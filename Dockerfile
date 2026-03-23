@@ -126,6 +126,5 @@ RUN /root/go/bin/nuclei -update-templates 2>/dev/null || true
 # Expose ports (for reverse shells, proxies, etc.)
 EXPOSE 1080 8080 4444
 
-# Set entrypoint
-ENTRYPOINT ["/opt/venv/bin/python", "/app/ctf_agent_graph.py"]
-CMD ["--help"]
+# Set entrypoint - keep container running for interactive use
+ENTRYPOINT ["tail", "-f", "/dev/null"]

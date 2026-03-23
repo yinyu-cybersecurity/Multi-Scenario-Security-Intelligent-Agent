@@ -27,40 +27,51 @@ CTF-Agent 是一个智能化的渗透测试代理，能够自主完成从信息�
 
 ## Quick Start
 
-### 1. Configure
+### 1. 配置
 ```bash
 cp config.yaml.example config.yaml
-# Edit config.yaml with your API key and settings
+# 编辑 config.yaml 填入 API Key
 ```
 
-### 2. Build and Run with Docker
+### 2. 构建并启动
 ```bash
 docker-compose build
 docker-compose up -d
 ```
 
-### 3. Run Self-Check
+### 3. 运行测试
 ```bash
-docker exec ctf-agent python /app/self_check.py
+# 进入容器
+docker exec -it ctf-agent bash
+
+# 系统自检
+python /app/ctf_agent_graph.py --skip
+
+# 运行任务
+python /app/ctf_agent_graph.py --target http://目标地址
 ```
 
 ---
 
-## Directory Structure
+## 目录结构
 
 ```
-├── app/                    # Core application code
-│   ├── ctf_agent_graph.py  # Main graph orchestration
-│   ├── state.py            # CTFState definition
-│   ├── router.py           # Node routing logic
-│   └── ...
-├── tools/                  # 33 security tools
-├── internal_network/       # AD/Lateral movement
-├── crypto/                 # Cryptography module
-├── memory/                 # Three-layer memory
-├── rag_builder/            # Knowledge retrieval
-├── docs/                   # Documentation
-├── .github/                # GitHub workflows & templates
+├── app/                    # 核心代码
+│   ├── ctf_agent_graph.py  # 主程序入口
+│   ├── state.py            # 状态定义
+│   ├── router.py           # 路由逻辑
+│   ├── llm_client.py       # LLM客户端
+│   ├── config.py           # 配置加载
+│   └── topology/           # 拓扑分析
+├── tools/                  # 33个安全工具
+├── internal_network/       # 内网渗透模块
+├── crypto/                 # 密码学模块
+├── pwn/                    # Pwn模块
+├── reverse/                # 逆向模块
+├── misc/                   # Misc模块
+├── memory/                 # 记忆系统
+├── rag_builder/            # RAG知识检索
+├── docs/                   # 文档
 ├── Dockerfile
 ├── docker-compose.yml
 └── requirements.txt
@@ -68,21 +79,60 @@ docker exec ctf-agent python /app/self_check.py
 
 ---
 
-## Supported Sectors
+## Docker 使用说明
 
-| Sector | 攻击类型 | 工具 |
-|--------|----------|------|
-| Web Security | SQL注入、SSTI、XSS、XXE | sqlmap, fenjing, xsser |
-| CVE/Cloud/AI | Log4Shell, Spring4Shell, Shiro | nuclei, jndi-exploit |
-| Multi-layer Network | 横向移动、OA漏洞 | impacket, crackmapexec |
-| AD Domain | AS-REP Roasting, Kerberoasting | KerberosAttacker |
+### 构建镜像
+```bash
+docker-compose build
+```
+
+### 启动容器
+```bash
+docker-compose up -d
+```
+
+### 进入容器
+```bash
+docker exec -it ctf-agent bash
+```
+
+### 查看日志
+```bash
+docker logs -f ctf-agent
+```
+
+### 停止容器
+```bash
+docker-compose down
+```
 
 ---
 
-## Documentation
+## 配置说明
+
+编辑 `config.yaml`：
+
+```yaml
+# LLM 配置
+LLM_API_KEY: "your-api-key"
+LLM_BASE_URL: "https://api.deepseek.com/v1"
+
+# 模型配置
+ANALYST_MODEL: "deepseek-chat"
+ATTACKER_MODEL: "deepseek-chat"
+
+# 系统控制
+MAX_TOTAL_ROUNDS: 60
+HITL_FAILURE_SCORE: 15.0
+```
+
+---
+
+## 文档
 
 - [项目路线图](docs/ROADMAP.md)
 - [贡献指南](docs/CONTRIBUTING.md)
+- [测试计划](docs/TEST_PLAN.md)
 
 ---
 
