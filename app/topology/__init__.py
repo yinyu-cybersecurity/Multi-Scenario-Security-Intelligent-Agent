@@ -1,8 +1,8 @@
 # topology/__init__.py
-from topology.builder import TopologyBuilder
-from topology.analyzer import TopologyAnalyzer
-from topology.pruner import TopologyPruner
-from topology.models import PageNode, PageEdge, AttackPath
+from .builder import TopologyBuilder
+from .analyzer import TopologyAnalyzer
+from .pruner import TopologyPruner
+from .models import PageNode, PageEdge, AttackPath
 
 # Optional: visualizer requires matplotlib
 try:

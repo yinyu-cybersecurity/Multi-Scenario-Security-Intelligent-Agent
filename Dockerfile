@@ -90,17 +90,8 @@ RUN wget -q https://github.com/fatedier/frp/releases/download/v0.52.3/frp_0.52.3
     tar -xzf frp_0.52.3_linux_amd64.tar.gz -C /app/data/frp --strip-components=1 && \
     rm frp_0.52.3_linux_amd64.tar.gz 2>/dev/null || echo "frp download skipped"
 
-# Copy application files to /app root (not /app/app/)
+# Create Python virtual environment and install dependencies FIRST (before copying code)
 COPY requirements.txt .
-COPY app/*.py ./
-COPY app/topology ./topology/
-COPY tools/ ./tools/
-COPY internal_network/ ./internal_network/
-COPY crypto/ ./crypto/
-COPY memory/ ./memory/
-COPY rag_builder/ ./rag_builder/
-
-# Create Python virtual environment and install dependencies
 RUN python3.11 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
@@ -110,6 +101,18 @@ RUN pip install --upgrade pip && \
 
 # Install other dependencies (sentence-transformers won't reinstall torch)
 RUN pip install -r requirements.txt
+
+# NOW copy application files (changes here won't trigger dependency reinstall)
+COPY app/*.py ./
+COPY app/topology ./topology/
+COPY tools/ ./tools/
+COPY internal_network/ ./internal_network/
+COPY crypto/ ./crypto/
+COPY pwn/ ./pwn/
+COPY reverse/ ./reverse/
+COPY misc/ ./misc/
+COPY memory/ ./memory/
+COPY rag_builder/ ./rag_builder/
 
 # Copy config template
 COPY config.yaml.example /app/config.yaml.example

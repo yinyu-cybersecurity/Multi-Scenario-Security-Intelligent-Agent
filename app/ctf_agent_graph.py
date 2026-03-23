@@ -1864,22 +1864,32 @@ def _route_from_mode_manager(state: CTFState) -> str:
     # 否则使用标准路由
     return route_mode(state, "mode_manager")
 
+# 动态构建路由映射，只包含实际可用的节点
+_mode_manager_routes = {
+    "exploit": "attacker",
+    "explore": "explorer",
+    "innovate": "innovator",
+    "hitl": "hitl",
+    "recon": "recon",
+    "end": END
+}
+
+# 只在模块可用时添加对应的路由
+if INTERNAL_NETWORK_AVAILABLE:
+    _mode_manager_routes["internal_recon"] = "internal_recon"
+if CRYPTO_AVAILABLE:
+    _mode_manager_routes["crypto_analyst"] = "crypto_analyst"
+if PWN_AVAILABLE:
+    _mode_manager_routes["pwn_analyst"] = "pwn_analyst"
+if REVERSE_AVAILABLE:
+    _mode_manager_routes["reverse_analyst"] = "reverse_analyst"
+if MISC_AVAILABLE:
+    _mode_manager_routes["misc_analyst"] = "misc_analyst"
+
 workflow.add_conditional_edges(
     "mode_manager",
     _route_from_mode_manager,
-    {
-        "exploit": "attacker",
-        "explore": "explorer",
-        "innovate": "innovator",
-        "hitl": "hitl",
-        "recon": "recon", # 支持跳转回侦察兵
-        "internal_recon": "internal_recon",  # 内网模式入口
-        "crypto_analyst": "crypto_analyst",  # Crypto模式入口
-        "pwn_analyst": "pwn_analyst",  # Pwn模式入口
-        "reverse_analyst": "reverse_analyst",  # Reverse模式入口
-        "misc_analyst": "misc_analyst",  # Misc模式入口
-        "end": END
-    }
+    _mode_manager_routes
 )
 
 # 3. 分支回归逻辑
