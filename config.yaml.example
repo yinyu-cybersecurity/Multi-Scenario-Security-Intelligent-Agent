@@ -1,0 +1,63 @@
+# CTF-Agent Configuration Template
+# Copy this file to config.yaml and update the values
+
+# ===== LLM Configuration =====
+# Required: Your LLM API key
+LLM_API_KEY: "your-api-key-here"
+
+# LLM API endpoint (DeepSeek, OpenAI compatible)
+LLM_BASE_URL: "https://api.deepseek.com/v1"
+
+# ===== Model Configuration =====
+# Models for different agent roles
+ANALYST_MODEL: "deepseek-chat"
+ATTACKER_MODEL: "deepseek-chat"
+VERIFIER_MODEL: "deepseek-chat"
+EXPLORER_MODEL: "deepseek-chat"
+INNOVATOR_MODEL: "deepseek-chat"
+
+# ===== Out-of-Band Configuration =====
+# Your VPS public IP for SSRF/XSS/RCE callbacks
+# Replace {{OOB_HOST}} in payloads with this value
+OOB_HOST: "your-vps-ip-here"
+
+# ===== System Control =====
+# Maximum execution rounds
+MAX_TOTAL_ROUNDS: 60
+
+# Steps before human-in-the-loop intervention
+MAX_STEPS_BEFORE_HITL: 50
+
+# Failure score threshold for HITL
+HITL_FAILURE_SCORE: 15.0
+
+# ===== Mode Switch Thresholds =====
+# Failure score to trigger explore mode
+FAILURE_SCORE_FOR_EXPLORE: 5.0
+
+# Failure score to trigger innovate mode
+FAILURE_SCORE_FOR_INNOVATE: 10.0
+
+# ===== Proxy Configuration (Optional) =====
+# Uncomment if you need to use a proxy
+# HTTP_PROXY: "http://127.0.0.1:8080"
+# HTTPS_PROXY: "http://127.0.0.1:8080"
+
+# ===== Tool Paths (Optional) =====
+# Custom paths for security tools
+# SQLMAP_PATH: "/usr/share/sqlmap"
+# NUCLEI_TEMPLATES_PATH: "/root/nuclei-templates"
+
+# ===== Memory Configuration =====
+# Memory storage directory
+MEMORY_DIR: ".memory"
+
+# Enable RAG knowledge retrieval
+RAG_ENABLED: true
+
+# ===== Debug Options =====
+# Enable verbose logging
+VERBOSE: false
+
+# Save tool outputs
+SAVE_TOOL_OUTPUTS: true

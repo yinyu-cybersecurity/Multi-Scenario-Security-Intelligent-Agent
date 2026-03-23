@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  ctf-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ctf-agent
+    # network_mode: host  # Windows不支持
+    ports:
+      - "1080:1080"
+      - "8080:8080"
+      - "4444:4444"
+    privileged: true
+    volumes:
+      - ./data:/app/data
+      - ./.memory:/app/.memory
+      - ./config.yaml:/app/config.yaml:ro
+    environment:
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.deepseek.com/v1}
+      - OOB_HOST=${OOB_HOST:-your-vps-ip}
+    restart: unless-stopped
+    stdin_open: true
+    tty: true

@@ -1,0 +1,33 @@
+# rag_builder/config.py - RAG知识库配置
+# 作用：统一管理路径和模型设置
+
+import os
+from pathlib import Path
+
+# 项目根目录
+BASE_DIR = Path(__file__).parent.parent
+
+# Writeup存放目录（你把167篇WP放这里）
+WRITEUPS_DIR = BASE_DIR / "data" / "writeups"
+
+# 向量数据库存储目录
+CHROMA_DIR = BASE_DIR / "data" / "chroma_db"
+
+# 自动创建目录
+WRITEUPS_DIR.mkdir(parents=True, exist_ok=True)
+CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+
+# 支持的WP文件格式
+SUPPORTED_EXTENSIONS = [".md", ".txt", ".markdown"]
+
+# Embedding模型配置
+# 多语言模型（同时支持中英文）
+EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+# 如果只想用英文，可以用这个： "sentence-transformers/all-MiniLM-L6-v2"
+
+# 检索配置
+TOP_K_RESULTS = 5  # 默认返回几条相似结果
+SIMILARITY_THRESHOLD = 0.6  # 相似度阈值（低于此值的不返回）
+
+# 分块大小（WP内容太长时可以截断）
+MAX_CONTENT_LENGTH = 2000  # 只取前2000字符

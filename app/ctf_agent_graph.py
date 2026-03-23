@@ -1,0 +1,2439 @@
+import argparse
+import re
+import asyncio
+import hashlib
+import requests
+import sys
+import concurrent.futures
+import traceback
+import urllib3
+from urllib.parse import urlparse
+
+# 🚀 抑制 SSL 安全警告 (CTF 环境中通常不需要)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# 🚀 修复 ChromaDB 在 Linux/Docker 环境下的 SQLite3 版本兼容性问题
+try:
+    import pysqlite3
+    sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
+except ImportError:
+    pass
+
+# [性能优化] 增加全局默认线程池，防止大量工具调用或 AI 分析阻塞
+# 降低最大并发数并添加任务队列保护
+from typing import Dict as TypingDict
+executor = concurrent.futures.ThreadPoolExecutor(max_workers=16)
+try:
+    loop = asyncio.get_event_loop()
+    loop.set_default_executor(executor)
+except RuntimeError:
+    pass
+
+# 全局任务追踪，用于优雅关闭
+_running_tasks: TypingDict[str, concurrent.futures.Future] = {}
+
+def normalize_target_url(url_str: str) -> str:
+    """
+    [加固版] 极度鲁棒的 URL 清洗逻辑，专门对付 LLM 产生的各类噪音
+    """
+    if not url_str: return ""
+    s = str(url_str).strip()
+    
+    # 1. 暴力移除所有已知的干扰字符
+    for char in ["`", "\\", "\n", "\r", "\t"]:
+        s = s.replace(char, "")
+    
+    # 2. 精准提取第一个 http(s) 链接
+    # 排除空格、引号、括号、尖括号、中括号
+    match = re.search(r'(https?://[^\s\'"<>\[\]\(\)]+)', s)
+    if match:
+        clean_url = match.group(1)
+        # 3. 剥离末尾可能残留的标点符号
+        return clean_url.strip().rstrip(".").rstrip(",").rstrip("/")
+    
+    # 4. 如果没找到协议头，尝试二次清理后返回
+    return s.strip("'").strip('"').strip()
+
+# ctf_agent_graph.py
+from config import config
+from llm_client import llm_client
+from analyst_prompt import get_analyst_prompt
+from tools import load_all_tools
+from verifier_prompt import get_verifier_prompt
+from attacker_prompt import get_attacker_prompt
+from topology import TopologyBuilder, TopologyAnalyzer, TopologyPruner
+from tool_framework import ToolRegistry, CTFTool
+# 假设用户已创建该模块
+from topology.page_diff import page_diff_manager
+
+from evolution import evolution_node
+from strategy_filter import strategy_filter_node
+from innovator_agent import innovator_node
+from router import (
+    route_mode,
+    route_verify,
+    route_hitl,
+    route_evolution,
+    get_routing_stats,
+    route_internal_mode,
+    route_internal_to_web,
+    get_internal_next_target
+)
+from state import CTFState, VulnerabilityCandidate, AttackAction, PageFeatures, Hint, ToolCall
+
+# 自我纠错模块
+try:
+    from self_correction import self_correction_manager, ErrorSeverity
+    SELF_CORRECTION_AVAILABLE = True
+except ImportError:
+    print("[Warning] Self-correction module not available")
+    SELF_CORRECTION_AVAILABLE = False
+
+# 内网渗透模块导入
+try:
+    from internal_network.nodes import (
+        internal_recon_node,
+        lateral_move_node,
+        privilege_escalation_node,
+        credential_gather_node
+    )
+    from internal_network.orchestrator import InternalNetworkOrchestrator
+    INTERNAL_NETWORK_AVAILABLE = True
+except ImportError:
+    print("[Warning] Internal network module not available")
+    INTERNAL_NETWORK_AVAILABLE = False
+
+# Crypto模块导入
+try:
+    from crypto.nodes import (
+        crypto_analyst_node,
+        crypto_solver_node
+    )
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    print("[Warning] Crypto module not available")
+    CRYPTO_AVAILABLE = False
+
+# Pwn模块导入
+try:
+    from pwn.nodes import (
+        pwn_analyst_node,
+        pwn_exploiter_node
+    )
+    PWN_AVAILABLE = True
+except ImportError:
+    print("[Warning] Pwn module not available")
+    PWN_AVAILABLE = False
+
+# Reverse模块导入
+try:
+    from reverse.nodes import (
+        reverse_analyst_node,
+        reverse_decompiler_node
+    )
+    REVERSE_AVAILABLE = True
+except ImportError:
+    print("[Warning] Reverse module not available")
+    REVERSE_AVAILABLE = False
+
+# Misc模块导入
+try:
+    from misc.nodes import (
+        misc_analyst_node,
+        misc_extractor_node
+    )
+    MISC_AVAILABLE = True
+except ImportError:
+    print("[Warning] Misc module not available")
+    MISC_AVAILABLE = False
+
+# 性能监控模块导入
+try:
+    from performance import performance_monitor, get_system_status, ParallelExecutor
+    PERFORMANCE_AVAILABLE = True
+except ImportError:
+    print("[Warning] Performance module not available")
+    PERFORMANCE_AVAILABLE = False
+import networkx as nx
+import json
+import yaml
+import os
+import time
+from typing import Annotated, List, Dict, Literal, Union, Any, Optional, Tuple
+from typing_extensions import TypedDict
+from langgraph.graph import StateGraph, END, START
+from langgraph.checkpoint.memory import MemorySaver
+from dataclasses import dataclass
+
+
+
+# ==============================================================================
+# 2. 工具集成框架 (Tool Integration Framework) - 可无限扩展
+# ==============================================================================
+
+# CTFTool and ToolRegistry are now imported from tool_framework.py
+# Removed redundant initialization here as it's handled by the entry point or registry.
+
+# ==============================================================================
+# 3. 辅助函数 (Utils)
+# ==============================================================================
+
+def log_node_data(node_name: str, input_data: Any, output_data: Any):
+    """最简单的日志记录：将节点输入输出写入 log 文件夹"""
+    os.makedirs("log", exist_ok=True)
+    log_file = os.path.join("log", f"{node_name}_{int(time.time())}.log")
+    with open(log_file, "w", encoding="utf-8") as f:
+        f.write(f"=== [{node_name}] INPUT ===\n")
+        f.write(json.dumps(input_data, indent=2, ensure_ascii=False, default=str))
+        f.write(f"\n\n=== [{node_name}] OUTPUT ===\n")
+        f.write(json.dumps(output_data, indent=2, ensure_ascii=False, default=str))
+    print(f"📝 [Log] {node_name} 数据已写入 {log_file}")
+
+def calculate_dom_fingerprint(html_content: str) -> str:
+    """计算DOM结构指纹"""
+    if not html_content:
+        return ""
+    return hashlib.md5(html_content.encode('utf-8', errors='ignore')).hexdigest()
+
+
+def check_human_intervention(state: CTFState) -> Optional[Dict]:
+    """
+    [HITL] 人类介入检查 - 简化版
+
+    触发条件：
+    1. 失败分过高 (熔断)
+    2. 步数过长 (超时)
+    """
+    steps = state.get("execution_steps", 0)
+    score = state.get("failure_weighted_score", 0)
+    last_step = state.get("last_intervention_step", 0)
+
+    # 避免频繁打断 (至少间隔5步)
+    if steps - last_step < 5:
+        return None
+
+    trigger_reason = ""
+    if score > config.HITL_FAILURE_SCORE:
+        trigger_reason = f"失败分过高 ({score:.1f} > {config.HITL_FAILURE_SCORE})"
+    elif steps >= config.MAX_STEPS_BEFORE_HITL:
+        trigger_reason = f"步数过长 ({steps} >= {config.MAX_STEPS_BEFORE_HITL})"
+    else:
+        return None
+
+    print("\n" + "=" * 50)
+    print(f"🚨 系统暂停: {trigger_reason}")
+    print(f"📍 当前URL: {state.get('current_url')}")
+    print("-" * 50)
+    print("请选择操作:")
+    print("  [1] 💡 提示 - 输入思路继续尝试")
+    print("  [2] 🧠 创新 - 启动头脑风暴")
+    print("  [3] 🗺️ 探索 - 重新扫描目录")
+    print("  [4] 🛑 结束 - 放弃任务")
+    print("  [5] 🔍 观察 - 查看漏洞候选")
+    print("-" * 50)
+
+    try:
+        while True:
+            choice = input("请输入选项 [1-5]: ").strip()
+
+            if choice == "1":
+                hint = input("请输入提示内容: ")
+                return {"action": "hint", "content": hint, "step": steps}
+            elif choice == "2":
+                return {"action": "innovate", "step": steps}
+            elif choice == "3":
+                return {"action": "explore", "step": steps}
+            elif choice == "4":
+                return {"action": "stop", "step": steps}
+            elif choice == "5":
+                print("\n当前漏洞候选:")
+                for c in state.get("vuln_candidates", []):
+                    print(f"  - {c.get('type')} @ {c.get('location')} (Conf: {c.get('confidence')})")
+                print("\n")
+                continue  # 继续循环等待选择
+            else:
+                print("无效选项，请重试")
+    except (EOFError, OSError):
+        # Docker环境或其他无交互环境，input()可能抛出异常
+        print("⚠️ 无交互环境，自动结束任务")
+        return None
+
+    return None
+
+
+def generate_ai_hint(state: CTFState, level: int) -> str:
+    """已废弃 - 简化版不再需要自动生成AI提示"""
+    return ""
+
+
+
+# ==============================================================================
+# 4. 兵种节点定义 (Node Definitions)
+# ==============================================================================
+
+def challenge_type_detector_node(state: CTFState) -> Dict:
+    """
+    [CTF类型检测器] 多信号智能检测挑战类型
+
+    检测策略（按优先级）：
+    1. 附件文件类型检测（最可靠）
+    2. HTTP服务可访问性检测
+    3. LLM智能判断（兜底方案）
+
+    检测类型:
+        - Web: HTTP服务可访问
+        - Pwn: ELF/PE二进制文件
+        - Reverse: 需逆向分析的二进制
+        - Crypto: 加密相关文件或描述
+        - Misc: 图片/音频/pcap等杂项文件
+        - Internal: 内网IP地址
+    """
+    print("[TypeDetector] Analyzing challenge type...")
+
+    task_name = state.get("task_name", "")
+    task_desc = state.get("task_description", "")
+    target_url = state.get("target_url", "")
+    attachments = state.get("attachments", [])
+
+    result = {}
+
+    # =========================================================================
+    # 策略1: 附件文件类型检测（最可靠）
+    # =========================================================================
+    if attachments:
+        for att in attachments:
+            att_path = att.get("path", "")
+            att_type = att.get("type", "").lower()
+            att_name = att.get("name", "").lower()
+
+            # 根据文件扩展名判断
+            ext = att_name.split('.')[-1] if '.' in att_name else ''
+
+            # 二进制文件类型
+            if ext in ['elf', 'so', 'out'] or att_type in ['elf', 'binary']:
+                # ELF文件 - 进一步判断是Pwn还是Reverse
+                # 通过LLM分析任务描述来区分
+                if _is_pwn_challenge(task_name, task_desc):
+                    print(f"   [Signal:Attachment] Pwn challenge detected (ELF binary)")
+                    result = {"pwn_mode": True, "binary_path": att_path}
+                else:
+                    print(f"   [Signal:Attachment] Reverse challenge detected (ELF binary)")
+                    result = {"reverse_mode": True, "binary_path": att_path}
+                break
+
+            elif ext in ['exe', 'dll'] or att_type in ['pe', 'exe']:
+                print(f"   [Signal:Attachment] Reverse/Pwn challenge (PE binary)")
+                result = {"reverse_mode": True, "binary_path": att_path}
+                break
+
+            # Misc文件类型
+            elif ext in ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'wav', 'mp3', 'mp4', 'avi']:
+                print(f"   [Signal:Attachment] Misc challenge (media file: {ext})")
+                result = {"misc_mode": True, "misc_file": att_path}
+                break
+
+            elif ext in ['pcap', 'pcapng', 'cap']:
+                print(f"   [Signal:Attachment] Misc challenge (traffic capture)")
+                result = {"misc_mode": True, "misc_file": att_path}
+                break
+
+            elif ext in ['pdf', 'doc', 'docx', 'xls', 'xlsx']:
+                print(f"   [Signal:Attachment] Misc challenge (document)")
+                result = {"misc_mode": True, "misc_file": att_path}
+                break
+
+            elif ext in ['zip', 'rar', '7z', 'tar', 'gz']:
+                print(f"   [Signal:Attachment] Misc challenge (archive)")
+                result = {"misc_mode": True, "misc_file": att_path}
+                break
+
+            # Crypto文件类型
+            elif ext in ['enc', 'key', 'pem', 'pub', 'priv']:
+                print(f"   [Signal:Attachment] Crypto challenge (key file)")
+                result = {"crypto_mode": True}
+                break
+
+    # =========================================================================
+    # 策略2: HTTP服务可访问性检测
+    # =========================================================================
+    if not result and target_url:
+        if target_url.startswith('http://') or target_url.startswith('https://'):
+            is_accessible, response_info = _check_http_accessible(target_url)
+            if is_accessible:
+                print(f"   [Signal:HTTP] Web challenge (service accessible)")
+                result = {}  # Web是默认模式
+            else:
+                # HTTP不可访问，可能是内网或需要VPN
+                # 检查是否是IP地址
+                import re
+                ip_match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', target_url)
+                if ip_match:
+                    print(f"   [Signal:IP] Internal network challenge detected")
+                    result = {"internal_mode": True}
+                else:
+                    # 无法确定，让LLM判断
+                    print(f"   [Signal:Unknown] HTTP not accessible, will use LLM analysis")
+
+        elif target_url.startswith('file://') or os.path.exists(target_url):
+            # 本地文件路径
+            print(f"   [Signal:LocalFile] Processing local file")
+            result = _detect_file_type(target_url)
+
+    # =========================================================================
+    # 策略3: LLM智能判断（兜底方案）
+    # =========================================================================
+    if not result:
+        print("   [Signal:LLM] Using LLM for type detection...")
+        llm_result = _llm_detect_challenge_type(task_name, task_desc, target_url, attachments)
+        if llm_result:
+            result = llm_result
+
+    # 如果仍未确定，默认Web模式
+    if not result:
+        print("   [Default] Assuming Web challenge")
+        result = {}
+
+    result["execution_steps"] = state.get("execution_steps", 0) + 1
+    return result
+
+
+def _is_pwn_challenge(task_name: str, task_desc: str) -> bool:
+    """通过关键词判断是否是Pwn挑战（vs Reverse）"""
+    pwn_indicators = [
+        'pwn', 'shell', 'exploit', 'overflow', 'rop', 'heap', 'stack',
+        'canary', 'aslr', 'pie', 'nx', 'got', 'plt', 'libc', 'shellcode',
+        'uaf', 'race condition', '漏洞利用'
+    ]
+    reverse_indicators = [
+        'reverse', '逆向', 'crack', 'keygen', 'serial', 'license',
+        '反编译', '注册机', '算法分析'
+    ]
+
+    text = f"{task_name} {task_desc}".lower()
+
+    pwn_score = sum(1 for kw in pwn_indicators if kw in text)
+    reverse_score = sum(1 for kw in reverse_indicators if kw in text)
+
+    return pwn_score > reverse_score
+
+
+def _check_http_accessible(url: str) -> tuple:
+    """检查HTTP服务是否可访问"""
+    try:
+        import requests
+        resp = requests.head(url, timeout=5, verify=False, allow_redirects=True)
+        if resp.status_code < 500:
+            return True, {
+                "status_code": resp.status_code,
+                "server": resp.headers.get("Server", ""),
+                "content_type": resp.headers.get("Content-Type", "")
+            }
+    except requests.exceptions.Timeout:
+        return False, {"error": "timeout"}
+    except requests.exceptions.ConnectionError:
+        return False, {"error": "connection_refused"}
+    except Exception as e:
+        return False, {"error": str(e)}
+
+    return False, {"error": "unknown"}
+
+
+def _detect_file_type(file_path: str) -> Dict:
+    """检测本地文件类型"""
+    import os
+    if not os.path.exists(file_path):
+        return {}
+
+    ext = file_path.split('.')[-1].lower() if '.' in file_path else ''
+
+    # 读取文件头判断真实类型
+    try:
+        with open(file_path, 'rb') as f:
+            header = f.read(16)
+
+        # ELF文件
+        if header[:4] == b'\x7fELF':
+            if _is_pwn_challenge("", ""):
+                return {"pwn_mode": True, "binary_path": file_path}
+            return {"reverse_mode": True, "binary_path": file_path}
+
+        # PE文件
+        if header[:2] == b'MZ':
+            return {"reverse_mode": True, "binary_path": file_path}
+
+        # PNG
+        if header[:8] == b'\x89PNG\r\n\x1a\n':
+            return {"misc_mode": True, "misc_file": file_path}
+
+        # JPEG
+        if header[:2] == b'\xff\xd8':
+            return {"misc_mode": True, "misc_file": file_path}
+
+        # PDF
+        if header[:4] == b'%PDF':
+            return {"misc_mode": True, "misc_file": file_path}
+
+        # ZIP
+        if header[:4] == b'PK\x03\x04':
+            return {"misc_mode": True, "misc_file": file_path}
+
+    except Exception:
+        pass
+
+    # 按扩展名判断
+    if ext in ['elf', 'out', 'so']:
+        return {"pwn_mode": True, "binary_path": file_path}
+    elif ext in ['exe', 'dll']:
+        return {"reverse_mode": True, "binary_path": file_path}
+    elif ext in ['png', 'jpg', 'gif', 'wav', 'mp3', 'pcap']:
+        return {"misc_mode": True, "misc_file": file_path}
+
+    return {}
+
+
+def _llm_detect_challenge_type(task_name: str, task_desc: str,
+                                target_url: str, attachments: list) -> Dict:
+    """使用LLM智能判断挑战类型"""
+
+    prompt = f"""Analyze this CTF challenge and determine its type.
+
+## Challenge Information
+- Name: {task_name}
+- Description: {task_desc}
+- Target: {target_url}
+- Attachments: {len(attachments)} files
+
+## Challenge Types
+1. **Web**: Web security (SQLi, XSS, SSRF, file upload, etc.)
+2. **Pwn**: Binary exploitation (buffer overflow, ROP, heap, etc.)
+3. **Reverse**: Reverse engineering (crackme, keygen, algorithm analysis)
+4. **Crypto**: Cryptography (RSA, AES, hash cracking, encoding)
+5. **Misc**: Steganography, forensics, traffic analysis, encoding
+6. **Internal**: Internal network penetration (AD, lateral movement)
+
+## Output Format (JSON)
+{{
+  "type": "web/pwn/reverse/crypto/misc/internal",
+  "confidence": 0.0-1.0,
+  "reasoning": "brief explanation"
+}}
+"""
+
+    try:
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
+
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+
+        result = json.loads(response.strip())
+        detected_type = result.get("type", "web")
+        confidence = result.get("confidence", 0.5)
+
+        print(f"   [LLM Result] Type: {detected_type}, Confidence: {confidence:.2f}")
+        print(f"   [LLM Reason] {result.get('reasoning', 'N/A')}")
+
+        if detected_type == "pwn":
+            return {"pwn_mode": True}
+        elif detected_type == "reverse":
+            return {"reverse_mode": True}
+        elif detected_type == "crypto":
+            return {"crypto_mode": True}
+        elif detected_type == "misc":
+            return {"misc_mode": True}
+        elif detected_type == "internal":
+            return {"internal_mode": True}
+        else:
+            return {}  # Web is default
+
+    except Exception as e:
+        print(f"   [LLM Error] {e}")
+        return {}
+
+
+def recon_node(state: CTFState) -> Dict:
+    """
+    [侦察兵] (LLM 驱动的特征提取)
+
+    职责:
+        1. 获取原始页面内容 (HTTP)
+        2. 计算页面指纹用于去重
+        3. 调用 LLM 进行深度特征提取
+    """
+    url = state.get('current_url', state['target_url'])
+    task_name = state.get("task_name", "")
+    task_desc = state.get("task_description", "")
+
+    print(f"📡 [侦察] {url}")
+
+    # 1. 发起请求获取原始 HTML
+    try:
+        import requests
+        resp = requests.get(url, timeout=10, verify=False, allow_redirects=True)
+        raw_html = resp.text
+
+        # 记录重定向信息
+        redirect_chain = []
+        final_url = resp.url
+        if resp.history:
+            for r in resp.history:
+                redirect_chain.append({
+                    "status_code": r.status_code,
+                    "url": r.url,
+                    "location": r.headers.get('Location', '')
+                })
+            print(f"   🔀 重定向: {url} -> {final_url}")
+            if "?" in final_url:
+                print(f"   📌 发现参数: {final_url.split('?', 1)[1]}")
+
+        # 记录基准响应信息
+        baseline = {
+            "status_code": resp.status_code,
+            "content_length": len(raw_html),
+            "response_time": resp.elapsed.total_seconds(),
+            "final_url": final_url,
+            "redirect_chain": redirect_chain
+        }
+        print(f"   状态码: {resp.status_code}, 长度: {len(raw_html)}")
+    except Exception as e:
+        print(f"   ❌ 请求失败: {e}")
+        raw_html = "<html><body><!-- Connection Failed --></body></html>"
+        baseline = {"status_code": 0, "content_length": 0, "response_time": 0}
+
+    fingerprint = calculate_dom_fingerprint(raw_html)
+
+    # 去重检查
+    visited_fps = state.get("visited_fingerprints") or []
+    if fingerprint in visited_fps:
+        print(f"   ⏭️ 页面重复，跳过")
+        return {"visited_urls": [url]}
+
+    # 2. 调用 LLM 进行智能特征提取
+    recon_prompt = f"""
+你是一个高级 Web 渗透测试侦察专家。你的任务是从 HTML 源码中提取攻击面。
+特别注意：如果题目名称或描述中提到了特定的参数名，请务必将其包含在 input_vectors 中。
+
+### 题目背景
+- 名称: {task_name}
+- 描述: {task_desc}
+
+### 待分析源码
+```html
+{raw_html[:8000]}
+```
+
+### 输出要求 (JSON ONLY)
+{{
+  "tech_stack": ["识别到的技术"],
+  "input_vectors": ["格式 type:name"],
+  "hints": ["识别到的关键提示"]
+}}
+"""
+    
+    try:
+        response_text = llm_client.call_chat_completion(
+            model=config.EXPLORER_MODEL,
+            messages=[{"role": "user", "content": recon_prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
+        
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0]
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0]
+            
+        recon_data = json.loads(response_text)
+    except Exception as e:
+        print(f"❌ [Recon] LLM 提取失败: {e}")
+        recon_data = {}
+
+    features: PageFeatures = {
+        "tech_stack": recon_data.get("tech_stack", []),
+        "input_vectors": recon_data.get("input_vectors", []),
+        "sensitive_paths": [],
+        "dom_structure_hash": fingerprint,
+        "form_structure": [],
+        "scripts": [],
+        "cookies": {},
+        "headers": {}
+    }
+    
+    page_history = state.get("page_history", {})
+    page_diff_manager.save_page(url, raw_html.encode('utf-8'), page_history)
+
+    # 如果发生重定向，同时记录最终 URL
+    visited_urls = [url]
+    if baseline.get("final_url") and baseline["final_url"] != url:
+        visited_urls.append(baseline["final_url"])
+        page_diff_manager.save_page(baseline["final_url"], raw_html.encode('utf-8'), page_history)
+
+    res = {
+        "page_features": features,
+        "raw_html_snippet": raw_html[:8000],
+        "baseline_response": baseline,
+        "page_history": page_history,
+        "visited_urls": visited_urls,
+        "visited_fingerprints": [fingerprint],
+        "execution_steps": state.get("execution_steps", 0) + 1
+    }
+    log_node_data("recon", {"url": url}, res)
+    return res
+
+
+
+def analyst_node(state: CTFState) -> Dict:
+    """
+    分析兵 - 调用大模型进行深度漏洞分析
+    """
+    print("🔍 [分析] 解析页面特征...")
+
+    # 1. 准备输入数据
+    page_features = state.get("page_features", {})
+    raw_html = state.get("raw_html_snippet", "")
+    task_name = state.get("task_name", "Unknown Task")
+    task_description = state.get("task_description", "No description provided")
+    baseline_response = state.get("baseline_response", {})  # 包含重定向信息
+
+    # 规则引擎的初步结果（如果有）
+    rule_candidates = state.get("vuln_candidates", [])
+
+    # 2. 构建 Prompt
+    prompt = get_analyst_prompt(
+        page_features,
+        raw_html,
+        rule_candidates,
+        task_name=task_name,
+        task_description=task_description,
+        baseline_response=baseline_response  # 传递重定向信息
+    )
+    
+    # 3. 调用 LLM
+    response_text = llm_client.call_chat_completion(
+        model=config.ANALYST_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.1,
+        json_mode=True
+    )
+    
+    if not response_text:
+        print("   ⚠️ LLM 无响应，使用规则引擎结果")
+        log_node_data("analyst", {"prompt": prompt}, {"error": "LLM failed"})
+        return {"vuln_candidates": rule_candidates} # 降级：使用规则引擎的结果
+
+    # 4. 解析结果
+    try:
+        # 清理可能的 markdown 标记
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0]
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0]
+            
+        result = json.loads(response_text)
+        candidates = result.get("candidates", [])
+
+        # 提取分析兵的关键情报（源码、过滤规则等）
+        key_intel_parts = []
+        meta = result.get("meta_analysis", "")
+        if meta:
+            key_intel_parts.append(f"[总体分析] {meta}")
+        key_intel_raw = result.get("key_intel", "")
+        if key_intel_raw:
+            key_intel_parts.append(f"[关键情报] {key_intel_raw}")
+
+        # 统一格式化为 state.py 定义的 VulnerabilityCandidate
+        current_url = state.get("current_url")
+        formatted_candidates = []
+        for cand in candidates:
+            ctx = cand.get("context", {})
+            # 将 key_code 也纳入 intel 汇总
+            key_code = ctx.get("key_code", "")
+            if key_code:
+                key_intel_parts.append(f"[{cand.get('type','?')}@{cand.get('location','?')}] 关键代码:\n{key_code}")
+            formatted_candidates.append({
+                "type": cand.get("type", "unknown"),
+                "location": cand.get("location", ""),
+                "confidence": float(cand.get("confidence", 0.5)),
+                "context": ctx,
+                "reason": cand.get("reason", ""), # 保留分析理由
+                "recommended_tools": ctx.get("recommended_tools", []),
+                "url": current_url # [核心修复] 绑定当前 URL
+            })
+            
+        print(f"   ✅ 发现 {len(formatted_candidates)} 个潜在漏洞点")
+
+        # 如果 formatted_candidates 为空，直接触发探索模式
+        if not formatted_candidates:
+            print("   ⚠️ 未识别到漏洞候选，触发探索模式")
+            return {
+                "vuln_candidates": [],
+                "analyst_intel": "\n\n".join(key_intel_parts) if key_intel_parts else None,
+                "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.5
+            }
+
+        analyst_intel = "\n\n".join(key_intel_parts) if key_intel_parts else None
+        res = {"vuln_candidates": formatted_candidates, "analyst_intel": analyst_intel}
+        log_node_data("analyst", {"prompt": prompt}, res)
+        return res
+
+    except json.JSONDecodeError:
+        print(f"   ❌ JSON 解析失败")
+        log_node_data("analyst", {"prompt": prompt, "raw_response": response_text}, {"error": "JSON parse error"})
+        # JSON解析失败也返回空，触发探索
+        return {
+            "vuln_candidates": [],
+            "analyst_intel": None,
+            "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.0
+        }
+
+
+
+
+
+def mode_manager_node(state: CTFState) -> Dict:
+    """
+    模式决策器 - 简化版
+    """
+    score = state.get("failure_weighted_score", 0)
+    steps = state.get("execution_steps", 0)
+    current_url = state.get("current_url")
+    node_status = state.get("node_attack_status", {})
+
+    # 0. 尊重上游设置的模式（如 HITL 返回的 end/explore）
+    # 但 innovate 模式是"一次性"的，innovator 执行后应该重置
+    preset_mode = state.get("current_mode")
+    if preset_mode == "end":
+        print(f"📍 保持预设模式: end")
+        return {"current_mode": "end"}
+    elif preset_mode == "explore":
+        # explore 可能需要多轮，保持
+        print(f"📍 保持预设模式: explore")
+        return {"current_mode": "explore"}
+    elif preset_mode == "innovate":
+        # [关键修复] innovate 是一次性的，innovator 已执行过，重置分数并切回 exploit
+        print(f"📍 创新模式已执行，重置分数并切回攻击模式")
+        return {
+            "current_mode": "exploit",
+            "failure_weighted_score": 0,  # 重置分数，给新规则机会
+            "current_round": state.get("current_round", 0) + 1
+        }
+
+    # 1. 检查是否结束
+    if steps >= config.MAX_TOTAL_ROUNDS:
+        return {"current_mode": "end"}
+
+    # 2. 检查是否需要人类介入
+    if steps >= config.MAX_STEPS_BEFORE_HITL or score >= config.HITL_FAILURE_SCORE:
+        print(f"🛑 触发人工介入 (步数:{steps}, 失败分:{score:.1f})")
+        return {"current_mode": "hitl"}
+
+    # 3. 节点状态管理 - 智能放弃判断
+    # 不再仅凭 attempt_count 判断，而是看最近的攻击是否有进展
+    # 如果最近有成功的攻击（状态码200且有输出变化），则不放弃
+    if current_url and current_url in node_status:
+        status = node_status[current_url]
+        attempts = status.get("attempt_count", 0)
+        recent_codes = status.get("last_status_codes", [])[-5:]
+
+        # 检查最近是否有有效的攻击（非404/500的状态码占比超过50%）
+        if attempts > 10 and recent_codes:
+            success_rate = sum(1 for c in recent_codes if c not in [404, 500, 0]) / len(recent_codes)
+            if success_rate < 0.3:  # 最近5次攻击中，成功率低于30%才放弃
+                status["status"] = "abandoned"
+                print(f"   🛑 放弃节点（成功率低）: {current_url}")
+            else:
+                print(f"   📊 节点仍有进展（成功率 {success_rate*100:.0f}%），继续攻击")
+
+    # 4. 模式切换 - 简化阈值
+    if score >= config.FAILURE_SCORE_FOR_INNOVATE:
+        print(f"💡 创新模式 (失败分:{score:.1f})")
+        return {"current_mode": "innovate"}
+    elif score >= config.FAILURE_SCORE_FOR_EXPLORE:
+        print(f"🗺️ 探索模式 (失败分:{score:.1f})")
+        return {"current_mode": "explore"}
+    else:
+        return {
+            "current_mode": "exploit",
+            "current_round": state.get("current_round", 0) + 1,
+            "node_attack_status": node_status
+        }
+
+
+def execute_single_attack(action: Dict, current_url: str, page_history: Dict) -> Dict:
+    """同步执行单个攻击动作并进行页面对比"""
+    # [核心修复] 初始化默认返回值，确保即便发生异常，核心字段也不为空
+    tool_name = "unknown"
+    target = current_url
+    payload = "N/A"
+    
+    try:
+        if not isinstance(action, dict):
+            # 兼容性修复：如果 action 是字符串（LLM 可能直接输出 JSON 字符串），尝试解析
+            try:
+                action = json.loads(action)
+            except (json.JSONDecodeError, TypeError) as e:
+                raise ValueError(f"Invalid action format: {type(action)}: {e}")
+            
+        tool_name = action.get("tool", "unknown")
+        params = action.get("params", {})
+        
+        # [核心修复] 使用最佳实践规范化 URL，彻底解决反引号、转义符和废话干扰
+        if isinstance(params, dict) and "url" in params:
+            target = normalize_target_url(params["url"])
+            params["url"] = target
+        else:
+            # 如果工具未提供 URL，使用当前上下文 URL
+            target = current_url
+            if isinstance(params, dict):
+                params["url"] = target
+
+        payload = json.dumps(params) if isinstance(params, dict) else str(params)
+        
+        if tool_name == "requests":
+            start_time = time.time()
+            method = params.get("method", "GET").upper()
+            
+            # [Requests 参数清洗] 确保 params, data, headers 格式正确
+            req_params = params.get("params")
+            if isinstance(req_params, str):
+                try: req_params = json.loads(req_params)
+                except: pass # 如果解析失败，可能是普通字符串，保留原样或置空
+            
+            req_data = params.get("data")
+            if isinstance(req_data, str):
+                try: req_data = json.loads(req_data)
+                except: pass # POST data 可以是字符串
+            
+            req_headers = params.get("headers")
+            if isinstance(req_headers, str):
+                try: req_headers = json.loads(req_headers)
+                except: req_headers = {}
+
+            # 支持文件上传 (multipart/form-data)
+            req_files = params.get("files")
+            opened_files = []  # 追踪打开的文件句柄，确保关闭
+
+            # 如果 files 是字典格式 {"field_name": file_spec}，转化为 requests 格式
+            if isinstance(req_files, dict):
+                formatted_files = {}
+                for field, content in req_files.items():
+                    if isinstance(content, str):
+                        # 如果内容看起来像路径，尝试读取（CTF 常见场景）
+                        if os.path.exists(content) and os.path.isfile(content):
+                            f = open(content, 'rb')
+                            opened_files.append(f)  # 追踪文件句柄
+                            formatted_files[field] = (os.path.basename(content), f)
+                        else:
+                            # 否则视为纯文本内容上传
+                            formatted_files[field] = (f"test_{field}.txt", content)
+                    elif isinstance(content, (list, tuple)):
+                        # [核心修复] 处理列表/元组格式: [filename, content, mime] 或 (filename, content, mime)
+                        # JSON 序列化会将元组转为列表，所以需要兼容两种格式
+                        if len(content) >= 2:
+                            filename = content[0]
+                            file_content = content[1]
+                            mime_type = content[2] if len(content) >= 3 else "application/octet-stream"
+                            formatted_files[field] = (filename, file_content, mime_type)
+                        else:
+                            formatted_files[field] = content  # 透传给 requests
+                    else:
+                        formatted_files[field] = content  # 其他格式直接透传
+                req_files = formatted_files
+
+            # [同步修复] 直接发起同步请求
+            try:
+                resp = requests.request(
+                    method=method,
+                    url=target,
+                    params=req_params,
+                    data=req_data,
+                    headers=req_headers,
+                    files=req_files, # 增加文件支持
+                    timeout=30,
+                    verify=False
+                )
+            finally:
+                # 确保关闭所有打开的文件句柄
+                for f in opened_files:
+                    try:
+                        f.close()
+                    except Exception as e:
+                        print(f"[Warning] Failed to close file handle: {e}")
+            duration = time.time() - start_time
+            content = resp.content
+            
+            # [Optimization] Save large responses to file to avoid memory issues and consistent with other tools
+            file_path = None
+            if len(content) > 2000:
+                os.makedirs("data/tool_outputs", exist_ok=True)
+                file_path = f"data/tool_outputs/req_{int(time.time())}_{hash(str(params))%1000}.html"
+                with open(file_path, "wb") as f:
+                    f.write(content)
+
+            # [优化] 构建简短的 output 供即时查看，完整内容在 file_path
+            short_output = content[:1500].decode('utf-8', errors='replace')
+            if len(content) > 1500:
+                short_output += f"\n... (Total {len(content)} bytes, see file)"
+
+            diff_analysis = page_diff_manager.compare_and_analyze(target, content, page_history)
+
+            # [核心修复] 将 diff_analysis 中的 extracted_flag 提升到顶层 result
+            result = {
+                "action_id": f"req_{int(time.time())}_{hash(str(params))%1000}",
+                "tool": "requests",
+                "target": target,
+                "payload": payload,
+                "status": resp.status_code,
+                "output": short_output,
+                "file_path": file_path,
+                "duration": duration,
+                "diff_analysis": diff_analysis,
+                "is_exploit": diff_analysis.get("changed", False)
+            }
+            # [核心修复] extracted_flag 需要提升到顶层，确保 verifier 能直接读取
+            if diff_analysis.get("extracted_flag"):
+                result["extracted_flag"] = diff_analysis["extracted_flag"]
+            return result
+            
+        else:
+            # [同步修复] 直接调用工具执行引擎
+            exec_result = ToolRegistry.execute_cached(tool_name, target, params)
+            
+            if "error" in exec_result:
+                return {
+                    "action_id": f"{tool_name}_err_{int(time.time())}",
+                    "tool": tool_name, 
+                    "payload": payload,
+                    "error": exec_result["error"], 
+                    "status": 500,
+                    "diff_analysis": {"changed": False}
+                }
+            
+            tool_res = exec_result.get("result", {})
+            
+            # [核心修复] 适配新的结构化结果
+            if "summary" in tool_res:
+                display_output = f"Summary: {tool_res['summary']}\nFindings: {json.dumps(tool_res.get('findings', []), ensure_ascii=False)}"
+            else:
+                display_output = json.dumps(tool_res, ensure_ascii=False)
+                
+            vulnerable = tool_res.get("vulnerable", False)
+
+            return {
+                "action_id": f"{tool_name}_{int(time.time())}_{hash(str(params))%1000}",
+                "tool": tool_name,
+                "target": target,
+                "payload": payload,
+                "status": 200 if (tool_res.get("success") or vulnerable) else 500,
+                "output": display_output, # 简短的结构化输出
+                "file_path": tool_res.get("full_log_path"), 
+                "duration": exec_result.get("duration", 0),
+                "is_exploit": vulnerable,
+                "diff_analysis": {"changed": vulnerable, "reason": tool_res.get("summary", "Tool findings")}
+            }
+    except Exception as e:
+        # [核心修复] 将详细报错信息放入 output，让核验兵能识别出具体错误
+        error_msg = f"Execution Exception: {str(e)}\n{traceback.format_exc()}"
+        print(f"❌ [Executor] 攻击动作执行失败: {tool_name}\n{error_msg}")
+        
+        return {
+            "action_id": f"err_{tool_name}_{int(time.time())}_{hash(str(action))%1000}",
+            "tool": tool_name,
+            "target": target,
+            "payload": payload,
+            "status": 500,
+            "error": str(e),
+            "output": error_msg,
+            "diff_analysis": {"changed": False}
+        }
+
+def attacker_node(state: CTFState) -> Dict:
+    """
+    [攻击兵] (同步并发执行优化版)
+    """
+    current_url = state.get("current_url")
+    print(f"⚔️ [攻击] 目标: {current_url}")
+    # [核心修复] 只攻击匹配当前 URL 的候选点
+    all_candidates = state.get("vuln_candidates", [])
+    candidates = [c for c in all_candidates if c.get("url") == current_url]
+    
+    # [节点状态管理]
+    node_status = state.get("node_attack_status", {})
+    if current_url and current_url not in node_status:
+        node_status[current_url] = {
+            "status": "active",
+            "start_time": time.time(),
+            "last_decision_time": time.time(),
+            "attempt_count": 0,
+            "last_status_codes": [],
+            "ai_decision_log": []
+        }
+    if current_url:
+        node_status[current_url]["attempt_count"] += 1
+
+    if not candidates:
+        print(f"   ⚠️ 无匹配漏洞候选项，直接触发探索模式")
+        # 直接设置模式为 explore，跳过 verifier
+        return {
+            "failure_weighted_score": state.get("failure_weighted_score", 0) + 2.0,  # 直接加2.0触发explore
+            "current_mode": "explore",  # 直接设置模式
+            "execution_steps": state.get("execution_steps", 0) + 1
+        }
+
+    # 1. 扩容动作数量：实现饱和测试
+    # 动态获取所有注册工具的详细定义（含参数规范）
+    tools_info = ToolRegistry.get_all_tools_info()
+    
+    # [优化] 获取最近的攻击历史，用于防止重复并引导进化
+    history = state.get("attack_results", [])[-10:]
+    
+    # 获取题目背景信息
+    task_info = {
+        "name": state.get("task_name", "Unknown"),
+        "description": state.get("task_description", "No description"),
+        "target_url": state.get("target_url", ""),
+        "current_url": current_url
+    }
+    
+    # 获取最新的人工提示
+    human_hint = None
+    hint_history = state.get("hint_history", [])
+    if hint_history:
+        latest_hint = hint_history[-1]
+        if latest_hint.get("source") == "human":
+            human_hint = latest_hint.get("content")
+
+    prompt = get_attacker_prompt(
+        candidates[:10],
+        tools_info,
+        history,
+        task_info=task_info,
+        tactical_guidance=state.get("latest_tactical_guidance"),
+        analyst_intel=state.get("analyst_intel"),
+        known_facts=state.get("known_facts", ""),
+        failed_payloads=state.get("failed_payloads", []),
+        human_hint=human_hint
+    ) # 增加题目背景与战术指引
+
+    try:
+        response_text = llm_client.call_chat_completion(
+            model=config.ATTACKER_MODEL if hasattr(config, 'ATTACKER_MODEL') else config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3, # 略微提高随机性，增加 Payload 的多样性
+            json_mode=True
+        )
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0]
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0]
+
+        # [核心修复] 增强JSON解析容错能力
+        response_text = response_text.strip()
+        try:
+            result = json.loads(response_text)
+            # [兼容] 处理 LLM 返回 "actions" 而不是 "attack_actions" 的情况
+            if "actions" in result and "attack_actions" not in result:
+                result["attack_actions"] = result["actions"]
+        except json.JSONDecodeError as json_err:
+            # 尝试修复常见问题
+            print(f"⚠️ [Attacker] JSON解析失败，尝试修复: {json_err}")
+            # 1. 尝试截断到最后一个完整的 }
+            if '"attack_actions"' in response_text or '"actions"' in response_text:
+                # 提取 attack_actions 或 actions 数组
+                import re
+                # 尝试匹配 attack_actions 或 actions
+                match = re.search(r'"(?:attack_actions|actions)"\s*:\s*\[', response_text)
+                if match:
+                    # 尝试找到数组结束位置
+                    start = match.end() - 1
+                    bracket_count = 0
+                    for i, c in enumerate(response_text[start:], start):
+                        if c == '[': bracket_count += 1
+                        elif c == ']': bracket_count -= 1
+                        if bracket_count == 0:
+                            # 找到数组结束
+                            actions_str = response_text[start:i+1]
+                            try:
+                                raw_actions = json.loads(actions_str)
+                                result = {"attack_actions": raw_actions}
+                                print(f"✅ [Attacker] JSON修复成功，提取到 {len(raw_actions)} 个动作")
+                            except (json.JSONDecodeError, TypeError) as e:
+                                print(f"[Warning] JSON parse failed in recovery: {e}")
+                                result = {"attack_actions": []}
+                            break
+                    else:
+                        result = {"attack_actions": []}
+                else:
+                    result = {"attack_actions": []}
+            else:
+                result = {"attack_actions": []}
+
+        raw_actions = result.get("attack_actions", [])[:15] 
+        
+        # [核心修复] 允许 requests 多次调用，其他工具强制去重
+        attack_actions = []
+        used_tools = set() 
+        
+        for action in raw_actions:
+            if not isinstance(action, dict): continue
+            tool = action.get("tool")
+            if not tool: continue
+            
+            # 策略：requests 作为手工工具，允许并发多个不同 Payload
+            # 其他自动化工具（如 sqlmap）每轮强制唯一
+            if tool != "requests" and tool in used_tools:
+                print(f"⚠️ [Attacker] 忽略重复工具调用: {tool}")
+                continue
+            
+            attack_actions.append(action)
+            used_tools.add(tool)
+                
+    except Exception as e:
+        print(f"   ❌ LLM 决策失败: {e}")
+        log_node_data("attacker", {"prompt": prompt}, {"error": str(e)})
+        attack_actions = []
+
+    if not attack_actions:
+        print("   ⚠️ LLM 未生成有效攻击动作")
+        # 不硬编码备用攻击，而是增加失败分触发模式切换
+        res = {
+            "attack_batch": [],
+            "attack_results": [],
+            "failure_weighted_score": state.get("failure_weighted_score", 0) + config.HARD_FAILURE_WEIGHT,
+            "execution_steps": state.get("execution_steps", 0) + 1
+        }
+        log_node_data("attacker", {"prompt": prompt}, res)
+        return res
+
+    # 2. 并发执行
+    print(f"   执行 {len(attack_actions)} 个攻击动作...")
+
+    # [同步修复] 使用线程池执行，并设置合理的单任务超时
+    attack_results = []
+    futures_map = {}
+    
+    for a in attack_actions:
+        # 为不同工具设置不同的内部超时
+        tool_name = a.get("tool", "unknown")
+        # 攻击模式下的工具调用应该比探索模式更快
+        task_timeout = 60 if tool_name in ["dirsearch", "sqlmap"] else 20
+        
+        future = executor.submit(execute_single_attack, a, current_url, state.get("page_history", {}))
+        futures_map[future] = a
+
+    try:
+        # 使用 as_completed 允许部分完成的任务先进入下一步，或者在超时后统一处理
+        from concurrent.futures import as_completed, wait, FIRST_EXCEPTION
+        
+        # 最多等待 300 秒，防止整个节点卡死（dirsearch/sqlmap 需要更长时间）
+        done, not_done = wait(futures_map.keys(), timeout=300)
+        
+        for f in done:
+            try:
+                attack_results.append(f.result())
+            except Exception as e:
+                action = futures_map[f]
+                print(f"❌ [Attacker] 任务执行崩溃: {action.get('tool')} - {e}")
+                attack_results.append({
+                    "tool": action.get("tool"),
+                    "status": 500,
+                    "output": f"Internal Error: {str(e)}",
+                    "diff_analysis": {"changed": False}
+                })
+        
+        # 处理超时的任务
+        for f in not_done:
+            action = futures_map[f]
+            print(f"⚠️ [Attacker] 任务执行超时已取消: {action.get('tool')}")
+            # 注意：concurrent.futures 无法强制杀掉正在运行的线程，但我们可以不再等待它
+            attack_results.append({
+                "tool": action.get("tool"),
+                "status": 408,
+                "output": "Task timed out and backgrounded.",
+                "diff_analysis": {"changed": False}
+            })
+
+    except KeyboardInterrupt:
+        print("\n🛑 [Attacker] 用户中断执行，正在尝试收尾...")
+        raise # 重新抛出让主程序处理
+    except Exception as e:
+        print(f"❌ [Attacker] 并发管理异常: {e}")
+
+    # 3. 检查是否有成功的动作 (Early Exit Sign)
+    success_found = any(r.get("is_exploit") for r in attack_results)
+    if success_found:
+        print("   🔥 有动作命中目标！")
+
+    res = {
+        "attack_batch": attack_actions,
+        "attack_results": attack_results,
+        "page_history": state.get("page_history", {}),
+        "node_attack_status": node_status,
+        "execution_steps": state.get("execution_steps", 0) + 1,
+    }
+    log_node_data("attacker", {"prompt": prompt, "actions": attack_actions}, res)
+    return res
+
+
+def explorer_node(state: CTFState) -> Dict:
+    """
+    [探索兵] (异步扫描 + 图数据库更新)
+
+    职责:
+        1. 执行耗时扫描操作 (dirsearch)
+        2. 发现新路径，更新拓扑图
+        3. 图分析（关键节点、死循环检测）
+        4. 自动剪枝无效路径
+    """
+    print("🗺️ [探索] 启动目录扫描...")
+    target_url = state.get("target_url")
+    current_url = state.get("current_url")
+    exploration_rounds = state.get("exploration_rounds", 0)
+
+    # 优先扫描当前URL，如果当前是root，则扫描target_url
+    scan_target = current_url if current_url else target_url
+
+    # 检查是否已扫描过该目标（避免重复）
+    visited_urls = state.get("visited_urls", [])
+    if scan_target in visited_urls and exploration_rounds > 0:
+        print(f"   ⏭️ 已扫描过，切换到创新模式")
+        # 已扫描过，直接切换到创新模式
+        return {
+            "exploration_rounds": exploration_rounds + 1,
+            "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.0,
+            "current_mode": "innovate"  # 直接切换模式
+        }
+
+    new_paths = {}
+    node_status = {}
+
+    if scan_target:
+        print(f"   扫描: {scan_target}")
+        # 调用 dirsearch
+        try:
+            # 默认扫描常见的 php,html,js
+            result = ToolRegistry.execute_cached("dirsearch", scan_target, {"extensions": "php,html,js"})
+
+            # 检查是否缓存命中
+            if result.get("cached", False):
+                print(f"   📦 使用缓存结果")
+                # 如果是缓存结果，说明之前扫描过，无需重复
+                exploration_rounds += 1
+                if exploration_rounds >= 2:
+                    print(f"   🔄 缓存命中且无新发现，切换到创新模式")
+                    return {
+                        "exploration_rounds": exploration_rounds,
+                        "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
+                        "current_mode": "innovate"
+                    }
+
+            # 解析输出提取 URL
+
+            output = result.get("result", {}).get("output", "")
+            if not output and result.get("result", {}).get("file_path"):
+                 # 尝试从文件读取
+                 try:
+                     with open(result["result"]["file_path"], "r", encoding="utf-8") as f:
+                         output = f.read()
+                 except: pass
+
+            found_urls = []
+            if output:
+                # 简单正则提取 http/https 链接
+                # 排除自身
+                urls = re.findall(r'(http[s]?://[^\s]+)', output)
+                for u in urls:
+                    if u != scan_target:
+                        found_urls.append(u)
+                        # 尝试从行中提取状态码 (例如 [200])
+                        # 这比较脆弱，实际应优化 dirsearch 输出格式
+                        node_status[u] = 200
+
+            if found_urls:
+                new_paths[scan_target] = found_urls
+                print(f"   ✅ 发现 {len(found_urls)} 个新路径")
+            else:
+                print("   ⚠️ 未发现新路径")
+                # 无新发现时切换到创新模式
+                return {
+                    "exploration_rounds": exploration_rounds + 1,
+                    "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
+                    "current_mode": "innovate"
+                }
+
+        except Exception as e:
+            print(f"   ❌ 扫描失败: {e}")
+            return {
+                "exploration_rounds": exploration_rounds + 1,
+                "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
+                "current_mode": "innovate"
+            }
+
+    # 1. 初始化图构建器
+    builder = TopologyBuilder()
+
+    # 2. 更新拓扑图（合并新路径）
+    state.update(builder.update_from_explorer(state, new_paths))
+
+    # 3. 构建NetworkX图进行分析
+    G = builder.build_from_adjacency(state.get("site_topology", {}))
+
+    # 4. 添加节点属性（状态码、技术栈等）
+    for url, status in node_status.items():
+        builder.add_node_attr(url, status_code=status)
+
+    # 5. 图分析
+    analyzer = TopologyAnalyzer(G)
+
+    # 5.1 找出关键节点（PageRank高的节点）
+    critical_nodes = analyzer.find_critical_nodes(top_k=5)
+    print(f"  📊 关键节点: {critical_nodes}")
+
+    # 5.2 检测循环路径
+    cycles = analyzer.detect_cycles()
+    if cycles:
+        print(f"  ⚠️ 检测到 {len(cycles)} 个循环路径")
+
+    # 5.3 找到从入口到敏感页面的最短攻击路径
+    target_url = state.get("target_url")
+    sensitive_paths = state.get("page_features", {}).get("sensitive_paths", [])
+    if sensitive_paths and target_url:
+        attack_path = analyzer.find_shortest_attack_path(target_url, sensitive_paths)
+        if attack_path:
+            print(f"  🎯 最短攻击路径: {' -> '.join(attack_path)}")
+
+    # 6. 剪枝（删除无效节点）
+    pruner = TopologyPruner()
+
+    # 准备剪枝元数据
+    metadata = {
+        "node_status": node_status,
+        "root": state.get("target_url", "/"),
+        "node_last_seen": {url: time.time() for url in G.nodes}
+    }
+
+    # 执行剪枝
+    G_pruned = pruner.prune_all(G, metadata)
+
+    # 7. 统计剪枝效果
+    before_count = G.number_of_nodes()
+    after_count = G_pruned.number_of_nodes()
+    if before_count > after_count:
+        print(f"  ✂️ 剪枝完成: 节点数 {before_count} → {after_count}")
+
+    # 8. 可选：可视化（调试用）
+    if state.get("debug_mode"):
+        from topology import TopologyVisualizer
+        viz = TopologyVisualizer(G_pruned)
+        viz.export_to_html(f"topology_{int(time.time())}.html")
+
+    # 9. 转回邻接表存回state
+    new_topology = nx.to_dict_of_lists(G_pruned)
+
+    return {
+        "exploration_rounds": state.get("exploration_rounds", 0) + 1,
+        "site_topology": new_topology,
+        "critical_nodes": critical_nodes,
+        "pruned_nodes": before_count - after_count
+    }
+
+
+def verifier_node(state: CTFState) -> Dict:
+    """
+    [核验兵] (AI 驱动验证) [P3合并版]
+
+    职责:
+        1. 验证攻击结果，识别各种变体形式的 Flag
+        2. 分析失败原因，决定节点是否继续
+        3. 提供战术指导
+
+    合并了原verifier和reflector的职责，减少LLM调用次数
+    """
+    print("🔎 [核验] 分析攻击结果...")
+
+    current_url = state.get("current_url")
+    node_status = state.get("node_attack_status", {})
+
+    # [P3合并] 超时检查 (原reflector功能)
+    if current_url and current_url in node_status:
+        status = node_status[current_url]
+        now = time.time()
+
+        # 硬熔断：节点超时
+        if now - status.get("start_time", now) > config.NODE_TIMEOUT:
+            print(f"   ⏰ 节点超时，放弃: {current_url}")
+            status["status"] = "abandoned"
+            return {
+                "node_attack_status": node_status,
+                "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
+                "execution_steps": state.get("execution_steps", 0) + 1
+            }
+
+    # 获取当前批次的攻击结果
+    results = state.get("attack_results", [])
+    attack_batch = state.get("attack_batch", [])
+
+    # 如果无攻击动作，检查是否已触发模式切换
+    current_mode = state.get("current_mode")
+    if not attack_batch:
+        if current_mode == "explore":
+            # 已由 attacker 设置为 explore 模式，直接返回
+            print("   ⏭️ 已触发探索模式，跳过核验")
+            return {}
+        print("   ⚠️ 本轮无攻击动作")
+        return {"failure_weighted_score": state.get("failure_weighted_score", 0) + config.HARD_FAILURE_WEIGHT}
+
+    recent_results = results[-len(attack_batch):]
+
+    # 更新节点状态码
+    if current_url and current_url in node_status:
+        new_codes = [res.get("status", 0) for res in recent_results]
+        node_status[current_url]["last_status_codes"].extend(new_codes)
+        node_status[current_url]["last_status_codes"] = node_status[current_url]["last_status_codes"][-10:]
+        node_status[current_url]["attempt_count"] = node_status[current_url].get("attempt_count", 0) + 1
+
+    if not recent_results:
+        print("   ⚠️ 无结果可核验")
+        return {"failure_weighted_score": state.get("failure_weighted_score", 0) + config.HARD_FAILURE_WEIGHT}
+
+    # [核心] Flag正则预捕获 - 三重兜底
+    pre_captured_flag: Optional[str] = None
+    for res in recent_results:
+        if res.get("extracted_flag"):
+            pre_captured_flag = res["extracted_flag"]
+            break
+        diff = res.get("diff_analysis", {})
+        if diff.get("extracted_flag"):
+            pre_captured_flag = diff["extracted_flag"]
+            break
+        output_text = res.get("output", "")
+        if isinstance(output_text, str):
+            flag_m = re.search(r"(flag\{[a-zA-Z0-9_-]+\}|ctf\{[a-zA-Z0-9_-]+\}|NSSCTF\{[a-zA-Z0-9_-]+\})", output_text, re.IGNORECASE)
+            if flag_m:
+                pre_captured_flag = flag_m.group(0)
+                break
+
+    # 读取日志文件并附加差异分析
+    for res in recent_results:
+        if res.get("file_path") and os.path.exists(res["file_path"]):
+            try:
+                with open(res["file_path"], 'rb') as f:
+                    content = f.read(6000).decode('utf-8', errors='ignore')
+                    if isinstance(res.get("output"), str) and res["output"].strip().startswith("{"):
+                        res["output"] = f"Cleaned Info: {res['output']}\n\nRaw Logs:\n{content}"
+                    else:
+                        res["output"] = content
+            except Exception as e:
+                print(f"⚠️ [Verifier] 读取文件失败: {e}")
+
+        diff = res.get("diff_analysis", {})
+        res["diff_metrics"] = {
+            "is_significant_change": diff.get("changed", False),
+            "exploit_confidence": diff.get("confidence", 0.0),
+            "change_reason": diff.get("reason", "")
+        }
+
+    # [P3合并] 构建节点信息供AI决策
+    node_info = {}
+    if current_url and current_url in node_status:
+        status = node_status[current_url]
+        node_info = {
+            "attempt_count": status.get("attempt_count", 0),
+            "duration_min": (time.time() - status.get("start_time", time.time())) / 60,
+            "recent_codes": status.get("last_status_codes", [])[-5:]
+        }
+
+    # 获取最新的人工提示
+    human_hint = None
+    hint_history = state.get("hint_history", [])
+    if hint_history:
+        latest_hint = hint_history[-1]
+        if latest_hint.get("source") == "human":
+            human_hint = latest_hint.get("content")
+
+    # 调用LLM
+    prompt = get_verifier_prompt(
+        attack_batch,
+        recent_results,
+        analyst_intel=state.get("analyst_intel"),
+        node_info=node_info,
+        known_facts=state.get("known_facts", ""),
+        human_hint=human_hint
+    )
+
+    response_text = llm_client.call_chat_completion(
+        model=config.VERIFIER_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.1,
+        json_mode=True
+    )
+
+    candidates = state.get("vuln_candidates", [])
+
+    # 容错
+    if not response_text or not response_text.strip():
+        print("   ⚠️ Verifier LLM 返回空响应")
+        return {
+            "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
+            "execution_steps": state.get("execution_steps", 0) + 1,
+            "node_attack_status": node_status,
+            "vuln_candidates": candidates
+        }
+
+    # 解析结果
+    try:
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0]
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0]
+
+        result = json.loads(response_text)
+
+        found_flag = result.get("found_flag", False)
+        potential_flag = result.get("potential_flag", "")
+        evidence = result.get("exploit_evidence", "")
+        failure_severity = result.get("failure_severity", 0.5)
+        is_exploit_successful = result.get("is_exploit_successful", False)
+        tactical_guidance = result.get("tactical_guidance", "")
+        updated_known_facts = result.get("updated_known_facts", "")
+        node_decision = result.get("node_decision", "continue")
+        failure_analysis = result.get("failure_analysis", "")
+
+        # 预捕获Flag优先
+        if pre_captured_flag:
+            potential_flag = pre_captured_flag
+            found_flag = True
+            print(f"   🔓 预捕获 Flag: {potential_flag}")
+
+        # 找到FLAG
+        if found_flag:
+            print(f"\n   🎉 找到 FLAG: {potential_flag}")
+            return {
+                "found_flag": True,
+                "final_flag": potential_flag,
+                "success_trace": recent_results[-1:],
+                "failure_weighted_score": 0,
+                "node_attack_status": node_status,
+                "execution_steps": state.get("execution_steps", 0) + 1
+            }
+
+        # 攻击成功
+        if is_exploit_successful:
+            print(f"   🔥 攻击有效: {evidence[:100] if evidence else 'N/A'}")
+
+            new_known_facts = ""
+            if updated_known_facts:
+                existing = state.get("known_facts", "")
+                new_known_facts = f"{existing}; {updated_known_facts}" if existing else updated_known_facts
+
+            if tactical_guidance and candidates:
+                for cand in candidates:
+                    if cand.get("url") == current_url:
+                        cand.setdefault("context", {})["tactical_guidance"] = tactical_guidance
+
+            # [核心修复] 只有当 failure_severity < 0.5 时才减少失败分
+            # 如果 failure_severity >= 0.5，说明虽然有进展但仍有问题，保持或增加失败分
+            if failure_severity < 0.5:
+                new_score = max(0, state.get("failure_weighted_score", 0) - 0.3)
+            else:
+                # 有变化但无实质突破，仍然增加失败分（只是权重较低）
+                new_score = state.get("failure_weighted_score", 0) + 0.2
+
+            result_dict = {
+                "failure_weighted_score": new_score,
+                "latest_tactical_guidance": tactical_guidance,
+                "execution_steps": state.get("execution_steps", 0) + 1,
+                "node_attack_status": node_status,
+                "vuln_candidates": candidates
+            }
+            if new_known_facts:
+                result_dict["known_facts"] = new_known_facts
+            return result_dict
+
+        # 攻击失败 - [P3合并] 处理节点决策
+        print(f"   📉 攻击无效 (严重度: {failure_severity})")
+
+        # 记录失败的payload
+        failed_payloads = []
+        for action in attack_batch:
+            payload_str = action.get("payload", "")
+            if payload_str:
+                failed_payloads.append(payload_str)
+
+        if node_decision == "abandon" and current_url and current_url in node_status:
+            print(f"   🛑 AI决策: 放弃节点 {current_url}")
+            print(f"   💡 原因: {failure_analysis[:100] if failure_analysis else 'N/A'}")
+            node_status[current_url]["status"] = "abandoned"
+        elif tactical_guidance:
+            print(f"   💡 分析: {failure_analysis[:100] if failure_analysis else 'N/A'}")
+            print(f"   🎯 建议: {tactical_guidance[:100]}")
+
+        result_dict = {
+            "failure_weighted_score": state.get("failure_weighted_score", 0) + failure_severity,
+            "execution_steps": state.get("execution_steps", 0) + 1,
+            "node_attack_status": node_status,
+            "vuln_candidates": candidates,
+            "latest_tactical_guidance": tactical_guidance
+        }
+        if failed_payloads:
+            result_dict["failed_payloads"] = failed_payloads
+        return result_dict
+
+    except Exception as e:
+        print(f"   ❌ 解析异常: {e}")
+        return {
+            "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.8,
+            "execution_steps": state.get("execution_steps", 0) + 1,
+            "node_attack_status": node_status,
+            "vuln_candidates": candidates
+        }
+
+
+
+
+
+def hitl_node(state: CTFState) -> Dict:
+    """
+    [HITL] 人类介入节点 - 交互式菜单
+    """
+    print("👤 等待人类介入...")
+
+    intervention = check_human_intervention(state)
+
+    if intervention:
+        action = intervention["action"]
+        
+        if action == "stop":
+            return {"current_mode": "end"}
+        
+        elif action == "innovate":
+            return {
+                "failure_weighted_score": 0, # 重置分数，给创新机会
+                "current_mode": "innovate",
+                "execution_steps": state.get("execution_steps", 0) - 5 # 宽限 5 步
+            }
+            
+        elif action == "explore":
+            return {
+                "failure_weighted_score": 0,
+                "current_mode": "explore",
+                "execution_steps": state.get("execution_steps", 0) - 5 # 宽限 5 步
+            }
+
+        elif action == "hint":
+            hint: Hint = {
+                "level": 3, # 统一视为高级提示
+                "content": intervention["content"],
+                "source": "human",
+                "timestamp": time.time()
+            }
+            # [核心修复] 将人工提示直接设置为tactical_guidance，确保攻击兵能看到并执行
+            return {
+                "last_intervention_step": intervention["step"],
+                "hint_history": [hint],
+                "failure_weighted_score": 0,  # 重置失败分
+                "current_mode": "exploit",  # 带着提示切回利用模式
+                "latest_tactical_guidance": f"[人工指导] {intervention['content']}",  # 人工提示作为战术指引
+                "execution_steps": state.get("execution_steps", 0) - 5 # 宽限 5 步，避免立即再次触发 HITL
+            }
+
+    # [关键修复] 没有人类输入时，重置失败分并给宽限步数，避免死循环
+    print("   📋 无人类输入，自动重置并继续...")
+    return {
+        "current_mode": "end",  # 直接结束，避免无限循环
+        "failure_weighted_score": 0,
+        "last_intervention_step": state.get("execution_steps", 0)
+    }
+
+
+# ==============================================================================
+# 6. 图编排 (Graph Orchestration)
+# ==============================================================================
+
+# 创建状态图
+workflow = StateGraph(CTFState) # type: ignore
+
+# 添加所有兵种节点 [P3优化: 移除reflector]
+workflow.add_node("challenge_type_detector", challenge_type_detector_node)  # type: ignore # CTF类型检测器
+workflow.add_node("recon", recon_node)  # type: ignore # 侦察兵
+workflow.add_node("analyst", analyst_node)  # type: ignore # 分析兵
+workflow.add_node("strategy_filter", strategy_filter_node)  # type: ignore # 策略过滤器
+workflow.add_node("mode_manager", mode_manager_node)  # type: ignore # 模式决策器
+workflow.add_node("attacker", attacker_node)  # type: ignore # 攻击兵
+workflow.add_node("explorer", explorer_node)  # type: ignore # 探索兵
+workflow.add_node("innovator", innovator_node)  # type: ignore # 头脑风暴
+workflow.add_node("verifier", verifier_node)  # type: ignore # 核验兵 [P3合并]
+workflow.add_node("evolution", evolution_node)  # type: ignore # 进化闭环
+workflow.add_node("hitl", hitl_node)  # type: ignore # 人类介入
+
+# 内网渗透节点 (可选启用)
+if INTERNAL_NETWORK_AVAILABLE:
+    workflow.add_node("internal_recon", internal_recon_node)  # type: ignore # 内网侦察
+    workflow.add_node("lateral_move", lateral_move_node)  # type: ignore # 横向移动
+    workflow.add_node("privilege_escalation", privilege_escalation_node)  # type: ignore # 权限提升
+    workflow.add_node("credential_gather", credential_gather_node)  # type: ignore # 凭据收集
+
+# Crypto节点 (可选启用)
+if CRYPTO_AVAILABLE:
+    workflow.add_node("crypto_analyst", crypto_analyst_node)  # type: ignore # 加密分析
+    workflow.add_node("crypto_solver", crypto_solver_node)  # type: ignore # 密码破解
+
+# Pwn节点 (可选启用)
+if PWN_AVAILABLE:
+    workflow.add_node("pwn_analyst", pwn_analyst_node)  # type: ignore # Pwn分析
+    workflow.add_node("pwn_exploiter", pwn_exploiter_node)  # type: ignore # Pwn利用
+
+# Reverse节点 (可选启用)
+if REVERSE_AVAILABLE:
+    workflow.add_node("reverse_analyst", reverse_analyst_node)  # type: ignore # 逆向分析
+    workflow.add_node("reverse_decompiler", reverse_decompiler_node)  # type: ignore # 反编译
+
+# Misc节点 (可选启用)
+if MISC_AVAILABLE:
+    workflow.add_node("misc_analyst", misc_analyst_node)  # type: ignore # Misc分析
+    workflow.add_node("misc_extractor", misc_extractor_node)  # type: ignore # Misc提取
+
+# 0. CTF类型检测路由
+def _route_from_challenge_detector(state: CTFState) -> str:
+    """根据检测到的CTF类型路由到对应的入口节点"""
+    # 优先检查特定模式
+    if state.get("internal_mode", False) and INTERNAL_NETWORK_AVAILABLE:
+        return "internal_recon"
+    if state.get("pwn_mode", False) and PWN_AVAILABLE:
+        return "pwn_analyst"
+    if state.get("reverse_mode", False) and REVERSE_AVAILABLE:
+        return "reverse_analyst"
+    if state.get("crypto_mode", False) and CRYPTO_AVAILABLE:
+        return "crypto_analyst"
+    if state.get("misc_mode", False) and MISC_AVAILABLE:
+        return "misc_analyst"
+    # 默认走Web流程
+    return "recon"
+
+# 构建类型检测器的路由映射
+_detector_routes = {
+    "recon": "recon"  # Web模式默认走侦察
+}
+
+if INTERNAL_NETWORK_AVAILABLE:
+    _detector_routes["internal_recon"] = "internal_recon"
+if PWN_AVAILABLE:
+    _detector_routes["pwn_analyst"] = "pwn_analyst"
+if REVERSE_AVAILABLE:
+    _detector_routes["reverse_analyst"] = "reverse_analyst"
+if CRYPTO_AVAILABLE:
+    _detector_routes["crypto_analyst"] = "crypto_analyst"
+if MISC_AVAILABLE:
+    _detector_routes["misc_analyst"] = "misc_analyst"
+
+workflow.add_edge(START, "challenge_type_detector")  # type: ignore
+workflow.add_conditional_edges(
+    "challenge_type_detector",
+    _route_from_challenge_detector,
+    _detector_routes
+)
+
+# 1. 线性分析流: 侦察 -> 分析 -> 过滤 -> 决策
+workflow.add_edge("recon", "analyst")
+workflow.add_edge("analyst", "strategy_filter")
+workflow.add_edge("strategy_filter", "mode_manager")
+
+# 2. 模式分流: 根据决策结果进入不同执行路径
+# 统一处理所有模式切换
+def _route_from_mode_manager(state: CTFState) -> str:
+    """统一的mode_manager路由函数，处理所有CTF方向模式"""
+    # 优先检查内网模式
+    if state.get("internal_mode", False) and INTERNAL_NETWORK_AVAILABLE:
+        return "internal_recon"
+    # 检查Crypto模式
+    if state.get("crypto_mode", False) and CRYPTO_AVAILABLE:
+        return "crypto_analyst"
+    # 检查Pwn模式
+    if state.get("pwn_mode", False) and PWN_AVAILABLE:
+        return "pwn_analyst"
+    # 检查Reverse模式
+    if state.get("reverse_mode", False) and REVERSE_AVAILABLE:
+        return "reverse_analyst"
+    # 检查Misc模式
+    if state.get("misc_mode", False) and MISC_AVAILABLE:
+        return "misc_analyst"
+    # 否则使用标准路由
+    return route_mode(state, "mode_manager")
+
+workflow.add_conditional_edges(
+    "mode_manager",
+    _route_from_mode_manager,
+    {
+        "exploit": "attacker",
+        "explore": "explorer",
+        "innovate": "innovator",
+        "hitl": "hitl",
+        "recon": "recon", # 支持跳转回侦察兵
+        "internal_recon": "internal_recon",  # 内网模式入口
+        "crypto_analyst": "crypto_analyst",  # Crypto模式入口
+        "pwn_analyst": "pwn_analyst",  # Pwn模式入口
+        "reverse_analyst": "reverse_analyst",  # Reverse模式入口
+        "misc_analyst": "misc_analyst",  # Misc模式入口
+        "end": END
+    }
+)
+
+# 3. 分支回归逻辑
+workflow.add_edge("explorer", "mode_manager")  # 探索后重新决策
+workflow.add_edge("innovator", "strategy_filter")  # 创新后注入规则到过滤器
+workflow.add_edge("hitl", "mode_manager")  # 人类介入后重试
+workflow.add_edge("attacker", "verifier")  # 攻击后必须验证
+
+# 4. [P3优化] 验证后分流: 成功则进化，失败则检查HITL或回到mode_manager
+workflow.add_conditional_edges(
+    "verifier",
+    lambda state: route_verify(state, "verifier"),
+    {
+        "evolution": "evolution",
+        "hitl": "hitl",  # [P3] 直接跳转到HITL（跳过reflector）
+        "mode_manager": "mode_manager"  # [P3] 直接回到决策
+    }
+)
+
+# 5. HITL后回到决策
+workflow.add_conditional_edges(
+    "hitl",
+    lambda state: route_hitl(state, "hitl"),
+    {
+        "mode_manager": "mode_manager"
+    }
+)
+
+workflow.add_conditional_edges(
+    "evolution",
+    lambda state: route_evolution(state, "evolution"),
+    {
+        END: END
+    }
+)
+
+# 6. 进化结束
+workflow.add_edge("evolution", END)
+
+# 7. 内网渗透路由 (Internal Network Routing)
+if INTERNAL_NETWORK_AVAILABLE:
+    # 内网侦察后路由
+    workflow.add_conditional_edges(
+        "internal_recon",
+        lambda state: route_internal_mode(state, "internal_recon"),
+        {
+            "internal_recon": "internal_recon",
+            "credential_gather": "credential_gather",
+            "lateral_move": "lateral_move",
+            "privilege_escalation": "privilege_escalation",
+            "mode_manager": "mode_manager"
+        }
+    )
+
+    # 凭据收集后路由
+    workflow.add_conditional_edges(
+        "credential_gather",
+        lambda state: route_internal_mode(state, "credential_gather"),
+        {
+            "internal_recon": "internal_recon",
+            "credential_gather": "credential_gather",
+            "lateral_move": "lateral_move",
+            "privilege_escalation": "privilege_escalation",
+            "mode_manager": "mode_manager"
+        }
+    )
+
+    # 横向移动后路由
+    workflow.add_conditional_edges(
+        "lateral_move",
+        lambda state: route_internal_mode(state, "lateral_move"),
+        {
+            "internal_recon": "internal_recon",
+            "credential_gather": "credential_gather",
+            "lateral_move": "lateral_move",
+            "privilege_escalation": "privilege_escalation",
+            "mode_manager": "mode_manager"
+        }
+    )
+
+    # 权限提升后路由
+    workflow.add_conditional_edges(
+        "privilege_escalation",
+        lambda state: route_internal_mode(state, "privilege_escalation"),
+        {
+            "internal_recon": "internal_recon",
+            "credential_gather": "credential_gather",
+            "lateral_move": "lateral_move",
+            "privilege_escalation": "privilege_escalation",
+            "mode_manager": "mode_manager"
+        }
+    )
+
+# 8. Crypto路由 (Crypto Routing)
+if CRYPTO_AVAILABLE:
+    # Crypto分析后路由
+    def _route_crypto_analyst(state: CTFState) -> str:
+        """Crypto分析师路由"""
+        crypto_analysis = state.get("crypto_analysis", {})
+        if crypto_analysis.get("status") == "analyzed":
+            return "crypto_solver"
+        return "mode_manager"
+
+    workflow.add_conditional_edges(
+        "crypto_analyst",
+        _route_crypto_analyst,
+        {
+            "crypto_solver": "crypto_solver",
+            "mode_manager": "mode_manager"
+        }
+    )
+
+    # Crypto求解后路由
+    def _route_crypto_solver(state: CTFState) -> str:
+        """Crypto求解器路由"""
+        potential_flags = state.get("potential_flags", [])
+        if potential_flags:
+            return "verifier"  # 有潜在flag，去验证
+        return "mode_manager"
+
+    workflow.add_conditional_edges(
+        "crypto_solver",
+        _route_crypto_solver,
+        {
+            "verifier": "verifier",
+            "mode_manager": "mode_manager"
+        }
+    )
+
+# 9. Pwn路由 (Pwn Routing)
+if PWN_AVAILABLE:
+    # Pwn分析后路由
+    def _route_pwn_analyst(state: CTFState) -> str:
+        """Pwn分析师路由"""
+        pwn_analysis = state.get("pwn_analysis", {})
+        if pwn_analysis.get("status") == "analyzed":
+            return "pwn_exploiter"
+        return "mode_manager"
+
+    workflow.add_conditional_edges(
+        "pwn_analyst",
+        _route_pwn_analyst,
+        {
+            "pwn_exploiter": "pwn_exploiter",
+            "mode_manager": "mode_manager"
+        }
+    )
+
+    # Pwn利用后路由
+    def _route_pwn_exploiter(state: CTFState) -> str:
+        """Pwn利用器路由"""
+        exploit_info = state.get("exploit_info", {})
+        if exploit_info.get("status") == "ready":
+            return "mode_manager"  # 继续执行
+        return "mode_manager"
+
+    workflow.add_conditional_edges(
+        "pwn_exploiter",
+        _route_pwn_exploiter,
+        {
+            "mode_manager": "mode_manager"
+        }
+    )
+
+# 10. Reverse路由 (Reverse Routing)
+if REVERSE_AVAILABLE:
+    # Reverse分析后路由
+    def _route_reverse_analyst(state: CTFState) -> str:
+        """Reverse分析师路由"""
+        reverse_info = state.get("reverse_info", {})
+        if reverse_info.get("status") == "analyzed":
+            return "reverse_decompiler"
+        return "mode_manager"
+
+    workflow.add_conditional_edges(
+        "reverse_analyst",
+        _route_reverse_analyst,
+        {
+            "reverse_decompiler": "reverse_decompiler",
+            "mode_manager": "mode_manager"
+        }
+    )
+
+    # Reverse反编译后路由
+    def _route_reverse_decompiler(state: CTFState) -> str:
+        """Reverse反编译器路由"""
+        potential_flags = state.get("potential_flags", [])
+        if potential_flags:
+            return "verifier"
+        return "mode_manager"
+
+    workflow.add_conditional_edges(
+        "reverse_decompiler",
+        _route_reverse_decompiler,
+        {
+            "verifier": "verifier",
+            "mode_manager": "mode_manager"
+        }
+    )
+
+# 11. Misc路由 (Misc Routing)
+if MISC_AVAILABLE:
+    # Misc分析后路由
+    def _route_misc_analyst(state: CTFState) -> str:
+        """Misc分析师路由"""
+        misc_analysis = state.get("misc_analysis", {})
+        if misc_analysis.get("status") == "analyzed":
+            return "misc_extractor"
+        return "mode_manager"
+
+    workflow.add_conditional_edges(
+        "misc_analyst",
+        _route_misc_analyst,
+        {
+            "misc_extractor": "misc_extractor",
+            "mode_manager": "mode_manager"
+        }
+    )
+
+    # Misc提取后路由
+    def _route_misc_extractor(state: CTFState) -> str:
+        """Misc提取器路由"""
+        potential_flags = state.get("potential_flags", [])
+        if potential_flags:
+            return "verifier"
+        return "mode_manager"
+
+    workflow.add_conditional_edges(
+        "misc_extractor",
+        _route_misc_extractor,
+        {
+            "verifier": "verifier",
+            "mode_manager": "mode_manager"
+        }
+    )
+
+# 编译图 - 启用内存检查点用于状态持久化
+checkpointer = MemorySaver()
+app = workflow.compile(checkpointer=checkpointer)
+
+
+# ==============================================================================
+# 7. 主入口 (Main)
+# ==============================================================================
+
+def system_check():
+    """系统功能自检 - 全量模型与工具链测试"""
+    print("🔄 [System] 开始系统功能自检...")
+
+    # 1. 检查所有节点使用的模型
+    models_to_test = {
+        "分析兵 (Analyst)": config.ANALYST_MODEL,
+        "攻击兵 (Attacker)": config.ATTACKER_MODEL,
+        "核验兵 (Verifier)": config.VERIFIER_MODEL,
+        "探索兵 (Explorer)": config.EXPLORER_MODEL,
+        "头脑风暴 (Innovator)": config.INNOVATOR_MODEL,
+        "变化检测 (Detection)": config.CHANGE_DETECTION_MODEL
+    }
+
+    print("   -> 检查全量 LLM 模型连通性...")
+    for role, model_name in models_to_test.items():
+        try:
+            # 使用极短的超时进行快速自检
+            test_resp = llm_client.call_chat_completion(
+                model=model_name,
+                messages=[{"role": "user", "content": "ping"}],
+                temperature=0.1,
+                max_tokens=5
+            )
+            if test_resp:
+                print(f"   ✅ {role} [{model_name}]: 响应正常")
+            else:
+                print(f"   ⚠️ {role} [{model_name}]: 无响应")
+        except Exception as e:
+            print(f"   ❌ {role} [{model_name}] 异常: {e}")
+
+    # 2. 检查关键工具
+    print("   -> 检查关键工具挂载...")
+    tools_to_check = ["dirsearch", "sqlmap"]
+    for t in tools_to_check:
+        tool_instances = ToolRegistry.get_tools(t) # Try to match by name or vulnerability
+        # Just check if registered
+        is_registered = any(tool.name() == t for tool_list in ToolRegistry._tools.values() for tool in tool_list)
+        if is_registered:
+             print(f"   ✅ 工具 {t} 已注册")
+        else:
+             print(f"   ⚠️ 工具 {t} 未找到注册信息")
+
+    # 3. 检查自我纠错模块
+    if SELF_CORRECTION_AVAILABLE:
+        print("   -> 检查自我纠错模块...")
+        print(f"   ✅ 自我纠错模块已加载")
+    else:
+        print("   ⚠️ 自我纠错模块未加载")
+
+    # 4. 检查内网渗透模块
+    if INTERNAL_NETWORK_AVAILABLE:
+        print("   -> 检查内网渗透模块...")
+        print(f"   ✅ 内网渗透模块已加载")
+    else:
+        print("   ⚠️ 内网渗透模块未加载")
+
+    # 5. 检查Crypto模块
+    if CRYPTO_AVAILABLE:
+        print("   -> 检查密码学模块...")
+        print(f"   ✅ 密码学模块已加载")
+    else:
+        print("   ⚠️ 密码学模块未加载")
+
+    # 6. 检查性能监控模块
+    if PERFORMANCE_AVAILABLE:
+        print("   -> 检查性能监控模块...")
+        status = get_system_status()
+        print(f"   ✅ 性能监控模块已加载 (状态: {status.get('status', 'unknown')})")
+    else:
+        print("   ⚠️ 性能监控模块未加载")
+
+    print("[System] 自检完成。\n")
+
+def main():
+    """主运行函数
+
+    执行流程:
+        1. 解析命令行参数
+        2. 加载配置
+        3. 初始化状态
+        4. 运行工作流
+        5. 输出结果
+    """
+    parser = argparse.ArgumentParser(description="CTF-Agent v2.5")
+    parser.add_argument("--skip", action="store_true", help="跳过系统自检")
+    args = parser.parse_args()
+
+    print("\n🚀 CTF-Agent v2.5 启动")
+    print("=" * 50)
+
+    # Register all tools
+    load_all_tools(ToolRegistry())
+
+    # [清理] 启动时清理过期缓存
+    page_diff_manager.cleanup_cache(max_age_seconds=86400) # 保留24小时
+
+    # 执行系统自检 (除非指定了 -skip)
+    if args.skip:
+        print("⏭️ [System] 跳过系统自检。")
+    else:
+        system_check()
+
+    # 主循环：支持连续出题
+    while True:
+        try:
+            # 获取用户输入
+            print("\n📝 请输入目标靶机信息：")
+            task_name = input("   题目名称 (按回车跳过): ").strip() or "Unknown Task"
+            task_description = input("   题目描述 (按回车跳过): ").strip() or "No description provided."
+            target_url = input("   目标 URL (必填，输入 q 退出): ").strip()
+
+            # 退出检查
+            if target_url.lower() == 'q':
+                print("\n👋 感谢使用，再见！")
+                return
+
+            while not target_url:
+                print("   ❌ URL 不能为空！")
+                target_url = input("   目标 URL (输入 q 退出): ").strip()
+                if target_url.lower() == 'q':
+                    print("\n👋 感谢使用，再见！")
+                    return
+
+            print("\n" + "=" * 50)
+            print(f"🎯 目标锁定: {task_name}")
+            print(f"🔗 URL: {target_url}")
+            print("=" * 50)
+
+            # 运行任务
+            result = run_single_task(task_name, task_description, target_url)
+
+            # 输出结果
+            print("\n" + "=" * 50)
+            print("🏁 任务结束")
+            if result.get('found_flag'):
+                print(f"🎉 FLAG: {result.get('final_flag', result.get('found_flag'))}")
+            else:
+                print(f"📊 最终状态: {result.get('current_mode')}")
+                print("❌ 未找到 Flag")
+
+            # 询问是否继续
+            print("\n" + "-" * 50)
+            choice = input("继续下一题？(y/n): ").strip().lower()
+            if choice != 'y':
+                print("\n👋 感谢使用，再见！")
+                return
+
+        except KeyboardInterrupt:
+            print("\n\n⏹️ 用户中断，正在退出...")
+            print("👋 再见！")
+            return
+        except Exception as e:
+            print(f"\n❌ 运行出错: {e}")
+            choice = input("是否继续下一题？(y/n): ").strip().lower()
+            if choice != 'y':
+                return
+
+
+def run_single_task(task_name: str, task_description: str, target_url: str) -> dict:
+    """运行单个CTF任务"""
+    # 初始化状态
+    initial_state: CTFState = {
+        # 基础上下文
+        "task_name": task_name,
+        "task_description": task_description,
+        "target_url": target_url,
+        "current_url": target_url,
+        "start_time": time.time(),
+        "current_round": 0,
+        "found_flag": False,
+
+        # 页面感知
+        "page_features": {},
+        "raw_html_snippet": "",
+        "baseline_response": {},
+        "page_history": {},
+
+        # 拓扑结构
+        "site_topology": {},
+        "node_metadata": {},
+        "critical_nodes": [],
+        "attack_paths": [],
+
+        # 记忆与知识
+        "visited_fingerprints": [],
+        "visited_urls": [],
+        "vuln_candidates": [],
+        "permanent_rules": [],
+        "tool_cache": {},
+
+        # 执行流
+        "attack_batch": [],
+        "attack_results": [],
+        "tool_calls": [],
+        "latest_tactical_guidance": "",
+        "analyst_intel": "",
+
+        # 决策状态
+        "failure_weighted_score": 0.0,
+        "exploration_rounds": 0,
+        "rule_miss_count": 0,
+        "execution_steps": 0,
+        "current_mode": "exploit",
+        "node_attack_status": {},
+
+        # 分级介入
+        "hint_level": 0,
+        "hint_history": [],
+        "last_intervention_step": 0,
+
+        # RAG与进化
+        "rag_context": [],
+        "temp_rules": [],
+        "success_trace": [],
+
+        # 已知事实追踪 [P2简化] 改为自由文本
+        "known_facts": "",
+        "failed_payloads": [],  # 失败payload追踪
+
+        # ==============================================================================
+        # 内网渗透初始状态 (Internal Network Initial State)
+        # ==============================================================================
+        "internal_hosts": [],
+        "internal_network_range": "",
+        "domain_controller": "",
+        "credentials": [],
+        "active_sessions": [],
+        "ad_domain": "",
+        "ad_users": [],
+        "ad_groups": [],
+        "ad_computers": [],
+        "ad_trusts": [],
+        "lateral_movement_paths": [],
+        "internal_mode": False,
+        "current_internal_target": "",
+        "pivot_host": "",
+
+        # ==============================================================================
+        # Crypto初始状态 (Crypto Initial State)
+        # ==============================================================================
+        "crypto_mode": False,
+        "crypto_analysis": {},
+        "identified_ciphertexts": [],
+        "decrypted_data": [],
+        "potential_flags": [],
+        "rsa_params": {},
+        "classical_cipher_hints": [],
+
+        # ==============================================================================
+        # Pwn初始状态 (Pwn Initial State)
+        # ==============================================================================
+        "pwn_mode": False,
+        "binary_path": "",
+        "binary_info": {},
+        "vulnerabilities": [],
+        "exploit_script": "",
+        "exploit_info": {},
+        "pwn_analysis": {},  # 添加缺失字段
+
+        # ==============================================================================
+        # Reverse初始状态 (Reverse Initial State)
+        # ==============================================================================
+        "reverse_mode": False,
+        "reverse_info": {},
+        "decompiled_code": "",
+        "algorithm_type": "",
+        "key_findings": "",
+        "functions": [],
+        "extracted_strings": [],
+
+        # ==============================================================================
+        # Misc初始状态 (Misc Initial State)
+        # ==============================================================================
+        "misc_mode": False,
+        "misc_file": "",
+        "file_info": {},
+        "steg_results": {},
+        "media_analysis": {},
+        "misc_analysis": {},  # 添加缺失字段
+        "extracted_data": [],
+        "embedded_files": [],
+        "attachments": []
+    }
+
+    # 验证所有必需字段都已初始化
+    from state import CTFState
+    required_fields = list(CTFState.__annotations__.keys())
+    for field in required_fields:
+        if field not in initial_state:
+            print(f"[Warning] 初始状态缺少字段: {field}，设置为默认值")
+            initial_state[field] = None  # 设置默认值
+
+    # 运行工作流
+    print("\n⏳ 开始攻击...")
+    config_params = {
+        "configurable": {"thread_id": f"ctf_task_{int(time.time())}"},
+        "recursion_limit": 500
+    }
+
+    try:
+        result = app.invoke(initial_state, config=config_params)
+        return result
+    except Exception as e:
+        import traceback
+        print(f"❌ 工作流执行异常: {e}")
+        traceback.print_exc()
+        return {"current_mode": "end", "found_flag": False}
+
+
+if __name__ == "__main__":
+    main()
