@@ -24,10 +24,13 @@ except ImportError:
 from typing import Dict as TypingDict
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=16)
 try:
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     loop.set_default_executor(executor)
 except RuntimeError:
-    pass
+    # 没有运行中的事件循环，创建一个新的
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.set_default_executor(executor)
 
 # 全局任务追踪，用于优雅关闭
 _running_tasks: TypingDict[str, concurrent.futures.Future] = {}
@@ -72,9 +75,9 @@ from innovator_agent import innovator_node
 from router import (
     route_mode,
     route_verify,
-    route_hitl,
     route_evolution,
     get_routing_stats,
+    reset_routing,
     route_internal_mode,
     route_internal_to_web,
     get_internal_next_target
@@ -154,6 +157,15 @@ try:
 except ImportError:
     print("[Warning] Performance module not available")
     PERFORMANCE_AVAILABLE = False
+
+# RAG知识检索模块导入
+try:
+    from rag_builder.retriever import KnowledgeRetriever
+    RAG_AVAILABLE = True
+except ImportError:
+    print("[Warning] RAG module not available")
+    RAG_AVAILABLE = False
+
 import networkx as nx
 import json
 import yaml
@@ -164,6 +176,15 @@ from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, END, START
 from langgraph.checkpoint.memory import MemorySaver
 from dataclasses import dataclass
+
+# 全局RAG实例
+_rag_retriever = None
+if RAG_AVAILABLE:
+    try:
+        _rag_retriever = KnowledgeRetriever()
+    except Exception as e:
+        print(f"[Warning] RAG init failed: {e}")
+        RAG_AVAILABLE = False
 
 
 
@@ -196,75 +217,33 @@ def calculate_dom_fingerprint(html_content: str) -> str:
     return hashlib.md5(html_content.encode('utf-8', errors='ignore')).hexdigest()
 
 
-def check_human_intervention(state: CTFState) -> Optional[Dict]:
+def get_rag_context(query: str, top_k: int = 3) -> str:
     """
-    [HITL] 人类介入检查 - 简化版
+    获取RAG知识检索上下文
 
-    触发条件：
-    1. 失败分过高 (熔断)
-    2. 步数过长 (超时)
+    Args:
+        query: 查询内容（通常是页面特征或漏洞类型）
+        top_k: 返回的最相关的知识条数
+
+    Returns:
+        格式化的知识上下文字符串
     """
-    steps = state.get("execution_steps", 0)
-    score = state.get("failure_weighted_score", 0)
-    last_step = state.get("last_intervention_step", 0)
-
-    # 避免频繁打断 (至少间隔5步)
-    if steps - last_step < 5:
-        return None
-
-    trigger_reason = ""
-    if score > config.HITL_FAILURE_SCORE:
-        trigger_reason = f"失败分过高 ({score:.1f} > {config.HITL_FAILURE_SCORE})"
-    elif steps >= config.MAX_STEPS_BEFORE_HITL:
-        trigger_reason = f"步数过长 ({steps} >= {config.MAX_STEPS_BEFORE_HITL})"
-    else:
-        return None
-
-    print("\n" + "=" * 50)
-    print(f"🚨 系统暂停: {trigger_reason}")
-    print(f"📍 当前URL: {state.get('current_url')}")
-    print("-" * 50)
-    print("请选择操作:")
-    print("  [1] 💡 提示 - 输入思路继续尝试")
-    print("  [2] 🧠 创新 - 启动头脑风暴")
-    print("  [3] 🗺️ 探索 - 重新扫描目录")
-    print("  [4] 🛑 结束 - 放弃任务")
-    print("  [5] 🔍 观察 - 查看漏洞候选")
-    print("-" * 50)
+    if not RAG_AVAILABLE or not _rag_retriever:
+        return ""
 
     try:
-        while True:
-            choice = input("请输入选项 [1-5]: ").strip()
+        results = _rag_retriever.retrieve(query, top_k=top_k)
+        if not results:
+            return ""
 
-            if choice == "1":
-                hint = input("请输入提示内容: ")
-                return {"action": "hint", "content": hint, "step": steps}
-            elif choice == "2":
-                return {"action": "innovate", "step": steps}
-            elif choice == "3":
-                return {"action": "explore", "step": steps}
-            elif choice == "4":
-                return {"action": "stop", "step": steps}
-            elif choice == "5":
-                print("\n当前漏洞候选:")
-                for c in state.get("vuln_candidates", []):
-                    print(f"  - {c.get('type')} @ {c.get('location')} (Conf: {c.get('confidence')})")
-                print("\n")
-                continue  # 继续循环等待选择
-            else:
-                print("无效选项，请重试")
-    except (EOFError, OSError):
-        # Docker环境或其他无交互环境，input()可能抛出异常
-        print("⚠️ 无交互环境，自动结束任务")
-        return None
+        context_parts = ["[RAG知识库参考]"]
+        for i, doc in enumerate(results, 1):
+            context_parts.append(f"{i}. {doc.get('content', '')[:500]}")
 
-    return None
-
-
-def generate_ai_hint(state: CTFState, level: int) -> str:
-    """已废弃 - 简化版不再需要自动生成AI提示"""
-    return ""
-
+        return "\n".join(context_parts)
+    except Exception as e:
+        print(f"[RAG] 检索失败: {e}")
+        return ""
 
 
 # ==============================================================================
@@ -277,7 +256,7 @@ def challenge_type_detector_node(state: CTFState) -> Dict:
 
     检测策略（按优先级）：
     1. 附件文件类型检测（最可靠）
-    2. HTTP服务可访问性检测
+    2. 目标格式检测（IP vs 域名）
     3. LLM智能判断（兜底方案）
 
     检测类型:
@@ -296,6 +275,18 @@ def challenge_type_detector_node(state: CTFState) -> Dict:
     attachments = state.get("attachments", [])
 
     result = {}
+
+    # =========================================================================
+    # 预处理：自动补全协议头
+    # =========================================================================
+    if target_url and not target_url.startswith(('http://', 'https://', 'file://')):
+        # 检查是否是纯IP地址或IP:端口格式
+        import re
+        if re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$', target_url.strip()):
+            print(f"   [AutoFix] Adding http:// prefix to IP address")
+            target_url = f"http://{target_url}"
+            result["target_url"] = target_url
+            result["current_url"] = target_url
 
     # =========================================================================
     # 策略1: 附件文件类型检测（最可靠）
@@ -354,30 +345,39 @@ def challenge_type_detector_node(state: CTFState) -> Dict:
                 break
 
     # =========================================================================
-    # 策略2: HTTP服务可访问性检测
+    # 策略2: 目标类型检测（核心逻辑）
     # =========================================================================
     if not result and target_url:
+        # 提取目标中的IP地址
+        import re
+        ip_match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', target_url)
+
+        # 判断目标是域名还是IP
         if target_url.startswith('http://') or target_url.startswith('https://'):
-            is_accessible, response_info = _check_http_accessible(target_url)
-            if is_accessible:
-                print(f"   [Signal:HTTP] Web challenge (service accessible)")
-                result = {}  # Web是默认模式
+            # 有协议头的情况
+            host_part = target_url.split('://')[1].split('/')[0].split(':')[0]
+
+            # 如果主机部分是IP地址 → 内网渗透模式（需要端口扫描）
+            if re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', host_part):
+                print(f"   [Signal:IP-URL] IP address target -> Internal network mode")
+                result = {"internal_mode": True}
             else:
-                # HTTP不可访问，可能是内网或需要VPN
-                # 检查是否是IP地址
-                import re
-                ip_match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', target_url)
-                if ip_match:
-                    print(f"   [Signal:IP] Internal network challenge detected")
-                    result = {"internal_mode": True}
-                else:
-                    # 无法确定，让LLM判断
-                    print(f"   [Signal:Unknown] HTTP not accessible, will use LLM analysis")
+                # 域名形式 → Web模式
+                print(f"   [Signal:Domain] Domain target -> Web mode")
+                result = {}
+
+        elif ip_match:
+            # 纯IP地址（无协议头）→ 内网渗透模式
+            print(f"   [Signal:IP] Pure IP address -> Internal network mode")
+            result = {"internal_mode": True}
 
         elif target_url.startswith('file://') or os.path.exists(target_url):
             # 本地文件路径
             print(f"   [Signal:LocalFile] Processing local file")
             result = _detect_file_type(target_url)
+        else:
+            # 其他情况，让LLM判断
+            print(f"   [Signal:Unknown] Unrecognized format, using LLM analysis")
 
     # =========================================================================
     # 策略3: LLM智能判断（兜底方案）
@@ -421,13 +421,15 @@ def _check_http_accessible(url: str) -> tuple:
     """检查HTTP服务是否可访问"""
     try:
         import requests
-        resp = requests.head(url, timeout=5, verify=False, allow_redirects=True)
+        # 增加超时时间到15秒，CTF服务器可能较慢
+        resp = requests.head(url, timeout=15, verify=False, allow_redirects=True)
         if resp.status_code < 500:
             return True, {
                 "status_code": resp.status_code,
                 "server": resp.headers.get("Server", ""),
                 "content_type": resp.headers.get("Content-Type", "")
             }
+        return False, {"status_code": resp.status_code}
     except requests.exceptions.Timeout:
         return False, {"error": "timeout"}
     except requests.exceptions.ConnectionError:
@@ -697,19 +699,39 @@ def analyst_node(state: CTFState) -> Dict:
     raw_html = state.get("raw_html_snippet", "")
     task_name = state.get("task_name", "Unknown Task")
     task_description = state.get("task_description", "No description provided")
-    baseline_response = state.get("baseline_response", {})  # 包含重定向信息
+    baseline_response = state.get("baseline_response", {})
 
     # 规则引擎的初步结果（如果有）
     rule_candidates = state.get("vuln_candidates", [])
 
-    # 2. 构建 Prompt
+    # 2. RAG知识检索（仅Web CTF场景）
+    rag_context = ""
+    current_mode = state.get("current_mode", "")
+    internal_mode = state.get("internal_mode", False)
+
+    # 只在Web CTF模式下使用RAG
+    if RAG_AVAILABLE and config.RAG_ENABLED and config.RAG_FOR_WEB_ONLY:
+        if not internal_mode and current_mode not in ["crypto", "pwn", "reverse", "misc"]:
+            # 根据页面特征构建查询
+            tech_stack = page_features.get("tech_stack", [])
+            input_vectors = page_features.get("input_vectors", [])
+            query = f"{' '.join(tech_stack)} {' '.join(input_vectors[:5])}"
+
+            if query.strip():
+                print("📚 [RAG] 检索知识库...")
+                rag_context = get_rag_context(query, top_k=3)
+                if rag_context:
+                    print(f"   ✅ 找到相关知识点")
+
+    # 3. 构建 Prompt
     prompt = get_analyst_prompt(
         page_features,
         raw_html,
         rule_candidates,
         task_name=task_name,
         task_description=task_description,
-        baseline_response=baseline_response  # 传递重定向信息
+        baseline_response=baseline_response,
+        rag_context=rag_context
     )
     
     # 3. 调用 LLM
@@ -796,59 +818,93 @@ def analyst_node(state: CTFState) -> Dict:
 
 def mode_manager_node(state: CTFState) -> Dict:
     """
-    模式决策器 - 简化版
+    模式决策器 - 自动决策，无人工介入
+
+    Features:
+        - 20分钟熔断
+        - 环境变化检测（进入内网、新域名），自动重置计时器
     """
     score = state.get("failure_weighted_score", 0)
     steps = state.get("execution_steps", 0)
     current_url = state.get("current_url")
     node_status = state.get("node_attack_status", {})
+    start_time = state.get("start_time", time.time())
 
-    # 0. 尊重上游设置的模式（如 HITL 返回的 end/explore）
-    # 但 innovate 模式是"一次性"的，innovator 执行后应该重置
+    # 0. 尊重上游设置的模式
     preset_mode = state.get("current_mode")
     if preset_mode == "end":
         print(f"📍 保持预设模式: end")
         return {"current_mode": "end"}
     elif preset_mode == "explore":
-        # explore 可能需要多轮，保持
         print(f"📍 保持预设模式: explore")
         return {"current_mode": "explore"}
     elif preset_mode == "innovate":
-        # [关键修复] innovate 是一次性的，innovator 已执行过，重置分数并切回 exploit
         print(f"📍 创新模式已执行，重置分数并切回攻击模式")
         return {
             "current_mode": "exploit",
-            "failure_weighted_score": 0,  # 重置分数，给新规则机会
+            "failure_weighted_score": 0,
             "current_round": state.get("current_round", 0) + 1
         }
 
-    # 1. 检查是否结束
-    if steps >= config.MAX_TOTAL_ROUNDS:
+    # 1. 环境变化检测 - 重置计时器
+    new_start_time = start_time
+    initial_domain = state.get("initial_target_domain", "")
+    internal_timer_reset = state.get("internal_network_timer_reset", False)
+    internal_mode = state.get("internal_mode", False)
+
+    # 检测进入内网（使用internal_mode字段）
+    if internal_mode and not internal_timer_reset:
+        print(f"🔀 检测到进入内网环境，重置计时器")
+        new_start_time = time.time()
+        return {
+            "start_time": new_start_time,
+            "internal_network_timer_reset": True,
+            "current_mode": "exploit"
+        }
+
+    # 检测域名变化（新SRC环境）
+    if current_url:
+        try:
+            current_domain = urlparse(current_url).netloc
+            if current_domain and initial_domain and current_domain != initial_domain:
+                # 检查是否是子域名
+                if not current_domain.endswith(initial_domain) and not initial_domain.endswith(current_domain):
+                    print(f"🔀 检测到新域名环境 ({initial_domain} -> {current_domain})，重置计时器")
+                    new_start_time = time.time()
+                    return {
+                        "start_time": new_start_time,
+                        "initial_target_domain": current_domain,
+                        "current_mode": "exploit"
+                    }
+        except Exception:
+            pass
+
+    # 2. 检查是否超时（20分钟熔断）
+    elapsed_time = time.time() - start_time
+    if elapsed_time > config.TASK_TIMEOUT:
+        print(f"⏰ 任务超时 ({elapsed_time/60:.1f}分钟 > {config.TASK_TIMEOUT/60:.1f}分钟)")
         return {"current_mode": "end"}
 
-    # 2. 检查是否需要人类介入
-    if steps >= config.MAX_STEPS_BEFORE_HITL or score >= config.HITL_FAILURE_SCORE:
-        print(f"🛑 触发人工介入 (步数:{steps}, 失败分:{score:.1f})")
-        return {"current_mode": "hitl"}
+    # 3. 检查是否达到最大步数
+    if steps >= config.MAX_TOTAL_ROUNDS:
+        print(f"📍 达到最大步数 ({steps}/{config.MAX_TOTAL_ROUNDS})")
+        return {"current_mode": "end"}
 
-    # 3. 节点状态管理 - 智能放弃判断
-    # 不再仅凭 attempt_count 判断，而是看最近的攻击是否有进展
-    # 如果最近有成功的攻击（状态码200且有输出变化），则不放弃
+    # 4. 节点状态管理
     if current_url and current_url in node_status:
         status = node_status[current_url]
         attempts = status.get("attempt_count", 0)
         recent_codes = status.get("last_status_codes", [])[-5:]
 
-        # 检查最近是否有有效的攻击（非404/500的状态码占比超过50%）
-        if attempts > 10 and recent_codes:
+        if attempts > 15 and recent_codes:
             success_rate = sum(1 for c in recent_codes if c not in [404, 500, 0]) / len(recent_codes)
-            if success_rate < 0.3:  # 最近5次攻击中，成功率低于30%才放弃
+            if success_rate < 0.2:
                 status["status"] = "abandoned"
                 print(f"   🛑 放弃节点（成功率低）: {current_url}")
             else:
-                print(f"   📊 节点仍有进展（成功率 {success_rate*100:.0f}%），继续攻击")
+                print(f"   📊 节点仍有进展（成功率 {success_rate*100:.0f}%）")
 
-    # 4. 模式切换 - 简化阈值
+    # 5. 模式切换
     if score >= config.FAILURE_SCORE_FOR_INNOVATE:
         print(f"💡 创新模式 (失败分:{score:.1f})")
         return {"current_mode": "innovate"}
@@ -1458,21 +1514,6 @@ def verifier_node(state: CTFState) -> Dict:
     current_url = state.get("current_url")
     node_status = state.get("node_attack_status", {})
 
-    # [P3合并] 超时检查 (原reflector功能)
-    if current_url and current_url in node_status:
-        status = node_status[current_url]
-        now = time.time()
-
-        # 硬熔断：节点超时
-        if now - status.get("start_time", now) > config.NODE_TIMEOUT:
-            print(f"   ⏰ 节点超时，放弃: {current_url}")
-            status["status"] = "abandoned"
-            return {
-                "node_attack_status": node_status,
-                "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
-                "execution_steps": state.get("execution_steps", 0) + 1
-            }
-
     # 获取当前批次的攻击结果
     results = state.get("attack_results", [])
     attack_batch = state.get("attack_batch", [])
@@ -1696,60 +1737,6 @@ def verifier_node(state: CTFState) -> Dict:
 
 
 
-def hitl_node(state: CTFState) -> Dict:
-    """
-    [HITL] 人类介入节点 - 交互式菜单
-    """
-    print("👤 等待人类介入...")
-
-    intervention = check_human_intervention(state)
-
-    if intervention:
-        action = intervention["action"]
-        
-        if action == "stop":
-            return {"current_mode": "end"}
-        
-        elif action == "innovate":
-            return {
-                "failure_weighted_score": 0, # 重置分数，给创新机会
-                "current_mode": "innovate",
-                "execution_steps": state.get("execution_steps", 0) - 5 # 宽限 5 步
-            }
-            
-        elif action == "explore":
-            return {
-                "failure_weighted_score": 0,
-                "current_mode": "explore",
-                "execution_steps": state.get("execution_steps", 0) - 5 # 宽限 5 步
-            }
-
-        elif action == "hint":
-            hint: Hint = {
-                "level": 3, # 统一视为高级提示
-                "content": intervention["content"],
-                "source": "human",
-                "timestamp": time.time()
-            }
-            # [核心修复] 将人工提示直接设置为tactical_guidance，确保攻击兵能看到并执行
-            return {
-                "last_intervention_step": intervention["step"],
-                "hint_history": [hint],
-                "failure_weighted_score": 0,  # 重置失败分
-                "current_mode": "exploit",  # 带着提示切回利用模式
-                "latest_tactical_guidance": f"[人工指导] {intervention['content']}",  # 人工提示作为战术指引
-                "execution_steps": state.get("execution_steps", 0) - 5 # 宽限 5 步，避免立即再次触发 HITL
-            }
-
-    # [关键修复] 没有人类输入时，重置失败分并给宽限步数，避免死循环
-    print("   📋 无人类输入，自动重置并继续...")
-    return {
-        "current_mode": "end",  # 直接结束，避免无限循环
-        "failure_weighted_score": 0,
-        "last_intervention_step": state.get("execution_steps", 0)
-    }
-
-
 # ==============================================================================
 # 6. 图编排 (Graph Orchestration)
 # ==============================================================================
@@ -1768,7 +1755,6 @@ workflow.add_node("explorer", explorer_node)  # type: ignore # 探索兵
 workflow.add_node("innovator", innovator_node)  # type: ignore # 头脑风暴
 workflow.add_node("verifier", verifier_node)  # type: ignore # 核验兵 [P3合并]
 workflow.add_node("evolution", evolution_node)  # type: ignore # 进化闭环
-workflow.add_node("hitl", hitl_node)  # type: ignore # 人类介入
 
 # 内网渗透节点 (可选启用)
 if INTERNAL_NETWORK_AVAILABLE:
@@ -1869,7 +1855,6 @@ _mode_manager_routes = {
     "exploit": "attacker",
     "explore": "explorer",
     "innovate": "innovator",
-    "hitl": "hitl",
     "recon": "recon",
     "end": END
 }
@@ -1895,25 +1880,14 @@ workflow.add_conditional_edges(
 # 3. 分支回归逻辑
 workflow.add_edge("explorer", "mode_manager")  # 探索后重新决策
 workflow.add_edge("innovator", "strategy_filter")  # 创新后注入规则到过滤器
-workflow.add_edge("hitl", "mode_manager")  # 人类介入后重试
 workflow.add_edge("attacker", "verifier")  # 攻击后必须验证
 
-# 4. [P3优化] 验证后分流: 成功则进化，失败则检查HITL或回到mode_manager
+# 4. [P3优化] 验证后分流: 成功则进化，失败则回到mode_manager
 workflow.add_conditional_edges(
     "verifier",
     lambda state: route_verify(state, "verifier"),
     {
         "evolution": "evolution",
-        "hitl": "hitl",  # [P3] 直接跳转到HITL（跳过reflector）
-        "mode_manager": "mode_manager"  # [P3] 直接回到决策
-    }
-)
-
-# 5. HITL后回到决策
-workflow.add_conditional_edges(
-    "hitl",
-    lambda state: route_hitl(state, "hitl"),
-    {
         "mode_manager": "mode_manager"
     }
 )
@@ -2242,10 +2216,8 @@ def main():
     while True:
         try:
             # 获取用户输入
-            print("\n📝 请输入目标靶机信息：")
-            task_name = input("   题目名称 (按回车跳过): ").strip() or "Unknown Task"
-            task_description = input("   题目描述 (按回车跳过): ").strip() or "No description provided."
-            target_url = input("   目标 URL (必填，输入 q 退出): ").strip()
+            print("\n📝 请输入目标 URL（输入 q 退出）：")
+            target_url = input("   目标 URL: ").strip()
 
             # 退出检查
             if target_url.lower() == 'q':
@@ -2260,12 +2232,11 @@ def main():
                     return
 
             print("\n" + "=" * 50)
-            print(f"🎯 目标锁定: {task_name}")
-            print(f"🔗 URL: {target_url}")
+            print(f"🎯 目标锁定: {target_url}")
             print("=" * 50)
 
             # 运行任务
-            result = run_single_task(task_name, task_description, target_url)
+            result = run_single_task(target_url)
 
             # 输出结果
             print("\n" + "=" * 50)
@@ -2294,18 +2265,30 @@ def main():
                 return
 
 
-def run_single_task(task_name: str, task_description: str, target_url: str) -> dict:
-    """运行单个CTF任务"""
+def run_single_task(target_url: str) -> dict:
+    """运行单个CTF任务
+
+    Args:
+        target_url: 目标URL
+
+    Features:
+        - 20分钟熔断
+        - 环境变化时重置计时器（进入内网、新SRC环境等）
+    """
     # 初始化状态
     initial_state: CTFState = {
         # 基础上下文
-        "task_name": task_name,
-        "task_description": task_description,
+        "task_name": "CTF Task",
+        "task_description": "No description provided",
         "target_url": target_url,
         "current_url": target_url,
         "start_time": time.time(),
         "current_round": 0,
         "found_flag": False,
+
+        # 环境追踪（用于检测环境变化）
+        "initial_target_domain": urlparse(target_url).netloc if target_url else "",
+        "internal_network_timer_reset": False,
 
         # 页面感知
         "page_features": {},
@@ -2427,6 +2410,9 @@ def run_single_task(task_name: str, task_description: str, target_url: str) -> d
         if field not in initial_state:
             print(f"[Warning] 初始状态缺少字段: {field}，设置为默认值")
             initial_state[field] = None  # 设置默认值
+
+    # 重置路由状态
+    reset_routing()
 
     # 运行工作流
     print("\n⏳ 开始攻击...")

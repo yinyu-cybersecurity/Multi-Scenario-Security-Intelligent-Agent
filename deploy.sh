@@ -20,7 +20,7 @@ apt-get update
 apt-get install -y \
     python3.11 python3-pip python3-venv \
     git curl wget unzip \
-    nmap openjdk-17-jdk maven golang-go \
+    openjdk-17-jdk maven golang-go \
     ruby php-cli libssl-dev libssh-dev \
     libimage-exiftool-perl binwalk foremost \
     docker.io docker-compose
@@ -74,6 +74,10 @@ mkdir -p data/tool_outputs data/tool_raw_logs data/frp .memory log thirdparty
 
 # ========== 开源安全工具 ==========
 echo "[7/7] Downloading open-source security tools..."
+
+# 内网扫描 - fscan
+git clone --depth 1 https://github.com/shadow1ng/fscan.git thirdparty/fscan 2>/dev/null || true
+cd thirdparty/fscan && go build -o /usr/local/bin/fscan . && cd /opt/ctf-agent || echo "fscan build skipped"
 
 # SSRF工具
 git clone --depth 1 https://github.com/In3tinct/See-SURF.git thirdparty/see-surf 2>/dev/null || true

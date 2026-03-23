@@ -241,7 +241,7 @@ class CTFState(TypedDict):
         exploration_rounds: int  # 探索模式已执行轮次，模式决策器读取
         rule_miss_count: int  # 规则引擎连续未命中次数，用于触发创新模式
         execution_steps: int  # 当前题目总执行步数，用于HITL触发
-        current_mode: Literal['exploit', 'explore', 'innovate', 'end', 'hitl']  # 当前工作模式，由模式决策器设置
+        current_mode: Literal['exploit', 'explore', 'innovate', 'end']  # 当前工作模式，由模式决策器设置
 
     [分级介入]
         hint_level: int  # 已给的最高提示级别(0-3)，避免重复给同级别提示
@@ -265,6 +265,10 @@ class CTFState(TypedDict):
     start_time: float
     current_round: int
     found_flag: bool # 新增字段，标记是否找到flag
+
+    # --- 环境追踪（用于环境变化检测和计时器重置）---
+    initial_target_domain: str  # 初始目标域名，用于检测新SRC环境
+    internal_network_timer_reset: bool  # 内网计时器是否已重置
 
     # --- 页面感知 ---
     page_features: PageFeatures
@@ -297,7 +301,7 @@ class CTFState(TypedDict):
     exploration_rounds: int
     rule_miss_count: int
     execution_steps: int
-    current_mode: Literal['exploit', 'explore', 'innovate', 'end', 'hitl']
+    current_mode: Literal['exploit', 'explore', 'innovate', 'end']
     node_attack_status: Dict[str, NodeAttackStatus]  # 节点攻击状态记录
 
     # --- 分级介入 ---
@@ -324,7 +328,7 @@ class CTFState(TypedDict):
     # --- 内网发现 ---
     internal_hosts: Annotated[List[Dict], lambda x, y: cap_list_reducer(x, y, 50)]
     # 发现的内网主机列表，每个条目包含: {ip, hostname, os, ports: [{port, service, version}]}
-    # 由 nmap_tool 等扫描工具填充
+    # 由 fscan 等扫描工具填充
 
     internal_network_range: str  # 内网网段范围，如 "10.10.10.0/24"
     domain_controller: str  # 域控IP或主机名

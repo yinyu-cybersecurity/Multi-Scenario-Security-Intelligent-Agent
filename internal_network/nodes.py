@@ -48,119 +48,104 @@ def internal_recon_node(state: Dict) -> Dict:
         - update CTFState
 
     工作流程:
-        1. 使用nmap扫描网段
+        1. 使用fscan扫描目标（快速、全面、自动漏洞识别）
         2. 解析结果
         3. 更新状态
     """
     network_range = state.get("internal_network_range", "")
     pivot_host = state.get("pivot_host", "")
+    current_url = state.get("current_url", "")
 
+    # 从当前URL提取目标IP
+    target_ip = ""
     if not network_range:
-        # 尝试从当前目标推断
-        current_url = state.get("current_url", "")
+        import re
         if current_url:
-            # 从URL提取IP
-            import re
             ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', current_url)
             if ip_match:
-                ip = ip_match.group(1)
-                # 推测/24网段
-                network_range = f"{'.'.join(ip.split('.')[:3])}.0/24"
+                target_ip = ip_match.group(1)
+                # 默认扫描单个IP
+                network_range = target_ip
 
     if not network_range:
         return {
-            "error": "无法确定内网网段",
+            "error": "无法确定扫描目标",
             "internal_mode": False,
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.0
         }
 
-    print(f"[InternalRecon] 扫描网段: {network_range}")
+    print(f"[InternalRecon] 使用 fscan 扫描目标: {network_range}")
 
-    # 执行nmap扫描
+    # 使用 fscan 扫描
     try:
-        nmap_result = ToolRegistry.execute_cached(
-            "nmap",
+        fscan_result = ToolRegistry.execute_cached(
+            "fscan",
             network_range,
             {
-                "ports": "quick",
-                "scan_type": "connect",
-                "service_detection": True,
-                "no_ping": True,
-                "timing": "aggressive"
+                "scan_type": "quick",
+                "brute": True,
+                "no_ping": True
             }
         )
 
         # 检查结果有效性
-        if not nmap_result:
-            return {
-                "error": "nmap扫描返回空结果",
-                "internal_mode": False,
-                "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5
-            }
+        if fscan_result and fscan_result.get("result", {}).get("success"):
+            result = fscan_result.get("result", {})
+            hosts_data = result.get("hosts", [])
+            vulnerabilities = result.get("vulnerabilities", [])
 
-        if nmap_result.get("error"):
-            return {
-                "error": f"nmap执行错误: {nmap_result.get('error')}",
-                "internal_mode": False,
-                "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.0
-            }
+            if hosts_data:
+                # 解析主机
+                hosts = []
+                for host_data in hosts_data:
+                    if not isinstance(host_data, dict):
+                        continue
 
-        result = nmap_result.get("result", {})
+                    host_info = {
+                        "ip": host_data.get("ip", ""),
+                        "hostname": "",
+                        "os": "",
+                        "ports": []
+                    }
 
-        # 检查是否是缓存结果
-        if nmap_result.get("cached"):
-            print(f"[InternalRecon] 使用缓存结果")
+                    for port in host_data.get("ports", []):
+                        if port.get("state") == "open" or port.get("port"):
+                            host_info["ports"].append({
+                                "port": port.get("port"),
+                                "protocol": "tcp",
+                                "service": port.get("service", ""),
+                                "version": ""
+                            })
 
-        if result.get("success") or result.get("hosts"):
-            # 解析主机
-            hosts = []
-            for host in result.get("hosts", []):
-                if not isinstance(host, dict):
-                    continue
-                host_info = {
-                    "ip": host.get("ip", ""),
-                    "hostname": host.get("hostname", ""),
-                    "os": host.get("os_match", ""),
-                    "ports": []
-                }
+                    if host_info["ports"] and host_info["ip"]:
+                        hosts.append(host_info)
 
-                for port in host.get("ports", []):
-                    if port.get("state") == "open":
-                        host_info["ports"].append({
-                            "port": port.get("port"),
-                            "protocol": port.get("protocol"),
-                            "service": port.get("service", ""),
-                            "version": port.get("version", "")
-                        })
+                if hosts:
+                    print(f"[InternalRecon] fscan 发现 {len(hosts)} 台主机")
 
-                if host_info["ports"] and host_info["ip"]:  # 只保留有开放端口且有IP的主机
-                    hosts.append(host_info)
+                    # AI分析发现
+                    analysis = _analyze_internal_hosts(hosts)
 
-            # AI分析发现
-            analysis = _analyze_internal_hosts(hosts)
+                    # 选择高价值目标
+                    first_target = _select_high_value_target(hosts)
 
-            # 确保有主机才设置目标
-            first_target = ""
-            if hosts:
-                # 优先选择高价值目标
-                first_target = _select_high_value_target(hosts)
+                    return {
+                        "internal_hosts": hosts,
+                        "internal_mode": True,
+                        "current_internal_target": first_target,
+                        "analyst_intel": analysis,
+                        "execution_steps": state.get("execution_steps", 0) + 1
+                    }
 
-            return {
-                "internal_hosts": hosts,
-                "internal_mode": True,
-                "current_internal_target": first_target,
-                "analyst_intel": analysis,
-                "execution_steps": state.get("execution_steps", 0) + 1
-            }
-
+        # 无结果
         return {
-            "error": result.get("error", "扫描失败"),
+            "error": "fscan 未发现存活主机或端口",
             "internal_mode": False,
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5
         }
 
     except Exception as e:
-        print(f"[InternalRecon] 异常: {e}")
+        print(f"[InternalRecon] fscan 异常: {e}")
         return {
             "error": f"扫描异常: {str(e)}",
             "internal_mode": False,

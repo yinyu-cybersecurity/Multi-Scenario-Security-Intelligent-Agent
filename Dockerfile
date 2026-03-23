@@ -60,10 +60,6 @@ RUN mkdir -p /app/thirdparty /app/data/tool_outputs /app/data/tool_raw_logs /app
 RUN git clone --depth 1 https://github.com/swisskyrepo/SSRFmap.git /app/thirdparty/SSRFmap 2>/dev/null || true
 RUN git clone --depth 1 https://github.com/tarunkant/Gopherus.git /app/thirdparty/Gopherus 2>/dev/null || true
 
-# 内网综合扫描
-RUN git clone --depth 1 https://github.com/shadow1ng/fscan.git /app/thirdparty/fscan 2>/dev/null || true
-RUN git clone --depth 1 https://github.com/lcvvvv/kscan.git /app/thirdparty/kscan 2>/dev/null || true
-
 # OA漏洞利用工具
 RUN git clone --depth 1 https://github.com/NS-Sp4ce/WeaverExploit.git /app/thirdparty/WeaverExploit 2>/dev/null || true
 RUN git clone --depth 1 https://github.com/NS-Sp4ce/SeeyonExploit.git /app/thirdparty/SeeyonExploit 2>/dev/null || true
@@ -119,6 +115,10 @@ COPY config.yaml.example /app/config.yaml.example
 
 # Copy self-check script
 COPY self_check.py /app/self_check.py
+
+# 编译 fscan (放在代码复制之后，避免触发依赖重装)
+RUN git clone --depth 1 https://github.com/shadow1ng/fscan.git /app/thirdparty/fscan 2>/dev/null && \
+    cd /app/thirdparty/fscan && go build -o /usr/local/bin/fscan . || echo "fscan build skipped"
 
 # Update nuclei templates
 RUN /root/go/bin/nuclei -update-templates 2>/dev/null || true

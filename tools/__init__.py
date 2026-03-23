@@ -17,8 +17,13 @@ def load_all_tools(registry: ToolRegistry):
         if filename.endswith(".py") and filename != "__init__.py":
             module_name = f"tools.{filename[:-3]}"
 
-            # 动态导入模块
-            module = importlib.import_module(module_name)
+            try:
+                # 动态导入模块
+                module = importlib.import_module(module_name)
+            except ImportError as e:
+                # 跳过缺少依赖的模块
+                print(f"[Warning] Skip {filename}: {e}")
+                continue
 
             # 找出模块中所有的类
             for name, obj in inspect.getmembers(module, inspect.isclass):
