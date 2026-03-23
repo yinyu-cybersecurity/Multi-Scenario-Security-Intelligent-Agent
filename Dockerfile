@@ -90,9 +90,10 @@ RUN wget -q https://github.com/fatedier/frp/releases/download/v0.52.3/frp_0.52.3
     tar -xzf frp_0.52.3_linux_amd64.tar.gz -C /app/data/frp --strip-components=1 && \
     rm frp_0.52.3_linux_amd64.tar.gz 2>/dev/null || echo "frp download skipped"
 
-# Copy application files
+# Copy application files to /app root (not /app/app/)
 COPY requirements.txt .
-COPY app/ ./app/
+COPY app/*.py ./
+COPY app/topology ./topology/
 COPY tools/ ./tools/
 COPY internal_network/ ./internal_network/
 COPY crypto/ ./crypto/
@@ -102,7 +103,13 @@ COPY rag_builder/ ./rag_builder/
 # Create Python virtual environment and install dependencies
 RUN python3.11 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-RUN pip install --upgrade pip && pip install -r requirements.txt
+
+# Install PyTorch CPU version first (avoid 2GB+ CUDA dependencies)
+RUN pip install --upgrade pip && \
+    pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+# Install other dependencies (sentence-transformers won't reinstall torch)
+RUN pip install -r requirements.txt
 
 # Copy config template
 COPY config.yaml.example /app/config.yaml.example
@@ -117,5 +124,5 @@ RUN /root/go/bin/nuclei -update-templates 2>/dev/null || true
 EXPOSE 1080 8080 4444
 
 # Set entrypoint
-ENTRYPOINT ["/opt/venv/bin/python", "/app/app/ctf_agent_graph.py"]
+ENTRYPOINT ["/opt/venv/bin/python", "/app/ctf_agent_graph.py"]
 CMD ["--help"]
