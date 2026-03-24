@@ -61,6 +61,7 @@ db.sqlite3
 # Environments
 .env
 .env.local
+.env.*.local
 .venv
 env/
 venv/
@@ -71,6 +72,7 @@ ENV/
 .vscode/
 *.swp
 *.swo
+*~
 
 # mypy
 .mypy_cache/
@@ -78,27 +80,115 @@ ENV/
 # Ruff
 .ruff_cache/
 
-# Config (may contain secrets)
+# =============================================================================
+# Config (may contain secrets) - MUST NOT UPLOAD
+# =============================================================================
 config.yaml
+*.local.yaml
+secrets/
+credentials/
+*.pem
+*.key
+*.p12
 
-# Logs
+# =============================================================================
+# Logs and temporary files
+# =============================================================================
 logs/
+log/
+*.log
+tmp/
+temp/
+*.tmp
+*.bak
+*.bak.*
 
-# Data directories
+# =============================================================================
+# Data directories (may contain sensitive data)
+# =============================================================================
 data/
 .memory/
 .memory_test/
+.tool_outputs/
+output/
+results/
+*.db
+*.sqlite
+*.sqlite3
 
-# OS
+# =============================================================================
+# OS generated files
+# =============================================================================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
 
+# =============================================================================
 # Docker
+# =============================================================================
 *.tar.gz
+*.tar
+*.zip
 
-# Internal docs (not for GitHub)
+# =============================================================================
+# Sensitive documentation (not for GitHub)
+# =============================================================================
 MEMORY.md
 FRAMEWORK_ANALYSIS.md
 PROJECT_DOCUMENTATION.md
 OPEN_SOURCE_TOOLS.md
 README_GITHUB.md
+
+# =============================================================================
+# Writeups and solutions (not for GitHub)
+# =============================================================================
+靶机wp/
+writeups/
+solutions/
+*.wp.md
+
+# =============================================================================
+# Test outputs
+# =============================================================================
+test_output/
+test_results/
+.pytest_cache/
+test_suite/output/
+
+# =============================================================================
+# RAG / Vector DB
+# =============================================================================
+chroma_db/
+rag_builder/index/
+*.index
+
+# =============================================================================
+# Session and cache files
+# =============================================================================
+sessions/
+*.session
+*.cache
+
+# =============================================================================
+# Attack results (may contain sensitive data)
+# =============================================================================
+attack_results/
+scan_results/
+exploit_output/
+
+# =============================================================================
+# Binary tools (large files, download separately)
+# =============================================================================
+tools/binaries/*.exe
+tools/binaries/*.elf
+tools/binaries/fscan
+tools/binaries/frp
+tools/linux/fscan
+tools/linux/frpc
+tools/linux/frps
+tools/windows/*.exe

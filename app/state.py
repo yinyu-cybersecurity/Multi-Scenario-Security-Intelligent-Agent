@@ -362,6 +362,12 @@ class CTFState(TypedDict):
     current_internal_target: str  # 当前内网目标IP/主机名
     pivot_host: str  # 跳板机IP/主机名
 
+    # --- 后渗透状态 ---
+    shell_session: Dict[str, Any]  # Shell会话信息
+    upload_status: str  # 工具上传状态
+    tunnel_status: str  # 隧道状态
+    proxy_info: Dict[str, Any]  # SOCKS5代理信息
+
     # --- 扫描去重 ---
     scanned_ips: Annotated[List[str], lambda x, y: list(set(x + y))]  # 已扫描的IP列表，防止重复扫描
     scanned_urls: Annotated[List[str], lambda x, y: list(set(x + y))]  # 已扫描的URL列表，防止重复dirsearch

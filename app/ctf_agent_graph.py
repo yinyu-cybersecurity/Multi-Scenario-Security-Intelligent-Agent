@@ -193,7 +193,11 @@ try:
         credential_gather_node
     )
     from internal_network.orchestrator import InternalNetworkOrchestrator
-    from internal_network.post_exploit import post_exploit_node
+    from internal_network.post_exploit import (
+        post_exploit_node,
+        upload_tools_node,
+        setup_tunnel_node
+    )
     INTERNAL_NETWORK_AVAILABLE = True
 except ImportError:
     print("[Warning] Internal network module not available")
@@ -2117,6 +2121,8 @@ if INTERNAL_NETWORK_AVAILABLE:
     workflow.add_node("privilege_escalation", privilege_escalation_node)  # type: ignore # 权限提升
     workflow.add_node("credential_gather", credential_gather_node)  # type: ignore # 凭据收集
     workflow.add_node("post_exploit", post_exploit_node)  # type: ignore # 后渗透节点
+    workflow.add_node("upload_tools", upload_tools_node)  # type: ignore # 工具上传节点
+    workflow.add_node("setup_tunnel", setup_tunnel_node)  # type: ignore # 隧道搭建节点
 
 # Crypto节点 (可选启用)
 if CRYPTO_AVAILABLE:
@@ -2284,6 +2290,8 @@ if INTERNAL_NETWORK_AVAILABLE:
             "credential_gather": "credential_gather",
             "lateral_move": "lateral_move",
             "privilege_escalation": "privilege_escalation",
+            "upload_tools": "upload_tools",
+            "setup_tunnel": "setup_tunnel",
             "mode_manager": "mode_manager"
         }
     )
@@ -2297,6 +2305,8 @@ if INTERNAL_NETWORK_AVAILABLE:
             "credential_gather": "credential_gather",
             "lateral_move": "lateral_move",
             "privilege_escalation": "privilege_escalation",
+            "upload_tools": "upload_tools",
+            "setup_tunnel": "setup_tunnel",
             "mode_manager": "mode_manager"
         }
     )
@@ -2310,6 +2320,8 @@ if INTERNAL_NETWORK_AVAILABLE:
             "credential_gather": "credential_gather",
             "lateral_move": "lateral_move",
             "privilege_escalation": "privilege_escalation",
+            "upload_tools": "upload_tools",
+            "setup_tunnel": "setup_tunnel",
             "mode_manager": "mode_manager"
         }
     )
@@ -2323,6 +2335,8 @@ if INTERNAL_NETWORK_AVAILABLE:
             "credential_gather": "credential_gather",
             "lateral_move": "lateral_move",
             "privilege_escalation": "privilege_escalation",
+            "upload_tools": "upload_tools",
+            "setup_tunnel": "setup_tunnel",
             "mode_manager": "mode_manager"
         }
     )
@@ -2331,6 +2345,29 @@ if INTERNAL_NETWORK_AVAILABLE:
     workflow.add_conditional_edges(
         "post_exploit",
         lambda state: route_post_exploit(state, "post_exploit"),
+        {
+            "upload_tools": "upload_tools",
+            "setup_tunnel": "setup_tunnel",
+            "internal_recon": "internal_recon",
+            "mode_manager": "mode_manager"
+        }
+    )
+
+    # 工具上传后路由
+    workflow.add_conditional_edges(
+        "upload_tools",
+        lambda state: route_post_exploit(state, "upload_tools"),
+        {
+            "setup_tunnel": "setup_tunnel",
+            "internal_recon": "internal_recon",
+            "mode_manager": "mode_manager"
+        }
+    )
+
+    # 隧道搭建后路由
+    workflow.add_conditional_edges(
+        "setup_tunnel",
+        lambda state: route_post_exploit(state, "setup_tunnel"),
         {
             "internal_recon": "internal_recon",
             "mode_manager": "mode_manager"
@@ -2732,6 +2769,10 @@ def run_single_task(task_name: str, task_description: str, target_url: str) -> d
         "internal_mode": False,
         "current_internal_target": "",
         "pivot_host": "",
+        "shell_session": {},  # Shell会话信息
+        "upload_status": "",  # 工具上传状态
+        "tunnel_status": "",  # 隧道状态
+        "proxy_info": {},  # 代理信息
 
         # --- 扫描去重 ---
         "scanned_ips": [],

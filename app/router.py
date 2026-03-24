@@ -1,4 +1,4 @@
-# router.py - 系统的"导航" [P3优化版 + 内网模式扩展]
+# router.py - 系统的"导航" [P3优化版 + 内网模式扩展 + AI驱动]
 # 作用：定义节点间的跳转逻辑，防止死循环，处理多路径汇合
 # 负责人：智能体架构师
 
@@ -6,7 +6,9 @@ from state import CTFState
 from config import config
 from typing import Dict, List, Tuple
 import time
+import json
 from langgraph.graph import END
+from llm_client import llm_client
 
 class RouteGuard:
     """路由守卫 - 防止死循环和异常跳转"""
@@ -218,13 +220,15 @@ def get_routing_stats() -> Dict:
 
 def route_internal_mode(state: CTFState, current_node: str) -> str:
     """
-    内网模式路由决策
+    内网模式路由决策 - AI驱动
 
-    根据内网渗透状态决定下一阶段:
+    AI分析当前态势，决定最优下一步:
     1. internal_recon: 内网侦察
-    2. credential_gather: 凭据收集
-    3. lateral_move: 横向移动
-    4. privilege_escalation: 权限提升
+    2. upload_tools: 工具上传
+    3. setup_tunnel: 隧道搭建
+    4. credential_gather: 凭据收集
+    5. lateral_move: 横向移动
+    6. privilege_escalation: 权限提升
 
     Args:
         state: 当前状态
@@ -237,48 +241,113 @@ def route_internal_mode(state: CTFState, current_node: str) -> str:
     if not state.get("internal_mode", False):
         return "mode_manager"  # 返回Web模式
 
-    # 安全获取列表，处理None值
-    internal_hosts = state.get("internal_hosts") or []
-    credentials = state.get("credentials") or []
-    active_sessions = state.get("active_sessions") or []
-    current_target = state.get("current_internal_target", "")
-    pivot_host = state.get("pivot_host", "")
+    # 收集关键状态信息 (压缩上下文)
+    context = {
+        "internal_hosts_count": len(state.get("internal_hosts") or []),
+        "credentials_count": len(state.get("credentials") or []),
+        "active_sessions_count": len(state.get("active_sessions") or []),
+        "upload_status": state.get("upload_status", ""),
+        "tunnel_status": state.get("tunnel_status", ""),
+        "current_target": state.get("current_internal_target", ""),
+        "pivot_host": state.get("pivot_host", ""),
+        "shell_session": bool(state.get("shell_session")),
+        "proxy_info": bool(state.get("proxy_info")),
+    }
 
     # 死循环检测
     if _route_guard.check_dead_loop(current_node, "internal_recon"):
         print(f"[InternalRoute] 检测到潜在死循环，重置计数")
         _route_guard.reset_loop_count("internal_recon")
 
-    # 决策逻辑
-    # 阶段1: 侦察 - 如果发现的主机少于5个，继续侦察
-    if len(internal_hosts) < 5:
-        print(f"[InternalRoute] 侦察阶段: 已发现 {len(internal_hosts)} 台主机")
+    # AI决策路由
+    decision = _ai_route_internal_decision(context, state)
+    return decision
+
+
+def _ai_route_internal_decision(context: Dict, state: CTFState) -> str:
+    """
+    AI决策内网路由
+
+    根据当前态势选择最优节点
+    """
+    # 规则优先 (快速响应常见情况)
+    # 规则1: 如果还没有侦察过，先侦察
+    if context["internal_hosts_count"] == 0:
+        print(f"[InternalRoute] 侦察阶段")
         return "internal_recon"
 
-    # 阶段2: 凭据收集 - 如果有目标但没有凭据
-    if current_target and len(credentials) < 3:
-        print(f"[InternalRoute] 凭据收集阶段: 目标 {current_target}, 凭据 {len(credentials)} 组")
+    # 规则2: 如果有shell但没有上传工具
+    if context["shell_session"] and context["upload_status"] not in ["completed", "commands_generated"]:
+        print(f"[InternalRoute] 工具上传阶段")
+        return "upload_tools"
+
+    # 规则3: 如果工具已上传但隧道未搭建
+    if context["upload_status"] == "completed" and context["tunnel_status"] not in ["configured"]:
+        print(f"[InternalRoute] 隧道搭建阶段")
+        return "setup_tunnel"
+
+    # 复杂情况交给AI决策
+    prompt = f"""
+分析内网渗透态势，决定下一步行动。
+
+## 当前状态
+- 发现主机: {context['internal_hosts_count']} 台
+- 已获取凭据: {context['credentials_count']} 组
+- 活跃会话: {context['active_sessions_count']} 个
+- 工具上传: {context['upload_status']}
+- 隧道状态: {context['tunnel_status']}
+- 当前目标: {context['current_target'] or '未确定'}
+
+## 可选节点
+- internal_recon: 继续扫描发现更多主机
+- credential_gather: 收集凭据
+- lateral_move: 横向移动到其他主机
+- privilege_escalation: 提升当前会话权限
+
+## 要求
+1. 选择最优下一步
+2. 输出节点名称和理由
+
+## 输出格式 (JSON)
+{{
+    "next_node": "节点名称",
+    "reason": "选择理由"
+}}
+"""
+
+    try:
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
+
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+
+        result = json.loads(response.strip())
+        next_node = result.get("next_node", "internal_recon")
+        print(f"[InternalRoute] AI决策: {next_node} - {result.get('reason', '')}")
+
+        # 验证节点名称
+        valid_nodes = ["internal_recon", "credential_gather", "lateral_move", "privilege_escalation", "upload_tools", "setup_tunnel"]
+        if next_node in valid_nodes:
+            return next_node
+
+    except Exception as e:
+        print(f"[InternalRoute] AI决策失败: {e}")
+
+    # 降级: 基于规则的决策
+    if context["credentials_count"] < 2 and context["current_target"]:
         return "credential_gather"
 
-    # 阶段3: 横向移动 - 如果有凭据且有新目标
-    if credentials and internal_hosts:
-        # 检查是否所有主机都已被攻陷
-        compromised_hosts = [s.get("host") for s in active_sessions if s.get("host")]
-        unexploited = [h for h in internal_hosts if h.get("ip") not in compromised_hosts]
+    if context["credentials_count"] > 0 and context["internal_hosts_count"] > 0:
+        return "lateral_move"
 
-        if unexploited:
-            print(f"[InternalRoute] 横向移动阶段: {len(unexploited)} 台未攻陷主机")
-            return "lateral_move"
+    if context["active_sessions_count"] > 0:
+        return "privilege_escalation"
 
-    # 阶段4: 权限提升 - 如果有活跃会话但需要更高权限
-    if active_sessions:
-        # 检查是否有system/admin权限
-        for session in active_sessions:
-            if session.get("shell_type") in ["shell", "meterpreter"]:
-                print(f"[InternalRoute] 权限提升阶段: 检查会话权限")
-                return "privilege_escalation"
-
-    # 默认返回侦察
     return "internal_recon"
 
 
@@ -366,13 +435,13 @@ def get_internal_next_target(state: CTFState) -> str:
 
 def route_post_exploit(state: CTFState, current_node: str) -> str:
     """
-    后渗透路由 - 根据后渗透结果决定下一步
+    后渗透路由 - AI驱动 + 自动化流程
 
     流程:
-        1. 检测到内网环境 -> internal_recon
-        2. 无内网环境 -> mode_manager (继续Web攻击)
-        3. 需要上传工具 -> upload_tools
-        4. 需要搭建隧道 -> setup_tunnel
+        1. 检测到内网环境 -> upload_tools (先上传工具)
+        2. 工具上传完成 -> setup_tunnel (搭建隧道)
+        3. 隧道搭建完成 -> internal_recon (开始内网侦察)
+        4. 无内网环境 -> mode_manager (继续Web攻击)
 
     Args:
         state: 当前状态
@@ -382,13 +451,25 @@ def route_post_exploit(state: CTFState, current_node: str) -> str:
         下一节点名称
     """
     post_exploit_status = state.get("post_exploit_status", "")
+    upload_status = state.get("upload_status", "")
+    tunnel_status = state.get("tunnel_status", "")
+    internal_range = state.get("internal_network_range", "")
 
-    # 如果发现内网环境，进入内网渗透
-    if post_exploit_status == "ready_for_internal":
-        internal_range = state.get("internal_network_range", "")
-        if internal_range:
-            print(f"🌐 [PostExploitRoute] 发现内网网段 {internal_range}，进入内网侦察")
-            return "internal_recon"
+    # 如果发现内网环境，进入内网渗透流程
+    if post_exploit_status == "ready_for_internal" and internal_range:
+        # 步骤1: 上传工具
+        if upload_status not in ["completed", "commands_generated"]:
+            print(f"🌐 [PostExploitRoute] 发现内网，准备上传工具")
+            return "upload_tools"
+
+        # 步骤2: 搭建隧道
+        if tunnel_status != "configured":
+            print(f"🌐 [PostExploitRoute] 工具就绪，准备搭建隧道")
+            return "setup_tunnel"
+
+        # 步骤3: 开始内网侦察
+        print(f"🌐 [PostExploitRoute] 隧道就绪，进入内网侦察")
+        return "internal_recon"
 
     # 如果只是Web shell，继续Web攻击流程
     if post_exploit_status == "web_only":

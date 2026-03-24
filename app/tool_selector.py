@@ -127,7 +127,7 @@ class ToolSelector:
 
     def get_recommended_tools(self, vuln_type: str, context: str = "") -> List[str]:
         """
-        简化的工具推荐接口
+        简化的工具推荐接口 - AI驱动增强版
 
         Args:
             vuln_type: 漏洞类型（如 "sql注入", "SSTI", "反序列化"）
@@ -571,3 +571,201 @@ def aggregate_scan_results(results: Dict[str, Dict]) -> Dict:
         "failed_tools": failed_tools,
         "vulnerable": len(all_vulns) > 0
     }
+
+
+# ============================================================================
+# AI驱动的智能工具选择
+# ============================================================================
+
+def ai_select_tools(vuln_info: Dict, context: Dict = None,
+                    attack_history: List[Dict] = None) -> List[str]:
+    """
+    AI驱动的工具选择 - 根据漏洞特征和上下文动态选择最优工具
+
+    Args:
+        vuln_info: 漏洞信息 {"type": "sql", "location": "...", ...}
+        context: 上下文信息 {"tech_stack": ["php"], "db_type": "mysql", ...}
+        attack_history: 历史攻击记录
+
+    Returns:
+        推荐工具列表
+    """
+    try:
+        from llm_client import llm_client
+        from config import config
+        import json
+
+        # 构建压缩的上下文
+        history_summary = ""
+        if attack_history:
+            failed_tools = [h.get("tool") for h in attack_history[-10:] if not h.get("success")]
+            success_tools = [h.get("tool") for h in attack_history[-10:] if h.get("success")]
+            if failed_tools or success_tools:
+                history_summary = f"历史: 成功={set(success_tools)}, 失败={set(failed_tools)}"
+
+        prompt = f"""
+分析漏洞特征，选择最优攻击工具。
+
+## 漏洞信息
+{json.dumps(vuln_info, ensure_ascii=False, indent=2)[:500]}
+
+## 环境
+{json.dumps(context, ensure_ascii=False)[:300] if context else '未知'}
+
+{history_summary}
+
+## 可用工具
+- sqlmap: SQL注入自动化
+- fenjing: Jinja2 SSTI专用
+- nuclei: CVE模板扫描
+- xray: 被动漏洞扫描
+- fscan: 内网综合扫描
+- ysoserial: Java反序列化
+- phpggc: PHP反序列化
+- jwt-tool: JWT攻击
+- requests: 手动HTTP请求
+- python-exec: 自定义脚本执行
+
+## 要求
+1. 选择2-3个最合适的工具（按优先级排序）
+2. 考虑历史成功/失败记录
+3. 避免选择已失败多次的工具
+
+## 输出格式 (JSON)
+{{
+    "tools": ["工具1", "工具2"],
+    "reasoning": "选择理由",
+    "params_suggestion": {{"工具名": {{"param": "value"}}}}
+}}
+"""
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
+
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+
+        result = json.loads(response.strip())
+        tools = result.get("tools", ["requests", "python-exec"])
+        print(f"[AI工具选择] 选择: {tools} - {result.get('reasoning', '')}")
+        return tools
+
+    except Exception as e:
+        print(f"[AI工具选择] 降级到规则选择: {e}")
+        # 降级到规则选择
+        return tool_selector.get_recommended_tools(
+            vuln_info.get("type", ""),
+            str(context) if context else ""
+        )
+
+
+def ai_generate_exploit_strategy(vuln_info: Dict, binary_info: Dict = None) -> Dict:
+    """
+    AI生成exploit策略 - 用于Pwn模块
+
+    Args:
+        vuln_info: 漏洞信息
+        binary_info: 二进制信息（Pwn场景）
+
+    Returns:
+        exploit策略和命令
+    """
+    try:
+        from llm_client import llm_client
+        from config import config
+        import json
+
+        prompt = f"""
+分析漏洞，生成exploit攻击策略。
+
+## 漏洞信息
+{json.dumps(vuln_info, ensure_ascii=False, indent=2)}
+
+## 二进制信息
+{json.dumps(binary_info, ensure_ascii=False, indent=2)[:500] if binary_info else '无'}
+
+## 要求
+1. 分析漏洞利用条件
+2. 生成具体的exploit命令或payload
+3. 考虑保护机制的绕过
+
+## 输出格式 (JSON)
+{{
+    "exploit_method": "方法名",
+    "commands": ["执行的命令列表"],
+    "payload": "payload内容",
+    "notes": "注意事项"
+}}
+"""
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
+
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+
+        return json.loads(response.strip())
+
+    except Exception as e:
+        print(f"[AI Exploit生成] 失败: {e}")
+        return {"exploit_method": "manual", "commands": [], "error": str(e)}
+
+
+def ai_decide_decryption(ciphertext: str, analysis: Dict) -> Dict:
+    """
+    AI决策解密策略 - 用于Crypto模块
+
+    Args:
+        ciphertext: 密文
+        analysis: 初步分析结果
+
+    Returns:
+        解密策略
+    """
+    try:
+        from llm_client import llm_client
+        from config import config
+        import json
+
+        prompt = f"""
+分析密文，决策解密策略。
+
+## 密文
+{ciphertext[:200]}
+
+## 初步分析
+{json.dumps(analysis, ensure_ascii=False)}
+
+## 要求
+1. 判断最可能的加密/编码类型
+2. 给出解密命令或方法
+3. 如果需要密钥，说明可能的密钥来源
+
+## 输出格式 (JSON)
+{{
+    "encryption_type": "类型",
+    "decryption_method": "方法",
+    "commands": ["python代码或命令"],
+    "key_hint": "密钥提示"
+}}
+"""
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
+
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+
+        return json.loads(response.strip())
+
+    except Exception as e:
+        return {"decryption_method": "auto", "error": str(e)}

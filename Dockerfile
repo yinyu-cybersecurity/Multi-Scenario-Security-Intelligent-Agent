@@ -12,7 +12,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN sed -i 's@archive.ubuntu.com@mirrors.aliyun.com@g' /etc/apt/sources.list && \
     sed -i 's@security.ubuntu.com@mirrors.aliyun.com@g' /etc/apt/sources.list && \
     apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 python3.11-venv python3-pip \
+    python3.11 python3.11-venv python3-pip python3.10-venv \
     git curl wget unzip \
     nmap openjdk-17-jdk maven \
     ruby php-cli libssl-dev libssh-dev \

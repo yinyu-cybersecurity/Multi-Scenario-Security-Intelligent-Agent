@@ -1,54 +1,83 @@
-# ctf_agent
+# CTF-Agent
 
-腾讯云黑客松智能渗透挑战赛 - 基于 LangGraph 的 CTF 自动化解题系统
+基于 LangGraph 的智能 CTF 自动化解题系统 - 支持六大方向，AI驱动全流程
 
 ---
 
 ## 项目简介
 
-CTF-Agent 是一个智能化的渗透测试代理，能够自主完成从信息侦察到漏洞利用的全流程。系统通过 LLM 驱动多兵种节点协同工作，支持 Web 安全、内网渗透、密码学、逆向、Pwn、Misc 六大方向。
+CTF-Agent 是一个智能化的渗透测试代理，能够自主完成从信息侦察到漏洞利用的全流程。系统通过 LLM 驱动多兵种节点协同工作，支持 **Web 安全、内网渗透、密码学、逆向、Pwn、Misc** 六大方向。
 
-### 核心能力
+### 核心特性
 
-- **自动场景识别**: 6种CTF方向自动切换
-- **33个安全工具**: SQL注入、SSTI、XXE、CVE利用、内网渗透全覆盖
-- **四大赛区支持**: SRC场景、CVE/Cloud/AI、多层网络/OA、AD域渗透
-- **三层记忆系统**: 工作记忆 + 文件记忆 + RAG知识检索
-- **自纠错机制**: 自动检测并恢复执行错误
+#### 🤖 AI驱动全流程
+- **Web CTF**: 侦察 → 分析 → 攻击 → 验证 → 进化
+- **内网渗透**: 后渗透 → 工具上传 → 隧道搭建 → 横向移动 → 权限提升
+- **动态决策**: 所有决策节点由AI驱动，避免硬编码
 
-### 技术栈
+#### 🛡️ 六大CTF方向
+| 方向 | 节点 | AI决策函数 |
+|------|------|-----------|
+| Web | analyst, attacker, verifier | `get_analyst_prompt()`, `get_attacker_prompt()` |
+| Internal Network | internal_recon, lateral_move, privilege_escalation | `_ai_decide_scan_strategy()`, `_ai_decide_lateral_strategy()` |
+| Crypto | crypto_analyst, crypto_solver | `_ai_decide_decrypt_strategy()` |
+| Pwn | pwn_analyst, pwn_exploiter | `_ai_decide_exploit_strategy()` |
+| Reverse | reverse_analyst, reverse_decompiler | `_llm_reverse_analysis()` |
+| Misc | misc_analyst, misc_extractor | `_llm_misc_analysis()` |
 
-- **框架**: LangGraph StateGraph
-- **LLM**: DeepSeek / OpenAI 兼容 API
-- **向量库**: ChromaDB + Sentence Transformers
-- **容器**: Docker + Docker Compose
+#### 🔧 33+ 安全工具
+- **注入工具**: sqlmap, fenjing (SSTI)
+- **漏洞扫描**: nuclei, xray, fscan
+- **反序列化**: ysoserial, phpggc, pickle-pwn
+- **内网渗透**: impacket, crackmapexec, mimikatz
+- **隧道代理**: frp, chisel
 
 ---
 
 ## Quick Start
 
-### 1. 配置
+### 1. 环境要求
+- Python 3.10+
+- Docker (可选)
+
+### 2. 配置
 ```bash
 cp config.yaml.example config.yaml
-# 编辑 config.yaml 填入 API Key
 ```
 
-### 2. 构建并启动
+编辑 `config.yaml`:
+```yaml
+# LLM 配置
+LLM_API_KEY: "your-api-key"
+LLM_BASE_URL: "https://api.deepseek.com/v1"
+ANALYST_MODEL: "deepseek-chat"
+
+# VPS配置 (内网渗透需要)
+LOCAL_PUBLIC_IP: "your-vps-ip"
+HTTP_SERVER_PORT: 8000
+FRP_SERVER_PORT: 7000
+FRP_SOCKS5_PORT: 10800
+```
+
+### 3. Docker 部署
 ```bash
 docker-compose build
 docker-compose up -d
-```
 
-### 3. 运行测试
-```bash
 # 进入容器
 docker exec -it ctf-agent bash
 
 # 系统自检
-python /app/ctf_agent_graph.py --skip
+python /app/self_check.py
 
 # 运行任务
 python /app/ctf_agent_graph.py --target http://目标地址
+```
+
+### 4. 本地运行
+```bash
+pip install -r requirements.txt
+python app/ctf_agent_graph.py --target http://目标地址
 ```
 
 ---
@@ -56,22 +85,31 @@ python /app/ctf_agent_graph.py --target http://目标地址
 ## 目录结构
 
 ```
-├── app/                    # 核心代码
-│   ├── ctf_agent_graph.py  # 主程序入口
-│   ├── state.py            # 状态定义
-│   ├── router.py           # 路由逻辑
-│   ├── llm_client.py       # LLM客户端
-│   ├── config.py           # 配置加载
-│   └── topology/           # 拓扑分析
-├── tools/                  # 33个安全工具
-├── internal_network/       # 内网渗透模块
-├── crypto/                 # 密码学模块
-├── pwn/                    # Pwn模块
-├── reverse/                # 逆向模块
-├── misc/                   # Misc模块
-├── memory/                 # 记忆系统
-├── rag_builder/            # RAG知识检索
-├── docs/                   # 文档
+deploy/
+├── app/                        # 核心代码
+│   ├── ctf_agent_graph.py      # 主程序入口 & 图定义
+│   ├── state.py                # CTFState 状态定义
+│   ├── router.py               # 节点路由逻辑
+│   ├── llm_client.py           # LLM 客户端
+│   ├── config.py               # 配置加载
+│   ├── tool_selector.py        # AI驱动工具选择
+│   ├── analyst_prompt.py       # 分析兵提示词
+│   ├── attacker_prompt.py      # 攻击兵提示词
+│   ├── verifier_prompt.py      # 核验兵提示词
+│   ├── innovator_agent.py      # 头脑风暴节点
+│   ├── evolution.py            # 进化闭环
+│   └── topology/               # 拓扑分析
+├── tools/                      # 33个安全工具
+├── internal_network/           # 内网渗透模块
+│   ├── nodes.py                # 内网节点实现
+│   └── post_exploit.py         # 后渗透处理
+├── crypto/                     # 密码学模块
+├── pwn/                        # Pwn模块
+├── reverse/                    # 逆向模块
+├── misc/                       # Misc模块
+├── remote_executor/            # 远程执行模块
+├── rag_builder/                # RAG知识检索
+├── config.yaml.example         # 配置模板
 ├── Dockerfile
 ├── docker-compose.yml
 └── requirements.txt
@@ -79,63 +117,157 @@ python /app/ctf_agent_graph.py --target http://目标地址
 
 ---
 
-## Docker 使用说明
+## 工作流程
 
-### 构建镜像
-```bash
-docker-compose build
+### Web CTF 流程
+```
+目标URL
+    │
+    ▼
+[侦察兵] ──HTTP探测──→ [分析兵] ──漏洞识别──→ [攻击兵]
+    │                      │                     │
+    ▼                      ▼                     ▼
+ page_features        vuln_candidates       attack_batch
+                                                    │
+                                                    ▼
+                                              [核验兵]
+                                                    │
+                                    ┌───────────────┼───────────────┐
+                                    ▼               ▼               ▼
+                              [继续攻击]       [探索模式]      [创新模式]
 ```
 
-### 启动容器
-```bash
-docker-compose up -d
+### 内网渗透流程
 ```
-
-### 进入容器
-```bash
-docker exec -it ctf-agent bash
-```
-
-### 查看日志
-```bash
-docker logs -f ctf-agent
-```
-
-### 停止容器
-```bash
-docker-compose down
+获取Shell
+    │
+    ▼
+[后渗透检测] ──发现内网──→ [工具上传] ──→ [隧道搭建]
+    │                                          │
+    ▼                                          ▼
+internal_network_range                    SOCKS5代理
+                                              │
+                                              ▼
+                                        [内网侦察]
+                                              │
+                                    ┌─────────┼─────────┐
+                                    ▼         ▼         ▼
+                              [凭据收集] [横向移动] [权限提升]
 ```
 
 ---
 
 ## 配置说明
 
-编辑 `config.yaml`：
-
+### 完整配置示例
 ```yaml
-# LLM 配置
-LLM_API_KEY: "your-api-key"
+# LLM配置
+LLM_API_KEY: "sk-xxx"
 LLM_BASE_URL: "https://api.deepseek.com/v1"
 
-# 模型配置
+# 模型选择
 ANALYST_MODEL: "deepseek-chat"
 ATTACKER_MODEL: "deepseek-chat"
+INNOVATOR_MODEL: "deepseek-chat"
 
 # 系统控制
 MAX_TOTAL_ROUNDS: 60
-HITL_FAILURE_SCORE: 15.0
+FAILURE_SCORE_FOR_EXPLORE: 3.0
+FAILURE_SCORE_FOR_INNOVATE: 8.0
+NODE_TIMEOUT: 3000  # 50分钟
+
+# VPS配置 (内网渗透必需)
+LOCAL_PUBLIC_IP: "x.x.x.x"
+HTTP_SERVER_PORT: 8000
+FRP_SERVER_PORT: 7000
+FRP_SOCKS5_PORT: 10800
+
+# 工具目录
+TOOLS_DIR: "/opt/tools"
 ```
 
 ---
 
-## 文档
+## AI决策节点
 
-- [项目路线图](docs/ROADMAP.md)
-- [贡献指南](docs/CONTRIBUTING.md)
-- [测试计划](docs/TEST_PLAN.md)
+### 工具选择 (AI驱动)
+```python
+from tool_selector import ai_select_tools
+
+tools = ai_select_tools(
+    vuln_info={"type": "sql注入", "location": "param:id"},
+    context={"tech_stack": ["php"], "db_type": "mysql"},
+    attack_history=[{"tool": "sqlmap", "success": False}]
+)
+# 返回: ["sqlmap", "requests"]
+```
+
+### 内网渗透决策
+```python
+# AI决策扫描策略
+scan_strategy = _ai_decide_scan_strategy(state, network_range)
+# 返回: {"strategy": "quick", "ports": "1-1000"}
+
+# AI决策横向移动
+lateral_strategy = _ai_decide_lateral_strategy(target, target_host, credentials)
+# 返回: {"method": "psexec", "credential_index": 0}
+```
 
 ---
 
-## License
+## 安全注意事项
+
+1. **API Key 保护**: 不要将 `config.yaml` 上传到公开仓库
+2. **攻击结果**: 攻击结果可能包含敏感信息，已添加到 `.gitignore`
+3. **授权使用**: 仅在授权的 CTF 环境中使用
+
+---
+
+## 开发指南
+
+### 添加新工具
+```python
+# tools/my_tool.py
+from tool_framework import CommandLineTool
+
+class MyTool(CommandLineTool):
+    def name(self) -> str:
+        return "my-tool"
+
+    def description(self) -> str:
+        return "My custom security tool"
+
+    def get_command(self, target: str, params: dict) -> str:
+        return f"my-tool -t {target}"
+
+# 注册工具
+ToolRegistry.register(MyTool())
+```
+
+### 添加新节点
+```python
+# 在 ctf_agent_graph.py 中
+def my_custom_node(state: CTFState) -> Dict:
+    # AI决策
+    decision = _ai_my_decision(state)
+    # 执行操作
+    result = _execute_operation(decision)
+    return {"custom_result": result}
+
+# 添加到图
+workflow.add_node("my_custom", my_custom_node)
+```
+
+---
+
+## 许可证
 
 MIT License
+
+---
+
+## 致谢
+
+- LangGraph 框架
+- DeepSeek / OpenAI API
+- 各开源安全工具

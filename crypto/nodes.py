@@ -115,7 +115,7 @@ def crypto_analyst_node(state: Dict) -> Dict:
 
 def crypto_solver_node(state: Dict) -> Dict:
     """
-    [Crypto求解节点] 尝试解密和破解
+    [Crypto求解节点] AI驱动的解密和破解
 
     输入:
         - crypto_analysis: 分析结果
@@ -126,11 +126,11 @@ def crypto_solver_node(state: Dict) -> Dict:
         - potential_flags: 潜在的flag
 
     工作流程:
-        1. 根据分析结果选择解密方法
-        2. 尝试自动解密
+        1. AI决策解密策略
+        2. 执行AI生成的解密命令
         3. 验证解密结果
     """
-    print("[CryptoSolver] Attempting to decrypt...")
+    print("[CryptoSolver] AI driving decryption...")
 
     crypto_analysis = state.get("crypto_analysis", {})
     if crypto_analysis.get("status") != "analyzed":
@@ -153,35 +153,59 @@ def crypto_solver_node(state: Dict) -> Dict:
         ciphertext = item.get("ciphertext", "").replace("...", "")
         types = item.get("possible_types", [])
 
-        for type_info in types:
-            enc_type = type_info.get("type", "")
-            confidence = type_info.get("confidence", 0)
+        # AI决策解密策略
+        decrypt_strategy = _ai_decide_decrypt_strategy(ciphertext, types, state)
 
-            # 只尝试高置信度的类型
-            if confidence < 50:
-                continue
+        print(f"[CryptoSolver] AI策略: {decrypt_strategy.get('encryption_type')}")
 
-            result = _attempt_decrypt(ciphertext, enc_type)
+        ai_success = False
 
-            if result.get("success"):
-                plaintext = result.get("plaintext", "")
-                decrypted_results.append({
-                    "ciphertext": ciphertext[:50],
-                    "type": enc_type,
-                    "plaintext": plaintext,
-                    "confidence": confidence
-                })
+        # 执行AI生成的解密命令
+        if decrypt_strategy.get("commands"):
+            for cmd in decrypt_strategy.get("commands", []):
+                try:
+                    # 执行Python代码
+                    if cmd.startswith("import") or cmd.startswith("from") or cmd.startswith("result"):
+                        exec_result = _execute_python_code(cmd)
+                        if exec_result.get("success"):
+                            plaintext = exec_result.get("result", "")
+                            if plaintext and len(plaintext) > 0:
+                                decrypted_results.append({
+                                    "ciphertext": ciphertext[:50],
+                                    "type": decrypt_strategy.get("encryption_type"),
+                                    "plaintext": plaintext,
+                                    "method": "ai_generated"
+                                })
+                                ai_success = True
+                                if _contains_flag(plaintext):
+                                    potential_flags.append(plaintext)
+                                break
+                except Exception as e:
+                    print(f"[CryptoSolver] 执行失败: {e}")
 
-                # 检查是否包含flag
-                if _contains_flag(plaintext):
-                    potential_flags.append(plaintext)
+        # 如果AI解密失败，尝试规则方法
+        if not ai_success:
+            for type_info in types:
+                confidence = type_info.get("confidence", 0)
+                if confidence < 50:
+                    continue
 
-                break  # 成功解密，跳过其他类型
+                result = _attempt_decrypt(ciphertext, type_info.get("type", ""))
+                if result.get("success"):
+                    plaintext = result.get("plaintext", "")
+                    decrypted_results.append({
+                        "ciphertext": ciphertext[:50],
+                        "type": type_info.get("type"),
+                        "plaintext": plaintext,
+                        "confidence": confidence
+                    })
+                    if _contains_flag(plaintext):
+                        potential_flags.append(plaintext)
+                    break
 
-    # 尝试古典密码
+    # 尝试古典密码暴力破解
     identified_ciphertexts = state.get("identified_ciphertexts", [])
     for ct in identified_ciphertexts[:3]:
-        # 尝试凯撒密码
         caesar_results = ClassicalCipherSolver.caesar_bruteforce(ct)
         for r in caesar_results[:3]:
             if r.get("likely"):
@@ -195,20 +219,6 @@ def crypto_solver_node(state: Dict) -> Dict:
                 if _contains_flag(r["plaintext"]):
                     potential_flags.append(r["plaintext"])
 
-        # 尝试XOR
-        xor_results = ClassicalCipherSolver.xor_bruteforce(ct, key_length=1)
-        for r in xor_results[:3]:
-            if r.get("score", 0) > 50:
-                decrypted_results.append({
-                    "ciphertext": ct[:50],
-                    "type": "xor",
-                    "key": r["key"],
-                    "plaintext": r["plaintext"],
-                    "method": "bruteforce"
-                })
-                if _contains_flag(r["plaintext"]):
-                    potential_flags.append(r["plaintext"])
-
     print(f"[CryptoSolver] Decrypted {len(decrypted_results)} items, found {len(potential_flags)} potential flags")
 
     return {
@@ -216,6 +226,70 @@ def crypto_solver_node(state: Dict) -> Dict:
         "potential_flags": potential_flags,
         "execution_steps": state.get("execution_steps", 0) + 1
     }
+
+
+def _ai_decide_decrypt_strategy(ciphertext: str, possible_types: List[Dict], state: Dict) -> Dict:
+    """
+    AI决策解密策略
+
+    分析密文特征，动态选择解密方法
+    """
+    prompt = f"""
+分析密文，决策最佳解密策略。
+
+## 密文
+{ciphertext[:200]}
+
+## 可能的类型
+{json.dumps(possible_types, ensure_ascii=False)}
+
+## 已知事实
+{state.get("known_facts", "无")}
+
+## 要求
+1. 判断最可能的加密/编码类型
+2. 生成具体的解密Python代码
+3. 考虑多种可能
+
+## 输出格式 (JSON)
+{{
+    "encryption_type": "最可能的类型",
+    "confidence": 0.85,
+    "commands": ["python解密代码"],
+    "reasoning": "判断依据"
+}}
+"""
+
+    try:
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
+
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+
+        result = json.loads(response.strip())
+        return result
+
+    except Exception as e:
+        print(f"[AI解密决策] 失败: {e}")
+        return {"encryption_type": "unknown", "commands": []}
+
+
+def _execute_python_code(code: str) -> Dict:
+    """执行Python代码并返回结果"""
+    try:
+        local_vars = {}
+        exec(code, {"__builtins__": __builtins__}, local_vars)
+        # 查找result变量
+        if "result" in local_vars:
+            return {"success": True, "result": str(local_vars["result"])}
+        return {"success": True, "result": "执行成功，但未找到result变量"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 def _looks_like_ciphertext(text: str) -> bool:

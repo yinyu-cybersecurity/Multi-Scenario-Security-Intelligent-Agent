@@ -135,7 +135,7 @@ def pwn_analyst_node(state: Dict) -> Dict:
 
 def pwn_exploiter_node(state: Dict) -> Dict:
     """
-    [Pwn利用节点] 构建并执行exploit
+    [Pwn利用节点] 构建并执行exploit - AI驱动
 
     输入:
         - binary_info: 二进制信息
@@ -147,11 +147,11 @@ def pwn_exploiter_node(state: Dict) -> Dict:
 
     工作流程:
         1. 选择目标漏洞
-        2. 构建ROP链或shellcode
-        3. 生成exploit脚本
+        2. AI生成exploit策略
+        3. AI生成exploit脚本
         4. 尝试执行
     """
-    print("[PwnExploiter] Building exploit...")
+    print("[PwnExploiter] Building exploit with AI...")
 
     binary_info_dict = state.get("binary_info", {})
     vulnerabilities = state.get("vulnerabilities", [])
@@ -170,45 +170,27 @@ def pwn_exploiter_node(state: Dict) -> Dict:
     arch = binary_info_dict.get("arch", "x64")
     protections = binary_info_dict.get("protections", {})
 
-    exploit_info = {}
+    # AI决策exploit策略
+    exploit_strategy = _ai_decide_exploit_strategy(binary_info_dict, target_vuln, state)
 
-    # 根据漏洞类型和保护状态选择策略
-    if vuln_type == "buffer_overflow":
-        exploit_info = _build_buffer_overflow_exploit(
-            binary_info_dict, target_vuln, protections
-        )
+    print(f"[PwnExploiter] AI策略: {exploit_strategy.get('exploit_method', 'unknown')}")
 
-    elif vuln_type == "format_string":
-        exploit_info = _build_format_string_exploit(
-            binary_info_dict, target_vuln
-        )
+    # AI生成exploit脚本
+    if exploit_strategy.get("exploit_method") != "manual_required":
+        script = _ai_generate_exploit_script(binary_info_dict, target_vuln, exploit_strategy)
 
-    elif vuln_type == "heap_overflow":
-        exploit_info = _build_heap_exploit(binary_info_dict, target_vuln)
-
-    else:
-        exploit_info = {
-            "status": "manual_required",
-            "vuln_type": vuln_type,
-            "suggestion": "Manual exploit development required"
-        }
-
-    # 生成exploit脚本
-    if exploit_info.get("status") == "ready":
-        script = _generate_exploit_script(binary_info_dict, exploit_info)
-
-        print(f"[PwnExploiter] Exploit script generated ({len(script)} bytes)")
+        print(f"[PwnExploiter] AI生成脚本 ({len(script)} bytes)")
 
         return {
             "exploit_script": script,
-            "exploit_info": exploit_info,
+            "exploit_info": exploit_strategy,
             "execution_steps": state.get("execution_steps", 0) + 1
         }
 
-    print(f"[PwnExploiter] Exploit status: {exploit_info.get('status', 'unknown')}")
+    print(f"[PwnExploiter] 需要手动exploit: {exploit_strategy.get('reason', '')}")
 
     return {
-        "exploit_info": exploit_info,
+        "exploit_info": exploit_strategy,
         "execution_steps": state.get("execution_steps", 0) + 1
     }
 
@@ -453,3 +435,112 @@ Analyze this binary for exploitation opportunities.
 
     except Exception as e:
         return f"LLM analysis failed: {str(e)}"
+
+
+def _ai_decide_exploit_strategy(binary_info: Dict, vuln: Dict, state: Dict) -> Dict:
+    """
+    AI决策exploit策略
+
+    根据二进制信息和漏洞特征，动态生成exploit策略
+    """
+    arch = binary_info.get("arch", "x64")
+    protections = binary_info.get("protections", {})
+
+    prompt = f"""
+分析二进制漏洞，生成exploit策略。
+
+## 二进制信息
+- 架构: {arch}
+- 保护: {json.dumps(protections, ensure_ascii=False)}
+- 危险函数: {binary_info.get('dangerous_functions', [])}
+
+## 漏洞信息
+{json.dumps(vuln, ensure_ascii=False, indent=2)}
+
+## 要求
+1. 分析漏洞可利用性
+2. 选择最佳exploit方法
+3. 给出具体步骤
+
+## 输出格式 (JSON)
+{{
+    "exploit_method": "shellcode_injection/rop_chain/ret2libc/format_string/heap_exploit",
+    "status": "ready/blocked/manual_required",
+    "reason": "选择理由",
+    "steps": ["步骤1", "步骤2"],
+    "required_addresses": ["需要的地址"],
+    "payload_structure": "payload结构描述"
+}}
+"""
+
+    try:
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
+
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+
+        result = json.loads(response.strip())
+        print(f"[AI Exploit策略] {result.get('exploit_method')} - {result.get('reason', '')}")
+        return result
+
+    except Exception as e:
+        print(f"[AI Exploit策略] 失败: {e}")
+        # 降级到硬编码策略
+        if protections.get("Canary"):
+            return {"exploit_method": "blocked", "status": "blocked", "reason": "Stack canary enabled"}
+        return {"exploit_method": "rop_chain", "status": "ready", "reason": "降级默认"}
+
+
+def _ai_generate_exploit_script(binary_info: Dict, vuln: Dict, strategy: Dict) -> str:
+    """
+    AI生成exploit脚本
+
+    根据策略动态生成完整的exploit脚本
+    """
+    arch = binary_info.get("arch", "x64")
+    binary_path = binary_info.get("path", "./binary")
+    method = strategy.get("exploit_method", "unknown")
+
+    prompt = f"""
+生成PWN exploit脚本。
+
+## 信息
+- 二进制: {binary_path}
+- 架构: {arch}
+- 漏洞: {json.dumps(vuln, ensure_ascii=False)}
+- 策略: {json.dumps(strategy, ensure_ascii=False)}
+
+## 要求
+1. 生成完整的Python exploit脚本
+2. 使用pwntools库
+3. 包含必要的注释
+4. 考虑保护机制绕过
+
+## 输出
+只输出完整的Python脚本代码，不要其他解释。
+"""
+
+    try:
+        script = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1
+        ).strip()
+
+        # 移除可能的markdown标记
+        if script.startswith("```python"):
+            script = script.split("```python")[1].split("```")[0]
+        elif script.startswith("```"):
+            script = script.split("```")[1].split("```")[0]
+
+        return script.strip()
+
+    except Exception as e:
+        print(f"[AI脚本生成] 失败: {e}")
+        # 降级到模板
+        return _generate_exploit_script(binary_info, strategy)
