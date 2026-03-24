@@ -42,3 +42,6 @@ gmpy2>=2.1.0
 # Optional - Misc
 Pillow>=10.0.0
 python-magic>=0.4.27
+
+# MCP (Model Context Protocol)
+mcp>=1.0.0

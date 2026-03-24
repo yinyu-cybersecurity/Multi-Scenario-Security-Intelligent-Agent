@@ -38,11 +38,11 @@ def normalize_target_url(url_str: str) -> str:
     """
     if not url_str: return ""
     s = str(url_str).strip()
-    
+
     # 1. 暴力移除所有已知的干扰字符
     for char in ["`", "\\", "\n", "\r", "\t"]:
         s = s.replace(char, "")
-    
+
     # 2. 精准提取第一个 http(s) 链接
     # 排除空格、引号、括号、尖括号、中括号
     match = re.search(r'(https?://[^\s\'"<>\[\]\(\)]+)', s)
@@ -50,9 +50,104 @@ def normalize_target_url(url_str: str) -> str:
         clean_url = match.group(1)
         # 3. 剥离末尾可能残留的标点符号
         return clean_url.strip().rstrip(".").rstrip(",").rstrip("/")
-    
+
     # 4. 如果没找到协议头，尝试二次清理后返回
     return s.strip("'").strip('"').strip()
+
+def ensure_protocol_consistency(target_url: str, original_url: str) -> str:
+    """
+    确保目标URL与原始URL使用相同协议
+    防止LLM将https改成http
+    """
+    if not target_url or not original_url:
+        return target_url
+
+    original_is_https = original_url.lower().startswith("https://")
+
+    if original_is_https and target_url.lower().startswith("http://"):
+        # 将http改为https
+        target_url = "https://" + target_url[7:]
+        print(f"   ⚠️ 协议修正: http -> https")
+    elif not original_is_https and target_url.lower().startswith("https://"):
+        # 将https改为http
+        target_url = "http://" + target_url[8:]
+        print(f"   ⚠️ 协议修正: https -> http")
+
+    return target_url
+
+def normalize_url(url: str) -> str:
+    """
+    标准化URL：添加协议头、处理常见格式问题
+    """
+    if not url:
+        return ""
+
+    url = url.strip()
+
+    # 移除多余空白和特殊字符
+    for char in ["`", "\\", "\n", "\r", "\t"]:
+        url = url.replace(char, "")
+
+    # 如果没有协议头，添加http://
+    if not url.startswith(("http://", "https://")):
+        # 检查是否是IP或域名格式
+        if re.match(r'^[\w\.-]+(:\d+)?', url):
+            url = "http://" + url
+
+    # 移除末尾的标点符号
+    url = url.rstrip(".").rstrip(",").rstrip("/")
+
+    return url
+
+def extract_target_info(url: str) -> tuple:
+    """
+    从URL自动识别环境类型
+    返回: (task_name, task_description)
+
+    环境类型:
+    - CTF环境: 域名形式，CTF靶场题目
+    - 内网渗透: 内网IP段 (10.x, 172.16-31.x, 192.168.x)
+    - 外网打点: 公网IP形式，可访问
+    """
+    parsed = urlparse(url)
+    hostname = parsed.hostname or parsed.netloc.split(':')[0]
+    port = parsed.port or (443 if parsed.scheme == 'https' else 80)
+
+    # 判断是否为IP地址
+    is_ip = bool(re.match(r'^(\d{1,3}\.){3}\d{1,3}$', hostname))
+
+    if is_ip:
+        # 解析IP段
+        ip_parts = [int(x) for x in hostname.split('.')]
+        first_octet = ip_parts[0]
+        second_octet = ip_parts[1]
+
+        # 内网IP段判断
+        # 10.0.0.0/8
+        # 172.16.0.0/12 (172.16.x.x - 172.31.x.x)
+        # 192.168.0.0/16
+        is_internal = (
+            first_octet == 10 or
+            (first_octet == 172 and 16 <= second_octet <= 31) or
+            (first_octet == 192 and second_octet == 168)
+        )
+
+        if is_internal:
+            task_name = f"Internal-{hostname}:{port}"
+            task_description = "内网渗透环境 - 内网IP目标"
+        else:
+            task_name = f"External-{hostname}:{port}"
+            task_description = "外网打点环境 - 公网IP目标"
+    else:
+        # 域名形式，判定为CTF环境
+        domain_parts = hostname.split('.')
+        if len(domain_parts) >= 2:
+            task_name = domain_parts[0]
+        else:
+            task_name = hostname
+        task_description = "CTF靶场环境 - 域名目标"
+
+    return task_name, task_description
 
 # ctf_agent_graph.py
 from config import config
@@ -63,8 +158,8 @@ from verifier_prompt import get_verifier_prompt
 from attacker_prompt import get_attacker_prompt
 from topology import TopologyBuilder, TopologyAnalyzer, TopologyPruner
 from tool_framework import ToolRegistry, CTFTool
-# 假设用户已创建该模块
 from topology.page_diff import page_diff_manager
+from scene_detector import SceneDetector
 
 from evolution import evolution_node
 from strategy_filter import strategy_filter_node
@@ -648,13 +743,48 @@ def recon_node(state: CTFState) -> Dict:
         }
         print(f"   状态码: {resp.status_code}, 长度: {len(raw_html)}")
 
-        # 检测常见框架指纹
+        # 检测常见框架指纹 - 增强版
         server_header = resp.headers.get("Server", "").lower()
         x_powered_by = resp.headers.get("X-Powered-By", "").lower()
-        if "thinkphp" in raw_html.lower() or "thinkphp" in server_header or "thinkphp" in x_powered_by:
+        html_lower = raw_html.lower()
+
+        detected_frameworks = []
+
+        # Tomcat检测
+        if "tomcat" in server_header or "tomcat" in html_lower:
+            version_match = re.search(r'tomcat[/\s]*(\d+\.\d+\.\d+)', server_header + raw_html, re.I)
+            version = version_match.group(1) if version_match else "unknown"
+            detected_frameworks.append({"name": "Tomcat", "version": version})
+            print(f"   🔥 检测到 Apache Tomcat/{version}!")
+
+        # Spring检测
+        if "spring" in x_powered_by or "spring" in html_lower or "whitelabel error page" in html_lower:
+            detected_frameworks.append({"name": "Spring"})
+            print(f"   🔥 检测到 Spring 框架!")
+
+        # ThinkPHP检测
+        if "thinkphp" in html_lower or "thinkphp" in server_header or "thinkphp" in x_powered_by:
+            detected_frameworks.append({"name": "ThinkPHP"})
             print(f"   🔥 检测到 ThinkPHP 框架!")
-        if "laravel" in raw_html.lower() or "laravel" in x_powered_by:
+
+        # Laravel检测
+        if "laravel" in html_lower or "laravel" in x_powered_by:
+            detected_frameworks.append({"name": "Laravel"})
             print(f"   🔥 检测到 Laravel 框架!")
+
+        # WebLogic检测
+        if "weblogic" in server_header or "weblogic" in html_lower:
+            detected_frameworks.append({"name": "WebLogic"})
+            print(f"   🔥 检测到 WebLogic!")
+
+        # Shiro检测 (rememberMe cookie)
+        if "rememberme" in str(resp.cookies).lower() or "shiro" in html_lower:
+            detected_frameworks.append({"name": "Shiro"})
+            print(f"   🔥 检测到 Shiro 框架!")
+
+        # 存储检测到的框架，供后续使用
+        if detected_frameworks:
+            baseline["detected_frameworks"] = detected_frameworks
 
     except Exception as e:
         print(f"   ❌ 请求失败: {e}")
@@ -762,16 +892,81 @@ def recon_node(state: CTFState) -> Dict:
     page_history = state.get("page_history", {})
     page_diff_manager.save_page(http_url, raw_html.encode('utf-8'), page_history)
 
-    # 如果发现框架，记录到 analyst_intel
+    # 如果发现框架，记录到 analyst_intel 并自动触发CVE扫描
     framework = recon_data.get("framework", "")
     vuln_hints = recon_data.get("vuln_hints", [])
     analyst_intel_parts = []
-    if framework:
+
+    # 处理检测到的框架
+    detected_frameworks = baseline.get("detected_frameworks", [])
+    if detected_frameworks:
+        for fw in detected_frameworks:
+            fw_name = fw.get("name", "")
+            fw_version = fw.get("version", "")
+            analyst_intel_parts.append(f"[框架识别] {fw_name}" + (f"/{fw_version}" if fw_version else ""))
+
+            # 自动触发并行漏洞扫描 (nuclei + xray + fscan)
+            if fw_name in ["Tomcat", "Spring", "WebLogic", "Shiro", "ThinkPHP"]:
+                print(f"   🔬 自动触发 {fw_name} 并行CVE扫描...")
+
+                # 导入并行扫描函数
+                from tool_selector import run_parallel_vuln_scan, aggregate_scan_results
+
+                # 根据框架选择扫描工具组合
+                scan_tools = ["nuclei", "xray", "fscan"] if fw_name == "Tomcat" else ["nuclei", "xray"]
+
+                # 并行执行扫描
+                scan_results = run_parallel_vuln_scan(http_url, scan_tools, {
+                    "nuclei": {"tags": fw_name.lower(), "severity": "high"},
+                    "xray": {"mode": "webscan"},
+                    "fscan": {"mode": "web"}
+                })
+
+                # 聚合结果
+                agg_result = aggregate_scan_results(scan_results)
+
+                if agg_result["total_vulns"] > 0:
+                    analyst_intel_parts.append(f"[并行扫描发现] {agg_result['total_vulns']} 个漏洞! (工具: {', '.join(agg_result['successful_tools'])})")
+                    for v in agg_result["vulnerabilities"][:5]:
+                        vuln_hints.append(f"{v.get('cve_id', v.get('plugin', v.get('name', '?')))}: {v.get('severity', '?')} [by {v.get('detected_by', '?')}]")
+
+                # 同时保留单个工具的详细结果
+                nuclei_result = scan_results.get("nuclei", {})
+                if nuclei_result.get("result", {}).get("vulnerabilities"):
+                    vulns = nuclei_result["result"]["vulnerabilities"]
+                    analyst_intel_parts.append(f"[nuclei详情] {len(vulns)} 个CVE漏洞")
+
+    if framework and framework not in [fw.get("name") for fw in detected_frameworks]:
         analyst_intel_parts.append(f"[框架识别] {framework}")
     if fscan_findings:
         analyst_intel_parts.append(f"[fscan发现] {len(fscan_findings)} 个潜在漏洞点")
     if vuln_hints:
         analyst_intel_parts.append(f"[漏洞提示] {'; '.join(vuln_hints[:5])}")
+
+    # 场景检测
+    scene_detector = SceneDetector()
+    detected_scenes = scene_detector.detect(features, baseline, raw_html)
+
+    # 确定聚焦场景（优先级：检测到的框架 > LLM识别的框架 > None）
+    focused_scene = None
+    if detected_frameworks:
+        # 取第一个检测到的框架作为聚焦场景
+        fw = detected_frameworks[0]
+        fw_name = fw.get("name", "")
+        fw_version = fw.get("version", "")
+        focused_scene = f"{fw_name}/{fw_version}" if fw_version else fw_name
+    elif framework:
+        focused_scene = framework
+
+    # 如果识别到新场景，重置场景攻击计数
+    prev_focused_scene = state.get("focused_scene", "")
+    if focused_scene and focused_scene != prev_focused_scene:
+        print(f"   🎯 新的聚焦场景: {focused_scene}")
+        scene_attack_attempts = 0
+        scene_exhausted = False
+    else:
+        scene_attack_attempts = state.get("scene_attack_attempts", 0)
+        scene_exhausted = state.get("scene_exhausted", False)
 
     # 如果发生重定向，同时记录最终 URL
     visited_urls = [url]
@@ -789,7 +984,11 @@ def recon_node(state: CTFState) -> Dict:
         "scanned_ips": scanned_ips,
         "scanned_urls": scanned_urls,
         "execution_steps": state.get("execution_steps", 0) + 1,
-        "analyst_intel": "\n".join(analyst_intel_parts) if analyst_intel_parts else None
+        "analyst_intel": "\n".join(analyst_intel_parts) if analyst_intel_parts else None,
+        "detected_scenes": detected_scenes,
+        "focused_scene": focused_scene,
+        "scene_attack_attempts": scene_attack_attempts,
+        "scene_exhausted": scene_exhausted
     }
     log_node_data("recon", {"url": url}, res)
     return res
@@ -812,6 +1011,16 @@ def analyst_node(state: CTFState) -> Dict:
     # 规则引擎的初步结果（如果有）
     rule_candidates = state.get("vuln_candidates", [])
 
+    # 获取场景信息
+    detected_scenes = state.get("detected_scenes", {})
+
+    # 获取工具信息
+    tools_info = ToolRegistry.get_all_tools_info()
+
+    # 获取场景聚焦信息
+    focused_scene = state.get("focused_scene", "")
+    scene_exhausted = state.get("scene_exhausted", False)
+
     # 2. 构建 Prompt
     prompt = get_analyst_prompt(
         page_features,
@@ -819,7 +1028,11 @@ def analyst_node(state: CTFState) -> Dict:
         rule_candidates,
         task_name=task_name,
         task_description=task_description,
-        baseline_response=baseline_response  # 传递重定向信息
+        baseline_response=baseline_response,
+        detected_scenes=detected_scenes,
+        tools_info=tools_info,
+        focused_scene=focused_scene,
+        scene_tested=scene_exhausted
     )
     
     # 3. 调用 LLM
@@ -870,7 +1083,7 @@ def analyst_node(state: CTFState) -> Dict:
                 "confidence": float(cand.get("confidence", 0.5)),
                 "context": ctx,
                 "reason": cand.get("reason", ""), # 保留分析理由
-                "recommended_tools": ctx.get("recommended_tools", []),
+                "recommended_tools": cand.get("recommended_tools", ctx.get("recommended_tools", [])),
                 "url": current_url # [核心修复] 绑定当前 URL
             })
             
@@ -906,12 +1119,22 @@ def analyst_node(state: CTFState) -> Dict:
 
 def mode_manager_node(state: CTFState) -> Dict:
     """
-    模式决策器 - 简化版
+    模式决策器 - 增强版
+
+    核心逻辑：
+    1. 如果有明确的聚焦场景（如识别到 Tomcat），优先在该场景内深度挖掘
+    2. 只有当场景穷尽后，才切换到探索模式
+    3. 这样避免"漏扫没结果就放弃已知目标"的问题
     """
     score = state.get("failure_weighted_score", 0)
     steps = state.get("execution_steps", 0)
     current_url = state.get("current_url")
     node_status = state.get("node_attack_status", {})
+
+    # 获取场景聚焦信息
+    focused_scene = state.get("focused_scene", "")
+    scene_attack_attempts = state.get("scene_attack_attempts", 0)
+    scene_exhausted = state.get("scene_exhausted", False)
 
     # 0. 尊重上游设置的模式（如 HITL 返回的 end/explore）
     # 但 innovate 模式是"一次性"的，innovator 执行后应该重置
@@ -936,7 +1159,23 @@ def mode_manager_node(state: CTFState) -> Dict:
     if steps >= config.MAX_TOTAL_ROUNDS:
         return {"current_mode": "end"}
 
-    # 2. 检查是否需要创新模式（原HITL触发条件，改为自动进入innovate）
+    # 2. 场景聚焦判断 - 核心逻辑
+    # 如果有明确的聚焦场景，且未穷尽，继续在该场景内攻击
+    MAX_SCENE_ATTEMPTS = 5  # 每个场景最多尝试5种不同攻击方式
+
+    if focused_scene and not scene_exhausted:
+        if scene_attack_attempts < MAX_SCENE_ATTEMPTS:
+            print(f"🎯 聚焦场景 [{focused_scene}] 继续攻击 ({scene_attack_attempts}/{MAX_SCENE_ATTEMPTS})")
+            return {"current_mode": "exploit"}
+        else:
+            # 场景已穷尽
+            print(f"🔄 场景 [{focused_scene}] 已穷尽 {scene_attack_attempts} 次攻击，切换探索模式")
+            return {
+                "current_mode": "explore",
+                "scene_exhausted": True
+            }
+
+    # 3. 检查是否需要创新模式（原HITL触发条件，改为自动进入innovate）
     # [重要] 头脑风暴只在Web CTF模式下触发，内网渗透不触发
     internal_mode = state.get("internal_mode", False)
     if not internal_mode and (steps >= config.MAX_STEPS_BEFORE_HITL or score >= config.HITL_FAILURE_SCORE):
@@ -997,10 +1236,12 @@ def execute_single_attack(action: Dict, current_url: str, page_history: Dict) ->
             
         tool_name = action.get("tool", "unknown")
         params = action.get("params", {})
-        
+
         # [核心修复] 使用最佳实践规范化 URL，彻底解决反引号、转义符和废话干扰
         if isinstance(params, dict) and "url" in params:
             target = normalize_target_url(params["url"])
+            # [协议修正] 确保与原始URL协议一致
+            target = ensure_protocol_consistency(target, current_url)
             params["url"] = target
         else:
             # 如果工具未提供 URL，使用当前上下文 URL
@@ -1802,6 +2043,10 @@ def verifier_node(state: CTFState) -> Dict:
         # 攻击失败 - [P3合并] 处理节点决策
         print(f"   📉 攻击无效 (严重度: {failure_severity})")
 
+        # 更新场景攻击计数
+        scene_attack_attempts = state.get("scene_attack_attempts", 0) + 1
+        focused_scene = state.get("focused_scene", "")
+
         # 记录失败的payload
         failed_payloads = []
         for action in attack_batch:
@@ -1817,12 +2062,17 @@ def verifier_node(state: CTFState) -> Dict:
             print(f"   💡 分析: {failure_analysis[:100] if failure_analysis else 'N/A'}")
             print(f"   🎯 建议: {tactical_guidance[:100]}")
 
+        # 如果有聚焦场景，显示进度
+        if focused_scene:
+            print(f"   📍 场景 [{focused_scene}] 攻击尝试: {scene_attack_attempts}")
+
         result_dict = {
             "failure_weighted_score": state.get("failure_weighted_score", 0) + failure_severity,
             "execution_steps": state.get("execution_steps", 0) + 1,
             "node_attack_status": node_status,
             "vuln_candidates": candidates,
-            "latest_tactical_guidance": tactical_guidance
+            "latest_tactical_guidance": tactical_guidance,
+            "scene_attack_attempts": scene_attack_attempts
         }
         if failed_payloads:
             result_dict["failed_payloads"] = failed_payloads
@@ -2345,11 +2595,9 @@ def main():
     # 主循环：支持连续出题
     while True:
         try:
-            # 获取用户输入
-            print("\n📝 请输入目标靶机信息：")
-            task_name = input("   题目名称 (按回车跳过): ").strip() or "Unknown Task"
-            task_description = input("   题目描述 (按回车跳过): ").strip() or "No description provided."
-            target_url = input("   目标 URL (必填，输入 q 退出): ").strip()
+            # 获取用户输入 - 只需要URL
+            print("\n📝 请输入目标 URL (输入 q 退出):")
+            target_url = input("   URL: ").strip()
 
             # 退出检查
             if target_url.lower() == 'q':
@@ -2358,13 +2606,20 @@ def main():
 
             while not target_url:
                 print("   ❌ URL 不能为空！")
-                target_url = input("   目标 URL (输入 q 退出): ").strip()
+                target_url = input("   URL (输入 q 退出): ").strip()
                 if target_url.lower() == 'q':
                     print("\n👋 感谢使用，再见！")
                     return
 
+            # 自动识别URL并标准化
+            target_url = normalize_url(target_url)
+
+            # 自动提取环境信息
+            task_name, task_description = extract_target_info(target_url)
+
             print("\n" + "=" * 50)
             print(f"🎯 目标锁定: {task_name}")
+            print(f"📝 识别描述: {task_description}")
             print(f"🔗 URL: {target_url}")
             print("=" * 50)
 
@@ -2416,6 +2671,7 @@ def run_single_task(task_name: str, task_description: str, target_url: str) -> d
         "raw_html_snippet": "",
         "baseline_response": {},
         "page_history": {},
+        "detected_scenes": {},
 
         # 拓扑结构
         "site_topology": {},

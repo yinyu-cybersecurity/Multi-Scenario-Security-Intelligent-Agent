@@ -271,6 +271,7 @@ class CTFState(TypedDict):
     raw_html_snippet: str
     baseline_response: Dict[str, Any] # 初始页面基准（长度、时间、MD5）
     page_history: Dict[str, Dict[str, Any]] # 页面变更历史记录 {url: {last_file, last_md5, ...}}
+    detected_scenes: Dict[str, Any] # 场景检测结果（框架、输入向量、数据模式等）
 
   # --- 拓扑结构 ---
     site_topology: Annotated[Dict[str, List[str]], lambda x, y: {**x, **y}]
@@ -299,6 +300,11 @@ class CTFState(TypedDict):
     execution_steps: int
     current_mode: Literal['exploit', 'explore', 'innovate', 'end', 'hitl']
     node_attack_status: Dict[str, NodeAttackStatus]  # 节点攻击状态记录
+
+    # --- 场景聚焦 ---
+    focused_scene: str  # 当前聚焦的攻击场景（如 "Tomcat/9.0.97"），由侦察节点识别
+    scene_attack_attempts: int  # 该场景已尝试的攻击次数
+    scene_exhausted: bool  # 该场景是否已穷尽测试（尝试多种攻击面后仍失败）
 
     # --- 分级介入 ---
     hint_level: int

@@ -106,8 +106,12 @@ class Config:
     LOCAL_PUBLIC_IP: str = ""
 
     # HTTP文件服务器端口 (本机提供工具下载服务)
-    # 工具目录: data/tools/
+    # 工具目录: /opt/tools/ (镜像内置，HTTP服务器服务此目录)
     HTTP_SERVER_PORT: int = 8000
+
+    # 工具目录 (镜像内置路径)
+    TOOLS_DIR: str = "/opt/tools"
+    FRP_DIR: str = "/opt/frp"
 
     # 本机HTTP服务器地址 (自动生成，无需手动配置)
     # 格式: http://{LOCAL_PUBLIC_IP}:{HTTP_SERVER_PORT}

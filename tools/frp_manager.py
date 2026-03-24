@@ -28,8 +28,8 @@ class FRPManager(CommandLineTool):
     简化版代理方案：只用frp
     """
 
-    # frp二进制文件目录
-    FRP_DIR = Path("data/frp")
+    # frp二进制文件目录 (镜像内置)
+    FRP_DIR = Path("/opt/frp")
 
     # 默认VPS配置（需要用户修改）
     DEFAULT_VPS_IP = "YOUR_VPS_IP"
@@ -142,7 +142,7 @@ class FRPManager(CommandLineTool):
             return {
                 "error": f"frp文件不存在: {frp_binary}",
                 "success": False,
-                "hint": "请下载frp并放到 data/frp/ 目录",
+                "hint": "frp应在镜像中自动下载到/opt/frp/目录，请检查Dockerfile",
                 "download_url": "https://github.com/fatedier/frp/releases"
             }
 

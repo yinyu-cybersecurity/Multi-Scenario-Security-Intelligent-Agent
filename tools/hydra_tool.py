@@ -46,6 +46,9 @@ class HydraTool(CommandLineTool):
     def supported_vulns(self) -> list:
         return ["Password Brute Force", "Credential Stuffing", "Dictionary Attack"]
 
+    def capability_statement(self) -> str:
+        return "密码爆破工具。支持SSH/FTP/HTTP/MySQL等多种协议。适合：登录表单、开放服务端口、弱口令检测。"
+
     def check_available(self) -> bool:
         if self.executable:
             return True

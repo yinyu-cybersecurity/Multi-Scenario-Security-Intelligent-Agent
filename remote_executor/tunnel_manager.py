@@ -77,9 +77,9 @@ local_port = {local_port}
 """
 
     def __init__(self):
-        self.frp_dir = "data/frp"
+        self.frp_dir = "/opt/frp"  # 镜像内置的frp目录
         self.active_tunnels: Dict[str, TunnelStatus] = {}
-        self.tunnel_file = "data/tunnels.json"
+        self.tunnel_file = "data/tunnels.json"  # 持久化存储
         self._load_tunnels()
 
     def _load_tunnels(self):
@@ -217,7 +217,7 @@ local_port = {local_port}
             f"netstat -tlnp | grep {config.remote_port}",
             f"",
             f"# 3. 如需启动frps:",
-            f"cd data/frp && ./frps -c frps.ini &"
+            f"cd /opt/frp && ./frps -c frps.ini &"
         ]
 
         return result
@@ -402,7 +402,7 @@ def quick_setup_tunnel(local_ip: str, remote_port: int = 10800) -> Dict:
     }
 
 
-def start_local_frps(port: int = 7000, frp_dir: str = "data/frp") -> Optional[subprocess.Popen]:
+def start_local_frps(port: int = 7000, frp_dir: str = "/opt/frp") -> Optional[subprocess.Popen]:
     """
     启动本地frps服务
 
@@ -410,7 +410,7 @@ def start_local_frps(port: int = 7000, frp_dir: str = "data/frp") -> Optional[su
 
     Args:
         port: frps监听端口
-        frp_dir: frp目录
+        frp_dir: frp目录 (默认使用镜像内置目录)
 
     Returns:
         frps进程对象

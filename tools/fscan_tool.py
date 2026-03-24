@@ -78,6 +78,9 @@ class FscanTool(CommandLineTool):
             "Vulnerability Scan"
         ]
 
+    def capability_statement(self) -> str:
+        return "内网综合扫描工具。输入IP或网段，快速发现端口、服务、弱口令、未授权访问。适合：内网渗透、资产发现、权限维持后的横向移动。"
+
     def check_available(self) -> bool:
         """检查 fscan 是否可用"""
         if self.executable:
@@ -120,6 +123,12 @@ class FscanTool(CommandLineTool):
                 "required": False,
                 "default": "quick"
             },
+            "mode": {
+                "type": "str",
+                "description": "扫描模式: 'web'(Web扫描-URL模式), 'network'(网络扫描-IP模式)",
+                "required": False,
+                "default": "network"
+            },
             "brute": {
                 "type": "bool",
                 "description": "是否启用弱口令爆破",
@@ -142,16 +151,22 @@ class FscanTool(CommandLineTool):
         if not target:
             return {"error": "必须提供目标", "success": False}
 
-        # 验证目标格式
-        is_valid, error_msg = self._validate_target(target)
-        if not is_valid:
-            return {"error": f"目标验证失败: {error_msg}", "success": False}
-
         # 构建命令
         cmd = [self.executable or "fscan"]
 
-        # 目标
-        cmd.extend(["-h", target])
+        # 检测是否是URL格式
+        is_url = target.startswith("http://") or target.startswith("https://")
+
+        if is_url:
+            # URL扫描模式
+            cmd.extend(["-u", target])
+        else:
+            # IP/网段扫描模式
+            # 验证目标格式
+            is_valid, error_msg = self._validate_target(target)
+            if not is_valid:
+                return {"error": f"目标验证失败: {error_msg}", "success": False}
+            cmd.extend(["-h", target])
 
         # 端口
         scan_type = params.get("scan_type", "quick")
@@ -188,27 +203,38 @@ class FscanTool(CommandLineTool):
                     "command": ' '.join(cmd)
                 }
 
-            # 解析结果
-            hosts = self._parse_output(stdout + "\n" + stderr)
+            # 根据扫描模式解析结果
+            if is_url:
+                # Web扫描模式 - 解析Web扫描结果
+                vulns = self._parse_web_output(stdout + "\n" + stderr)
+                return {
+                    "success": True,
+                    "vulnerable": len(vulns) > 0,
+                    "target": target,
+                    "command": raw_result.get('command', ''),
+                    "vulnerabilities": vulns,
+                    "total_found": len(vulns),
+                    "raw_output": stdout[:5000] if len(stdout) > 5000 else stdout
+                }
+            else:
+                # 网络扫描模式
+                hosts = self._parse_output(stdout + "\n" + stderr)
+                analysis = self._analyze_results(hosts, target)
 
-            # AI分析
-            analysis = self._analyze_results(hosts, target)
+                has_vulnerabilities = len(analysis.get("vulnerabilities", [])) > 0
+                has_hosts = len(hosts) > 0
 
-            # [修复] 添加 vulnerable 字段到顶层
-            has_vulnerabilities = len(analysis.get("vulnerabilities", [])) > 0
-            has_hosts = len(hosts) > 0
-
-            return {
-                "success": True,
-                "vulnerable": has_vulnerabilities or has_hosts,  # 发现漏洞或主机即视为有发现
-                "target": target,
-                "command": raw_result.get('command', ''),
-                "hosts": hosts,
-                "summary": analysis.get("summary", ""),
-                "vulnerabilities": analysis.get("vulnerabilities", []),
-                "recommendations": analysis.get("recommendations", []),
-                "raw_output": stdout[:5000] if len(stdout) > 5000 else stdout
-            }
+                return {
+                    "success": True,
+                    "vulnerable": has_vulnerabilities or has_hosts,
+                    "target": target,
+                    "command": raw_result.get('command', ''),
+                    "hosts": hosts,
+                    "summary": analysis.get("summary", ""),
+                    "vulnerabilities": analysis.get("vulnerabilities", []),
+                    "recommendations": analysis.get("recommendations", []),
+                    "raw_output": stdout[:5000] if len(stdout) > 5000 else stdout
+                }
 
         except Exception as e:
             return {
@@ -336,6 +362,56 @@ class FscanTool(CommandLineTool):
                     })
 
         return list(hosts.values())
+
+    def _parse_web_output(self, output: str) -> List[Dict]:
+        """解析fscan Web扫描输出"""
+        vulnerabilities = []
+        lines = output.split('\n')
+
+        # Web扫描输出格式:
+        # [900ms] [*] 网站标题 https://example.com 状态码:200 长度:1234 标题:Apache Tomcat/9.0.97
+        # [+] https://example.com 存在漏洞
+
+        title_pattern = re.compile(r'网站标题\s+(\S+)\s+状态码:(\d+).*?标题:(.+)')
+        vuln_pattern = re.compile(r'\[\+\]\s*(.+)')
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            # 解析标题信息（指纹识别）
+            title_match = title_pattern.search(line)
+            if title_match:
+                url = title_match.group(1)
+                status = title_match.group(2)
+                title = title_match.group(3).strip()
+
+                # 检查标题中是否包含版本信息
+                version_match = re.search(r'(\w+)/([\d.]+)', title)
+                if version_match:
+                    vulnerabilities.append({
+                        "url": url,
+                        "type": "fingerprint",
+                        "name": version_match.group(1),
+                        "version": version_match.group(2),
+                        "severity": "info",
+                        "info": f"检测到 {title}"
+                    })
+                continue
+
+            # 解析漏洞信息
+            vuln_match = vuln_pattern.match(line)
+            if vuln_match:
+                vuln_info = vuln_match.group(1).strip()
+                vulnerabilities.append({
+                    "url": vuln_info.split()[0] if ' ' in vuln_info else vuln_info,
+                    "type": "vulnerability",
+                    "severity": "high",
+                    "info": vuln_info
+                })
+
+        return vulnerabilities
 
     def _analyze_results(self, hosts: List[Dict], target: str) -> Dict:
         """AI分析扫描结果"""

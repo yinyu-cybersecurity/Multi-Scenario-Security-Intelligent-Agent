@@ -9,7 +9,7 @@ HTTP服务器模块
 
 使用方式:
     from remote_executor.http_server import start_http_server
-    start_http_server(port=8000, directory="data/tools")
+    start_http_server(port=8000, directory="/opt/tools")
 """
 
 import os
@@ -26,7 +26,7 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 def start_http_server(
     port: int = 8000,
-    directory: str = "data/tools",
+    directory: str = "/opt/tools",
     daemon: bool = True
 ) -> Optional[threading.Thread]:
     """
@@ -34,15 +34,18 @@ def start_http_server(
 
     Args:
         port: 监听端口
-        directory: 服务目录
+        directory: 服务目录 (默认使用镜像内置的工具目录)
         daemon: 是否作为守护线程运行
 
     Returns:
         服务器线程对象
     """
     if not os.path.exists(directory):
+        print(f"[HTTPServer] 警告: 目录不存在 {directory}")
         os.makedirs(directory, exist_ok=True)
 
+    # 保存当前目录
+    original_dir = os.getcwd()
     os.chdir(directory)
 
     handler = http.server.SimpleHTTPRequestHandler
@@ -53,35 +56,41 @@ def start_http_server(
         server_thread.daemon = daemon
         server_thread.start()
 
+        # 恢复原目录
+        os.chdir(original_dir)
+
         print(f"[HTTPServer] 启动成功: http://0.0.0.0:{port}")
-        print(f"[HTTPServer] 服务目录: {os.path.abspath(directory)}")
+        print(f"[HTTPServer] 服务目录: {directory}")
 
         return server_thread
 
     except OSError as e:
+        os.chdir(original_dir)
         if "Address already in use" in str(e) or e.errno == 98:
             print(f"[HTTPServer] 端口 {port} 已被占用")
         else:
             print(f"[HTTPServer] 启动失败: {e}")
         return None
     except Exception as e:
+        os.chdir(original_dir)
         print(f"[HTTPServer] 启动失败: {e}")
         return None
 
 
 def check_tools_directory() -> dict:
     """
-    检查工具目录
+    检查工具目录 (镜像内置路径)
 
     Returns:
         各目录的工具列表
     """
     dirs = {
-        "tools": "data/tools",
-        "potato": "data/tools/potato",
-        "ad": "data/tools/ad",
-        "linux": "data/tools/linux",
-        "frp": "data/frp"
+        "tools": "/opt/tools",
+        "potato": "/opt/tools/potato",
+        "ad": "/opt/tools/ad",
+        "linux": "/opt/tools/linux",
+        "windows": "/opt/tools/windows",
+        "frp": "/opt/frp"
     }
 
     result = {}
@@ -89,7 +98,7 @@ def check_tools_directory() -> dict:
         if os.path.exists(path):
             files = os.listdir(path)
             result[name] = {
-                "path": os.path.abspath(path),
+                "path": path,
                 "files": files,
                 "count": len(files)
             }
@@ -105,17 +114,20 @@ def check_tools_directory() -> dict:
 
 
 def ensure_tools_directories():
-    """确保工具目录存在"""
+    """确保工具目录存在 (仅在本地开发时使用)"""
+    # 生产环境中，工具目录由Dockerfile创建
+    # 此函数仅用于本地开发或调试
     dirs = [
-        "data/tools",
-        "data/tools/potato",
-        "data/tools/ad",
-        "data/tools/linux",
-        "data/frp"
+        "/opt/tools",
+        "/opt/tools/potato",
+        "/opt/tools/ad",
+        "/opt/tools/linux",
+        "/opt/tools/windows",
+        "/opt/frp"
     ]
 
     for d in dirs:
         os.makedirs(d, exist_ok=True)
 
-    print(f"[HTTPServer] 创建工具目录: {len(dirs)} 个")
+    print(f"[HTTPServer] 确保工具目录存在: {len(dirs)} 个")
     return dirs

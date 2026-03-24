@@ -78,6 +78,11 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
 ## 攻击目标
 {json.dumps(vuln_candidates, ensure_ascii=False, indent=2)}
 
+**关键：优先使用每个候选点的recommended_tools！** 不要随意换工具。
+- 如果recommended_tools=["sqlmap"]，就用sqlmap
+- 如果recommended_tools=["requests"]，就用requests直接访问
+- 只有推荐工具失败时，才考虑替代方案
+
 ## 历史攻击
 {history_desc}
 {failed_desc}

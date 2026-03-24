@@ -66,6 +66,9 @@ class NucleiScanner(CommandLineTool):
             "WebLogic RCE", "Tomcat Ghostcat", "OA Vulnerabilities"
         ]
 
+    def capability_statement(self) -> str:
+        return "CVE漏洞扫描器。输入URL，自动扫描5000+已知漏洞模板。适合：已识别框架/中间件、疑似CVE目标、批量安全评估。可指定tags过滤扫描范围。"
+
     def check_available(self) -> bool:
         """检查nuclei是否可用"""
         if not self.executable:

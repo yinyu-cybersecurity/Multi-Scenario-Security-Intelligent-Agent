@@ -40,6 +40,9 @@ class PythonExecTool(CTFTool):
     def supported_vulns(self) -> list:
         return ["Data Processing", "Encoding", "Decoding", "Cryptography", "Calculation"]
 
+    def capability_statement(self) -> str:
+        return "Python脚本执行器。编写代码处理编码解码、加密解密、数据处理、正则提取。适合：发现编码数据、需要精确计算、写利用脚本。"
+
     def check_available(self) -> bool:
         return True  # Python 总是可用
 

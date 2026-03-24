@@ -159,16 +159,21 @@ class ToolSelector:
             "java反序列化": ["ysoserial", "marshalsec", "jndi-exploit"],
             "php反序列化": ["phpggc", "phar-gen"],
 
-            # CVE
-            "cve": ["nuclei", "cve-scanner"],
-            "log4j": ["jndi-exploit", "nuclei"],
-            "log4shell": ["jndi-exploit", "nuclei"],
-            "spring": ["nuclei", "cve-scanner"],
-            "shiro": ["nuclei", "ysoserial"],
-            "weblogic": ["nuclei", "ysoserial", "marshalsec"],
-            "fastjson": ["jndi-exploit", "nuclei"],
-            "tomcat": ["ajp-shooter", "nuclei"],
-            "ghostcat": ["ajp-shooter"],
+            # CVE - 并行扫描
+            "cve": ["nuclei", "xray", "fscan"],  # 多工具并行
+            "log4j": ["jndi-exploit", "nuclei", "xray"],
+            "log4shell": ["jndi-exploit", "nuclei", "xray"],
+            "spring": ["nuclei", "xray", "cve-scanner"],
+            "shiro": ["nuclei", "ysoserial", "xray"],
+            "weblogic": ["nuclei", "ysoserial", "marshalsec", "xray"],
+            "fastjson": ["jndi-exploit", "nuclei", "xray"],
+            "tomcat": ["ajp-shooter", "nuclei", "xray", "fscan"],  # 并行扫描
+            "ghostcat": ["ajp-shooter", "nuclei"],
+
+            # 综合漏洞扫描
+            "漏洞扫描": ["nuclei", "xray", "fscan"],
+            "安全评估": ["nuclei", "xray"],
+            "渗透测试": ["nuclei", "xray", "fscan"],
 
             # 云服务
             "云元数据": ["cloud-scanner", "ssrf-scanner"],
@@ -427,3 +432,142 @@ tool_selector = ToolSelector()
 def get_tool_selector() -> ToolSelector:
     """获取全局工具选择器实例"""
     return tool_selector
+
+
+# ============================================================================
+# 并行漏洞扫描工具组合
+# ============================================================================
+
+# 漏洞扫描工具组（按场景分类，用于并行调用）
+VULN_SCANNER_GROUPS = {
+    # 综合CVE扫描 - 三个工具并行
+    "cve_full": ["nuclei", "xray", "fscan"],
+
+    # 快速扫描 - 两个工具
+    "cve_quick": ["nuclei", "fscan"],
+
+    # Java/中间件漏洞
+    "java_middleware": ["nuclei", "xray"],
+
+    # Tomcat专项
+    "tomcat": ["nuclei", "xray", "fscan", "ajp-shooter"],
+
+    # OA系统
+    "oa": ["nuclei", "xray", "oa-exploiter"],
+
+    # 内网资产发现
+    "internal_scan": ["fscan", "nmap"],
+
+    # Web应用深度扫描
+    "web_deep": ["nuclei", "xray"],
+}
+
+
+def get_parallel_scanners(scene: str = "cve_full") -> List[str]:
+    """
+    获取并行扫描工具组合
+
+    Args:
+        scene: 场景名称，如 "cve_full", "tomcat", "web_deep"
+
+    Returns:
+        可用的扫描工具列表
+    """
+    from tool_framework import ToolRegistry
+
+    tools = VULN_SCANNER_GROUPS.get(scene, VULN_SCANNER_GROUPS["cve_full"])
+
+    # 过滤出实际可用的工具
+    available_tools = []
+    for tool_name in tools:
+        # 检查工具是否注册且可用
+        for vuln_type, tool_list in ToolRegistry._tools.items():
+            for tool in tool_list:
+                if tool.name() == tool_name and tool.check_available():
+                    if tool_name not in available_tools:
+                        available_tools.append(tool_name)
+                    break
+
+    return available_tools if available_tools else ["nuclei"]
+
+
+def run_parallel_vuln_scan(target: str, tools: List[str] = None,
+                           params: Dict = None) -> Dict[str, Dict]:
+    """
+    并行执行多个漏洞扫描工具
+
+    Args:
+        target: 目标URL
+        tools: 工具列表，默认使用 nuclei + xray
+        params: 每个工具的参数（可选）
+
+    Returns:
+        {tool_name: scan_result}
+    """
+    import concurrent.futures
+    from tool_framework import ToolRegistry
+
+    if tools is None:
+        tools = ["nuclei", "xray"]
+
+    if params is None:
+        params = {}
+
+    results = {}
+
+    def scan_with_tool(tool_name: str) -> tuple:
+        """单个工具扫描"""
+        tool_params = params.get(tool_name, {})
+        result = ToolRegistry.execute_cached(tool_name, target, tool_params)
+        return tool_name, result
+
+    # 并行执行
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {executor.submit(scan_with_tool, t): t for t in tools}
+
+        for future in concurrent.futures.as_completed(futures, timeout=600):
+            try:
+                tool_name, result = future.result(timeout=300)
+                results[tool_name] = result
+            except Exception as e:
+                tool_name = futures[future]
+                results[tool_name] = {"error": str(e), "success": False}
+
+    return results
+
+
+def aggregate_scan_results(results: Dict[str, Dict]) -> Dict:
+    """
+    聚合多个扫描工具的结果
+
+    Args:
+        results: {tool_name: scan_result}
+
+    Returns:
+        聚合后的结果，包含发现的漏洞总数和详情
+    """
+    all_vulns = []
+    successful_tools = []
+    failed_tools = []
+
+    for tool_name, result in results.items():
+        if result.get("error") or not result.get("result", {}).get("success"):
+            failed_tools.append(tool_name)
+            continue
+
+        successful_tools.append(tool_name)
+        tool_result = result.get("result", {})
+
+        # 提取漏洞
+        vulns = tool_result.get("vulnerabilities", [])
+        for vuln in vulns:
+            vuln["detected_by"] = tool_name
+            all_vulns.append(vuln)
+
+    return {
+        "total_vulns": len(all_vulns),
+        "vulnerabilities": all_vulns,
+        "successful_tools": successful_tools,
+        "failed_tools": failed_tools,
+        "vulnerable": len(all_vulns) > 0
+    }

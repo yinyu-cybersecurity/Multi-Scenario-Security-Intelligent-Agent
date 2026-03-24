@@ -276,34 +276,37 @@ class FileTransfer:
 # ==================== 工具目录管理 ====================
 
 def ensure_tools_directory():
-    """确保工具目录存在"""
-    tools_dirs = [
-        "data/tools/potato",
-        "data/tools/ad",
-        "data/tools/linux",
-        "data/frp"
+    """确保工具目录存在 (返回镜像内置路径)"""
+    # 工具在镜像中下载到 /opt/tools/，由Dockerfile管理
+    return [
+        "/opt/tools/potato",
+        "/opt/tools/ad",
+        "/opt/tools/linux",
+        "/opt/tools/windows",
+        "/opt/frp"
     ]
-
-    for d in tools_dirs:
-        os.makedirs(d, exist_ok=True)
-
-    return tools_dirs
 
 
 def list_available_tools() -> Dict[str, List[str]]:
-    """列出可用的工具"""
+    """列出可用的工具 (从镜像内置目录读取)"""
     tools = {
         "potato": [],
         "ad": [],
         "linux": [],
+        "windows": [],
         "frp": []
     }
 
-    base_dir = "data/tools"
-    for category in tools.keys():
+    base_dir = "/opt/tools"
+    for category in ["potato", "ad", "linux", "windows"]:
         category_dir = os.path.join(base_dir, category)
         if os.path.exists(category_dir):
             for f in os.listdir(category_dir):
                 tools[category].append(f)
+
+    # frp 目录
+    frp_dir = "/opt/frp"
+    if os.path.exists(frp_dir):
+        tools["frp"] = [f for f in os.listdir(frp_dir) if os.path.isfile(os.path.join(frp_dir, f))]
 
     return tools

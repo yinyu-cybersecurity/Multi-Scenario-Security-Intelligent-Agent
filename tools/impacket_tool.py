@@ -80,6 +80,9 @@ class ImpacketTool(CommandLineTool):
             "Pass the Hash"
         ]
 
+    def capability_statement(self) -> str:
+        return "Windows渗透工具集。支持SMB利用、Kerberos攻击、凭据导出、PTH攻击。适合：内网Windows环境、已获取凭据后的横向移动。"
+
     def check_available(self) -> bool:
         try:
             # 检查是否有可用的脚本

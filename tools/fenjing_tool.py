@@ -36,6 +36,9 @@ class FenjingTool(CommandLineTool):
     def supported_vulns(self) -> List[str]:
         return ["SSTI", "Jinja2 SSTI", "Template Injection", "SSTI WAF Bypass"]
 
+    def capability_statement(self) -> str:
+        return "Jinja2 SSTI自动化工具。自动生成绕过WAF的Payload。适合：Flask/Jinja2应用、模板渲染点、发现{{}}或类似模板语法。"
+
     def check_available(self) -> bool:
         return shutil.which("fenjing") is not None
 

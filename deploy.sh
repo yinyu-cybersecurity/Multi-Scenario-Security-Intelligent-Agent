@@ -70,11 +70,14 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 # Create necessary directories
-mkdir -p data/tool_outputs data/tool_raw_logs data/frp .memory log thirdparty
+mkdir -p data/tool_outputs data/tool_raw_logs .memory log thirdparty
 
-# ========== 开源安全工具 ==========
+# Create tool directories (镜像路径，本地部署也需要)
+mkdir -p /opt/tools/potato /opt/tools/ad /opt/tools/linux /opt/tools/windows /opt/frp
+
 echo "[7/7] Downloading open-source security tools..."
 
+# ========== 开源安全工具 ==========
 # 内网扫描 - fscan
 git clone --depth 1 https://github.com/shadow1ng/fscan.git thirdparty/fscan 2>/dev/null || true
 cd thirdparty/fscan && go build -o /usr/local/bin/fscan . && cd /opt/ctf-agent || echo "fscan build skipped"
@@ -99,10 +102,34 @@ git clone --depth 1 https://github.com/danielmiessler/SecLists.git thirdparty/Se
 # JWT工具
 git clone --depth 1 https://github.com/ticarpi/jwt_tool.git thirdparty/jwt_tool 2>/dev/null || true
 
-# frp代理
+# frp代理 - Linux版本
 wget -q https://github.com/fatedier/frp/releases/download/v0.52.3/frp_0.52.3_linux_amd64.tar.gz
-tar -xzf frp_0.52.3_linux_amd64.tar.gz -C data/frp --strip-components=1
+tar -xzf frp_0.52.3_linux_amd64.tar.gz -C /opt/frp --strip-components=1
 rm frp_0.52.3_linux_amd64.tar.gz
+
+# frp代理 - Windows版本
+wget -q https://github.com/fatedier/frp/releases/download/v0.52.3/frp_0.52.3_windows_amd64.zip
+unzip -q frp_0.52.3_windows_amd64.zip -d /tmp/frp_win
+mv /tmp/frp_win/frpc.exe /opt/tools/windows/
+mv /tmp/frp_win/frps.exe /opt/tools/windows/
+rm -rf frp_0.52.3_windows_amd64.zip /tmp/frp_win
+
+# fscan - Windows版本
+wget -q -O /opt/tools/windows/fscan.exe https://github.com/shadow1ng/fscan/releases/download/v1.8.2/fscan.exe 2>/dev/null || true
+
+# Windows提权工具
+wget -q -O /opt/tools/potato/PrintSpoofer64.exe \
+    "https://github.com/itm4n/PrintSpoofer/releases/download/v1.0/PrintSpoofer64.exe" 2>/dev/null || true
+wget -q -O /opt/tools/potato/SweetPotato.exe \
+    "https://github.com/CCob/SweetPotato/raw/master/SweetPotato/bin/Release/SweetPotato.exe" 2>/dev/null || true
+wget -q -O /opt/tools/potato/GodPotato.exe \
+    "https://github.com/BeichenDream/GodPotato/releases/download/V1.20/GodPotato_Net40.exe" 2>/dev/null || true
+
+# mimikatz
+wget -q -O /tmp/mimikatz.zip \
+    "https://github.com/gentilkiwi/mimikatz/releases/download/v2.2.0-20220919/mimikatz_trunk.zip" 2>/dev/null
+unzip -q /tmp/mimikatz.zip -d /opt/tools/ 2>/dev/null
+rm -f /tmp/mimikatz.zip
 
 echo ""
 echo "=========================================="

@@ -28,6 +28,9 @@ class YsoserialTool(CommandLineTool):
     def supported_vulns(self) -> list:
         return ["Java Deserialization", "Insecure Deserialization", "RCE", "Object Injection"]
 
+    def capability_statement(self) -> str:
+        return "Java反序列化Payload生成器。生成恶意序列化数据触发RCE。适合：Java应用、检测到序列化数据、已知反序列化漏洞点。需配合JNDI或文件上传使用。"
+
     def check_available(self) -> bool:
         # 检查 Java 和 ysoserial.jar
         import shutil

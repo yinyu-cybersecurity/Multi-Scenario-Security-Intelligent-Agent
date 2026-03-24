@@ -37,6 +37,17 @@ class CTFTool(ABC):
         """支持的漏洞类型列表，如 ['sqli', 'time_sqli']"""
         pass
 
+    def capability_statement(self) -> str:
+        """
+        工具能力声明 - 描述工具的适用场景和使用时机
+        供LLM决策时参考，不硬编码具体漏洞
+
+        示例: "漏洞扫描器。输入URL，自动扫描已知CVE漏洞。适合已识别框架、疑似CVE目标。"
+
+        子类可覆盖此方法提供更详细的声明
+        """
+        return f"{self.description()} 支持漏洞类型: {', '.join(self.supported_vulns())}"
+
     @abstractmethod
     def execute(self, target: str, params: Dict) -> Dict:
         """执行工具的核心逻辑"""
@@ -227,61 +238,19 @@ class ToolRegistry:
         return cls._tools.get(vuln_type, [])
 
     @classmethod
-    def get_all_tools_info(cls) -> str:
+    def get_all_tools_info(cls, scenes: Dict = None) -> str:
         """
-        获取所有注册工具的详细信息，用于构建 LLM Prompt。
-        使用 set 确保每个工具只输出一次，防止 Weapon Manual 重复。
+        获取所有注册工具的能力声明，用于构建 LLM Prompt。
 
-        requests 工具不在注册体系中，在此直接内嵌其规范。
+        Args:
+            scenes: 可选的场景信息，用于在输出中标记相关工具
         """
         info_lines = []
         seen_tools = set()
 
-        # [核心修复] requests 不走注册流程，在此直接注入其参数规范
-        requests_spec = {
-            "method": {
-                "type": "string",
-                "description": "HTTP 方法，可选 GET/POST/PUT/DELETE，不填默认为 GET",
-                "required": False,
-                "default": "GET"
-            },
-            "url": {
-                "type": "string",
-                "description": "目标 URL，例如 http://example.com/vuln.php?id=1",
-                "required": True
-            },
-            "params": {
-                "type": "dict",
-                "description": "URL 查询参数（?key=value），GET 请求或 POST 的 ? 部分",
-                "required": False,
-                "default": None
-            },
-            "data": {
-                "type": "dict",
-                "description": "POST 请求体（application/x-www-form-urlencoded）。Payload 可直接写入这里",
-                "required": False,
-                "default": None
-            },
-            "headers": {
-                "type": "dict",
-                "description": "自定义 HTTP 头。常用：Cookie、Content-Type、X-Forwarded-For、Referer、User-Agent",
-                "required": False,
-                "default": None
-            },
-            "files": {
-                "type": "dict",
-                "description": "文件上传（multipart/form-data）。三种方式："
-                               "1. 直接内容: {\"upload\": (\"shell.php\", \"<?php system($_GET['c']);?>\", \"image/png\")}。"
-                               "2. 使用已生成文件路径: {\"upload\": \"data/tool_outputs/shell.phar\"} (先用 file-creator 或 phar-gen 生成文件)。"
-                               "3. 读取本地文件: {\"upload\": \"/path/to/file\"}。",
-                "required": False,
-                "default": None
-            }
-        }
-        info_lines.append("### Tool: requests")
-        info_lines.append("- Description: 发送 HTTP 请求，可完全控制 method/URL/headers/data/files，是手工 Payload 攻击的核心工具。")
-        info_lines.append("- Supported Vulns: SQL Injection, Command Injection, XSS, SSRF, SSTI, File Upload, LFI, XXE, Authentication Bypass, Information Disclosure")
-        info_lines.append(f"- Expected Params: {json.dumps(requests_spec, ensure_ascii=False)}")
+        # requests 工具的能力声明
+        info_lines.append("## Tool: requests")
+        info_lines.append("手工HTTP请求工具。可控制method/URL/headers/data/files。适合：手工Payload构造、绕过检测、文件上传攻击、验证新路径。")
         info_lines.append("")
         seen_tools.add("requests")
 
@@ -291,11 +260,11 @@ class ToolRegistry:
                     continue
                 seen_tools.add(tool.name())
 
-                info_lines.append(f"### Tool: {tool.name()}")
-                info_lines.append(f"- Description: {tool.description()}")
-                info_lines.append(f"- Supported Vulns: {', '.join(tool.supported_vulns())}")
-                info_lines.append(f"- Expected Params: {json.dumps(tool.expected_params(), ensure_ascii=False)}")
+                info_lines.append(f"## Tool: {tool.name()}")
+                info_lines.append(tool.capability_statement())
                 info_lines.append("")
+
+        return "\n".join(info_lines)
 
         return "\n".join(info_lines)
 

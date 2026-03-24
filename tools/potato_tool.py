@@ -68,7 +68,7 @@ class PotatoTool(CommandLineTool):
     }
 
     def __init__(self):
-        self.tools_dir = os.path.join("data", "tools", "potato")
+        self.tools_dir = "/opt/tools/potato"  # 镜像内置路径
         self.cmd_path = "cmd.exe"
         super().__init__(self.cmd_path)
         self.timeout = 60
@@ -150,7 +150,7 @@ class PotatoTool(CommandLineTool):
             "success": True,
             "available": available,
             "tools_dir": self.tools_dir,
-            "hint": "如果列表为空，请下载土豆工具放到 data/tools/potato/ 目录"
+            "hint": "土豆工具应在镜像中自动下载到/opt/tools/potato/目录，请检查Dockerfile"
         }
 
     def _list_potatoes(self) -> Dict:

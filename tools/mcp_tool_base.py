@@ -49,12 +49,12 @@ class MCPClientTool(CTFTool):
 
         # 同步阻塞等待异步结果
         raw_res = asyncio.run(self._call_mcp_tool_async(mcp_args))
-        
+
         if not raw_res.get("success"):
             return raw_res
 
         output = raw_res.get("output", "")
-        
+
         # 🚨 [核心修改] 使用 AI 智能分析网页抓取结果，提取漏洞线索
         analysis_prompt = f"""
 分析以下网页抓取结果 (工具: {self.name()})，寻找潜在的漏洞线索（如 SQL 语法错误、敏感文件、目录遍历迹象等）。
@@ -78,22 +78,22 @@ class MCPClientTool(CTFTool):
                 temperature=0.1,
                 json_mode=True
             )
-            
+
             if "```json" in analysis_text:
                 analysis_text = analysis_text.split("```json")[1].split("```")[0]
             elif "```" in analysis_text:
                 analysis_text = analysis_text.split("```")[1].split("```")[0]
-                
+
             analysis_data = json.loads(analysis_text)
-            
+
             # 保留原始输出用于日志归档
             analysis_data["raw_output"] = output
             analysis_data["success"] = True
             return analysis_data
-            
+
         except Exception as e:
             return {
-                "success": True, 
+                "success": True,
                 "vulnerable": False,
                 "summary": "抓取成功，但 AI 分析失败",
                 "raw_output": output

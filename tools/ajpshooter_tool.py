@@ -31,6 +31,9 @@ class AJPShooterTool(CommandLineTool):
     def supported_vulns(self) -> list:
         return ["AJP Ghostcat", "CVE-2020-1938", "Tomcat LFI", "AJP Injection"]
 
+    def capability_statement(self) -> str:
+        return "Tomcat AJP漏洞利用工具。针对CVE-2020-1938，可读取Web目录文件。适合：Tomcat服务器且开放AJP端口(8009)。"
+
     def check_available(self) -> bool:
         return os.path.exists(self.script_path)
 

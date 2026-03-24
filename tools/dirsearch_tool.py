@@ -36,6 +36,9 @@ class DirsearchTool(CommandLineTool):
     def supported_vulns(self) -> list:
         return ["Information Disclosure", "Hidden Paths", "Backup Files", "Admin Panels", "API Endpoints"]
 
+    def capability_statement(self) -> str:
+        return "目录扫描工具。发现隐藏路径、备份文件、管理后台、API端点。适合：无明确漏洞方向时的资产发现。"
+
     def check_available(self) -> bool:
         return True
 

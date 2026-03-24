@@ -89,6 +89,9 @@ class SqlmapTool(CommandLineTool):
     def supported_vulns(self) -> list:
         return ["SQL Injection", "Error-based SQLi", "Boolean-based SQLi", "Time-based SQLi", "Union-based SQLi"]
 
+    def capability_statement(self) -> str:
+        return "SQL注入自动化工具。输入带参数的URL，自动检测并利用SQL注入。适合：URL参数、登录表单、搜索框等输入点。支持多种注入技术和数据库类型。"
+
     def check_available(self) -> bool:
         # 如果命令存在，直接可用
         if self.executable and os.access(self.executable, os.X_OK):
