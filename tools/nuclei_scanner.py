@@ -182,8 +182,12 @@ class NucleiScanner(CommandLineTool):
                     except json.JSONDecodeError:
                         continue
 
+            # [修复] 添加 vulnerable 字段到顶层
+            has_vulns = len(vulnerabilities) > 0
+
             return {
                 "success": True,
+                "vulnerable": has_vulns,
                 "target": target,
                 "command": " ".join(cmd),
                 "vulnerabilities": vulnerabilities,

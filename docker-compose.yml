@@ -1,23 +1,27 @@
 services:
   ctf-agent:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: deploy/Dockerfile
     container_name: ctf-agent
-    # network_mode: host  # Windows不支持
+    # network_mode: host  # Windows不支持，使用端口映射
     ports:
-      - "1080:1080"
-      - "8080:8080"
-      - "4444:4444"
+      - "8000:8000"   # HTTP Server (工具下载服务)
+      - "7000:7000"   # frps (FRP服务端)
+      - "10800:10800" # SOCKS5代理
+      - "4444:4444"   # Reverse Shell监听
     privileged: true
     volumes:
-      - ./data:/app/data
-      - ./.memory:/app/.memory
+      - ../data:/app/data
+      - ../.memory:/app/.memory
       - ./config.yaml:/app/config.yaml:ro
     environment:
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_BASE_URL=${LLM_BASE_URL:-https://api.deepseek.com/v1}
-      - OOB_HOST=${OOB_HOST:-your-vps-ip}
+      - LOCAL_PUBLIC_IP=${LOCAL_PUBLIC_IP}
+      - HTTP_SERVER_PORT=${HTTP_SERVER_PORT:-8000}
+      - FRP_SERVER_PORT=${FRP_SERVER_PORT:-7000}
+      - FRP_SOCKS5_PORT=${FRP_SOCKS5_PORT:-10800}
     restart: unless-stopped
     stdin_open: true
     tty: true

@@ -1,13 +1,16 @@
 #!/usr/bin/env python
 """
-CTF-Agent Comprehensive Self-Check Script
+CTF-Agent Comprehensive Self-Check Script (deploy version)
 """
 
 import sys
 import os
 
+# Add app directory to path for deploy structure
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'app'))
+
 print('=' * 60)
-print('CTF-Agent Comprehensive Self-Check')
+print('CTF-Agent Comprehensive Self-Check (deploy)')
 print('=' * 60)
 
 results = {'pass': 0, 'fail': 0, 'warnings': []}
@@ -36,7 +39,7 @@ except Exception as e:
 try:
     from router import (
         route_mode, route_verify,
-        route_hitl, route_evolution,
+        route_evolution,
         route_internal_mode, route_internal_to_web
     )
     check('router module', True)
@@ -147,8 +150,43 @@ try:
 except Exception as e:
     check('advanced_operations module', False, str(e))
 
+try:
+    from internal_network.post_exploit import post_exploit_node
+    check('post_exploit module', True)
+except Exception as e:
+    check('post_exploit module', False, str(e))
+
 # ========================================
-# 4. Memory Module
+# 4. Remote Executor Module
+# ========================================
+print('\n--- Remote Executor Module ---')
+try:
+    from remote_executor import (
+        ShellSessionManager, ShellSession, ShellType,
+        WebShellExecutor, SSHExecutor, ImpacketExecutor, ProxyExecutor,
+        FileTransfer, TunnelManager, TunnelConfig, TunnelStatus
+    )
+    check('remote_executor core', True)
+except Exception as e:
+    check('remote_executor core', False, str(e))
+
+try:
+    from remote_executor import (
+        start_local_frps, check_frps_status,
+        start_http_server, check_tools_directory
+    )
+    check('remote_executor utilities', True)
+except Exception as e:
+    check('remote_executor utilities', False, str(e))
+
+try:
+    from remote_executor.executors import execute_on_session, ExecutionResult
+    check('remote_executor.executors', True)
+except Exception as e:
+    check('remote_executor.executors', False, str(e))
+
+# ========================================
+# 5. Memory Module
 # ========================================
 print('\n--- Memory Module ---')
 try:
@@ -158,7 +196,7 @@ except Exception as e:
     check('memory_manager module', False, str(e))
 
 # ========================================
-# 5. Graph Structure
+# 6. Graph Structure
 # ========================================
 print('\n--- Graph Structure ---')
 try:
@@ -168,7 +206,7 @@ except Exception as e:
     check('graph runner', False, str(e))
 
 # ========================================
-# 6. Functionality Tests
+# 7. Functionality Tests
 # ========================================
 print('\n--- Functionality Tests ---')
 
@@ -213,7 +251,7 @@ except Exception as e:
     check('MemoryManager save/get', False, str(e))
 
 # ========================================
-# 7. State Structure
+# 8. State Structure
 # ========================================
 print('\n--- State Structure ---')
 try:
@@ -233,7 +271,7 @@ except Exception as e:
     check('State required fields', False, str(e))
 
 # ========================================
-# 8. Tool Registration
+# 9. Tool Registration
 # ========================================
 print('\n--- Tool Registration ---')
 try:

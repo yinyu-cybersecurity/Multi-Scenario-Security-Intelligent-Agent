@@ -194,8 +194,13 @@ class FscanTool(CommandLineTool):
             # AI分析
             analysis = self._analyze_results(hosts, target)
 
+            # [修复] 添加 vulnerable 字段到顶层
+            has_vulnerabilities = len(analysis.get("vulnerabilities", [])) > 0
+            has_hosts = len(hosts) > 0
+
             return {
                 "success": True,
+                "vulnerable": has_vulnerabilities or has_hosts,  # 发现漏洞或主机即视为有发现
                 "target": target,
                 "command": raw_result.get('command', ''),
                 "hosts": hosts,

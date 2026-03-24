@@ -12,6 +12,18 @@ VERIFIER_MODEL: "deepseek-chat"
 EXPLORER_MODEL: "deepseek-chat"
 INNOVATOR_MODEL: "deepseek-chat"
 
+# ===== VPS Configuration =====
+# 框架运行在VPS服务器上，需要配置公网IP
+# 本机公网IP (用于生成隧道配置、回调地址等)
+LOCAL_PUBLIC_IP: ""
+
+# HTTP文件服务器端口 (本机提供工具下载服务)
+HTTP_SERVER_PORT: 8000
+
+# frp配置 (frps运行在本机)
+FRP_SERVER_PORT: 7000      # frps监听端口
+FRP_SOCKS5_PORT: 10800     # SOCKS5代理端口
+
 # ===== Out-of-Band Configuration =====
 OOB_HOST: "127.0.0.1"
 

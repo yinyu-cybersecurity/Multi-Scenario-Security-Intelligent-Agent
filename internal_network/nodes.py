@@ -629,18 +629,62 @@ def credential_gather_node(state: Dict) -> Dict:
             if shares:
                 print(f"[CredGather] 发现 {len(shares)} 个SMB共享")
 
-    # 尝试LDAP匿名绑定
+    # 尝试LDAP匿名绑定或使用已获取凭据
     if 389 in port_numbers or 636 in port_numbers:
-        result = ToolRegistry.execute_cached(
-            "bloodhound",
-            target,
-            {
-                "domain": state.get("ad_domain", ""),
-                "dc": target,
-                "username": "anonymous",
-                "password": ""
-            }
-        )
+        # 检查是否有可用的域凭据
+        domain = state.get("ad_domain", "")
+        domain_creds = [c for c in credentials if c.get("domain") == domain] if domain else []
+
+        if domain_creds or domain:
+            # 使用第一个可用凭据
+            cred = domain_creds[0] if domain_creds else {}
+            username = cred.get("username", "")
+            password = cred.get("password", "")
+            hash_val = cred.get("hash", "")
+
+            if username and (password or hash_val):
+                print(f"[CredGather] 尝试BloodHound数据采集...")
+
+                result = ToolRegistry.execute_cached(
+                    "bloodhound",
+                    target,
+                    {
+                        "domain": domain,
+                        "dc": target,
+                        "username": username,
+                        "password": password,
+                        "hash": hash_val,
+                        "collection": "all"
+                    }
+                )
+
+                # 处理BloodHound结果
+                if result.get("result", {}).get("success"):
+                    bh_data = result.get("result", {})
+                    # 发现的攻击路径
+                    attack_paths = bh_data.get("attack_paths", [])
+                    high_value_targets = bh_data.get("high_value_targets", [])
+
+                    if attack_paths:
+                        print(f"[CredGather] BloodHound发现 {len(attack_paths)} 条攻击路径")
+
+                    # 更新analyst_intel
+                    intel = f"[BloodHound] {bh_data.get('summary', '采集完成')}"
+                    if high_value_targets:
+                        intel += f"\n高价值目标: {', '.join(high_value_targets[:5])}"
+
+                    return {
+                        "credentials": credentials,
+                        "current_internal_target": target,
+                        "analyst_intel": intel,
+                        "attack_paths": attack_paths,
+                        "high_value_targets": high_value_targets,
+                        "execution_steps": state.get("execution_steps", 0) + 1
+                    }
+                elif result.get("error"):
+                    print(f"[CredGather] BloodHound失败: {result.get('error')}")
+            else:
+                print(f"[CredGather] 缺少有效的域凭据，跳过BloodHound")
 
     return {
         "credentials": credentials,

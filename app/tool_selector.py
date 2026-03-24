@@ -120,7 +120,119 @@ class ToolSelector:
     }
 
     def __init__(self):
-        pass  # 不需要历史记录，直接规则匹配
+        # 简单的历史记录（不用于训练，仅用于当前会话优化）
+        self.successful_tools = {}
+        self.failed_tools = {}
+        self.attack_history = []
+
+    def get_recommended_tools(self, vuln_type: str, context: str = "") -> List[str]:
+        """
+        简化的工具推荐接口
+
+        Args:
+            vuln_type: 漏洞类型（如 "sql注入", "SSTI", "反序列化"）
+            context: 上下文信息（如 "MySQL", "Jinja2", "Java"）
+
+        Returns:
+            推荐工具名称列表
+        """
+        # 标准化漏洞类型
+        vuln_type_lower = vuln_type.lower()
+
+        # 漏洞类型到工具的直接映射
+        direct_mapping = {
+            # Web漏洞
+            "sql注入": ["sqlmap", "db-attacks", "requests"],
+            "sql": ["sqlmap", "db-attacks", "requests"],
+            "sqli": ["sqlmap", "db-attacks", "requests"],
+            "ssti": ["fenjing", "requests", "python-exec"],
+            "模板注入": ["fenjing", "requests", "python-exec"],
+            "xss": ["xsser", "xsstrike", "requests"],
+            "xxe": ["xxe-injector", "nuclei", "requests"],
+            "ssrf": ["ssrf-scanner", "cloud-scanner", "requests"],
+            "lfi": ["php-filter-chain", "ffuf", "dirsearch", "requests"],
+            "rfi": ["requests", "python-exec"],
+            "文件上传": ["file-creator", "requests"],
+
+            # 反序列化
+            "反序列化": ["ysoserial", "phpggc", "pickle-pwn", "marshalsec"],
+            "java反序列化": ["ysoserial", "marshalsec", "jndi-exploit"],
+            "php反序列化": ["phpggc", "phar-gen"],
+
+            # CVE
+            "cve": ["nuclei", "cve-scanner"],
+            "log4j": ["jndi-exploit", "nuclei"],
+            "log4shell": ["jndi-exploit", "nuclei"],
+            "spring": ["nuclei", "cve-scanner"],
+            "shiro": ["nuclei", "ysoserial"],
+            "weblogic": ["nuclei", "ysoserial", "marshalsec"],
+            "fastjson": ["jndi-exploit", "nuclei"],
+            "tomcat": ["ajp-shooter", "nuclei"],
+            "ghostcat": ["ajp-shooter"],
+
+            # 云服务
+            "云元数据": ["cloud-scanner", "ssrf-scanner"],
+            "aws": ["cloud-scanner", "ssrf-scanner"],
+            "azure": ["cloud-scanner", "ssrf-scanner"],
+            "gcp": ["cloud-scanner", "ssrf-scanner"],
+
+            # AI安全
+            "prompt注入": ["ai-attacker", "requests"],
+            "ai攻击": ["ai-attacker", "requests"],
+            "越狱": ["ai-attacker", "requests"],
+
+            # OA系统
+            "oa漏洞": ["oa-exploiter", "nuclei", "requests"],
+            "泛微": ["oa-exploiter", "nuclei"],
+            "致远": ["oa-exploiter", "nuclei"],
+            "通达": ["oa-exploiter", "nuclei"],
+            "蓝凌": ["oa-exploiter", "nuclei"],
+
+            # 内网渗透
+            "端口扫描": ["nmap", "masscan"],
+            "smb枚举": ["crackmapexec", "impacket", "nmap"],
+            "横向移动": ["impacket", "crackmapexec"],
+            "psexec": ["impacket", "crackmapexec"],
+            "wmi": ["impacket", "crackmapexec"],
+            "代理": ["frp-manager", "chisel"],
+            "socks5": ["frp-manager", "chisel"],
+
+            # 域渗透
+            "kerberos": ["impacket", "bloodhound"],
+            "as-rep roasting": ["impacket", "crackmapexec"],
+            "kerberoasting": ["impacket", "crackmapexec"],
+            "dcsync": ["impacket", "crackmapexec"],
+            "域渗透": ["impacket", "bloodhound", "crackmapexec"],
+            "票据": ["impacket", "mimikatz"],
+
+            # 认证绕过
+            "jwt": ["jwt-tool", "requests"],
+            "认证绕过": ["jwt-tool", "flask-unsign", "requests"],
+        }
+
+        # 查找匹配的工具
+        for key, tools in direct_mapping.items():
+            if key in vuln_type_lower:
+                return tools
+
+        # 根据上下文进一步筛选
+        if context:
+            context_lower = context.lower()
+            if "mysql" in context_lower or "mssql" in context_lower or "postgres" in context_lower:
+                if "sql" in vuln_type_lower:
+                    return ["sqlmap", "db-attacks"]
+            if "jinja2" in context_lower or "flask" in context_lower:
+                if "ssti" in vuln_type_lower or "模板" in vuln_type:
+                    return ["fenjing", "requests"]
+            if "java" in context_lower:
+                if "反序列化" in vuln_type:
+                    return ["ysoserial", "marshalsec", "jndi-exploit"]
+            if "php" in context_lower:
+                if "反序列化" in vuln_type:
+                    return ["phpggc", "phar-gen"]
+
+        # 默认返回通用工具
+        return ["requests", "python-exec", "nuclei"]
 
     def classify_vuln(self, vuln_info: Dict) -> VulnCategory:
         """根据漏洞信息分类"""

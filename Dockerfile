@@ -1,5 +1,6 @@
 # CTF-Agent Dockerfile
 # Ubuntu-based image with all security tools
+# 框架运行在VPS服务器上
 
 FROM ubuntu:22.04
 
@@ -13,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     nmap openjdk-17-jdk maven \
     ruby php-cli libssl-dev libssh-dev \
     libimage-exiftool-perl binwalk foremost \
+    proxychains4 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Go 1.22 (required for nuclei and other tools)
@@ -47,13 +49,24 @@ RUN pipx install ROPgadget || true
 RUN pipx install jwt-tool || true
 RUN pipx install dictutils || true
 RUN pipx install xsstrike || true
+RUN pipx install paramiko || true
 
 # Install Ruby tools
 RUN gem install zsteg one_gadget
 
-# Create app and thirdparty directories
+# Create app and data directories
 WORKDIR /app
-RUN mkdir -p /app/thirdparty /app/data/tool_outputs /app/data/tool_raw_logs /app/data/frp /app/.memory /app/log
+RUN mkdir -p /app/thirdparty \
+    /app/data/tool_outputs \
+    /app/data/tool_raw_logs \
+    /app/data/frp \
+    /app/data/tools/potato \
+    /app/data/tools/ad \
+    /app/data/tools/linux \
+    /app/data/sessions \
+    /app/data/tunnels \
+    /app/.memory \
+    /app/log
 
 # ========== 开源安全工具 ==========
 # SSRF工具
@@ -81,7 +94,7 @@ RUN git clone --depth 1 https://github.com/danielmiessler/SecLists.git /app/thir
 RUN git clone --depth 1 https://github.com/swisskyrepo/PayloadsAllTheThings.git /app/thirdparty/PayloadsAllTheThings 2>/dev/null || true
 RUN git clone --depth 1 https://github.com/fofapro/fapro.git /app/thirdparty/fapro 2>/dev/null || true
 
-# frp代理
+# frp代理 (frps在本地运行)
 RUN wget -q https://github.com/fatedier/frp/releases/download/v0.52.3/frp_0.52.3_linux_amd64.tar.gz && \
     tar -xzf frp_0.52.3_linux_amd64.tar.gz -C /app/data/frp --strip-components=1 && \
     rm frp_0.52.3_linux_amd64.tar.gz 2>/dev/null || echo "frp download skipped"
@@ -103,6 +116,7 @@ COPY app/*.py ./
 COPY app/topology ./topology/
 COPY tools/ ./tools/
 COPY internal_network/ ./internal_network/
+COPY remote_executor/ ./remote_executor/
 COPY crypto/ ./crypto/
 COPY pwn/ ./pwn/
 COPY reverse/ ./reverse/
@@ -120,11 +134,31 @@ COPY self_check.py /app/self_check.py
 RUN git clone --depth 1 https://github.com/shadow1ng/fscan.git /app/thirdparty/fscan 2>/dev/null && \
     cd /app/thirdparty/fscan && go build -o /usr/local/bin/fscan . || echo "fscan build skipped"
 
+# 下载 Windows 提权工具 (土豆系列)
+RUN wget -q -O /app/data/tools/potato/PrintSpoofer64.exe \
+    "https://github.com/itm4n/PrintSpoofer/releases/download/v1.0/PrintSpoofer64.exe" 2>/dev/null || true
+
+# 下载 SweetPotato
+RUN wget -q -O /app/data/tools/potato/SweetPotato.exe \
+    "https://github.com/CCob/SweetPotato/raw/master/SweetPotato/bin/Release/SweetPotato.exe" 2>/dev/null || true
+
+# 下载 PetitPotam (EfsRpc强制认证)
+RUN git clone --depth 1 https://github.com/topotam/PetitPotam.git /app/thirdparty/PetitPotam 2>/dev/null || true
+
+# 下载 mimikatz
+RUN wget -q -O /tmp/mimikatz.zip \
+    "https://github.com/gentilkiwi/mimikatz/releases/download/v2.2.0-20220919/mimikatz_trunk.zip" 2>/dev/null && \
+    unzip -q /tmp/mimikatz.zip -d /app/data/tools/ 2>/dev/null || true
+
 # Update nuclei templates
 RUN /root/go/bin/nuclei -update-templates 2>/dev/null || true
 
-# Expose ports (for reverse shells, proxies, etc.)
-EXPOSE 1080 8080 4444
+# Expose ports
+# HTTP Server (工具下载服务): 8000
+# frps (frp服务端): 7000
+# SOCKS5代理: 10800
+# Reverse Shell监听: 4444
+EXPOSE 8000 7000 10800 4444
 
 # Set entrypoint - keep container running for interactive use
 ENTRYPOINT ["tail", "-f", "/dev/null"]

