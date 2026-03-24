@@ -100,7 +100,7 @@ RUN wget -q https://github.com/fatedier/frp/releases/download/v0.52.3/frp_0.52.3
     rm frp_0.52.3_linux_amd64.tar.gz 2>/dev/null || echo "frp download skipped"
 
 # Create Python virtual environment and install dependencies FIRST (before copying code)
-COPY requirements.txt .
+COPY deploy/requirements.txt .
 RUN python3.11 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
@@ -112,23 +112,23 @@ RUN pip install --upgrade pip && \
 RUN pip install -r requirements.txt
 
 # NOW copy application files (changes here won't trigger dependency reinstall)
-COPY app/*.py ./
-COPY app/topology ./topology/
-COPY tools/ ./tools/
-COPY internal_network/ ./internal_network/
-COPY remote_executor/ ./remote_executor/
-COPY crypto/ ./crypto/
-COPY pwn/ ./pwn/
-COPY reverse/ ./reverse/
-COPY misc/ ./misc/
-COPY memory/ ./memory/
-COPY rag_builder/ ./rag_builder/
+COPY deploy/app/*.py ./
+COPY deploy/app/topology ./topology/
+COPY deploy/tools/ ./tools/
+COPY deploy/internal_network/ ./internal_network/
+COPY deploy/remote_executor/ ./remote_executor/
+COPY deploy/crypto/ ./crypto/
+COPY deploy/pwn/ ./pwn/
+COPY deploy/reverse/ ./reverse/
+COPY deploy/misc/ ./misc/
+COPY deploy/memory/ ./memory/
+COPY deploy/rag_builder/ ./rag_builder/
 
 # Copy config template
-COPY config.yaml.example /app/config.yaml.example
+COPY deploy/config.yaml.example /app/config.yaml.example
 
 # Copy self-check script
-COPY self_check.py /app/self_check.py
+COPY deploy/self_check.py /app/self_check.py
 
 # 编译 fscan (放在代码复制之后，避免触发依赖重装)
 RUN git clone --depth 1 https://github.com/shadow1ng/fscan.git /app/thirdparty/fscan 2>/dev/null && \
