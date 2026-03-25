@@ -38,6 +38,10 @@ CTF-Agent 是一个智能化的渗透测试代理，能够自主完成从信息�
 - **并发控制**: LLMRateLimiter 实现的 API 调用限流
 - **任务持久化**: SQLite 存储，支持断点续传
 - **模块注册机制**: 延迟导入，代码简化 38%
+- **拓扑决策对接**: 拓扑分析与攻击决策深度融合
+- **统一日志系统**: 按任务/节点分离日志，控制台简洁输出
+- **性能监控面板**: 节点/LLM/工具执行耗时统计
+- **Web UI 优化**: 固定导航栏、节点拆卸、拓扑图可视化
 
 ---
 
@@ -111,6 +115,7 @@ deploy/
 ├── app/                        # 核心代码
 │   ├── ctf_agent_graph.py      # 主程序入口 & 图定义
 │   ├── state.py                # CTFState 状态定义（原有）
+│   ├── state_v2.py             # 增强状态定义（拓扑字段）
 │   ├── state_types/            # [新增] 模块化状态类型
 │   │   ├── base.py             # 基础状态（通用字段）
 │   │   ├── web.py              # Web CTF 状态
@@ -120,6 +125,8 @@ deploy/
 │   ├── task_persistence.py     # [新增] 任务持久化
 │   ├── attack_strategy_evaluator.py  # [新增] 策略评估
 │   ├── context_compressor.py   # [新增] 上下文压缩
+│   ├── logger.py               # [新增] 统一日志系统
+│   ├── performance.py          # [新增] 性能监控
 │   ├── router.py               # 节点路由逻辑
 │   ├── llm_client.py           # LLM 客户端（并发控制）
 │   ├── self_correction.py      # 自我纠错（AI驱动恢复）

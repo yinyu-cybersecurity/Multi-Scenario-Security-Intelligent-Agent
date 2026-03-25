@@ -47,7 +47,7 @@ class TopologyPruner:
         # 计算所有节点到根节点的距离
         try:
             lengths = nx.shortest_path_length(G, root)
-        except:
+        except Exception:
             return G
 
         too_deep = []

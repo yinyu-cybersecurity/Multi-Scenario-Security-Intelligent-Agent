@@ -153,7 +153,7 @@ class PageDiffManager:
             try:
                 with open(last_file, 'rb') as f:
                     last_content = f.read()
-            except:
+            except Exception:
                 pass
 
         # 保存新文件
@@ -249,7 +249,7 @@ URL: {url}
             elif "```" in response:
                 response = response.split("```")[1].split("```")[0]
             return json.loads(response)
-        except:
+        except Exception:
             return {"is_exploit": False, "confidence": 0.0, "reason": "模型解析失败"}
 
 page_diff_manager = PageDiffManager()

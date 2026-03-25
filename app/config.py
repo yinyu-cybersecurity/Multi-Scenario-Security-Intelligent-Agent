@@ -278,6 +278,52 @@ class Config:
                 return cls(**data)
         return cls()
 
+    def validate(self) -> List[str]:
+        """验证配置完整性
+
+        Returns:
+            错误消息列表，空列表表示验证通过
+        """
+        errors = []
+
+        # LLM配置检查
+        if not self.LLM_API_KEY:
+            errors.append("LLM_API_KEY 未配置 - AI功能将无法使用")
+
+        if not self.LLM_BASE_URL:
+            errors.append("LLM_BASE_URL 未配置")
+
+        # 内网渗透配置检查
+        if self.LOCAL_PUBLIC_IP:
+            # 如果设置了公网IP，检查端口配置
+            if self.HTTP_SERVER_PORT <= 0 or self.HTTP_SERVER_PORT > 65535:
+                errors.append(f"HTTP_SERVER_PORT 端口无效: {self.HTTP_SERVER_PORT}")
+
+            if self.FRP_SERVER_PORT <= 0 or self.FRP_SERVER_PORT > 65535:
+                errors.append(f"FRP_SERVER_PORT 端口无效: {self.FRP_SERVER_PORT}")
+
+        # 阈值合理性检查
+        if self.MAX_TOTAL_ROUNDS <= 0:
+            errors.append(f"MAX_TOTAL_ROUNDS 必须大于0: {self.MAX_TOTAL_ROUNDS}")
+
+        if hasattr(self, 'FAILURE_THRESHOLD') and self.FAILURE_THRESHOLD <= 0:
+            errors.append(f"FAILURE_THRESHOLD 必须大于0: {self.FAILURE_THRESHOLD}")
+
+        return errors
+
+    def is_valid(self) -> bool:
+        """检查配置是否有效"""
+        return len(self.validate()) == 0
+
 
 # 全局配置实例
 config = Config.from_yaml()
+
+# 启动时验证配置
+_validation_errors = config.validate()
+if _validation_errors:
+    print("=" * 50)
+    print("配置警告:")
+    for err in _validation_errors:
+        print(f"  - {err}")
+    print("=" * 50)

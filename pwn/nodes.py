@@ -12,6 +12,7 @@ from typing import Dict, List, Any
 from state import CTFState
 from llm_client import llm_client
 from config import config
+from logger import get_logger
 from .tools import (
     BinaryAnalyzer,
     ProtectionChecker,
@@ -21,6 +22,9 @@ from .tools import (
     BinaryInfo,
     VulnerabilityInfo
 )
+
+# 模块日志器
+logger = get_logger("Pwn")
 
 
 def pwn_analyst_node(state: Dict) -> Dict:

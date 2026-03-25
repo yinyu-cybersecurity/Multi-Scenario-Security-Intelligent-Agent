@@ -23,10 +23,24 @@ from state_types.web import (
 from state_types.internal_network import (
     InternalNetworkState, InternalHost, Credential, LateralMove
 )
+# 导入所有预定义的 reducer
 from state_types.reducers import (
-    cap_list_reducer, cap_candidates_reducer, cap_results_reducer,
-    merge_dict_reducer, visited_urls_reducer
+    visited_urls_reducer,
+    visited_fingerprints_reducer,
+    attack_results_reducer,
+    tool_calls_reducer,
+    failed_payloads_reducer,
+    credentials_reducer,
+    internal_hosts_reducer,
+    cap_candidates_reducer,
+    merge_dict_reducer,
+    dedupe_list_reducer,
+    _make_cap_reducer,
 )
+
+# 创建带特定上限的 reducer
+_cap_50_reducer = _make_cap_reducer(50)
+_cap_100_reducer = _make_cap_reducer(100)
 
 
 class CTFStateV2(TypedDict):
@@ -54,9 +68,9 @@ class CTFStateV2(TypedDict):
     rule_miss_count: int
     found_flag: bool
     final_flag: str
-    visited_urls: Annotated[List[str], lambda x, y: cap_list_reducer(x, y, 100)]
-    scanned_ips: Annotated[List[str], lambda x, y: list(set(x + y))]
-    scanned_urls: Annotated[List[str], lambda x, y: list(set(x + y))]
+    visited_urls: Annotated[List[str], visited_urls_reducer]
+    scanned_ips: Annotated[List[str], dedupe_list_reducer]
+    scanned_urls: Annotated[List[str], dedupe_list_reducer]
     attachments: List[Dict[str, Any]]
 
     # =====================================================
@@ -67,20 +81,21 @@ class CTFStateV2(TypedDict):
     baseline_response: Dict[str, Any]
     page_history: Dict[str, Dict[str, Any]]
     detected_scenes: Dict[str, Any]
-    site_topology: Annotated[Dict[str, List[str]], lambda x, y: {**x, **y}]
-    node_metadata: Annotated[Dict[str, Dict], lambda x, y: {**x, **y}]
+    site_topology: Annotated[Dict[str, List[str]], merge_dict_reducer]
+    node_metadata: Annotated[Dict[str, Dict], merge_dict_reducer]
     critical_nodes: List[str]
     attack_paths: List[List[str]]
-    visited_fingerprints: Annotated[List[str], lambda x, y: cap_list_reducer(x, y, 100)]
+    topology_priority: List[tuple]  # 拓扑优先级: [(url, score), ...]
+    visited_fingerprints: Annotated[List[str], visited_fingerprints_reducer]
     vuln_candidates: Annotated[List[VulnerabilityCandidate], cap_candidates_reducer]
-    permanent_rules: Annotated[List[Dict], lambda x, y: cap_list_reducer(x, y, 50)]
-    tool_cache: Annotated[Dict[str, Any], lambda x, y: {**x, **y}]
+    permanent_rules: Annotated[List[Dict], _cap_50_reducer]
+    tool_cache: Annotated[Dict[str, Any], merge_dict_reducer]
     attack_batch: List[AttackAction]
-    attack_results: Annotated[List[Dict], cap_results_reducer]
-    tool_calls: Annotated[List[ToolCall], lambda x, y: cap_list_reducer(x, y, 100)]
+    attack_results: Annotated[List[Dict], attack_results_reducer]
+    tool_calls: Annotated[List[ToolCall], tool_calls_reducer]
     latest_tactical_guidance: Optional[str]
     analyst_intel: Optional[str]
-    failed_payloads: Annotated[List[str], lambda x, y: cap_list_reducer(x, y, 50)]
+    failed_payloads: Annotated[List[str], failed_payloads_reducer]
     hint_level: int
     hint_history: Annotated[List[Hint], operator.add]
     last_intervention_step: int
@@ -95,8 +110,8 @@ class CTFStateV2(TypedDict):
     # =====================================================
     internal_network_detected: bool
     internal_network_range: str
-    internal_hosts: Annotated[List[InternalHost], lambda x, y: x + y]
-    credentials: Annotated[List[Credential], lambda x, y: x + y]
+    internal_hosts: Annotated[List[InternalHost], internal_hosts_reducer]
+    credentials: Annotated[List[Credential], credentials_reducer]
     lateral_moves: List[LateralMove]
     domain_info: Dict[str, Any]
     shell_session: Optional[Dict[str, Any]]

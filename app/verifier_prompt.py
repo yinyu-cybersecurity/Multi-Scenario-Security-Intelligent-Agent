@@ -25,8 +25,8 @@ def get_verifier_prompt(attack_batch: list, results: list, analyst_intel: str = 
                     content = data["summary"]
                 elif "vulnerable" in data:
                     content = f"Vulnerable: {data.get('vulnerable')}\nSummary: {data.get('summary', '')}"
-            except:
-                pass
+            except (json.JSONDecodeError, KeyError):
+                pass  # JSON解析失败，使用原始输出
 
         # 检测并标注编码内容
         encoding_hints = []

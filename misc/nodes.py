@@ -13,6 +13,7 @@ from typing import Dict, List, Any
 from state import CTFState
 from llm_client import llm_client
 from config import config
+from logger import get_logger
 from .tools import (
     SteganographyDetector,
     ForensicsAnalyzer,
@@ -21,6 +22,9 @@ from .tools import (
     EncodingConverter,
     FileType
 )
+
+# 模块日志器
+logger = get_logger("Misc")
 
 
 def misc_analyst_node(state: Dict) -> Dict:

@@ -20,6 +20,10 @@ from typing import Dict, List, Any, Optional
 from llm_client import llm_client
 from config import config
 from tool_framework import ToolRegistry
+from logger import get_logger
+
+# 模块日志器
+logger = get_logger("InternalNetwork")
 
 # 导入远程执行模块
 try:
@@ -27,7 +31,7 @@ try:
     from remote_executor.session_manager import get_session_manager
     REMOTE_EXEC_AVAILABLE = True
 except ImportError:
-    print("[Warning] remote_executor module not available")
+    logger.warning("remote_executor module not available")
     REMOTE_EXEC_AVAILABLE = False
 
 # 导入高级操作模块
@@ -42,7 +46,7 @@ try:
     )
     ADVANCED_OPS_AVAILABLE = True
 except ImportError:
-    print("[Warning] Advanced operations module not available")
+    logger.warning("Advanced operations module not available")
     ADVANCED_OPS_AVAILABLE = False
 
 

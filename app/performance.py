@@ -1,12 +1,14 @@
 # performance.py
 """
-性能优化模块
+性能优化与监控模块
 
 提供:
+- 节点执行耗时统计
+- LLM调用耗时统计
+- 工具执行耗时统计
 - 并行工具执行
-- 性能监控
-- 资源限制
-- 自适应超时
+- 内存使用监控
+- 实时性能数据
 """
 
 import time
@@ -15,6 +17,8 @@ import concurrent.futures
 from typing import Dict, List, Any, Callable, Optional
 from dataclasses import dataclass, field
 from collections import defaultdict
+from datetime import datetime
+from contextlib import contextmanager
 import psutil
 import os
 
@@ -51,11 +55,24 @@ class PerformanceMetrics:
         self.min_duration = min(self.min_duration, duration)
 
 
+@dataclass
+class ExecutionRecord:
+    """执行记录"""
+    name: str
+    category: str  # node, llm, tool
+    start_time: float
+    end_time: float = 0
+    duration_ms: float = 0
+    success: bool = True
+    error: str = ""
+
+
 class PerformanceMonitor:
     """
     性能监控器
 
     监控工具执行性能，提供统计信息
+    支持：节点、LLM调用、工具执行
     """
 
     _instance = None
@@ -68,6 +85,9 @@ class PerformanceMonitor:
                     cls._instance = super().__new__(cls)
                     cls._instance._metrics = defaultdict(PerformanceMetrics)
                     cls._instance._start_time = time.time()
+                    cls._instance._records: List[ExecutionRecord] = []
+                    cls._instance._node_stats = defaultdict(lambda: {"count": 0, "total_ms": 0, "max_ms": 0, "errors": 0})
+                    cls._instance._llm_stats = defaultdict(lambda: {"count": 0, "total_ms": 0, "max_ms": 0, "errors": 0, "tokens": 0})
         return cls._instance
 
     def record_execution(self, tool_name: str, duration: float,
@@ -75,6 +95,70 @@ class PerformanceMonitor:
         """记录工具执行"""
         with self._lock:
             self._metrics[tool_name].update(duration, success, cached, timeout)
+
+    @contextmanager
+    def track_node(self, node_name: str):
+        """跟踪节点执行"""
+        start = time.time()
+        error = ""
+        success = True
+        try:
+            yield
+        except Exception as e:
+            error = str(e)
+            success = False
+            raise
+        finally:
+            duration_ms = (time.time() - start) * 1000
+            with self._lock:
+                self._records.append(ExecutionRecord(
+                    name=node_name, category="node", start_time=start,
+                    end_time=time.time(), duration_ms=duration_ms, success=success, error=error
+                ))
+                stats = self._node_stats[node_name]
+                stats["count"] += 1
+                stats["total_ms"] += duration_ms
+                stats["max_ms"] = max(stats["max_ms"], duration_ms)
+                if not success:
+                    stats["errors"] += 1
+
+    @contextmanager
+    def track_llm(self, model: str, tokens: int = 0):
+        """跟踪LLM调用"""
+        start = time.time()
+        error = ""
+        success = True
+        try:
+            yield
+        except Exception as e:
+            error = str(e)
+            success = False
+            raise
+        finally:
+            duration_ms = (time.time() - start) * 1000
+            with self._lock:
+                self._records.append(ExecutionRecord(
+                    name=model, category="llm", start_time=start,
+                    end_time=time.time(), duration_ms=duration_ms, success=success, error=error
+                ))
+                stats = self._llm_stats[model]
+                stats["count"] += 1
+                stats["total_ms"] += duration_ms
+                stats["max_ms"] = max(stats["max_ms"], duration_ms)
+                stats["tokens"] += tokens
+                if not success:
+                    stats["errors"] += 1
+
+    def record_llm_call(self, model: str, duration_ms: float, tokens: int = 0, success: bool = True):
+        """记录LLM调用（手动方式）"""
+        with self._lock:
+            stats = self._llm_stats[model]
+            stats["count"] += 1
+            stats["total_ms"] += duration_ms
+            stats["max_ms"] = max(stats["max_ms"], duration_ms)
+            stats["tokens"] += tokens
+            if not success:
+                stats["errors"] += 1
 
     def get_metrics(self, tool_name: str = None) -> Dict:
         """获取性能指标"""
@@ -106,10 +190,73 @@ class PerformanceMonitor:
                 "executions_per_minute": total.total_executions / max(uptime / 60, 1)
             }
 
+    def get_full_stats(self) -> Dict:
+        """获取完整统计信息"""
+        with self._lock:
+            process = psutil.Process()
+            memory_mb = process.memory_info().rss / 1024 / 1024
+            uptime = time.time() - self._start_time
+
+            return {
+                "uptime_seconds": round(uptime, 1),
+                "memory_mb": round(memory_mb, 1),
+                "total_records": len(self._records),
+                "nodes": {k: {
+                    "count": v["count"],
+                    "avg_ms": round(v["total_ms"] / max(v["count"], 1), 2),
+                    "max_ms": round(v["max_ms"], 2),
+                    "total_ms": round(v["total_ms"], 2),
+                    "errors": v["errors"]
+                } for k, v in self._node_stats.items()},
+                "llm": {k: {
+                    "count": v["count"],
+                    "avg_ms": round(v["total_ms"] / max(v["count"], 1), 2),
+                    "max_ms": round(v["max_ms"], 2),
+                    "total_ms": round(v["total_ms"], 2),
+                    "tokens": v["tokens"],
+                    "errors": v["errors"]
+                } for k, v in self._llm_stats.items()},
+                "tools": {k: v.__dict__ for k, v in self._metrics.items()},
+            }
+
+    def get_recent_records(self, limit: int = 50) -> List[Dict]:
+        """获取最近的执行记录"""
+        with self._lock:
+            recent = self._records[-limit:] if len(self._records) > limit else self._records
+            return [
+                {
+                    "name": r.name,
+                    "category": r.category,
+                    "duration_ms": round(r.duration_ms, 2),
+                    "success": r.success,
+                    "error": r.error[:100] if r.error else "",
+                    "time": datetime.fromtimestamp(r.start_time).strftime("%H:%M:%S"),
+                }
+                for r in recent
+            ]
+
+    def get_slow_operations(self, threshold_ms: float = 5000) -> List[Dict]:
+        """获取慢操作列表"""
+        with self._lock:
+            slow = [
+                {
+                    "name": r.name,
+                    "category": r.category,
+                    "duration_ms": round(r.duration_ms, 2),
+                    "time": datetime.fromtimestamp(r.start_time).strftime("%H:%M:%S"),
+                }
+                for r in self._records
+                if r.duration_ms >= threshold_ms
+            ]
+            return sorted(slow, key=lambda x: x["duration_ms"], reverse=True)[:20]
+
     def reset(self):
         """重置监控器"""
         with self._lock:
             self._metrics.clear()
+            self._records.clear()
+            self._node_stats.clear()
+            self._llm_stats.clear()
             self._start_time = time.time()
 
 

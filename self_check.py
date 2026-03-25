@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """
-CTF-Agent Comprehensive Self-Check Script (deploy version)
+CTF-Agent 综合自检脚本 (deploy版本)
 
-[任务3.2] 增强功能:
+增强功能:
 - 工具可用性检查
 - 网络连接测试
 - 配置验证
@@ -306,7 +306,7 @@ except Exception as e:
     check('Tool register functions', False, str(e))
 
 # ========================================
-# [任务3.2] 10. Tool Availability
+# 10. Tool Availability
 # ========================================
 print('\n--- Tool Availability ---')
 
@@ -351,7 +351,7 @@ except Exception as e:
     skip('fscan available', str(e))
 
 # ========================================
-# [任务3.2] 11. Configuration Validation
+# 11. Configuration Validation
 # ========================================
 print('\n--- Configuration Validation ---')
 
@@ -387,7 +387,7 @@ except Exception as e:
     check('Configuration validation', False, str(e))
 
 # ========================================
-# [任务3.2] 12. Network Connectivity
+# 12. Network Connectivity
 # ========================================
 print('\n--- Network Connectivity ---')
 
@@ -419,7 +419,7 @@ for port in required_ports:
         print(f'[INFO] Port {port} is available')
 
 # ========================================
-# [任务3.2] 13. LLM Connection Test
+# 13. LLM Connection Test
 # ========================================
 print('\n--- LLM Connection Test ---')
 
@@ -443,7 +443,7 @@ except Exception as e:
     check('LLM connection', False, str(e))
 
 # ========================================
-# [任务3.2] 14. Persistence Test
+# 14. Persistence Test
 # ========================================
 print('\n--- Persistence Module Test ---')
 
@@ -487,7 +487,7 @@ except Exception as e:
     check('Persistence module', False, str(e))
 
 # ========================================
-# [任务3.2] 15. Self-Correction Test
+# 15. Self-Correction Test
 # ========================================
 print('\n--- Self-Correction Module Test ---')
 
@@ -519,7 +519,7 @@ except Exception as e:
     check('Self-correction module', False, str(e))
 
 # ========================================
-# [任务3.2] 16. Context Compression Test
+# 16. Context Compression Test
 # ========================================
 print('\n--- Context Compression Test ---')
 

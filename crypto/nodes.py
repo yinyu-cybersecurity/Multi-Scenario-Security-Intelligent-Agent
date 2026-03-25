@@ -12,6 +12,7 @@ from typing import Dict, List, Any
 from state import CTFState
 from llm_client import llm_client
 from config import config
+from logger import get_logger
 from .tools import (
     CryptoIdentifier,
     EncodingDecoder,
@@ -19,6 +20,9 @@ from .tools import (
     ModernCryptoSolver,
     HashAnalyzer
 )
+
+# 模块日志器
+logger = get_logger("Crypto")
 
 
 def crypto_analyst_node(state: Dict) -> Dict:
@@ -38,7 +42,7 @@ def crypto_analyst_node(state: Dict) -> Dict:
         2. 自动识别编码/加密类型
         3. 提供解密建议
     """
-    print("[CryptoAnalyst] Starting crypto analysis...")
+    logger.info("Starting crypto analysis...")
 
     # 收集待分析的密文
     ciphertexts = []
@@ -78,7 +82,7 @@ def crypto_analyst_node(state: Dict) -> Dict:
     ciphertexts = list(set(ciphertexts))
 
     if not ciphertexts:
-        print("[CryptoAnalyst] No ciphertext found")
+        logger.warning("No ciphertext found")
         return {
             "crypto_analysis": {"status": "no_ciphertext"},
             "execution_steps": state.get("execution_steps", 0) + 1
@@ -100,7 +104,7 @@ def crypto_analyst_node(state: Dict) -> Dict:
     else:
         llm_analysis = "No encryption patterns identified"
 
-    print(f"[CryptoAnalyst] Analyzed {len(analysis_results)} ciphertexts")
+    logger.info(f"Analyzed {len(analysis_results)} ciphertexts")
 
     return {
         "crypto_analysis": {
@@ -130,7 +134,7 @@ def crypto_solver_node(state: Dict) -> Dict:
         2. 执行AI生成的解密命令
         3. 验证解密结果
     """
-    print("[CryptoSolver] AI driving decryption...")
+    logger.info("AI driving decryption...")
 
     crypto_analysis = state.get("crypto_analysis", {})
     if crypto_analysis.get("status") != "analyzed":
@@ -156,7 +160,7 @@ def crypto_solver_node(state: Dict) -> Dict:
         # AI决策解密策略
         decrypt_strategy = _ai_decide_decrypt_strategy(ciphertext, types, state)
 
-        print(f"[CryptoSolver] AI策略: {decrypt_strategy.get('encryption_type')}")
+        logger.info(f"AI策略: {decrypt_strategy.get('encryption_type')}")
 
         ai_success = False
 
@@ -181,7 +185,7 @@ def crypto_solver_node(state: Dict) -> Dict:
                                     potential_flags.append(plaintext)
                                 break
                 except Exception as e:
-                    print(f"[CryptoSolver] 执行失败: {e}")
+                    logger.error(f"执行失败: {e}")
 
         # 如果AI解密失败，尝试规则方法
         if not ai_success:
@@ -219,7 +223,7 @@ def crypto_solver_node(state: Dict) -> Dict:
                 if _contains_flag(r["plaintext"]):
                     potential_flags.append(r["plaintext"])
 
-    print(f"[CryptoSolver] Decrypted {len(decrypted_results)} items, found {len(potential_flags)} potential flags")
+    logger.info(f"Decrypted {len(decrypted_results)} items, found {len(potential_flags)} potential flags")
 
     return {
         "decrypted_data": decrypted_results,
@@ -275,7 +279,7 @@ def _ai_decide_decrypt_strategy(ciphertext: str, possible_types: List[Dict], sta
         return result
 
     except Exception as e:
-        print(f"[AI解密决策] 失败: {e}")
+        logger.error(f"AI解密决策失败: {e}")
         return {"encryption_type": "unknown", "commands": []}
 
 

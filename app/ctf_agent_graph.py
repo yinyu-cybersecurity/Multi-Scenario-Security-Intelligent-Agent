@@ -13,8 +13,26 @@ from urllib.parse import urlparse
 from context_compressor import get_chain_recorder, get_compressor
 
 # 统一日志系统
-from logger import get_logger
+from logger import get_logger, node_log, log_node_start, log_node_result, log_attack, log_flag_found
 logger = get_logger(__name__)
+
+def log(msg: str, node: str = "main", level: str = "info"):
+    """
+    统一日志输出函数
+    同时输出到控制台（带颜色/图标）和日志文件
+    """
+    node_log(node, msg, level)
+
+# 节点日志快捷函数
+def log_recon(msg: str): log(msg, node="recon")
+def log_analyst(msg: str): log(msg, node="analyst")
+def log_attacker(msg: str): log(msg, node="attacker")
+def log_verifier(msg: str): log(msg, node="verifier")
+def log_explorer(msg: str): log(msg, node="explorer")
+def log_innovator(msg: str): log(msg, node="innovator")
+def log_detector(msg: str): log(msg, node="challenge_type_detector")
+def log_mode_manager(msg: str): log(msg, node="mode_manager")
+def log_system(msg: str): log(msg, node="system")
 
 # 抑制 SSL 安全警告 (CTF 环境中通常不需要)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -74,11 +92,11 @@ def ensure_protocol_consistency(target_url: str, original_url: str) -> str:
     if original_is_https and target_url.lower().startswith("http://"):
         # 将http改为https
         target_url = "https://" + target_url[7:]
-        print(f"   ⚠️ 协议修正: http -> https")
+        log(f"   ⚠️ 协议修正: http -> https")
     elif not original_is_https and target_url.lower().startswith("https://"):
         # 将https改为http
         target_url = "http://" + target_url[8:]
-        print(f"   ⚠️ 协议修正: https -> http")
+        log(f"   ⚠️ 协议修正: https -> http")
 
     return target_url
 
@@ -269,7 +287,7 @@ def log_node_data(node_name: str, input_data: Any, output_data: Any):
         f.write(json.dumps(input_data, indent=2, ensure_ascii=False, default=str))
         f.write(f"\n\n=== [{node_name}] OUTPUT ===\n")
         f.write(json.dumps(output_data, indent=2, ensure_ascii=False, default=str))
-    print(f"📝 [Log] {node_name} 数据已写入 {log_file}")
+    log(f"📝 [Log] {node_name} 数据已写入 {log_file}")
 
 def calculate_dom_fingerprint(html_content: str) -> str:
     """计算DOM结构指纹"""
@@ -305,7 +323,7 @@ def challenge_type_detector_node(state: CTFState) -> Dict:
         - Misc: 图片/音频/pcap等杂项文件
         - Internal: 内网IP地址
     """
-    print("[TypeDetector] Analyzing challenge type...")
+    log("[TypeDetector] Analyzing challenge type...")
 
     task_name = state.get("task_name", "")
     task_desc = state.get("task_description", "")
@@ -331,42 +349,42 @@ def challenge_type_detector_node(state: CTFState) -> Dict:
                 # ELF文件 - 进一步判断是Pwn还是Reverse
                 # 通过LLM分析任务描述来区分
                 if _is_pwn_challenge(task_name, task_desc):
-                    print(f"   [Signal:Attachment] Pwn challenge detected (ELF binary)")
+                    log(f"   [Signal:Attachment] Pwn challenge detected (ELF binary)")
                     result = {"pwn_mode": True, "binary_path": att_path}
                 else:
-                    print(f"   [Signal:Attachment] Reverse challenge detected (ELF binary)")
+                    log(f"   [Signal:Attachment] Reverse challenge detected (ELF binary)")
                     result = {"reverse_mode": True, "binary_path": att_path}
                 break
 
             elif ext in ['exe', 'dll'] or att_type in ['pe', 'exe']:
-                print(f"   [Signal:Attachment] Reverse/Pwn challenge (PE binary)")
+                log(f"   [Signal:Attachment] Reverse/Pwn challenge (PE binary)")
                 result = {"reverse_mode": True, "binary_path": att_path}
                 break
 
             # Misc文件类型
             elif ext in ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'wav', 'mp3', 'mp4', 'avi']:
-                print(f"   [Signal:Attachment] Misc challenge (media file: {ext})")
+                log(f"   [Signal:Attachment] Misc challenge (media file: {ext})")
                 result = {"misc_mode": True, "misc_file": att_path}
                 break
 
             elif ext in ['pcap', 'pcapng', 'cap']:
-                print(f"   [Signal:Attachment] Misc challenge (traffic capture)")
+                log(f"   [Signal:Attachment] Misc challenge (traffic capture)")
                 result = {"misc_mode": True, "misc_file": att_path}
                 break
 
             elif ext in ['pdf', 'doc', 'docx', 'xls', 'xlsx']:
-                print(f"   [Signal:Attachment] Misc challenge (document)")
+                log(f"   [Signal:Attachment] Misc challenge (document)")
                 result = {"misc_mode": True, "misc_file": att_path}
                 break
 
             elif ext in ['zip', 'rar', '7z', 'tar', 'gz']:
-                print(f"   [Signal:Attachment] Misc challenge (archive)")
+                log(f"   [Signal:Attachment] Misc challenge (archive)")
                 result = {"misc_mode": True, "misc_file": att_path}
                 break
 
             # Crypto文件类型
             elif ext in ['enc', 'key', 'pem', 'pub', 'priv']:
-                print(f"   [Signal:Attachment] Crypto challenge (key file)")
+                log(f"   [Signal:Attachment] Crypto challenge (key file)")
                 result = {"crypto_mode": True}
                 break
 
@@ -387,36 +405,36 @@ def challenge_type_detector_node(state: CTFState) -> Dict:
         if test_url.startswith('http://') or test_url.startswith('https://'):
             is_accessible, response_info = _check_http_accessible(test_url)
             if is_accessible:
-                print(f"   [Signal:HTTP] Web challenge (service accessible)")
+                log(f"   [Signal:HTTP] Web challenge (service accessible)")
                 # HTTP 可访问，检查是否有内网渗透特征
                 # [修复] 移除对未定义变量 raw_html 的引用
                 if response_info.get("server", "").lower().find("nginx") >= 0:
-                    print(f"   [Signal:Web-Framework] 可能使用Nginx服务器")
+                    log(f"   [Signal:Web-Framework] 可能使用Nginx服务器")
                 result = {}  # Web是默认模式
             else:
                 # HTTP不可访问
                 if ip_match:
-                    print(f"   [Signal:IP-NoHTTP] IP地址无HTTP服务 -> 内网扫描模式")
+                    log(f"   [Signal:IP-NoHTTP] IP地址无HTTP服务 -> 内网扫描模式")
                     result = {"internal_mode": True}
                 else:
-                    print(f"   [Signal:Unknown] HTTP not accessible, will use LLM analysis")
+                    log(f"   [Signal:Unknown] HTTP not accessible, will use LLM analysis")
         elif target_url.startswith('file://') or os.path.exists(target_url):
             # 本地文件路径
-            print(f"   [Signal:LocalFile] Processing local file")
+            log(f"   [Signal:LocalFile] Processing local file")
             result = _detect_file_type(target_url)
 
     # =========================================================================
     # 策略3: LLM智能判断（兜底方案）
     # =========================================================================
     if not result:
-        print("   [Signal:LLM] Using LLM for type detection...")
+        log("   [Signal:LLM] Using LLM for type detection...")
         llm_result = _llm_detect_challenge_type(task_name, task_desc, target_url, attachments)
         if llm_result:
             result = llm_result
 
     # 如果仍未确定，默认Web模式
     if not result:
-        print("   [Default] Assuming Web challenge")
+        log("   [Default] Assuming Web challenge")
         result = {}
 
     result["execution_steps"] = state.get("execution_steps", 0) + 1
@@ -560,8 +578,8 @@ def _llm_detect_challenge_type(task_name: str, task_desc: str,
         detected_type = result.get("type", "web")
         confidence = result.get("confidence", 0.5)
 
-        print(f"   [LLM Result] Type: {detected_type}, Confidence: {confidence:.2f}")
-        print(f"   [LLM Reason] {result.get('reasoning', 'N/A')}")
+        log(f"   [LLM Result] Type: {detected_type}, Confidence: {confidence:.2f}")
+        log(f"   [LLM Reason] {result.get('reasoning', 'N/A')}")
 
         if detected_type == "pwn":
             return {"pwn_mode": True}
@@ -577,7 +595,7 @@ def _llm_detect_challenge_type(task_name: str, task_desc: str,
             return {}  # Web is default
 
     except Exception as e:
-        print(f"   [LLM Error] {e}")
+        log(f"   [LLM Error] {e}")
         return {}
 
 
@@ -600,7 +618,7 @@ def recon_node(state: CTFState) -> Dict:
     scanned_ips = state.get("scanned_ips", []) or []
     scanned_urls = state.get("scanned_urls", []) or []
 
-    print(f"📡 [侦察] {url}")
+    log(f"📡 [侦察] {url}")
 
     # =========================================================================
     # 新增: 检测是否是纯 IP 目标，执行 fscan 扫描
@@ -615,7 +633,7 @@ def recon_node(state: CTFState) -> Dict:
     if ip_match:
         target_ip = ip_match.group(1)
         if target_ip not in scanned_ips:
-            print(f"   🔍 [fscan] 扫描目标 IP: {target_ip}")
+            log(f"   🔍 [fscan] 扫描目标 IP: {target_ip}")
             try:
                 fscan_result = ToolRegistry.execute_cached("fscan", target_ip, {
                     "scan_type": "quick"
@@ -644,17 +662,17 @@ def recon_node(state: CTFState) -> Dict:
                             })
                     fscan_findings = findings
                     if findings:
-                        print(f"   🔥 fscan 发现 {len(findings)} 个潜在漏洞/服务")
+                        log(f"   🔥 fscan 发现 {len(findings)} 个潜在漏洞/服务")
                         for f in findings[:5]:
                             vuln_type = f.get("type", "unknown")
                             port = f.get("port", "?")
                             info = f.get("info", "")[:50]
-                            print(f"      - [{vuln_type}] {target_ip}:{port} {info}")
+                            log(f"      - [{vuln_type}] {target_ip}:{port} {info}")
             except Exception as e:
-                print(f"   ⚠️ [fscan] 扫描失败: {e}")
+                log(f"   ⚠️ [fscan] 扫描失败: {e}")
             scanned_ips = scanned_ips + [target_ip]
         else:
-            print(f"   ⏭️ [fscan] IP {target_ip} 已扫描过，跳过")
+            log(f"   ⏭️ [fscan] IP {target_ip} 已扫描过，跳过")
 
     # =========================================================================
     # 新增: 对 Web 目标执行 dirsearch 扫描
@@ -663,7 +681,7 @@ def recon_node(state: CTFState) -> Dict:
     # 确定扫描目标 URL（去掉参数和片段）
     scan_url = url.split('?')[0].split('#')[0]
     if scan_url not in scanned_urls and (scan_url.startswith('http')):
-        print(f"   📂 [dirsearch] 目录扫描: {scan_url}")
+        log(f"   📂 [dirsearch] 目录扫描: {scan_url}")
         try:
             dirsearch_result = ToolRegistry.execute_cached("dirsearch", scan_url, {
                 "extensions": "php,html,js,txt,bak,sql,zip,tar,gz",
@@ -676,19 +694,19 @@ def recon_node(state: CTFState) -> Dict:
                 critical_paths = dirsearch_result.get("result", {}).get("critical_paths", [])
                 if critical_paths:
                     dirsearch_paths = [p.get("url", "") for p in critical_paths if p.get("url")]
-                    print(f"   ✅ dirsearch 发现 {len(dirsearch_paths)} 条路径")
+                    log(f"   ✅ dirsearch 发现 {len(dirsearch_paths)} 条路径")
                     for p in critical_paths[:5]:
                         status = p.get("status", "?")
                         reason = p.get("reason", "")[:50]
-                        print(f"      - [{status}] {p.get('url', '?')} ({reason})")
+                        log(f"      - [{status}] {p.get('url', '?')} ({reason})")
                 # 检查是否有漏洞
                 if dirsearch_result.get("result", {}).get("vulnerable"):
-                    print(f"   🔥 dirsearch 发现敏感路径或配置泄露!")
+                    log(f"   🔥 dirsearch 发现敏感路径或配置泄露!")
         except Exception as e:
-            print(f"   ⚠️ [dirsearch] 扫描失败: {e}")
+            log(f"   ⚠️ [dirsearch] 扫描失败: {e}")
         scanned_urls = scanned_urls + [scan_url]
     elif scan_url in scanned_urls:
-        print(f"   ⏭️ [dirsearch] URL {scan_url} 已扫描过，跳过")
+        log(f"   ⏭️ [dirsearch] URL {scan_url} 已扫描过，跳过")
 
     # =========================================================================
     # 1. 发起 HTTP 请求获取原始 HTML
@@ -713,9 +731,9 @@ def recon_node(state: CTFState) -> Dict:
                     "url": r.url,
                     "location": r.headers.get('Location', '')
                 })
-            print(f"   🔀 重定向: {http_url} -> {final_url}")
+            log(f"   🔀 重定向: {http_url} -> {final_url}")
             if "?" in final_url:
-                print(f"   📌 发现参数: {final_url.split('?', 1)[1]}")
+                log(f"   📌 发现参数: {final_url.split('?', 1)[1]}")
 
         # 记录基准响应信息
         baseline = {
@@ -727,7 +745,7 @@ def recon_node(state: CTFState) -> Dict:
             "server": resp.headers.get("Server", ""),
             "x_powered_by": resp.headers.get("X-Powered-By", "")
         }
-        print(f"   状态码: {resp.status_code}, 长度: {len(raw_html)}")
+        log(f"   状态码: {resp.status_code}, 长度: {len(raw_html)}")
 
         # 检测常见框架指纹 - 增强版
         server_header = resp.headers.get("Server", "").lower()
@@ -741,39 +759,39 @@ def recon_node(state: CTFState) -> Dict:
             version_match = re.search(r'tomcat[/\s]*(\d+\.\d+\.\d+)', server_header + raw_html, re.I)
             version = version_match.group(1) if version_match else "unknown"
             detected_frameworks.append({"name": "Tomcat", "version": version})
-            print(f"   🔥 检测到 Apache Tomcat/{version}!")
+            log(f"   🔥 检测到 Apache Tomcat/{version}!")
 
         # Spring检测
         if "spring" in x_powered_by or "spring" in html_lower or "whitelabel error page" in html_lower:
             detected_frameworks.append({"name": "Spring"})
-            print(f"   🔥 检测到 Spring 框架!")
+            log(f"   🔥 检测到 Spring 框架!")
 
         # ThinkPHP检测
         if "thinkphp" in html_lower or "thinkphp" in server_header or "thinkphp" in x_powered_by:
             detected_frameworks.append({"name": "ThinkPHP"})
-            print(f"   🔥 检测到 ThinkPHP 框架!")
+            log(f"   🔥 检测到 ThinkPHP 框架!")
 
         # Laravel检测
         if "laravel" in html_lower or "laravel" in x_powered_by:
             detected_frameworks.append({"name": "Laravel"})
-            print(f"   🔥 检测到 Laravel 框架!")
+            log(f"   🔥 检测到 Laravel 框架!")
 
         # WebLogic检测
         if "weblogic" in server_header or "weblogic" in html_lower:
             detected_frameworks.append({"name": "WebLogic"})
-            print(f"   🔥 检测到 WebLogic!")
+            log(f"   🔥 检测到 WebLogic!")
 
         # Shiro检测 (rememberMe cookie)
         if "rememberme" in str(resp.cookies).lower() or "shiro" in html_lower:
             detected_frameworks.append({"name": "Shiro"})
-            print(f"   🔥 检测到 Shiro 框架!")
+            log(f"   🔥 检测到 Shiro 框架!")
 
         # 存储检测到的框架，供后续使用
         if detected_frameworks:
             baseline["detected_frameworks"] = detected_frameworks
 
     except Exception as e:
-        print(f"   ❌ 请求失败: {e}")
+        log(f"   ❌ 请求失败: {e}")
         raw_html = "<html><body><!-- Connection Failed --></body></html>"
         baseline = {"status_code": 0, "content_length": 0, "response_time": 0}
 
@@ -782,7 +800,7 @@ def recon_node(state: CTFState) -> Dict:
     # 去重检查
     visited_fps = state.get("visited_fingerprints") or []
     if fingerprint in visited_fps:
-        print(f"   ⏭️ 页面重复，跳过 LLM 分析")
+        log(f"   ⏭️ 页面重复，跳过 LLM 分析")
         return {
             "visited_urls": [url],
             "scanned_ips": scanned_ips,
@@ -854,7 +872,7 @@ def recon_node(state: CTFState) -> Dict:
 
         recon_data = json.loads(response_text)
     except Exception as e:
-        print(f"❌ [Recon] LLM 提取失败: {e}")
+        log(f"❌ [Recon] LLM 提取失败: {e}")
         recon_data = {}
 
     # 合并 dirsearch 发现的敏感路径
@@ -893,7 +911,7 @@ def recon_node(state: CTFState) -> Dict:
 
             # 自动触发并行漏洞扫描 (nuclei + xray + fscan)
             if fw_name in ["Tomcat", "Spring", "WebLogic", "Shiro", "ThinkPHP"]:
-                print(f"   🔬 自动触发 {fw_name} 并行CVE扫描...")
+                log(f"   🔬 自动触发 {fw_name} 并行CVE扫描...")
 
                 # 导入并行扫描函数
                 from tool_selector import run_parallel_vuln_scan, aggregate_scan_results
@@ -947,7 +965,7 @@ def recon_node(state: CTFState) -> Dict:
     # 如果识别到新场景，重置场景攻击计数
     prev_focused_scene = state.get("focused_scene", "")
     if focused_scene and focused_scene != prev_focused_scene:
-        print(f"   🎯 新的聚焦场景: {focused_scene}")
+        log(f"   🎯 新的聚焦场景: {focused_scene}")
         scene_attack_attempts = 0
         scene_exhausted = False
     else:
@@ -1014,7 +1032,7 @@ def analyst_node(state: CTFState) -> Dict:
     """
     分析兵 - 调用大模型进行深度漏洞分析
     """
-    print("🔍 [分析] 解析页面特征...")
+    log("🔍 [分析] 解析页面特征...")
 
     # 1. 准备输入数据
     page_features = state.get("page_features", {})
@@ -1036,6 +1054,24 @@ def analyst_node(state: CTFState) -> Dict:
     focused_scene = state.get("focused_scene", "")
     scene_exhausted = state.get("scene_exhausted", False)
 
+    # 获取拓扑信息
+    critical_nodes = state.get("critical_nodes", [])
+    topology_priority = state.get("topology_priority", [])
+    current_url = state.get("current_url", "")
+
+    # 构建拓扑提示
+    topology_hint = None
+    if critical_nodes or topology_priority:
+        hint_parts = []
+        if current_url in critical_nodes:
+            hint_parts.append(f"当前URL是关键节点（PageRank Top {len(critical_nodes)}），请提升分析深度，优先挖掘漏洞。")
+        elif critical_nodes:
+            hint_parts.append(f"已知关键节点: {critical_nodes[:3]}")
+        if topology_priority:
+            top_targets = [url for url, score in topology_priority[:3]]
+            hint_parts.append(f"拓扑优先目标: {top_targets}")
+        topology_hint = "\n".join(hint_parts)
+
     # 2. 构建 Prompt
     prompt = get_analyst_prompt(
         page_features,
@@ -1047,7 +1083,8 @@ def analyst_node(state: CTFState) -> Dict:
         detected_scenes=detected_scenes,
         tools_info=tools_info,
         focused_scene=focused_scene,
-        scene_tested=scene_exhausted
+        scene_tested=scene_exhausted,
+        topology_hint=topology_hint  # 新增：拓扑提示
     )
     
     # 3. 调用 LLM
@@ -1059,7 +1096,7 @@ def analyst_node(state: CTFState) -> Dict:
     )
     
     if not response_text:
-        print("   ⚠️ LLM 无响应，使用规则引擎结果")
+        log("   ⚠️ LLM 无响应，使用规则引擎结果")
         log_node_data("analyst", {"prompt": prompt}, {"error": "LLM failed"})
         return {"vuln_candidates": rule_candidates} # 降级：使用规则引擎的结果
 
@@ -1102,11 +1139,11 @@ def analyst_node(state: CTFState) -> Dict:
                 "url": current_url # [核心修复] 绑定当前 URL
             })
             
-        print(f"   ✅ 发现 {len(formatted_candidates)} 个潜在漏洞点")
+        log(f"   ✅ 发现 {len(formatted_candidates)} 个潜在漏洞点")
 
         # 如果 formatted_candidates 为空，直接触发探索模式
         if not formatted_candidates:
-            print("   ⚠️ 未识别到漏洞候选，触发探索模式")
+            log("   ⚠️ 未识别到漏洞候选，触发探索模式")
             return {
                 "vuln_candidates": [],
                 "analyst_intel": "\n\n".join(key_intel_parts) if key_intel_parts else None,
@@ -1119,7 +1156,7 @@ def analyst_node(state: CTFState) -> Dict:
         return res
 
     except json.JSONDecodeError:
-        print(f"   ❌ JSON 解析失败")
+        log(f"   ❌ JSON 解析失败")
         log_node_data("analyst", {"prompt": prompt, "raw_response": response_text}, {"error": "JSON parse error"})
         # JSON解析失败也返回空，触发探索
         return {
@@ -1155,15 +1192,15 @@ def mode_manager_node(state: CTFState) -> Dict:
     # 但 innovate 模式是"一次性"的，innovator 执行后应该重置
     preset_mode = state.get("current_mode")
     if preset_mode == "end":
-        print(f"📍 保持预设模式: end")
+        log(f"📍 保持预设模式: end")
         return {"current_mode": "end"}
     elif preset_mode == "explore":
         # explore 可能需要多轮，保持
-        print(f"📍 保持预设模式: explore")
+        log(f"📍 保持预设模式: explore")
         return {"current_mode": "explore"}
     elif preset_mode == "innovate":
         # [关键修复] innovate 是一次性的，innovator 已执行过，重置分数并切回 exploit
-        print(f"📍 创新模式已执行，重置分数并切回攻击模式")
+        log(f"📍 创新模式已执行，重置分数并切回攻击模式")
         return {
             "current_mode": "exploit",
             "failure_weighted_score": 0,  # 重置分数，给新规则机会
@@ -1180,11 +1217,11 @@ def mode_manager_node(state: CTFState) -> Dict:
 
     if focused_scene and not scene_exhausted:
         if scene_attack_attempts < MAX_SCENE_ATTEMPTS:
-            print(f"🎯 聚焦场景 [{focused_scene}] 继续攻击 ({scene_attack_attempts}/{MAX_SCENE_ATTEMPTS})")
+            log(f"🎯 聚焦场景 [{focused_scene}] 继续攻击 ({scene_attack_attempts}/{MAX_SCENE_ATTEMPTS})")
             return {"current_mode": "exploit"}
         else:
             # 场景已穷尽
-            print(f"🔄 场景 [{focused_scene}] 已穷尽 {scene_attack_attempts} 次攻击，切换探索模式")
+            log(f"🔄 场景 [{focused_scene}] 已穷尽 {scene_attack_attempts} 次攻击，切换探索模式")
             return {
                 "current_mode": "explore",
                 "scene_exhausted": True
@@ -1194,12 +1231,12 @@ def mode_manager_node(state: CTFState) -> Dict:
     # [重要] 头脑风暴只在Web CTF模式下触发，内网渗透不触发
     internal_mode = state.get("internal_mode", False)
     if not internal_mode and (steps >= config.MAX_STEPS_BEFORE_HITL or score >= config.HITL_FAILURE_SCORE):
-        print(f"💡 自动进入创新模式 (步数:{steps}, 失败分:{score:.1f})")
+        log(f"💡 自动进入创新模式 (步数:{steps}, 失败分:{score:.1f})")
         return {"current_mode": "innovate"}
     elif internal_mode:
         # 内网模式下不触发头脑风暴，继续内网渗透
         # 内网渗透只有唯一结束条件：50分钟超时（由NODE_TIMEOUT控制）
-        print(f"🌐 内网模式，跳过头脑风暴，继续渗透 (步数:{steps}, 失败分:{score:.1f})")
+        log(f"🌐 内网模式，跳过头脑风暴，继续渗透 (步数:{steps}, 失败分:{score:.1f})")
 
     # 3. 节点状态管理 - 智能放弃判断
     # 不再仅凭 attempt_count 判断，而是看最近的攻击是否有进展
@@ -1214,17 +1251,17 @@ def mode_manager_node(state: CTFState) -> Dict:
             success_rate = sum(1 for c in recent_codes if c not in [404, 500, 0]) / len(recent_codes)
             if success_rate < 0.3:  # 最近5次攻击中，成功率低于30%才放弃
                 status["status"] = "abandoned"
-                print(f"   🛑 放弃节点（成功率低）: {current_url}")
+                log(f"   🛑 放弃节点（成功率低）: {current_url}")
             else:
-                print(f"   📊 节点仍有进展（成功率 {success_rate*100:.0f}%），继续攻击")
+                log(f"   📊 节点仍有进展（成功率 {success_rate*100:.0f}%），继续攻击")
 
     # 4. 模式切换 - 简化阈值
     # [重要] 头脑风暴只在Web CTF模式下触发
     if score >= config.FAILURE_SCORE_FOR_INNOVATE and not internal_mode:
-        print(f"💡 创新模式 (失败分:{score:.1f})")
+        log(f"💡 创新模式 (失败分:{score:.1f})")
         return {"current_mode": "innovate"}
     elif score >= config.FAILURE_SCORE_FOR_EXPLORE:
-        print(f"🗺️ 探索模式 (失败分:{score:.1f})")
+        log(f"🗺️ 探索模式 (失败分:{score:.1f})")
         return {"current_mode": "explore"}
     else:
         return {
@@ -1274,17 +1311,17 @@ def execute_single_attack(action: Dict, current_url: str, page_history: Dict) ->
             req_params = params.get("params")
             if isinstance(req_params, str):
                 try: req_params = json.loads(req_params)
-                except: pass # 如果解析失败，可能是普通字符串，保留原样或置空
-            
+                except (json.JSONDecodeError, ValueError): pass  # 解析失败，保留原样
+
             req_data = params.get("data")
             if isinstance(req_data, str):
                 try: req_data = json.loads(req_data)
-                except: pass # POST data 可以是字符串
-            
+                except (json.JSONDecodeError, ValueError): pass  # POST data 可以是字符串
+
             req_headers = params.get("headers")
             if isinstance(req_headers, str):
                 try: req_headers = json.loads(req_headers)
-                except: req_headers = {}
+                except (json.JSONDecodeError, ValueError): req_headers = {}
 
             # 支持文件上传 (multipart/form-data)
             req_files = params.get("files")
@@ -1335,7 +1372,7 @@ def execute_single_attack(action: Dict, current_url: str, page_history: Dict) ->
                     try:
                         f.close()
                     except Exception as e:
-                        print(f"[Warning] Failed to close file handle: {e}")
+                        log(f"[Warning] Failed to close file handle: {e}")
             duration = time.time() - start_time
             content = resp.content
             
@@ -1446,7 +1483,7 @@ def execute_single_attack(action: Dict, current_url: str, page_history: Dict) ->
     except Exception as e:
         # [核心修复] 将详细报错信息放入 output，让核验兵能识别出具体错误
         error_msg = f"Execution Exception: {str(e)}\n{traceback.format_exc()}"
-        print(f"❌ [Executor] 攻击动作执行失败: {tool_name}\n{error_msg}")
+        log(f"❌ [Executor] 攻击动作执行失败: {tool_name}\n{error_msg}")
         
         return {
             "action_id": f"err_{tool_name}_{int(time.time())}_{hash(str(action))%1000}",
@@ -1464,11 +1501,24 @@ def attacker_node(state: CTFState) -> Dict:
     [攻击兵] (同步并发执行优化版)
     """
     current_url = state.get("current_url")
-    print(f"⚔️ [攻击] 目标: {current_url}")
+    log(f"⚔️ [攻击] 目标: {current_url}")
+
+    # 获取拓扑优先级
+    topology_priority = state.get("topology_priority", [])
+    priority_dict = {url: score for url, score in topology_priority}
+    current_priority = priority_dict.get(current_url, 0.5)
+
     # [核心修复] 只攻击匹配当前 URL 的候选点
     all_candidates = state.get("vuln_candidates", [])
     candidates = [c for c in all_candidates if c.get("url") == current_url]
-    
+
+    # 按拓扑优先级 + 置信度排序
+    if candidates and priority_dict:
+        candidates.sort(key=lambda c: (
+            c.get("confidence", 0) * 0.6 + priority_dict.get(c.get("url", ""), 0.5) * 0.4
+        ), reverse=True)
+        log(f"   📊 已按拓扑优先级排序候选漏洞")
+
     # [节点状态管理]
     node_status = state.get("node_attack_status", {})
     if current_url and current_url not in node_status:
@@ -1484,7 +1534,7 @@ def attacker_node(state: CTFState) -> Dict:
         node_status[current_url]["attempt_count"] += 1
 
     if not candidates:
-        print(f"   ⚠️ 无匹配漏洞候选项，直接触发探索模式")
+        log(f"   ⚠️ 无匹配漏洞候选项，直接触发探索模式")
         # 直接设置模式为 explore，跳过 verifier
         return {
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 2.0,  # 直接加2.0触发explore
@@ -1492,21 +1542,27 @@ def attacker_node(state: CTFState) -> Dict:
             "execution_steps": state.get("execution_steps", 0) + 1
         }
 
-    # 1. 扩容动作数量：实现饱和测试
+    # 1. 扩容动作数量：实现饱和测试（高优先级目标增加动作数量）
     # 动态获取所有注册工具的详细定义（含参数规范）
     tools_info = ToolRegistry.get_all_tools_info()
-    
+
+    # 根据拓扑优先级动态调整攻击动作数量
+    max_actions = 15 if current_priority > 0.7 else 10
+    if current_priority > 0.7:
+        log(f"   🎯 高优先级目标，增加攻击动作上限至 {max_actions}")
+
     # [优化] 获取最近的攻击历史，用于防止重复并引导进化
     history = state.get("attack_results", [])[-10:]
-    
+
     # 获取题目背景信息
     task_info = {
         "name": state.get("task_name", "Unknown"),
         "description": state.get("task_description", "No description"),
         "target_url": state.get("target_url", ""),
-        "current_url": current_url
+        "current_url": current_url,
+        "topology_priority": current_priority  # 新增：传递优先级信息
     }
-    
+
     # 获取最新的人工提示
     human_hint = None
     hint_history = state.get("hint_history", [])
@@ -1516,7 +1572,7 @@ def attacker_node(state: CTFState) -> Dict:
             human_hint = latest_hint.get("content")
 
     prompt = get_attacker_prompt(
-        candidates[:10],
+        candidates[:max_actions],  # 使用动态上限
         tools_info,
         history,
         task_info=task_info,
@@ -1548,7 +1604,7 @@ def attacker_node(state: CTFState) -> Dict:
                 result["attack_actions"] = result["actions"]
         except json.JSONDecodeError as json_err:
             # 尝试修复常见问题
-            print(f"⚠️ [Attacker] JSON解析失败，尝试修复: {json_err}")
+            log(f"⚠️ [Attacker] JSON解析失败，尝试修复: {json_err}")
             # 1. 尝试截断到最后一个完整的 }
             if '"attack_actions"' in response_text or '"actions"' in response_text:
                 # 提取 attack_actions 或 actions 数组
@@ -1568,9 +1624,9 @@ def attacker_node(state: CTFState) -> Dict:
                             try:
                                 raw_actions = json.loads(actions_str)
                                 result = {"attack_actions": raw_actions}
-                                print(f"✅ [Attacker] JSON修复成功，提取到 {len(raw_actions)} 个动作")
+                                log(f"✅ [Attacker] JSON修复成功，提取到 {len(raw_actions)} 个动作")
                             except (json.JSONDecodeError, TypeError) as e:
-                                print(f"[Warning] JSON parse failed in recovery: {e}")
+                                log(f"[Warning] JSON parse failed in recovery: {e}")
                                 result = {"attack_actions": []}
                             break
                     else:
@@ -1580,7 +1636,7 @@ def attacker_node(state: CTFState) -> Dict:
             else:
                 result = {"attack_actions": []}
 
-        raw_actions = result.get("attack_actions", [])[:15] 
+        raw_actions = result.get("attack_actions", [])[:max_actions] 
         
         # [核心修复] 允许 requests 多次调用，其他工具强制去重
         attack_actions = []
@@ -1594,19 +1650,19 @@ def attacker_node(state: CTFState) -> Dict:
             # 策略：requests 作为手工工具，允许并发多个不同 Payload
             # 其他自动化工具（如 sqlmap）每轮强制唯一
             if tool != "requests" and tool in used_tools:
-                print(f"⚠️ [Attacker] 忽略重复工具调用: {tool}")
+                log(f"⚠️ [Attacker] 忽略重复工具调用: {tool}")
                 continue
             
             attack_actions.append(action)
             used_tools.add(tool)
                 
     except Exception as e:
-        print(f"   ❌ LLM 决策失败: {e}")
+        log(f"   ❌ LLM 决策失败: {e}")
         log_node_data("attacker", {"prompt": prompt}, {"error": str(e)})
         attack_actions = []
 
     if not attack_actions:
-        print("   ⚠️ LLM 未生成有效攻击动作")
+        log("   ⚠️ LLM 未生成有效攻击动作")
         # 不硬编码备用攻击，而是增加失败分触发模式切换
         res = {
             "attack_batch": [],
@@ -1618,7 +1674,7 @@ def attacker_node(state: CTFState) -> Dict:
         return res
 
     # 2. 并发执行
-    print(f"   执行 {len(attack_actions)} 个攻击动作...")
+    log(f"   执行 {len(attack_actions)} 个攻击动作...")
 
     # [同步修复] 使用线程池执行，并设置合理的单任务超时
     attack_results = []
@@ -1645,7 +1701,7 @@ def attacker_node(state: CTFState) -> Dict:
                 attack_results.append(f.result())
             except Exception as e:
                 action = futures_map[f]
-                print(f"❌ [Attacker] 任务执行崩溃: {action.get('tool')} - {e}")
+                log(f"❌ [Attacker] 任务执行崩溃: {action.get('tool')} - {e}")
                 attack_results.append({
                     "tool": action.get("tool"),
                     "status": 500,
@@ -1656,7 +1712,7 @@ def attacker_node(state: CTFState) -> Dict:
         # 处理超时的任务
         for f in not_done:
             action = futures_map[f]
-            print(f"⚠️ [Attacker] 任务执行超时已取消: {action.get('tool')}")
+            log(f"⚠️ [Attacker] 任务执行超时已取消: {action.get('tool')}")
             # 注意：concurrent.futures 无法强制杀掉正在运行的线程，但我们可以不再等待它
             attack_results.append({
                 "tool": action.get("tool"),
@@ -1666,15 +1722,15 @@ def attacker_node(state: CTFState) -> Dict:
             })
 
     except KeyboardInterrupt:
-        print("\n🛑 [Attacker] 用户中断执行，正在尝试收尾...")
+        log("\n🛑 [Attacker] 用户中断执行，正在尝试收尾...")
         raise # 重新抛出让主程序处理
     except Exception as e:
-        print(f"❌ [Attacker] 并发管理异常: {e}")
+        log(f"❌ [Attacker] 并发管理异常: {e}")
 
     # 3. 检查是否有成功的动作 (Early Exit Sign)
     success_found = any(r.get("is_exploit") for r in attack_results)
     if success_found:
-        print("   🔥 有动作命中目标！")
+        log("   🔥 有动作命中目标！")
 
     # 4. 合并工具发现的结构化数据
     discovered_vulns = []
@@ -1701,11 +1757,11 @@ def attacker_node(state: CTFState) -> Dict:
 
     # 打印发现摘要
     if discovered_vulns:
-        print(f"   📌 发现 {len(discovered_vulns)} 个新漏洞")
+        log(f"   📌 发现 {len(discovered_vulns)} 个新漏洞")
     if discovered_creds:
-        print(f"   🔑 发现 {len(discovered_creds)} 个新凭据")
+        log(f"   🔑 发现 {len(discovered_creds)} 个新凭据")
     if discovered_hosts:
-        print(f"   🖥️ 发现 {len(discovered_hosts)} 个新主机")
+        log(f"   🖥️ 发现 {len(discovered_hosts)} 个新主机")
 
     # 记录攻击链
     try:
@@ -1727,7 +1783,7 @@ def attacker_node(state: CTFState) -> Dict:
             success=len(discovered_vulns) > 0 or len(discovered_creds) > 0
         )
     except Exception as e:
-        print(f"   ⚠️ 记录攻击链失败: {e}")
+        log(f"   ⚠️ 记录攻击链失败: {e}")
 
     res = {
         "attack_batch": attack_actions,
@@ -1754,7 +1810,7 @@ def explorer_node(state: CTFState) -> Dict:
         3. 图分析（关键节点、死循环检测）
         4. 自动剪枝无效路径
     """
-    print("🗺️ [探索] 启动目录扫描...")
+    log("🗺️ [探索] 启动目录扫描...")
     target_url = state.get("target_url")
     current_url = state.get("current_url")
     exploration_rounds = state.get("exploration_rounds", 0)
@@ -1765,7 +1821,7 @@ def explorer_node(state: CTFState) -> Dict:
     # 检查是否已扫描过该目标（避免重复）
     visited_urls = state.get("visited_urls", [])
     if scan_target in visited_urls and exploration_rounds > 0:
-        print(f"   ⏭️ 已扫描过，切换到创新模式")
+        log(f"   ⏭️ 已扫描过，切换到创新模式")
         # 已扫描过，直接切换到创新模式
         return {
             "exploration_rounds": exploration_rounds + 1,
@@ -1777,7 +1833,7 @@ def explorer_node(state: CTFState) -> Dict:
     node_status = {}
 
     if scan_target:
-        print(f"   扫描: {scan_target}")
+        log(f"   扫描: {scan_target}")
         # 调用 dirsearch
         try:
             # 默认扫描常见的 php,html,js
@@ -1785,11 +1841,11 @@ def explorer_node(state: CTFState) -> Dict:
 
             # 检查是否缓存命中
             if result.get("cached", False):
-                print(f"   📦 使用缓存结果")
+                log(f"   📦 使用缓存结果")
                 # 如果是缓存结果，说明之前扫描过，无需重复
                 exploration_rounds += 1
                 if exploration_rounds >= 2:
-                    print(f"   🔄 缓存命中且无新发现，切换到创新模式")
+                    log(f"   🔄 缓存命中且无新发现，切换到创新模式")
                     return {
                         "exploration_rounds": exploration_rounds,
                         "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
@@ -1804,7 +1860,8 @@ def explorer_node(state: CTFState) -> Dict:
                  try:
                      with open(result["result"]["file_path"], "r", encoding="utf-8") as f:
                          output = f.read()
-                 except: pass
+                 except (IOError, OSError, UnicodeDecodeError):
+                     pass  # 文件读取失败，忽略
 
             found_urls = []
             if output:
@@ -1820,9 +1877,9 @@ def explorer_node(state: CTFState) -> Dict:
 
             if found_urls:
                 new_paths[scan_target] = found_urls
-                print(f"   ✅ 发现 {len(found_urls)} 个新路径")
+                log(f"   ✅ 发现 {len(found_urls)} 个新路径")
             else:
-                print("   ⚠️ 未发现新路径")
+                log("   ⚠️ 未发现新路径")
                 # 无新发现时切换到创新模式
                 return {
                     "exploration_rounds": exploration_rounds + 1,
@@ -1831,7 +1888,7 @@ def explorer_node(state: CTFState) -> Dict:
                 }
 
         except Exception as e:
-            print(f"   ❌ 扫描失败: {e}")
+            log(f"   ❌ 扫描失败: {e}")
             return {
                 "exploration_rounds": exploration_rounds + 1,
                 "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
@@ -1856,12 +1913,12 @@ def explorer_node(state: CTFState) -> Dict:
 
     # 5.1 找出关键节点（PageRank高的节点）
     critical_nodes = analyzer.find_critical_nodes(top_k=5)
-    print(f"  📊 关键节点: {critical_nodes}")
+    log(f"  📊 关键节点: {critical_nodes}")
 
     # 5.2 检测循环路径
     cycles = analyzer.detect_cycles()
     if cycles:
-        print(f"  ⚠️ 检测到 {len(cycles)} 个循环路径")
+        log(f"  ⚠️ 检测到 {len(cycles)} 个循环路径")
 
     # 5.3 找到从入口到敏感页面的最短攻击路径
     target_url = state.get("target_url")
@@ -1869,7 +1926,13 @@ def explorer_node(state: CTFState) -> Dict:
     if sensitive_paths and target_url:
         attack_path = analyzer.find_shortest_attack_path(target_url, sensitive_paths)
         if attack_path:
-            print(f"  🎯 最短攻击路径: {' -> '.join(attack_path)}")
+            log(f"  🎯 最短攻击路径: {' -> '.join(attack_path)}")
+
+    # 5.4 计算拓扑优先级（核心对接点）
+    visited_urls = state.get("visited_urls", [])
+    topology_priority = analyzer.prioritize_attack_targets(visited_urls, top_k=10)
+    if topology_priority:
+        log(f"  🎯 拓扑优先目标: {[f'{url}({score:.2f})' for url, score in topology_priority[:3]]}")
 
     # 6. 剪枝（删除无效节点）
     pruner = TopologyPruner()
@@ -1888,7 +1951,7 @@ def explorer_node(state: CTFState) -> Dict:
     before_count = G.number_of_nodes()
     after_count = G_pruned.number_of_nodes()
     if before_count > after_count:
-        print(f"  ✂️ 剪枝完成: 节点数 {before_count} → {after_count}")
+        log(f"  ✂️ 剪枝完成: 节点数 {before_count} → {after_count}")
 
     # 8. 可选：可视化（调试用）
     if state.get("debug_mode"):
@@ -1903,6 +1966,7 @@ def explorer_node(state: CTFState) -> Dict:
         "exploration_rounds": state.get("exploration_rounds", 0) + 1,
         "site_topology": new_topology,
         "critical_nodes": critical_nodes,
+        "topology_priority": topology_priority,  # 新增：拓扑优先级列表
         "pruned_nodes": before_count - after_count
     }
 
@@ -1918,7 +1982,7 @@ def verifier_node(state: CTFState) -> Dict:
 
     合并了原verifier和reflector的职责，减少LLM调用次数
     """
-    print("🔎 [核验] 分析攻击结果...")
+    log("🔎 [核验] 分析攻击结果...")
 
     current_url = state.get("current_url")
     node_status = state.get("node_attack_status", {})
@@ -1930,7 +1994,7 @@ def verifier_node(state: CTFState) -> Dict:
 
         # 硬熔断：节点超时
         if now - status.get("start_time", now) > config.NODE_TIMEOUT:
-            print(f"   ⏰ 节点超时，放弃: {current_url}")
+            log(f"   ⏰ 节点超时，放弃: {current_url}")
             status["status"] = "abandoned"
             return {
                 "node_attack_status": node_status,
@@ -1947,9 +2011,9 @@ def verifier_node(state: CTFState) -> Dict:
     if not attack_batch:
         if current_mode == "explore":
             # 已由 attacker 设置为 explore 模式，直接返回
-            print("   ⏭️ 已触发探索模式，跳过核验")
+            log("   ⏭️ 已触发探索模式，跳过核验")
             return {}
-        print("   ⚠️ 本轮无攻击动作")
+        log("   ⚠️ 本轮无攻击动作")
         return {"failure_weighted_score": state.get("failure_weighted_score", 0) + config.HARD_FAILURE_WEIGHT}
 
     recent_results = results[-len(attack_batch):]
@@ -1962,7 +2026,7 @@ def verifier_node(state: CTFState) -> Dict:
         node_status[current_url]["attempt_count"] = node_status[current_url].get("attempt_count", 0) + 1
 
     if not recent_results:
-        print("   ⚠️ 无结果可核验")
+        log("   ⚠️ 无结果可核验")
         return {"failure_weighted_score": state.get("failure_weighted_score", 0) + config.HARD_FAILURE_WEIGHT}
 
     # [核心] Flag正则预捕获 - 三重兜底
@@ -1993,7 +2057,7 @@ def verifier_node(state: CTFState) -> Dict:
                     else:
                         res["output"] = content
             except Exception as e:
-                print(f"⚠️ [Verifier] 读取文件失败: {e}")
+                log(f"⚠️ [Verifier] 读取文件失败: {e}")
 
         diff = res.get("diff_analysis", {})
         res["diff_metrics"] = {
@@ -2041,7 +2105,7 @@ def verifier_node(state: CTFState) -> Dict:
 
     # 容错
     if not response_text or not response_text.strip():
-        print("   ⚠️ Verifier LLM 返回空响应")
+        log("   ⚠️ Verifier LLM 返回空响应")
         return {
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
             "execution_steps": state.get("execution_steps", 0) + 1,
@@ -2072,11 +2136,11 @@ def verifier_node(state: CTFState) -> Dict:
         if pre_captured_flag:
             potential_flag = pre_captured_flag
             found_flag = True
-            print(f"   🔓 预捕获 Flag: {potential_flag}")
+            log(f"   🔓 预捕获 Flag: {potential_flag}")
 
         # 找到FLAG
         if found_flag:
-            print(f"\n   🎉 找到 FLAG: {potential_flag}")
+            log(f"\n   🎉 找到 FLAG: {potential_flag}")
             return {
                 "found_flag": True,
                 "final_flag": potential_flag,
@@ -2088,7 +2152,7 @@ def verifier_node(state: CTFState) -> Dict:
 
         # 攻击成功
         if is_exploit_successful:
-            print(f"   [+] Attack effective: {evidence[:100] if evidence else 'N/A'}")
+            log(f"   [+] Attack effective: {evidence[:100] if evidence else 'N/A'}")
 
             # 检测并管理交互式会话 - 创建完整的ShellSession对象
             shell_session_info = None
@@ -2099,7 +2163,7 @@ def verifier_node(state: CTFState) -> Dict:
 
                     # 检测 meterpreter 会话
                     if "meterpreter" in output.lower() or tool in ["metasploit", "msfvenom"]:
-                        print(f"   [MSF] Detected Meterpreter session, connecting...")
+                        log(f"   [MSF] Detected Meterpreter session, connecting...")
                         try:
                             from tools.metasploit_manager import get_msf_manager
                             from remote_executor.session_manager import ShellSession, ShellType, get_session_manager
@@ -2109,7 +2173,7 @@ def verifier_node(state: CTFState) -> Dict:
                                 sessions = msf.list_sessions()
                                 if sessions:
                                     latest_session = sessions[-1]
-                                    print(f"   [MSF] Connected to session: {latest_session.id}")
+                                    log(f"   [MSF] Connected to session: {latest_session.id}")
 
                                     # 创建 ShellSession 对象并注册
                                     session_manager = get_session_manager()
@@ -2136,27 +2200,27 @@ def verifier_node(state: CTFState) -> Dict:
                                         "target": latest_session.target,
                                         "platform": latest_session.platform
                                     }
-                                    print(f"   [MSF] Session registered: {shell_session.id}")
+                                    log(f"   [MSF] Session registered: {shell_session.id}")
 
                                     # 获取系统信息
                                     sysinfo = msf.execute(latest_session.id, "sysinfo")
                                     if sysinfo.get("success"):
-                                        print(f"   [MSF] System info: {sysinfo.get('output', '')[:100]}")
+                                        log(f"   [MSF] System info: {sysinfo.get('output', '')[:100]}")
                         except Exception as msf_err:
-                            print(f"   [!] MSF connection failed: {msf_err}")
+                            log(f"   [!] MSF connection failed: {msf_err}")
                         break
 
                     # 检测其他 shell 类型
                     elif any(indicator in output.lower() for indicator in
                             ["shell>", "cmd>", "whoami", "uid=", "c:\\"]):
-                        print(f"   [Shell] Detected shell session")
+                        log(f"   [Shell] Detected shell session")
                         shell_session_info = {
                             "type": "shell",
                             "output_sample": output[:500]
                         }
                         break
             except Exception as e:
-                print(f"   [!] Session detection failed: {e}")
+                log(f"   [!] Session detection failed: {e}")
 
             new_known_facts = ""
             if updated_known_facts:
@@ -2190,7 +2254,7 @@ def verifier_node(state: CTFState) -> Dict:
             return result_dict
 
         # 攻击失败 - [P3合并] 处理节点决策
-        print(f"   📉 攻击无效 (严重度: {failure_severity})")
+        log(f"   📉 攻击无效 (严重度: {failure_severity})")
 
         # 更新场景攻击计数
         scene_attack_attempts = state.get("scene_attack_attempts", 0) + 1
@@ -2204,16 +2268,16 @@ def verifier_node(state: CTFState) -> Dict:
                 failed_payloads.append(payload_str)
 
         if node_decision == "abandon" and current_url and current_url in node_status:
-            print(f"   🛑 AI决策: 放弃节点 {current_url}")
-            print(f"   💡 原因: {failure_analysis[:100] if failure_analysis else 'N/A'}")
+            log(f"   🛑 AI决策: 放弃节点 {current_url}")
+            log(f"   💡 原因: {failure_analysis[:100] if failure_analysis else 'N/A'}")
             node_status[current_url]["status"] = "abandoned"
         elif tactical_guidance:
-            print(f"   💡 分析: {failure_analysis[:100] if failure_analysis else 'N/A'}")
-            print(f"   🎯 建议: {tactical_guidance[:100]}")
+            log(f"   💡 分析: {failure_analysis[:100] if failure_analysis else 'N/A'}")
+            log(f"   🎯 建议: {tactical_guidance[:100]}")
 
         # 如果有聚焦场景，显示进度
         if focused_scene:
-            print(f"   📍 场景 [{focused_scene}] 攻击尝试: {scene_attack_attempts}")
+            log(f"   📍 场景 [{focused_scene}] 攻击尝试: {scene_attack_attempts}")
 
         result_dict = {
             "failure_weighted_score": state.get("failure_weighted_score", 0) + failure_severity,
@@ -2228,7 +2292,7 @@ def verifier_node(state: CTFState) -> Dict:
         return result_dict
 
     except Exception as e:
-        print(f"   ❌ 解析异常: {e}")
+        log(f"   ❌ 解析异常: {e}")
         return {
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.8,
             "execution_steps": state.get("execution_steps", 0) + 1,
@@ -2673,7 +2737,7 @@ app = workflow.compile(checkpointer=checkpointer)
 
 def system_check():
     """系统功能自检 - 全量模型与工具链测试"""
-    print("🔄 [System] 开始系统功能自检...")
+    log("🔄 [System] 开始系统功能自检...")
 
     # 1. 检查所有节点使用的模型
     models_to_test = {
@@ -2685,7 +2749,7 @@ def system_check():
         "变化检测 (Detection)": config.CHANGE_DETECTION_MODEL
     }
 
-    print("   -> 检查全量 LLM 模型连通性...")
+    log("   -> 检查全量 LLM 模型连通性...")
     for role, model_name in models_to_test.items():
         try:
             # 使用极短的超时进行快速自检
@@ -2696,54 +2760,54 @@ def system_check():
                 max_tokens=5
             )
             if test_resp:
-                print(f"   ✅ {role} [{model_name}]: 响应正常")
+                log(f"   ✅ {role} [{model_name}]: 响应正常")
             else:
-                print(f"   ⚠️ {role} [{model_name}]: 无响应")
+                log(f"   ⚠️ {role} [{model_name}]: 无响应")
         except Exception as e:
-            print(f"   ❌ {role} [{model_name}] 异常: {e}")
+            log(f"   ❌ {role} [{model_name}] 异常: {e}")
 
     # 2. 检查关键工具
-    print("   -> 检查关键工具挂载...")
+    log("   -> 检查关键工具挂载...")
     tools_to_check = ["dirsearch", "sqlmap"]
     for t in tools_to_check:
         tool_instances = ToolRegistry.get_tools(t) # Try to match by name or vulnerability
         # Just check if registered
         is_registered = any(tool.name() == t for tool_list in ToolRegistry._tools.values() for tool in tool_list)
         if is_registered:
-             print(f"   ✅ 工具 {t} 已注册")
+             log(f"   ✅ 工具 {t} 已注册")
         else:
-             print(f"   ⚠️ 工具 {t} 未找到注册信息")
+             log(f"   ⚠️ 工具 {t} 未找到注册信息")
 
     # 3. 检查自我纠错模块
     if SELF_CORRECTION_AVAILABLE:
-        print("   -> 检查自我纠错模块...")
-        print(f"   ✅ 自我纠错模块已加载")
+        log("   -> 检查自我纠错模块...")
+        log(f"   ✅ 自我纠错模块已加载")
     else:
-        print("   ⚠️ 自我纠错模块未加载")
+        log("   ⚠️ 自我纠错模块未加载")
 
     # 4. 检查内网渗透模块
     if INTERNAL_NETWORK_AVAILABLE:
-        print("   -> 检查内网渗透模块...")
-        print(f"   ✅ 内网渗透模块已加载")
+        log("   -> 检查内网渗透模块...")
+        log(f"   ✅ 内网渗透模块已加载")
     else:
-        print("   ⚠️ 内网渗透模块未加载")
+        log("   ⚠️ 内网渗透模块未加载")
 
     # 5. 检查Crypto模块
     if CRYPTO_AVAILABLE:
-        print("   -> 检查密码学模块...")
-        print(f"   ✅ 密码学模块已加载")
+        log("   -> 检查密码学模块...")
+        log(f"   ✅ 密码学模块已加载")
     else:
-        print("   ⚠️ 密码学模块未加载")
+        log("   ⚠️ 密码学模块未加载")
 
     # 6. 检查性能监控模块
     if PERFORMANCE_AVAILABLE:
-        print("   -> 检查性能监控模块...")
+        log("   -> 检查性能监控模块...")
         status = get_system_status()
-        print(f"   ✅ 性能监控模块已加载 (状态: {status.get('status', 'unknown')})")
+        log(f"   ✅ 性能监控模块已加载 (状态: {status.get('status', 'unknown')})")
     else:
-        print("   ⚠️ 性能监控模块未加载")
+        log("   ⚠️ 性能监控模块未加载")
 
-    print("[System] 自检完成。\n")
+    log("[System] 自检完成。\n")
 
 def main():
     """主运行函数
@@ -2759,8 +2823,8 @@ def main():
     parser.add_argument("--skip", action="store_true", help="跳过系统自检")
     args = parser.parse_args()
 
-    print("\n🚀 CTF-Agent v2.5 启动")
-    print("=" * 50)
+    log("\n🚀 CTF-Agent v2.5 启动")
+    log("=" * 50)
 
     # Register all tools
     load_all_tools(ToolRegistry())
@@ -2770,7 +2834,7 @@ def main():
 
     # 执行系统自检 (除非指定了 -skip)
     if args.skip:
-        print("⏭️ [System] 跳过系统自检。")
+        log("⏭️ [System] 跳过系统自检。")
     else:
         system_check()
 
@@ -2778,19 +2842,19 @@ def main():
     while True:
         try:
             # 获取用户输入 - 只需要URL
-            print("\n📝 请输入目标 URL (输入 q 退出):")
+            log("\n📝 请输入目标 URL (输入 q 退出):")
             target_url = input("   URL: ").strip()
 
             # 退出检查
             if target_url.lower() == 'q':
-                print("\n👋 感谢使用，再见！")
+                log("\n👋 感谢使用，再见！")
                 return
 
             while not target_url:
-                print("   ❌ URL 不能为空！")
+                log("   ❌ URL 不能为空！")
                 target_url = input("   URL (输入 q 退出): ").strip()
                 if target_url.lower() == 'q':
-                    print("\n👋 感谢使用，再见！")
+                    log("\n👋 感谢使用，再见！")
                     return
 
             # 自动识别URL并标准化
@@ -2799,37 +2863,37 @@ def main():
             # 自动提取环境信息
             task_name, task_description = extract_target_info(target_url)
 
-            print("\n" + "=" * 50)
-            print(f"🎯 目标锁定: {task_name}")
-            print(f"📝 识别描述: {task_description}")
-            print(f"🔗 URL: {target_url}")
-            print("=" * 50)
+            log("\n" + "=" * 50)
+            log(f"🎯 目标锁定: {task_name}")
+            log(f"📝 识别描述: {task_description}")
+            log(f"🔗 URL: {target_url}")
+            log("=" * 50)
 
             # 运行任务
             result = run_single_task(task_name, task_description, target_url)
 
             # 输出结果
-            print("\n" + "=" * 50)
-            print("🏁 任务结束")
+            log("\n" + "=" * 50)
+            log("🏁 任务结束")
             if result.get('found_flag'):
-                print(f"🎉 FLAG: {result.get('final_flag', result.get('found_flag'))}")
+                log(f"🎉 FLAG: {result.get('final_flag', result.get('found_flag'))}")
             else:
-                print(f"📊 最终状态: {result.get('current_mode')}")
-                print("❌ 未找到 Flag")
+                log(f"📊 最终状态: {result.get('current_mode')}")
+                log("❌ 未找到 Flag")
 
             # 询问是否继续
-            print("\n" + "-" * 50)
+            log("\n" + "-" * 50)
             choice = input("继续下一题？(y/n): ").strip().lower()
             if choice != 'y':
-                print("\n👋 感谢使用，再见！")
+                log("\n👋 感谢使用，再见！")
                 return
 
         except KeyboardInterrupt:
-            print("\n\n⏹️ 用户中断，正在退出...")
-            print("👋 再见！")
+            log("\n\n⏹️ 用户中断，正在退出...")
+            log("👋 再见！")
             return
         except Exception as e:
-            print(f"\n❌ 运行出错: {e}")
+            log(f"\n❌ 运行出错: {e}")
             choice = input("是否继续下一题？(y/n): ").strip().lower()
             if choice != 'y':
                 return
@@ -2860,6 +2924,7 @@ def run_single_task(task_name: str, task_description: str, target_url: str) -> d
         "node_metadata": {},
         "critical_nodes": [],
         "attack_paths": [],
+        "topology_priority": [],  # 拓扑优先级列表: [(url, score), ...]
 
         # 记忆与知识
         "visited_fingerprints": [],
@@ -2975,11 +3040,11 @@ def run_single_task(task_name: str, task_description: str, target_url: str) -> d
     required_fields = list(CTFState.__annotations__.keys())
     for field in required_fields:
         if field not in initial_state:
-            print(f"[Warning] 初始状态缺少字段: {field}，设置为默认值")
+            log(f"[Warning] 初始状态缺少字段: {field}，设置为默认值")
             initial_state[field] = None  # 设置默认值
 
     # 运行工作流
-    print("\n⏳ 开始攻击...")
+    log("\n⏳ 开始攻击...")
     config_params = {
         "configurable": {"thread_id": f"ctf_task_{int(time.time())}"},
         "recursion_limit": 500
@@ -2990,7 +3055,7 @@ def run_single_task(task_name: str, task_description: str, target_url: str) -> d
         return result
     except Exception as e:
         import traceback
-        print(f"❌ 工作流执行异常: {e}")
+        log(f"❌ 工作流执行异常: {e}")
         traceback.print_exc()
         return {"current_mode": "end", "found_flag": False}
 

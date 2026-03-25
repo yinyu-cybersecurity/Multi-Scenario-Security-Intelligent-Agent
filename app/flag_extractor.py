@@ -134,8 +134,8 @@ class FlagExtractor:
                     for f in found:
                         flags.append((f, f"base64:{name}"))
 
-            except:
-                pass
+            except Exception as e:
+                pass  # base64解码失败，继续尝试其他解码
 
         return flags
 
@@ -150,7 +150,7 @@ class FlagExtractor:
                 found = pattern.findall(decoded)
                 for f in found:
                     flags.append((f, f"url_decode:{name}"))
-        except:
+        except Exception:
             pass
 
         return flags
@@ -168,8 +168,8 @@ class FlagExtractor:
                     found = pattern.findall(decoded)
                     for f in found:
                         flags.append((f, f"hex_decode:{name}"))
-            except:
-                pass
+            except Exception as e:
+                pass  # base64解码失败，继续尝试其他解码
 
         return flags
 
@@ -184,7 +184,7 @@ class FlagExtractor:
                 found = pattern.findall(decoded)
                 for f in found:
                     flags.append((f, f"unicode_decode:{name}"))
-        except:
+        except Exception:
             pass
 
         return flags

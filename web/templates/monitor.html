@@ -3,686 +3,193 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CTF-Agent Monitor Dashboard</title>
+    <title>CTF-Agent 监控面板</title>
     <link href="https://cdn.jsdelivr.net/npm/element-plus@2.4.0/dist/index.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.prod.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/element-plus@2.4.0/dist/index.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@element-plus/icons-vue@2.3.1/dist/index.iife.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0f0f1a;
-            color: #e0e0e0;
-            min-height: 100vh;
-        }
+        body { font-family: -apple-system, 'Microsoft YaHei', sans-serif; background: #f0f2f5; color: #333; min-height: 100vh; padding-top: 56px; }
+        .header { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%); color: #fff; padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+        .header h1 { font-size: 18px; }
+        .nav-links { display: flex; gap: 8px; }
+        .nav-link { padding: 6px 16px; color: rgba(255,255,255,0.85); text-decoration: none; border-radius: 4px; font-size: 14px; }
+        .nav-link:hover, .nav-link.active { background: rgba(255,255,255,0.2); color: #fff; }
+        .header-stats { display: flex; gap: 24px; font-size: 13px; }
+        .header-stats span { opacity: 0.9; }
 
-        /* Header */
-        .header {
-            background: linear-gradient(90deg, #1a1a2e 0%, #16213e 100%);
-            border-bottom: 1px solid #2a2a4a;
-            padding: 0 20px;
-            height: 60px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .header h1 {
-            font-size: 20px;
-            font-weight: 600;
-            color: #00d4ff;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .header-metrics {
-            display: flex;
-            gap: 24px;
-        }
-        .metric-item {
-            text-align: center;
-        }
-        .metric-value {
-            font-size: 18px;
-            font-weight: 600;
-            color: #00d4ff;
-        }
-        .metric-label {
-            font-size: 10px;
-            color: #888;
-            text-transform: uppercase;
-        }
+        .main-layout { display: flex; height: calc(100vh - 56px); }
 
-        /* Main Layout */
-        .main-container {
-            display: grid;
-            grid-template-columns: 1fr 400px;
-            height: calc(100vh - 60px);
-        }
+        .sidebar { width: 300px; background: #fff; border-right: 1px solid #e8e8e8; display: flex; flex-direction: column; }
+        .sidebar-section { padding: 16px; border-bottom: 1px solid #e8e8e8; }
+        .section-title { font-size: 13px; color: #666; margin-bottom: 12px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        .stat-item { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; padding: 12px; text-align: center; }
+        .stat-value { font-size: 20px; font-weight: 600; color: #1890ff; }
+        .stat-value.success { color: #52c41a; }
+        .stat-value.warning { color: #faad14; }
+        .stat-label { font-size: 11px; color: #999; margin-top: 4px; }
 
-        /* Left Panel - Graph & Logs */
-        .left-panel {
-            display: flex;
-            flex-direction: column;
-            border-right: 1px solid #2a2a4a;
-        }
+        .task-list { flex: 1; overflow-y: auto; padding: 8px; }
+        .task-item { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; padding: 12px; margin-bottom: 8px; cursor: pointer; }
+        .task-item:hover { border-color: #1890ff; }
+        .task-item.active { border-color: #1890ff; background: #e6f7ff; }
+        .task-url { font-size: 13px; color: #333; margin-bottom: 6px; word-break: break-all; }
+        .task-meta { display: flex; justify-content: space-between; font-size: 12px; color: #999; }
 
-        /* Performance Bar */
-        .perf-bar {
-            background: #12121a;
-            padding: 12px 16px;
-            border-bottom: 1px solid #2a2a4a;
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 16px;
-        }
-        .perf-card {
-            background: #1a1a2e;
-            border-radius: 8px;
-            padding: 12px;
-            text-align: center;
-        }
-        .perf-icon {
-            font-size: 20px;
-            margin-bottom: 4px;
-        }
-        .perf-value {
-            font-size: 16px;
-            font-weight: 600;
-        }
-        .perf-label {
-            font-size: 10px;
-            color: #888;
-            margin-top: 2px;
-        }
-        .perf-card.success .perf-value { color: #00ff88; }
-        .perf-card.warning .perf-value { color: #ffaa00; }
-        .perf-card.danger .perf-value { color: #ff4444; }
-        .perf-card.info .perf-value { color: #00d4ff; }
+        .center-area { flex: 1; display: flex; flex-direction: column; background: #fff; }
+        .graph-area { flex: 1; min-height: 300px; background: #fafafa; position: relative; }
+        #graph-svg { width: 100%; height: 100%; }
+        .node circle { stroke-width: 2px; cursor: pointer; }
+        .node text { font-size: 10px; fill: #333; }
+        .edge { fill: none; stroke: #d9d9d9; stroke-width: 1px; }
+        .edge.active { stroke: #1890ff; }
 
-        /* Graph Container */
-        .graph-container {
-            flex: 1;
-            position: relative;
-            background: radial-gradient(circle at center, #0d0d15 0%, #0a0a0f 100%);
-            min-height: 300px;
-        }
-        #graph-svg {
-            width: 100%;
-            height: 100%;
-        }
-        .node {
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        .node circle {
-            stroke-width: 2px;
-            transition: all 0.3s;
-        }
-        .node:hover circle { filter: brightness(1.3); }
-        .node.active circle {
-            stroke: #00d4ff;
-            stroke-width: 3px;
-            filter: drop-shadow(0 0 15px rgba(0, 212, 255, 0.8));
-        }
-        .node.visited { opacity: 0.5; }
-        .node text {
-            font-size: 11px;
-            fill: #fff;
-            font-weight: 500;
-        }
-        .edge {
-            fill: none;
-            stroke: #3a3a5a;
-            stroke-width: 1px;
-            opacity: 0.6;
-        }
-        .edge.active {
-            stroke: #00d4ff;
-            stroke-width: 2px;
-            opacity: 1;
-        }
+        .graph-legend { position: absolute; top: 12px; right: 12px; background: #fff; padding: 10px; border-radius: 4px; border: 1px solid #e8e8e8; font-size: 12px; }
+        .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+        .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
 
-        /* Legend */
-        .legend {
-            position: absolute;
-            top: 16px;
-            right: 16px;
-            background: rgba(18, 18, 26, 0.95);
-            padding: 12px 16px;
-            border-radius: 8px;
-            border: 1px solid #2a2a4a;
-            font-size: 11px;
-        }
-        .legend-title {
-            color: #888;
-            margin-bottom: 8px;
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        .legend-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 4px;
-        }
-        .legend-color {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-        }
+        .log-area { height: 180px; overflow-y: auto; padding: 12px; font-family: Consolas, monospace; font-size: 12px; background: #fafafa; border-top: 1px solid #e8e8e8; }
+        .log-entry { display: flex; gap: 10px; margin: 2px 0; }
+        .log-time { color: #999; }
+        .log-msg { color: #333; }
+        .log-entry.success .log-msg { color: #52c41a; }
+        .log-entry.error .log-msg { color: #ff4d4f; }
 
-        /* Log Panel */
-        .log-panel {
-            height: 200px;
-            background: #0d0d12;
-            border-top: 1px solid #2a2a4a;
-            font-family: 'Consolas', 'Monaco', monospace;
-            font-size: 11px;
-            overflow-y: auto;
-            padding: 8px 12px;
-        }
-        .log-entry {
-            padding: 2px 0;
-            display: flex;
-            gap: 10px;
-        }
-        .log-time {
-            color: #4a9eff;
-            min-width: 60px;
-        }
-        .log-msg { color: #ccc; }
-        .log-entry.success .log-msg { color: #00ff88; }
-        .log-entry.error .log-msg { color: #ff4444; }
-        .log-entry.warning .log-msg { color: #ffaa00; }
+        .right-panel { width: 340px; background: #fff; border-left: 1px solid #e8e8e8; display: flex; flex-direction: column; }
+        .tabs { display: flex; background: #fafafa; border-bottom: 1px solid #e8e8e8; }
+        .tab { flex: 1; padding: 10px; text-align: center; font-size: 13px; cursor: pointer; color: #666; border-bottom: 2px solid transparent; }
+        .tab:hover { color: #1890ff; }
+        .tab.active { color: #1890ff; border-bottom-color: #1890ff; }
+        .tab-content { flex: 1; overflow-y: auto; padding: 12px; }
 
-        /* Right Panel */
-        .right-panel {
-            background: #12121a;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
+        .info-card { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; padding: 12px; margin-bottom: 8px; }
+        .info-row { display: flex; justify-content: space-between; padding: 4px 0; }
+        .info-label { color: #666; font-size: 12px; }
+        .info-value { color: #333; font-size: 12px; }
+        .panel-title { font-size: 13px; font-weight: 600; color: #333; margin-bottom: 10px; }
 
-        /* Task Input */
-        .task-input {
-            padding: 16px;
-            border-bottom: 1px solid #2a2a4a;
-            background: #0f0f18;
-        }
-        .task-input-row {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 8px;
-        }
-        .task-input input {
-            flex: 1;
-            background: #1a1a2e !important;
-            border-color: #2a2a4a !important;
-            color: #fff !important;
-        }
+        .btn { padding: 8px 16px; border-radius: 4px; font-size: 13px; cursor: pointer; border: 1px solid #d9d9d9; background: #fff; color: #333; }
+        .btn:hover { border-color: #1890ff; color: #1890ff; }
+        .btn-primary { background: #1890ff; border-color: #1890ff; color: #fff; }
+        .btn-primary:hover { background: #40a9ff; border-color: #40a9ff; color: #fff; }
 
-        /* Tabs */
-        .panel-tabs {
-            display: flex;
-            border-bottom: 1px solid #2a2a4a;
-            background: #0f0f18;
-        }
-        .panel-tab {
-            flex: 1;
-            padding: 12px 8px;
-            text-align: center;
-            font-size: 11px;
-            cursor: pointer;
-            color: #888;
-            transition: all 0.2s;
-            border-bottom: 2px solid transparent;
-        }
-        .panel-tab:hover { color: #fff; background: #1a1a2e; }
-        .panel-tab.active {
-            color: #00d4ff;
-            border-bottom-color: #00d4ff;
-        }
+        .input-row { display: flex; gap: 8px; margin-bottom: 8px; }
+        .tools-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+        .tool-item { background: #fafafa; border-radius: 4px; padding: 6px 8px; font-size: 11px; display: flex; justify-content: space-between; }
+        .tool-name { color: #333; }
+        .tool-status { color: #52c41a; }
+        .tool-status.unavailable { color: #999; }
 
-        /* Panel Content */
-        .panel-content {
-            flex: 1;
-            overflow-y: auto;
-            padding: 12px;
-        }
-
-        /* Stats Grid */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 8px;
-            margin-bottom: 16px;
-        }
-        .stat-card {
-            background: #1a1a2e;
-            border-radius: 6px;
-            padding: 12px;
-            text-align: center;
-        }
-        .stat-value {
-            font-size: 20px;
-            font-weight: 600;
-            color: #00d4ff;
-        }
-        .stat-label {
-            font-size: 10px;
-            color: #888;
-            margin-top: 4px;
-        }
-
-        /* Result Sections */
-        .result-section {
-            margin-bottom: 16px;
-        }
-        .result-section h5 {
-            color: #888;
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 8px;
-        }
-        .result-card {
-            background: #1a1a2e;
-            border: 1px solid #2a2a4a;
-            border-radius: 6px;
-            padding: 10px;
-            margin-bottom: 6px;
-        }
-        .result-card.vuln { border-left: 3px solid #ff4444; }
-        .result-card.cred { border-left: 3px solid #ffaa00; }
-        .result-card.host { border-left: 3px solid #00d4ff; }
-        .result-card.flag { border-left: 3px solid #00ff88; background: #0d2a1a; }
-        .result-card.error { border-left: 3px solid #ff4444; background: #2a0d0d; }
-
-        .card-title {
-            font-size: 12px;
-            color: #fff;
-            margin-bottom: 4px;
-        }
-        .card-detail {
-            font-size: 11px;
-            color: #888;
-        }
-
-        /* Task List */
-        .task-list {
-            max-height: 300px;
-            overflow-y: auto;
-        }
-        .task-item {
-            background: #1a1a2e;
-            border: 1px solid #2a2a4a;
-            border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 8px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .task-item:hover { background: #1f1f35; }
-        .task-item.active {
-            border-color: #00d4ff;
-            background: #0d1f35;
-        }
-        .task-url {
-            font-size: 12px;
-            color: #fff;
-            word-break: break-all;
-            margin-bottom: 6px;
-        }
-        .task-meta {
-            display: flex;
-            justify-content: space-between;
-            font-size: 10px;
-            color: #888;
-        }
-        .task-status {
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 10px;
-        }
-        .status-running { background: #1a3a5c; color: #00d4ff; }
-        .status-completed { background: #1a3a2a; color: #00ff88; }
-        .status-error { background: #3a1a1a; color: #ff4444; }
-        .status-cancelled { background: #2a2a2a; color: #888; }
-
-        /* Chart Container */
-        .chart-container {
-            background: #1a1a2e;
-            border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 16px;
-            height: 180px;
-        }
-
-        /* Progress */
-        .progress-bar {
-            height: 4px;
-            background: #1a1a2e;
-            margin-top: 8px;
-            border-radius: 2px;
-        }
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #00d4ff, #00ff88);
-            border-radius: 2px;
-            transition: width 0.3s;
-        }
-
-        /* Tool Grid */
-        .tool-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 4px;
-        }
-        .tool-item {
-            background: #1a1a2e;
-            border-radius: 4px;
-            padding: 6px;
-            font-size: 10px;
-            text-align: center;
-        }
-        .tool-name { color: #fff; }
-        .tool-status {
-            font-size: 9px;
-            margin-top: 2px;
-        }
-        .tool-status.available { color: #00ff88; }
-        .tool-status.unavailable { color: #ff4444; }
-
-        /* Error History */
-        .error-item {
-            background: #2a1515;
-            border-left: 3px solid #ff4444;
-            border-radius: 4px;
-            padding: 8px;
-            margin-bottom: 6px;
-            font-size: 11px;
-        }
-        .error-node { color: #ffaa00; }
-        .error-msg { color: #ff4444; margin-top: 4px; }
-        .error-action { color: #00ff88; margin-top: 4px; font-size: 10px; }
-
-        /* Empty State */
-        .empty-state {
-            text-align: center;
-            padding: 40px 20px;
-            color: #666;
-        }
-        .empty-state-icon { font-size: 48px; margin-bottom: 12px; }
-
-        /* Scrollbar */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #0a0a0f; }
-        ::-webkit-scrollbar-thumb { background: #3a3a5a; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #4a4a6a; }
+        .empty-text { color: #999; font-size: 13px; text-align: center; padding: 20px; }
     </style>
 </head>
 <body>
     <div id="app">
-        <!-- Header -->
         <div class="header">
-            <h1>
-                <span style="font-size: 28px;">&#9889;</span>
-                CTF-Agent Monitor
-            </h1>
-            <div class="header-metrics">
-                <div class="metric-item">
-                    <div class="metric-value">{{ systemStatus.tasks_running || 0 }}</div>
-                    <div class="metric-label">Running</div>
-                </div>
-                <div class="metric-item">
-                    <div class="metric-value">{{ systemStatus.tasks_completed || 0 }}</div>
-                    <div class="metric-label">Completed</div>
-                </div>
-                <div class="metric-item">
-                    <div class="metric-value">{{ llmStatus.requests_today || 0 }}</div>
-                    <div class="metric-label">LLM Calls</div>
-                </div>
-                <div class="metric-item">
-                    <div class="metric-value">{{ systemStatus.tools_loaded || 0 }}</div>
-                    <div class="metric-label">Tools</div>
-                </div>
+            <h1>CTF-Agent 监控</h1>
+            <div class="nav-links">
+                <a href="/" class="nav-link">控制台</a>
+                <a href="/monitor" class="nav-link active">监控</a>
+                <a href="/modules" class="nav-link">模块</a>
+                <a href="/topology" class="nav-link">拓扑</a>
+            </div>
+            <div class="header-stats">
+                <span>运行: {{ systemStatus.tasks_running || 0 }}</span>
+                <span>完成: {{ systemStatus.tasks_completed || 0 }}</span>
+                <span>LLM调用: {{ llmStatus.requests_today || 0 }}</span>
             </div>
         </div>
 
-        <div class="main-container">
-            <!-- Left Panel -->
-            <div class="left-panel">
-                <!-- Performance Bar -->
-                <div class="perf-bar">
-                    <div class="perf-card" :class="getPerfClass(llmStatus.rate_limit_percent, 80, 95)">
-                        <div class="perf-icon">&#129302;</div>
-                        <div class="perf-value">{{ llmStatus.rate_limit_percent || 0 }}%</div>
-                        <div class="perf-label">LLM Rate</div>
-                    </div>
-                    <div class="perf-card" :class="getPerfClass(compressionStats.compression_ratio * 100, 50, 80)">
-                        <div class="perf-icon">&#128230;</div>
-                        <div class="perf-value">{{ (compressionStats.compression_ratio * 100 || 0).toFixed(0) }}%</div>
-                        <div class="perf-label">Compressed</div>
-                    </div>
-                    <div class="perf-card info">
-                        <div class="perf-icon">&#128279;</div>
-                        <div class="perf-value">{{ systemStatus.active_sessions || 0 }}</div>
-                        <div class="perf-label">Sessions</div>
-                    </div>
-                    <div class="perf-card" :class="recoveryStats.recovering ? 'warning' : 'success'">
-                        <div class="perf-icon">&#128260;</div>
-                        <div class="perf-value">{{ recoveryStats.total_recoveries || 0 }}</div>
-                        <div class="perf-label">Recoveries</div>
-                    </div>
-                    <div class="perf-card" :class="strategyStats.avg_success_rate > 0.5 ? 'success' : 'warning'">
-                        <div class="perf-icon">&#127919;</div>
-                        <div class="perf-value">{{ ((strategyStats.avg_success_rate || 0) * 100).toFixed(0) }}%</div>
-                        <div class="perf-label">Success Rate</div>
+        <div class="main-layout">
+            <div class="sidebar">
+                <div class="sidebar-section">
+                    <div class="section-title">系统状态</div>
+                    <div class="stats-grid">
+                        <div class="stat-item"><div class="stat-value" :class="llmStatus.rate_limit_percent > 80 ? 'warning' : 'success'">{{ llmStatus.rate_limit_percent || 0 }}%</div><div class="stat-label">LLM限额</div></div>
+                        <div class="stat-item"><div class="stat-value success">{{ compressionStats.tokens_saved || 0 }}</div><div class="stat-label">节省令牌</div></div>
+                        <div class="stat-item"><div class="stat-value">{{ recoveryStats.total_recoveries || 0 }}</div><div class="stat-label">错误恢复</div></div>
+                        <div class="stat-item"><div class="stat-value" :class="strategyStats.avg_success_rate > 0.5 ? 'success' : 'warning'">{{ ((strategyStats.avg_success_rate || 0) * 100).toFixed(0) }}%</div><div class="stat-label">成功率</div></div>
                     </div>
                 </div>
-
-                <!-- Graph -->
-                <div class="graph-container">
-                    <svg id="graph-svg"></svg>
-                    <div class="legend">
-                        <div class="legend-title">Node Types</div>
-                        <div v-for="(group, key) in graphData.groups" :key="key" class="legend-item">
-                            <div class="legend-color" :style="{ background: group.color }"></div>
-                            <span>{{ group.name }}</span>
-                        </div>
+                <div class="sidebar-section">
+                    <div class="section-title">新建任务</div>
+                    <div class="input-row"><el-input v-model="targetUrl" placeholder="目标地址 (http://example.com)" size="small" clearable /></div>
+                    <div class="input-row">
+                        <button class="btn btn-primary" style="flex:1" @click="startTask" :disabled="starting">{{ starting ? '启动中...' : '开始攻击' }}</button>
+                        <button class="btn" @click="refreshAll">刷新</button>
                     </div>
                 </div>
-
-                <!-- Log Panel -->
-                <div class="log-panel" ref="logPanel">
-                    <div v-for="(log, idx) in logs" :key="idx" class="log-entry" :class="log.type">
-                        <span class="log-time">{{ log.time }}</span>
-                        <span class="log-msg">{{ log.msg }}</span>
+                <div class="section-title" style="padding: 12px 16px;">任务列表</div>
+                <div class="task-list">
+                    <div v-for="task in taskList" :key="task.id" class="task-item" :class="{ active: currentTaskId === task.id }" @click="selectTask(task.id)">
+                        <div class="task-url">{{ task.target_url }}</div>
+                        <div class="task-meta"><span>{{ task.created_at }}</span><span>{{ statusText(task.status) }}</span></div>
                     </div>
+                    <div v-if="taskList.length === 0" class="empty-text">暂无任务</div>
                 </div>
             </div>
 
-            <!-- Right Panel -->
+            <div class="center-area">
+                <div class="graph-area"><svg id="graph-svg"></svg>
+                    <div class="graph-legend">
+                        <div v-for="(g, k) in graphData.groups" :key="k" class="legend-item"><div class="legend-dot" :style="{ background: g.color }"></div><span>{{ g.name }}</span></div>
+                    </div>
+                </div>
+                <div class="log-area">
+                    <div v-for="(log, i) in logs" :key="i" class="log-entry" :class="log.type"><span class="log-time">{{ log.time }}</span><span class="log-msg">{{ log.msg }}</span></div>
+                    <div v-if="logs.length === 0" class="empty-text">等待任务执行...</div>
+                </div>
+            </div>
+
             <div class="right-panel">
-                <!-- Task Input -->
-                <div class="task-input">
-                    <div class="task-input-row">
-                        <el-input v-model="targetUrl" placeholder="Target URL (http://example.com)" clearable size="small"></el-input>
-                    </div>
-                    <div class="task-input-row">
-                        <el-button type="primary" @click="startTask" :loading="starting" size="small" style="flex:1">Start Attack</el-button>
-                        <el-button @click="cancelTask" :disabled="!canCancel" size="small">Cancel</el-button>
-                        <el-button @click="refreshAll" size="small" icon="Refresh"></el-button>
-                    </div>
+                <div class="tabs">
+                    <div class="tab" :class="{ active: tab === 'results' }" @click="tab = 'results'">结果</div>
+                    <div class="tab" :class="{ active: tab === 'monitor' }" @click="tab = 'monitor'">监控</div>
+                    <div class="tab" :class="{ active: tab === 'tools' }" @click="tab = 'tools'">工具</div>
                 </div>
-
-                <!-- Tabs -->
-                <div class="panel-tabs">
-                    <div class="panel-tab" :class="{ active: rightTab === 'tasks' }" @click="rightTab = 'tasks'">Tasks</div>
-                    <div class="panel-tab" :class="{ active: rightTab === 'results' }" @click="rightTab = 'results'">Results</div>
-                    <div class="panel-tab" :class="{ active: rightTab === 'monitor' }" @click="rightTab = 'monitor'">Monitor</div>
-                    <div class="panel-tab" :class="{ active: rightTab === 'tools' }" @click="rightTab = 'tools'">Tools</div>
-                </div>
-
-                <div class="panel-content">
-                    <!-- Tasks Tab -->
-                    <div v-show="rightTab === 'tasks'">
-                        <div class="task-list">
-                            <div v-for="task in taskList" :key="task.id"
-                                 class="task-item"
-                                 :class="{ active: currentTaskId === task.id }"
-                                 @click="selectTask(task.id)">
-                                <div class="task-url">{{ task.target_url }}</div>
-                                <div class="task-meta">
-                                    <span>{{ task.created_at }}</span>
-                                    <span class="task-status" :class="'status-' + task.status">{{ task.status }}</span>
-                                </div>
-                                <div class="progress-bar" v-if="task.status === 'running'">
-                                    <div class="progress-fill" :style="{ width: task.progress + '%' }"></div>
-                                </div>
+                <div class="tab-content">
+                    <div v-show="tab === 'results'">
+                        <div v-if="currentTask && currentTask.found_flag" class="panel-title" style="color:#52c41a;">Flag已找到</div>
+                        <div v-if="currentTask && currentTask.found_flag" class="info-card" style="background:#f6ffed;border-color:#b7eb8f;">
+                            <div style="color:#52c41a;font-size:14px;font-family:monospace;">{{ currentTask.final_flag }}</div>
+                        </div>
+                        <div v-if="currentTask">
+                            <div class="panel-title">当前任务</div>
+                            <div class="info-card">
+                                <div class="info-row"><span class="info-label">节点</span><span class="info-value">{{ currentTask.current_node || '-' }}</span></div>
+                                <div class="info-row"><span class="info-label">模式</span><span class="info-value">{{ taskResult.current_mode || '-' }}</span></div>
+                                <div class="info-row"><span class="info-label">步数</span><span class="info-value">{{ taskResult.execution_steps || 0 }}</span></div>
                             </div>
                         </div>
-                        <div v-if="taskList.length === 0" class="empty-state">
-                            <div class="empty-state-icon">&#128196;</div>
-                            <div>No tasks yet. Enter a target URL above to start.</div>
+                        <div v-if="taskResult.vuln_candidates && taskResult.vuln_candidates.length">
+                            <div class="panel-title">漏洞发现 ({{ taskResult.vuln_candidates.length }})</div>
+                            <div v-for="v in taskResult.vuln_candidates.slice(0, 5)" :key="v.location" class="info-card" style="background:#fff7e6;border-color:#ffd591;">
+                                <div style="color:#d4380d;font-weight:500;">{{ v.type || v.vuln_type }}</div>
+                                <div style="color:#666;font-size:11px;">{{ v.location }}</div>
+                            </div>
+                        </div>
+                        <div v-if="!currentTask" class="empty-text">选择任务查看结果</div>
+                    </div>
+                    <div v-show="tab === 'monitor'">
+                        <div class="panel-title">LLM性能</div>
+                        <div class="info-card">
+                            <div class="info-row"><span class="info-label">今日请求</span><span class="info-value">{{ llmStatus.requests_today || 0 }}</span></div>
+                            <div class="info-row"><span class="info-label">限额使用</span><span class="info-value">{{ llmStatus.rate_limit_percent || 0 }}%</span></div>
+                        </div>
+                        <div class="panel-title">上下文压缩</div>
+                        <div class="info-card">
+                            <div class="info-row"><span class="info-label">压缩次数</span><span class="info-value">{{ compressionStats.total_compressions || 0 }}</span></div>
+                            <div class="info-row"><span class="info-label">节省令牌</span><span class="info-value">{{ compressionStats.tokens_saved || 0 }}</span></div>
                         </div>
                     </div>
-
-                    <!-- Results Tab -->
-                    <div v-show="rightTab === 'results'">
-                        <!-- FLAG -->
-                        <div class="result-section" v-if="currentTask && currentTask.found_flag">
-                            <h5>Flag Found!</h5>
-                            <div class="result-card flag">
-                                <div class="card-title" style="color: #00ff88; font-size: 14px;">{{ currentTask.final_flag }}</div>
-                            </div>
-                        </div>
-
-                        <!-- Current Task Info -->
-                        <div class="result-section" v-if="currentTask">
-                            <h5>Current Task</h5>
-                            <div class="result-card">
-                                <div class="card-title">{{ currentTask.task_name || 'Running...' }}</div>
-                                <div class="card-detail">
-                                    Node: {{ currentTask.current_node || '-' }} |
-                                    Mode: {{ taskResult.current_mode || '-' }} |
-                                    Steps: {{ taskResult.execution_steps || 0 }}
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Vulnerabilities -->
-                        <div class="result-section" v-if="taskResult.vuln_candidates && taskResult.vuln_candidates.length > 0">
-                            <h5>Vulnerabilities ({{ taskResult.vuln_candidates.length }})</h5>
-                            <div v-for="v in taskResult.vuln_candidates.slice(0, 8)" :key="v.location" class="result-card vuln">
-                                <div class="card-title">{{ v.type }}</div>
-                                <div class="card-detail">{{ v.location }} | {{ ((v.confidence || 0) * 100).toFixed(0) }}%</div>
-                            </div>
-                        </div>
-
-                        <!-- Credentials -->
-                        <div class="result-section" v-if="taskResult.credentials && taskResult.credentials.length > 0">
-                            <h5>Credentials ({{ taskResult.credentials.length }})</h5>
-                            <div v-for="c in taskResult.credentials.slice(0, 8)" :key="c.username" class="result-card cred">
-                                <div class="card-title">{{ c.username }}:{{ c.password }}</div>
-                                <div class="card-detail">{{ c.host || c.source || '' }}</div>
-                            </div>
-                        </div>
-
-                        <!-- Internal Hosts -->
-                        <div class="result-section" v-if="taskResult.internal_hosts && taskResult.internal_hosts.length > 0">
-                            <h5>Internal Hosts ({{ taskResult.internal_hosts.length }})</h5>
-                            <div v-for="h in taskResult.internal_hosts.slice(0, 8)" :key="h.ip" class="result-card host">
-                                <div class="card-title">{{ h.ip }}</div>
-                                <div class="card-detail">
-                                    <span v-for="p in (h.ports || []).slice(0, 5)" :key="p.port">{{ p.port }} </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div v-if="!currentTask" class="empty-state">
-                            <div class="empty-state-icon">&#128269;</div>
-                            <div>Select a task to view results</div>
-                        </div>
-                    </div>
-
-                    <!-- Monitor Tab -->
-                    <div v-show="rightTab === 'monitor'">
-                        <!-- Stats -->
-                        <div class="stats-grid">
-                            <div class="stat-card">
-                                <div class="stat-value">{{ systemStatus.tasks_total || 0 }}</div>
-                                <div class="stat-label">Total Tasks</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value">{{ recoveryStats.total_errors || 0 }}</div>
-                                <div class="stat-label">Errors</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value">{{ recoveryStats.recovered || 0 }}</div>
-                                <div class="stat-label">Recovered</div>
-                            </div>
-                        </div>
-
-                        <!-- LLM Stats -->
-                        <div class="result-section">
-                            <h5>LLM Performance</h5>
-                            <div class="result-card">
-                                <div class="card-detail">
-                                    Requests Today: {{ llmStatus.requests_today || 0 }}<br>
-                                    Rate Limit: {{ llmStatus.rate_limit_percent || 0 }}%<br>
-                                    Avg Response: {{ llmStatus.avg_response_time || 0 }}ms
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Compression Stats -->
-                        <div class="result-section">
-                            <h5>Context Compression</h5>
-                            <div class="result-card">
-                                <div class="card-detail">
-                                    Total Compressions: {{ compressionStats.total_compressions || 0 }}<br>
-                                    Tokens Saved: {{ compressionStats.tokens_saved || 0 }}<br>
-                                    Ratio: {{ ((compressionStats.compression_ratio || 0) * 100).toFixed(0) }}%
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Recent Errors -->
-                        <div class="result-section" v-if="recentErrors.length > 0">
-                            <h5>Recent Errors</h5>
-                            <div v-for="e in recentErrors.slice(0, 5)" :key="e.timestamp" class="error-item">
-                                <div class="error-node">{{ e.node }} - {{ e.error_type }}</div>
-                                <div class="error-msg">{{ e.error_message }}</div>
-                                <div class="error-action" v-if="e.recovered">Recovered: {{ e.recovery_action }}</div>
-                            </div>
-                        </div>
-
-                        <!-- Sessions -->
-                        <div class="result-section" v-if="sessions.length > 0">
-                            <h5>Active Sessions</h5>
-                            <div v-for="s in sessions" :key="s.id" class="result-card host">
-                                <div class="card-title">{{ s.target }}</div>
-                                <div class="card-detail">{{ s.type }} | {{ s.os_type }}</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Tools Tab -->
-                    <div v-show="rightTab === 'tools'">
-                        <div class="result-section">
-                            <h5>Available Tools ({{ tools.length }})</h5>
-                            <div class="tool-grid">
-                                <div v-for="tool in tools.slice(0, 30)" :key="tool.name" class="tool-item">
-                                    <div class="tool-name">{{ tool.name }}</div>
-                                    <div class="tool-status" :class="tool.available ? 'available' : 'unavailable'">
-                                        {{ tool.available ? 'Ready' : 'N/A' }}
-                                    </div>
-                                </div>
+                    <div v-show="tab === 'tools'">
+                        <div class="panel-title">工具列表 ({{ tools.length }})</div>
+                        <div class="tools-grid">
+                            <div v-for="t in tools.slice(0, 20)" :key="t.name" class="tool-item">
+                                <span class="tool-name">{{ t.name }}</span>
+                                <span class="tool-status" :class="t.available ? '' : 'unavailable'">{{ t.available ? '就绪' : '不可用' }}</span>
                             </div>
                         </div>
                     </div>
@@ -692,291 +199,82 @@
     </div>
 
     <script>
-        const { createApp, ref, reactive, computed, onMounted, watch, nextTick } = Vue;
-
+        const { createApp, ref, computed, onMounted } = Vue;
         const app = createApp({
             setup() {
-                // State
                 const tasks = ref({});
                 const currentTaskId = ref(null);
                 const targetUrl = ref('');
                 const logs = ref([]);
                 const starting = ref(false);
                 const graphData = ref({ nodes: [], edges: [], groups: {} });
-                const rightTab = ref('tasks');
+                const tab = ref('results');
                 const taskResult = ref({});
                 const systemStatus = ref({});
                 const tools = ref([]);
-                const sessions = ref([]);
                 const llmStatus = ref({});
                 const compressionStats = ref({});
                 const recoveryStats = ref({});
                 const strategyStats = ref({});
-                const recentErrors = ref([]);
 
-                // Computed
                 const taskList = computed(() => Object.values(tasks.value).sort((a, b) => b.created_at.localeCompare(a.created_at)));
                 const currentTask = computed(() => tasks.value[currentTaskId.value]);
-                const canCancel = computed(() => currentTask.value && currentTask.value.status === 'running');
+                const statusText = (s) => ({ running: '运行中', completed: '已完成', error: '失败', cancelled: '已取消' }[s] || s);
 
-                // Helper
-                function getPerfClass(value, warnThreshold, dangerThreshold) {
-                    if (value >= dangerThreshold) return 'danger';
-                    if (value >= warnThreshold) return 'warning';
-                    return 'success';
-                }
+                async function fetchGraph() { try { graphData.value = await (await fetch('/api/graph')).json(); renderGraph(); } catch (e) {} }
+                async function fetchTasks() { try { const d = await (await fetch('/api/tasks')).json(); const m = {}; (d.tasks || []).forEach(t => m[t.id] = t); tasks.value = m; } catch (e) {} }
+                async function fetchSystemStatus() { try { systemStatus.value = await (await fetch('/api/system/status')).json(); } catch (e) {} }
+                async function fetchTools() { try { tools.value = (await (await fetch('/api/tools')).json()).tools || []; } catch (e) {} }
+                async function fetchLLMStatus() { try { llmStatus.value = await (await fetch('/api/llm/status')).json(); } catch (e) {} }
+                async function fetchCompressionStats() { try { compressionStats.value = await (await fetch('/api/compression/status')).json(); } catch (e) {} }
+                async function fetchRecoveryStats() { try { const d = await (await fetch('/api/system/recovery')).json(); recoveryStats.value = d.recovery_stats || {}; } catch (e) {} }
+                async function fetchStrategyStats() { try { strategyStats.value = await (await fetch('/api/strategy/statistics')).json(); } catch (e) {} }
 
-                // API Fetch Functions
-                async function fetchGraph() {
-                    try {
-                        const res = await fetch('/api/graph');
-                        graphData.value = await res.json();
-                        renderGraph();
-                    } catch (e) { console.error('Graph fetch error:', e); }
-                }
-
-                async function fetchTasks() {
-                    try {
-                        const res = await fetch('/api/tasks');
-                        const data = await res.json();
-                        const taskMap = {};
-                        data.tasks.forEach(t => taskMap[t.id] = t);
-                        tasks.value = taskMap;
-                    } catch (e) { console.error('Tasks fetch error:', e); }
-                }
-
-                async function fetchSystemStatus() {
-                    try {
-                        const res = await fetch('/api/system/status');
-                        systemStatus.value = await res.json();
-                    } catch (e) { console.error('System status error:', e); }
-                }
-
-                async function fetchTools() {
-                    try {
-                        const res = await fetch('/api/tools');
-                        const data = await res.json();
-                        tools.value = data.tools || [];
-                    } catch (e) { console.error('Tools fetch error:', e); }
-                }
-
-                async function fetchSessions() {
-                    try {
-                        const res = await fetch('/api/sessions');
-                        const data = await res.json();
-                        sessions.value = data.sessions || [];
-                    } catch (e) { sessions.value = []; }
-                }
-
-                async function fetchLLMStatus() {
-                    try {
-                        const res = await fetch('/api/llm/status');
-                        llmStatus.value = await res.json();
-                    } catch (e) { llmStatus.value = {}; }
-                }
-
-                async function fetchCompressionStats() {
-                    try {
-                        const res = await fetch('/api/compression/status');
-                        compressionStats.value = await res.json();
-                    } catch (e) { compressionStats.value = {}; }
-                }
-
-                async function fetchRecoveryStats() {
-                    try {
-                        const res = await fetch('/api/system/recovery');
-                        const data = await res.json();
-                        recoveryStats.value = data.recovery_stats || {};
-                        recentErrors.value = data.recent_errors || [];
-                    } catch (e) { recoveryStats.value = {}; }
-                }
-
-                async function fetchStrategyStats() {
-                    try {
-                        const res = await fetch('/api/strategy/statistics');
-                        strategyStats.value = await res.json();
-                    } catch (e) { strategyStats.value = {}; }
-                }
-
-                async function selectTask(taskId) {
-                    currentTaskId.value = taskId;
-                    logs.value = [];
-                    taskResult.value = {};
-                    await fetchTaskDetail();
+                async function selectTask(id) {
+                    currentTaskId.value = id; logs.value = []; taskResult.value = {};
+                    try { currentTask.value = tasks.value[id] = await (await fetch(`/api/task/${id}`)).json(); taskResult.value = currentTask.value; logs.value = (await (await fetch(`/api/task/${id}/logs`)).json()).logs || []; } catch (e) {}
                     pollTaskStatus();
                 }
 
-                async function fetchTaskDetail() {
-                    if (!currentTaskId.value) return;
-                    try {
-                        const res = await fetch(`/api/task/${currentTaskId.value}`);
-                        const data = await res.json();
-                        tasks.value[currentTaskId.value] = data;
-                        taskResult.value = data;
-
-                        const logsRes = await fetch(`/api/task/${currentTaskId.value}/logs`);
-                        const logsData = await logsRes.json();
-                        logs.value = logsData.logs || [];
-
-                        updateGraphHighlight(data.current_node, data.visited_nodes);
-                        scrollToBottom();
-                    } catch (e) { console.error('Task detail error:', e); }
-                }
-
                 async function startTask() {
-                    if (!targetUrl.value) {
-                        ElementPlus.ElMessage.warning('Please enter target URL');
-                        return;
-                    }
+                    if (!targetUrl.value) return;
                     starting.value = true;
-                    try {
-                        const res = await fetch('/api/task/start', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ target_url: targetUrl.value })
-                        });
-                        const data = await res.json();
-                        currentTaskId.value = data.task_id;
-                        targetUrl.value = '';
-                        rightTab.value = 'results';
-                        await fetchTasks();
-                        pollTaskStatus();
-                    } catch (e) {
-                        ElementPlus.ElMessage.error('Failed to start task');
-                    }
+                    try { const d = await (await fetch('/api/task/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target_url: targetUrl.value }) })).json(); currentTaskId.value = d.task_id; targetUrl.value = ''; tab.value = 'results'; await fetchTasks(); pollTaskStatus(); } catch (e) {}
                     starting.value = false;
-                }
-
-                async function cancelTask() {
-                    if (!currentTaskId.value) return;
-                    try {
-                        await fetch(`/api/task/${currentTaskId.value}/cancel`, { method: 'POST' });
-                        await fetchTasks();
-                    } catch (e) { console.error('Cancel error:', e); }
                 }
 
                 let pollTimer = null;
                 async function pollTaskStatus() {
                     if (pollTimer) clearTimeout(pollTimer);
                     if (!currentTaskId.value) return;
-
-                    await fetchTaskDetail();
+                    try { currentTask.value = tasks.value[currentTaskId.value] = await (await fetch(`/api/task/${currentTaskId.value}`)).json(); taskResult.value = currentTask.value; logs.value = (await (await fetch(`/api/task/${currentTaskId.value}/logs`)).json()).logs || []; } catch (e) {}
                     await fetchSystemStatus();
-
-                    if (tasks.value[currentTaskId.value]?.status === 'running') {
-                        pollTimer = setTimeout(pollTaskStatus, 2000);
-                    }
+                    if (tasks.value[currentTaskId.value]?.status === 'running') pollTimer = setTimeout(pollTaskStatus, 2000);
                 }
 
-                function refreshAll() {
-                    fetchGraph();
-                    fetchTasks();
-                    fetchSystemStatus();
-                    fetchTools();
-                    fetchSessions();
-                    fetchLLMStatus();
-                    fetchCompressionStats();
-                    fetchRecoveryStats();
-                    fetchStrategyStats();
-                }
+                function refreshAll() { fetchGraph(); fetchTasks(); fetchSystemStatus(); fetchTools(); fetchLLMStatus(); fetchCompressionStats(); fetchRecoveryStats(); fetchStrategyStats(); }
 
-                // Graph Rendering
                 function renderGraph() {
                     const svg = d3.select('#graph-svg');
-                    const container = document.querySelector('.graph-container');
+                    const container = document.querySelector('.graph-area');
                     if (!container) return;
-                    const width = container.clientWidth;
-                    const height = container.clientHeight;
-
+                    const w = container.clientWidth, h = container.clientHeight;
                     svg.selectAll('*').remove();
-
-                    const nodes = graphData.value.nodes.map(n => ({
-                        ...n,
-                        color: graphData.value.groups[n.group]?.color || '#409EFF'
-                    }));
-
-                    const edges = graphData.value.edges.map((e, i) => ({
-                        ...e,
-                        id: i,
-                        source: e.source,
-                        target: e.target
-                    }));
-
-                    const simulation = d3.forceSimulation(nodes)
-                        .force('link', d3.forceLink(edges).id(d => d.id).distance(80))
-                        .force('charge', d3.forceManyBody().strength(-200))
-                        .force('center', d3.forceCenter(width / 2, height / 2))
-                        .force('collision', d3.forceCollide().radius(30));
-
-                    const link = svg.append('g')
-                        .selectAll('path')
-                        .data(edges)
-                        .enter().append('path')
-                        .attr('class', 'edge')
-                        .attr('id', d => `edge-${d.source.id || d.source}-${d.target.id || d.target}`);
-
-                    const node = svg.append('g')
-                        .selectAll('g')
-                        .data(nodes)
-                        .enter().append('g')
-                        .attr('class', 'node')
-                        .attr('id', d => `node-${d.id}`)
-                        .call(d3.drag()
-                            .on('start', d => { if (!d.active) simulation.alphaTarget(0.3).restart(); d.subject.fx = d.x; })
-                            .on('drag', d => { d.subject.fx = d.x; d.subject.fy = d.y; })
-                            .on('end', d => { if (!d.active) simulation.alphaTarget(0); d.subject.fx = null; d.subject.fy = null; }));
-
-                    node.append('circle').attr('r', 18).attr('fill', d => d.color).attr('stroke', '#fff');
+                    const nodes = graphData.value.nodes.map(n => ({ ...n, color: graphData.value.groups[n.group]?.color || '#1890ff' }));
+                    const edges = graphData.value.edges.map((e, i) => ({ ...e, id: i }));
+                    const sim = d3.forceSimulation(nodes).force('link', d3.forceLink(edges).id(d => d.id).distance(80)).force('charge', d3.forceManyBody().strength(-200)).force('center', d3.forceCenter(w / 2, h / 2));
+                    const link = svg.append('g').selectAll('line').data(edges).enter().append('line').attr('class', 'edge');
+                    const node = svg.append('g').selectAll('g').data(nodes).enter().append('g').attr('class', 'node');
+                    node.append('circle').attr('r', 14).attr('fill', d => d.color).attr('stroke', '#fff');
                     node.append('text').attr('dy', 4).attr('text-anchor', 'middle').text(d => d.name.substring(0, 2));
-
-                    simulation.on('tick', () => {
-                        link.attr('d', d => `M${d.source.x},${d.source.y}L${d.target.x},${d.target.y}`);
-                        node.attr('transform', d => `translate(${d.x},${d.y})`);
-                    });
+                    sim.on('tick', () => { link.attr('x1', d => d.source.x).attr('y1', d => d.source.y).attr('x2', d => d.target.x).attr('y2', d => d.target.y); node.attr('transform', d => `translate(${d.x},${d.y})`); });
                 }
 
-                function updateGraphHighlight(currentNode, visitedNodes) {
-                    d3.selectAll('.node')
-                        .classed('active', d => d.id === currentNode)
-                        .classed('visited', d => visitedNodes && visitedNodes.includes(d.id));
-                }
-
-                function scrollToBottom() {
-                    nextTick(() => {
-                        const panel = document.querySelector('.log-panel');
-                        if (panel) panel.scrollTop = panel.scrollHeight;
-                    });
-                }
-
-                // Initialize
-                onMounted(() => {
-                    refreshAll();
-
-                    // Periodic refresh
-                    setInterval(() => {
-                        fetchSystemStatus();
-                        fetchLLMStatus();
-                        fetchRecoveryStats();
-                    }, 5000);
-
-                    window.addEventListener('resize', renderGraph);
-                });
-
-                return {
-                    tasks, currentTaskId, currentTask, targetUrl, logs, starting,
-                    graphData, rightTab, taskResult, systemStatus, tools, sessions,
-                    llmStatus, compressionStats, recoveryStats, strategyStats, recentErrors,
-                    taskList, canCancel,
-                    selectTask, startTask, cancelTask, refreshAll, getPerfClass
-                };
+                onMounted(() => { refreshAll(); setInterval(() => { fetchSystemStatus(); fetchLLMStatus(); fetchRecoveryStats(); }, 5000); window.addEventListener('resize', renderGraph); });
+                return { tasks, taskList, currentTaskId, currentTask, targetUrl, logs, starting, graphData, tab, taskResult, systemStatus, tools, llmStatus, compressionStats, recoveryStats, strategyStats, selectTask, startTask, refreshAll, statusText };
             }
         });
-
-        for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
-            app.component(key, component);
-        }
-        app.use(ElementPlus);
-        app.mount('#app');
+        app.use(ElementPlus).mount('#app');
     </script>
 </body>
 </html>

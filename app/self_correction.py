@@ -12,16 +12,26 @@ AI驱动的错误恢复:
 - analyze_failure_with_ai: AI分析失败根因
 - attempt_ai_recovery: AI生成恢复策略
 - 智能错误模式识别
+
+增强特性:
+- 指数退避重试
+- 上下文丰富
+- 错误聚类分析
 """
 import json
 import time
 import traceback
+import random
 from typing import Dict, List, Any, Optional, Callable, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 from state import CTFState
 from llm_client import llm_client
 from config import config
+from logger import get_logger
+
+# 模块日志器
+logger = get_logger("SelfCorrection")
 
 
 class ErrorSeverity(Enum):
@@ -30,6 +40,44 @@ class ErrorSeverity(Enum):
     MEDIUM = 2    # 需要重试
     HIGH = 3      # 需要模式切换
     CRITICAL = 4  # 需要人工介入
+
+
+# 扩展错误类型
+class ErrorType:
+    """错误类型常量"""
+    # 网络错误
+    NETWORK_TIMEOUT = "NETWORK_TIMEOUT"
+    CONNECTION_REFUSED = "CONNECTION_REFUSED"
+    DNS_FAILURE = "DNS_FAILURE"
+    SSL_ERROR = "SSL_ERROR"
+
+    # 工具错误
+    TOOL_FAILURE = "TOOL_FAILURE"
+    TOOL_TIMEOUT = "TOOL_TIMEOUT"
+    TOOL_NOT_FOUND = "TOOL_NOT_FOUND"
+
+    # LLM错误
+    LLM_TIMEOUT = "LLM_TIMEOUT"
+    LLM_RATE_LIMIT = "LLM_RATE_LIMIT"
+    LLM_CONTEXT_OVERFLOW = "LLM_CONTEXT_OVERFLOW"
+
+    # 状态错误
+    STATE_CORRUPTION = "STATE_CORRUPTION"
+    STATE_VALIDATION = "STATE_VALIDATION"
+
+    # 逻辑错误
+    DEAD_LOOP = "DEAD_LOOP"
+    NO_PROGRESS = "NO_PROGRESS"
+    INVALID_STRATEGY = "INVALID_STRATEGY"
+
+    # 权限错误
+    PERMISSION_DENIED = "PERMISSION_DENIED"
+    AUTH_REQUIRED = "AUTH_REQUIRED"
+
+    # 执行错误
+    EXECUTION_ERROR = "EXECUTION_ERROR"
+    SHELL_LOST = "SHELL_LOST"
+    SESSION_EXPIRED = "SESSION_EXPIRED"
 
 
 @dataclass
@@ -118,7 +166,7 @@ class SelfCorrectionManager:
         if severity.value <= ErrorSeverity.MEDIUM.value:
             record.recovery_action = self._attempt_recovery(record)
 
-        print(f"[SelfCorrection] 记录错误: {error_type}@{node} (严重度: {severity.name})")
+        logger.warning(f"记录错误: {error_type}@{node} (严重度: {severity.name})")
         return record
 
     def _update_health_status(self, severity: ErrorSeverity):
@@ -271,14 +319,14 @@ class SelfCorrectionManager:
             strategy_name = strategy.get("strategy", "")
             action = strategy.get("action", "")
 
-            print(f"[SelfCorrection] 尝试恢复策略: {strategy_name} - {action}")
+            logger.info(f"尝试恢复策略: {strategy_name} - {action}")
 
             result = self._execute_recovery_strategy(state, strategy_name, action)
             if result.get("success"):
                 updates.update(result.get("updates", {}))
                 recovered = True
                 self.health_status.consecutive_failures = 0
-                print(f"[SelfCorrection] 恢复成功: {strategy_name}")
+                logger.success(f"恢复成功: {strategy_name}")
                 break
             else:
                 updates.update(result.get("updates", {}))
@@ -513,7 +561,7 @@ class SelfCorrectionManager:
                 elif isinstance(state.get(field), dict):
                     updates[field] = {}
 
-        print(f"[SelfCorrection] 重置状态字段: {list(updates.keys())}")
+        logger.info(f"重置状态字段: {list(updates.keys())}")
         self.health_status.consecutive_failures = 0
         self.health_status.is_healthy = True
 
@@ -573,3 +621,162 @@ def with_self_correction(node_name: str):
                 }
         return wrapper
     return decorator
+
+
+def with_retry(max_retries: int = 3, base_delay: float = 1.0, max_delay: float = 30.0,
+               exponential_base: float = 2.0, jitter: bool = True):
+    """
+    指数退避重试装饰器
+
+    Args:
+        max_retries: 最大重试次数
+        base_delay: 基础延迟时间(秒)
+        max_delay: 最大延迟时间(秒)
+        exponential_base: 指数基数
+        jitter: 是否添加随机抖动
+
+    用法:
+        @with_retry(max_retries=3, base_delay=1.0)
+        def risky_operation():
+            ...
+    """
+    def decorator(func):
+        from functools import wraps
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+
+                    if attempt == max_retries:
+                        logger.error(f"重试次数耗尽: {func.__name__} 失败")
+                        raise
+
+                    # 计算延迟时间
+                    delay = min(base_delay * (exponential_base ** attempt), max_delay)
+                    if jitter:
+                        delay = delay * (0.5 + random.random())
+
+                    logger.warning(f"重试 {attempt + 1}/{max_retries}: {func.__name__} - {e}, 等待 {delay:.1f}s")
+                    time.sleep(delay)
+
+            raise last_exception
+        return wrapper
+    return decorator
+
+
+def enrich_error_context(state: CTFState, node_name: str, error: Exception) -> Dict:
+    """
+    丰富错误上下文信息
+
+    收集状态和环境的上下文信息，用于AI分析
+
+    Args:
+        state: 当前状态
+        node_name: 发生错误的节点
+        error: 异常对象
+
+    Returns:
+        丰富的上下文字典
+    """
+    context = {
+        "node": node_name,
+        "error_type": type(error).__name__,
+        "error_message": str(error),
+        "timestamp": time.time(),
+        "state_snapshot": {
+            "current_url": state.get("current_url", ""),
+            "current_mode": state.get("current_mode", ""),
+            "execution_steps": state.get("execution_steps", 0),
+            "failure_score": state.get("failure_weighted_score", 0),
+            "visited_count": len(state.get("visited_urls", [])),
+        },
+        "recent_actions": state.get("attack_results", [])[-5:],
+        "recent_errors": [
+            {
+                "node": e.node,
+                "type": e.error_type,
+                "message": e.error_message[:100]
+            }
+            for e in self_correction_manager.error_history[-5:]
+        ],
+        "tools_status": _get_tools_status(),
+        "sessions_status": _get_sessions_status(state),
+    }
+
+    return context
+
+
+def _get_tools_status() -> Dict:
+    """获取工具状态"""
+    try:
+        from tool_framework import ToolRegistry
+        return {
+            "total": len(ToolRegistry._tools),
+            "available": sum(1 for t in ToolRegistry._tools.values()
+                            if hasattr(t, 'check_available') and t.check_available())
+        }
+    except Exception:
+        return {"total": 0, "available": 0}
+
+
+def _get_sessions_status(state: CTFState) -> Dict:
+    """获取会话状态"""
+    session = state.get("shell_session")
+    if not session:
+        return {"active": False}
+
+    return {
+        "active": True,
+        "type": str(session.get("session_type", "unknown")),
+        "target": session.get("target", ""),
+        "os": session.get("os_type", "unknown")
+    }
+
+
+def classify_error(error: Exception, context: Dict = None) -> Tuple[str, ErrorSeverity]:
+    """
+    分类错误类型和严重程度
+
+    Args:
+        error: 异常对象
+        context: 上下文信息
+
+    Returns:
+        (错误类型, 严重程度)
+    """
+    error_name = type(error).__name__
+    error_msg = str(error).lower()
+
+    # 网络错误
+    if any(kw in error_name.lower() for kw in ['timeout', 'connection', 'socket']):
+        return ErrorType.NETWORK_TIMEOUT, ErrorSeverity.MEDIUM
+
+    if 'refused' in error_msg or 'connection reset' in error_msg:
+        return ErrorType.CONNECTION_REFUSED, ErrorSeverity.MEDIUM
+
+    # SSL错误
+    if 'ssl' in error_msg or 'certificate' in error_msg:
+        return ErrorType.SSL_ERROR, ErrorSeverity.MEDIUM
+
+    # LLM错误
+    if 'rate limit' in error_msg or 'too many requests' in error_msg:
+        return ErrorType.LLM_RATE_LIMIT, ErrorSeverity.MEDIUM
+
+    if 'context' in error_msg and 'length' in error_msg:
+        return ErrorType.LLM_CONTEXT_OVERFLOW, ErrorSeverity.HIGH
+
+    # 权限错误
+    if 'permission' in error_msg or 'access denied' in error_msg:
+        return ErrorType.PERMISSION_DENIED, ErrorSeverity.HIGH
+
+    if 'unauthorized' in error_msg or 'authentication' in error_msg:
+        return ErrorType.AUTH_REQUIRED, ErrorSeverity.HIGH
+
+    # 默认
+    return ErrorType.EXECUTION_ERROR, ErrorSeverity.MEDIUM

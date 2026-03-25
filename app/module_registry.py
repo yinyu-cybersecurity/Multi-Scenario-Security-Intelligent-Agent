@@ -98,17 +98,17 @@ class ModuleRegistry:
             'misc_extractor': cls._import_node('misc.nodes', 'misc_extractor_node'),
         })
 
-        # 性能监控模块
+        # 性能监控模块 (在app目录下)
         cls.register('performance', lambda: {
-            'performance_monitor': cls._import_attr('performance', 'performance_monitor'),
-            'get_system_status': cls._import_attr('performance', 'get_system_status'),
-            'ParallelExecutor': cls._import_attr('performance', 'ParallelExecutor'),
+            'performance_monitor': cls._import_attr('app.performance', 'performance_monitor'),
+            'get_system_status': cls._import_attr('app.performance', 'get_system_status'),
+            'ParallelExecutor': cls._import_attr('app.performance', 'ParallelExecutor'),
         })
 
-        # 自我纠错模块
+        # 自我纠错模块 (在app目录下)
         cls.register('self_correction', lambda: {
-            'self_correction_manager': cls._import_attr('self_correction', 'self_correction_manager'),
-            'ErrorSeverity': cls._import_attr('self_correction', 'ErrorSeverity'),
+            'self_correction_manager': cls._import_attr('app.self_correction', 'self_correction_manager'),
+            'ErrorSeverity': cls._import_attr('app.self_correction', 'ErrorSeverity'),
         })
 
     @classmethod

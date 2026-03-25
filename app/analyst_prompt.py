@@ -5,7 +5,8 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
                         baseline_response: dict = None, detected_scenes: dict = None,
                         tools_info: str = None,
                         focused_scene: str = None,
-                        scene_tested: bool = False) -> str:
+                        scene_tested: bool = False,
+                        topology_hint: str = None) -> str:
     """
     生成分析兵的情报统筹提示词。
     """
@@ -99,6 +100,7 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
 
 {scenes_section}
 {focus_section}
+{f"## 拓扑分析\n{topology_hint}\n" if topology_hint else ""}
 ## 页面特征
 {json.dumps(page_features, indent=2, ensure_ascii=False)[:1000]}
 
