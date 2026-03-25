@@ -391,19 +391,121 @@ def api_system_status():
 
 @app.route('/api/tools')
 def api_tools():
-    """获取可用工具列表"""
+    """获取可用工具列表（分类显示）"""
     try:
         from tool_framework import ToolRegistry
-        tools = []
+
+        # 定义工具分类
+        categories = {
+            "impacket": {
+                "name": "Impacket工具集",
+                "tools": [
+                    # 远程执行
+                    "psexec", "wmiexec", "smbexec", "atexec", "dcomexec",
+                    # 凭据导出
+                    "secretsdump",
+                    # Kerberos攻击
+                    "getnpusers", "getuserspns", "ticketer", "goldenpac",
+                    # NTLM中继
+                    "ntlmrelayx",
+                    # AD域渗透
+                    "dacledit", "getadusers", "raisechild",
+                    # SMB工具
+                    "smbclient", "lookupsid", "smbserver",
+                    # MSSQL工具
+                    "mssqlclient", "mssqlinstance",
+                    # RPC工具
+                    "rpcdump", "samrdump",
+                    # 其他
+                    "reg", "services", "getarch"
+                ]
+            },
+            "web_attack": {
+                "name": "Web攻击",
+                "tools": ["sqlmap", "ffuf", "dirsearch", "nuclei", "xray", "nmap", "httpx", "subfinder", "httprobe"]
+            },
+            "java_deserialize": {
+                "name": "Java反序列化",
+                "tools": ["ysoserial", "jndi-exploit", "marshalsec", "jdbc-exploit"]
+            },
+            "ad_attack": {
+                "name": "AD域攻击",
+                "tools": ["petitpotam", "rubeus", "bloodhound", "crackmapexec", "mimikatz"]
+            },
+            "privilege_escalation": {
+                "name": "权限提升",
+                "tools": ["potato", "privesc"]
+            },
+            "info_leak": {
+                "name": "信息泄露",
+                "tools": ["jsfinder", "git-hacker", "xxe-injector", "ajp-shooter"]
+            },
+            "session_attack": {
+                "name": "会话攻击",
+                "tools": ["flask-unsign", "jwt-tool"]
+            },
+            "crypto": {
+                "name": "密码学",
+                "tools": ["fenjing"]
+            },
+            "framework": {
+                "name": "框架工具",
+                "tools": ["metasploit", "metasploit-manager", "fscan", "hydra"]
+            },
+            "other": {
+                "name": "其他工具",
+                "tools": []  # 未分类的工具会放在这里
+            }
+        }
+
+        # 收集所有工具
+        all_tools = {}
         for tool in ToolRegistry.get_all_tools():
-            tools.append({
-                "name": tool.name(),
+            tool_name = tool.name()
+            all_tools[tool_name] = {
+                "name": tool_name,
                 "description": tool.description() if hasattr(tool, 'description') else "",
                 "available": tool.check_available() if hasattr(tool, 'check_available') else True
-            })
-        return jsonify({"tools": tools, "total": len(tools)})
+            }
+
+        # 按分类组织工具
+        categorized_tools = {}
+        used_tools = set()
+
+        for cat_key, cat_info in categories.items():
+            if cat_key == "other":
+                continue
+            cat_tools = []
+            for tool_name in cat_info["tools"]:
+                if tool_name in all_tools:
+                    cat_tools.append(all_tools[tool_name])
+                    used_tools.add(tool_name)
+
+            if cat_tools:
+                categorized_tools[cat_key] = {
+                    "name": cat_info["name"],
+                    "tools": cat_tools,
+                    "available_count": sum(1 for t in cat_tools if t["available"]),
+                    "total_count": len(cat_tools)
+                }
+
+        # 未分类的工具放入"其他"
+        other_tools = [t for name, t in all_tools.items() if name not in used_tools]
+        if other_tools:
+            categorized_tools["other"] = {
+                "name": "其他工具",
+                "tools": other_tools,
+                "available_count": sum(1 for t in other_tools if t["available"]),
+                "total_count": len(other_tools)
+            }
+
+        return jsonify({
+            "categories": categorized_tools,
+            "total": len(all_tools),
+            "available": sum(1 for t in all_tools.values() if t["available"])
+        })
     except Exception as e:
-        return jsonify({"tools": [], "error": str(e)})
+        return jsonify({"categories": {}, "error": str(e)})
 
 
 @app.route('/api/sessions')

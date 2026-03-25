@@ -217,11 +217,16 @@
                         </div>
                     </div>
                     <div v-show="tab === 'tools'">
-                        <div class="panel-title">工具列表 ({{ tools.length }})</div>
-                        <div class="tools-grid">
-                            <div v-for="t in tools.slice(0, 20)" :key="t.name" class="tool-item">
-                                <span class="tool-name">{{ t.name }}</span>
-                                <span class="tool-status" :class="t.available ? '' : 'unavailable'">{{ t.available ? '就绪' : '不可用' }}</span>
+                        <div class="panel-title">工具列表 ({{ toolStats.total }} 总计, {{ toolStats.available }} 可用)</div>
+                        <div v-for="(cat, key) in toolCategories" :key="key" style="margin-bottom: 12px;">
+                            <div style="font-weight: 500; color: #666; margin-bottom: 6px; font-size: 12px;">
+                                {{ cat.name }} ({{ cat.available_count }}/{{ cat.total_count }})
+                            </div>
+                            <div class="tools-grid">
+                                <div v-for="t in cat.tools" :key="t.name" class="tool-item">
+                                    <span class="tool-name">{{ t.name }}</span>
+                                    <span class="tool-status" :class="t.available ? '' : 'unavailable'">{{ t.available ? '就绪' : '不可用' }}</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -243,7 +248,8 @@
                 const tab = ref('results');
                 const taskResult = ref({});
                 const systemStatus = ref({});
-                const tools = ref([]);
+                const toolCategories = ref({});
+                const toolStats = ref({ total: 0, available: 0 });
                 const llmStatus = ref({});
                 const compressionStats = ref({});
                 const recoveryStats = ref({});
@@ -260,7 +266,13 @@
                 async function fetchGraph() { try { graphData.value = await (await fetch('/api/graph')).json(); renderGraph(); } catch (e) {} }
                 async function fetchTasks() { try { const d = await (await fetch('/api/tasks')).json(); const m = {}; (d.tasks || []).forEach(t => m[t.id] = t); tasks.value = m; } catch (e) {} }
                 async function fetchSystemStatus() { try { systemStatus.value = await (await fetch('/api/system/status')).json(); } catch (e) {} }
-                async function fetchTools() { try { tools.value = (await (await fetch('/api/tools')).json()).tools || []; } catch (e) {} }
+                async function fetchTools() {
+                    try {
+                        const data = await (await fetch('/api/tools')).json();
+                        toolCategories.value = data.categories || {};
+                        toolStats.value = { total: data.total || 0, available: data.available || 0 };
+                    } catch (e) {}
+                }
                 async function fetchLLMStatus() { try { llmStatus.value = await (await fetch('/api/llm/status')).json(); } catch (e) {} }
                 async function fetchCompressionStats() { try { compressionStats.value = await (await fetch('/api/compression/status')).json(); } catch (e) {} }
                 async function fetchRecoveryStats() { try { const d = await (await fetch('/api/system/recovery')).json(); recoveryStats.value = d.recovery_stats || {}; } catch (e) {} }
@@ -398,7 +410,7 @@
                 }
 
                 onMounted(() => { refreshAll(); setInterval(() => { fetchSystemStatus(); fetchLLMStatus(); fetchRecoveryStats(); }, 5000); window.addEventListener('resize', renderGraph); });
-                return { tasks, taskList, currentTaskId, currentTask, targetUrl, logs, starting, graphData, tab, taskResult, systemStatus, tools, llmStatus, compressionStats, recoveryStats, strategyStats, tooltipNode, tooltipX, tooltipY, selectTask, startTask, refreshAll, statusText, zoomIn, zoomOut, zoomReset };
+                return { tasks, taskList, currentTaskId, currentTask, targetUrl, logs, starting, graphData, tab, taskResult, systemStatus, toolCategories, toolStats, llmStatus, compressionStats, recoveryStats, strategyStats, tooltipNode, tooltipX, tooltipY, selectTask, startTask, refreshAll, statusText, zoomIn, zoomOut, zoomReset };
             }
         });
         app.use(ElementPlus).mount('#app');

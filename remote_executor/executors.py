@@ -308,21 +308,25 @@ class ImpacketExecutor:
     Impacket命令执行器
 
     支持方法:
-    - psexec.py
-    - wmiexec.py
-    - smbexec.py
-    - atexec.py
+    - psexec.py - PsExec远程执行（需要管理员权限）
+    - wmiexec.py - WMI远程执行（推荐，更隐蔽）
+    - smbexec.py - SMB远程执行
+    - atexec.py - 计划任务执行
+    - dcomexec.py - DCOM远程执行
     """
 
     # 脚本路径
     SCRIPT_PATHS = [
+        "/root/.local/bin",           # pipx 安装
+        "/usr/local/bin",             # 全局安装
         "/usr/share/doc/python3-impacket/examples",
         "/usr/local/share/impacket",
         "/opt/impacket/examples",
+        "/opt/venv/bin",              # venv 安装
     ]
 
     def __init__(self, host: str, username: str, password: str = "",
-                 hash_: str = "", domain: str = "", method: str = "psexec"):
+                 hash_: str = "", domain: str = "", method: str = "wmiexec"):
         self.host = host
         self.username = username
         self.password = password
@@ -335,7 +339,10 @@ class ImpacketExecutor:
         """查找impacket脚本目录"""
         for path in self.SCRIPT_PATHS:
             if os.path.exists(path):
-                return path
+                # 检查是否包含常用脚本
+                test_script = os.path.join(path, "wmiexec.py")
+                if os.path.exists(test_script):
+                    return path
         return None
 
     def execute(self, command: str, timeout: int = 60) -> ExecutionResult:
@@ -346,10 +353,11 @@ class ImpacketExecutor:
             "psexec": "psexec.py",
             "wmiexec": "wmiexec.py",
             "smbexec": "smbexec.py",
-            "atexec": "atexec.py"
+            "atexec": "atexec.py",
+            "dcomexec": "dcomexec.py"
         }
 
-        script_name = script_map.get(self.method, "psexec.py")
+        script_name = script_map.get(self.method, "wmiexec.py")
 
         # 查找脚本
         script_path = None
@@ -359,7 +367,7 @@ class ImpacketExecutor:
                 script_path = None
 
         if not script_path:
-            # 尝试直接使用命令
+            # 尝试直接使用命令（pipx安装的）
             script_path = script_name
 
         # 构建命令

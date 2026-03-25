@@ -61,20 +61,19 @@ class MimikatzTool(CommandLineTool):
     }
 
     def __init__(self):
-        # 检测 mimikatz 路径
+        # 检测 mimikatz 路径 - Dockerfile下载路径优先
         self.executable = None
 
         common_paths = [
+            "/opt/tools/x64/mimikatz.exe",  # Dockerfile解压路径
+            "/opt/tools/mimikatz/x64/mimikatz.exe",
+            "/opt/tools/Win32/mimikatz.exe",
+            "/opt/tools/mimikatz/Win32/mimikatz.exe",
             "mimikatz.exe",
             "./mimikatz.exe",
             "./tools/mimikatz.exe",
             "C:\\tools\\mimikatz.exe",
             os.path.expanduser("~/tools/mimikatz.exe"),
-            "/opt/tools/mimikatz.exe",
-            "/opt/tools/mimikatz/x64/mimikatz.exe",
-            "/opt/tools/x64/mimikatz.exe",  # 可能的解压路径
-            "/opt/tools/mimikatz/Win32/mimikatz.exe",
-            "/opt/tools/Win32/mimikatz.exe",
         ]
 
         for path in common_paths:

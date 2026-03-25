@@ -8,7 +8,6 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 # ===== Layer 1: 系统依赖 (几乎不变) =====
-# 镜像源替换与apt-get合并为一个RUN，避免增加新层
 RUN sed -i 's@archive.ubuntu.com@mirrors.aliyun.com@g' /etc/apt/sources.list && \
     sed -i 's@security.ubuntu.com@mirrors.aliyun.com@g' /etc/apt/sources.list && \
     apt-get update && apt-get install -y --no-install-recommends \
@@ -31,38 +30,59 @@ ENV GOPATH=/root/go
 ENV PATH=/usr/local/go/bin:$PATH:/root/go/bin
 
 # ===== Layer 3: Go 工具 (偶尔变) =====
-RUN go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
-    go install -v github.com/projectdiscovery/ffuf/v2/cmd/ffuf@latest || \
-    go install -v github.com/projectdiscovery/ffuf/cmd/ffuf@latest || true
-
-RUN go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest || true && \
-    go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest || true && \
-    go install -v github.com/tomnomnom/httprobe@latest || true && \
-    go install -v github.com/tomnomnom/gf@latest || true && \
-    go install -v github.com/tomnomnom/qsreplace@latest || true
+# 使用 GitHub Releases 下载二进制文件（避免网络问题）
+RUN echo "Installing Go tools..." && \
+    # nuclei
+    wget -q -O /tmp/nuclei.zip https://github.com/projectdiscovery/nuclei/releases/download/v3.3.0/nuclei_3.3.0_linux_amd64.zip 2>/dev/null && \
+    unzip -o /tmp/nuclei.zip -d /usr/local/bin 2>/dev/null && chmod +x /usr/local/bin/nuclei || true && \
+    # ffuf
+    wget -q -O /tmp/ffuf.tar.gz https://github.com/projectdiscovery/ffuf/releases/download/v2.1.0/ffuf_2.1.0_linux_amd64.tar.gz 2>/dev/null && \
+    tar -xzf /tmp/ffuf.tar.gz -C /usr/local/bin 2>/dev/null && chmod +x /usr/local/bin/ffuf || true && \
+    # httpx
+    wget -q -O /tmp/httpx.zip https://github.com/projectdiscovery/httpx/releases/download/v1.6.0/httpx_1.6.0_linux_amd64.zip 2>/dev/null && \
+    unzip -o /tmp/httpx.zip -d /usr/local/bin 2>/dev/null && chmod +x /usr/local/bin/httpx || true && \
+    # subfinder
+    wget -q -O /tmp/subfinder.tar.gz https://github.com/projectdiscovery/subfinder/releases/download/v2.6.5/subfinder_2.6.5_linux_amd64.tar.gz 2>/dev/null && \
+    tar -xzf /tmp/subfinder.tar.gz -C /usr/local/bin 2>/dev/null && chmod +x /usr/local/bin/subfinder || true && \
+    # httprobe
+    wget -q -O /usr/local/bin/httprobe https://github.com/tomnomnom/httprobe/releases/download/v0.2/httprobe-linux-amd64 2>/dev/null && \
+    chmod +x /usr/local/bin/httprobe || true && \
+    # gf
+    wget -q -O /tmp/gf.tar.gz https://github.com/tomnomnom/gf/releases/download/v0.0.3/gf-linux-amd64.tar.gz 2>/dev/null && \
+    tar -xzf /tmp/gf.tar.gz -C /usr/local/bin 2>/dev/null && chmod +x /usr/local/bin/gf || true && \
+    # qsreplace
+    wget -q -O /usr/local/bin/qsreplace https://github.com/tomnomnom/qsreplace/releases/download/v0.0.2/qsreplace-linux-amd64 2>/dev/null && \
+    chmod +x /usr/local/bin/qsreplace || true && \
+    rm -rf /tmp/*.zip /tmp/*.tar.gz && \
+    echo "Go tools installation completed"
 
 # ===== Layer 4: Python/Ruby 工具 (偶尔变) =====
-# pipx 安装可执行工具，pip 安装库
 RUN pip3 install pipx && \
     pipx ensurepath && \
-    # 将 PATH 写入 bashrc 以消除 pipx 警告
     echo 'export PATH="/root/.local/bin:$PATH"' >> ~/.bashrc
 
-# 确保 pipx 安装的工具在 PATH 中可用
 ENV PATH="/root/.local/bin:$PATH"
 
-# 安装工具（部分工具需要从 git 安装）
+# 安装 Python 工具
 RUN pipx install sqlmap || true && \
     pipx install fenjing || true && \
     pipx install flask-unsign || true && \
     pipx install impacket || true && \
     pipx install pwntools || true && \
     pipx install ROPgadget || true && \
-    pipx install git-hacker || true && \
-    # crackmapexec 从 git 安装
+    pipx install git+https://github.com/epsylon/xsser.git || true && \
     pipx install git+https://github.com/Porchetta-Industries/CrackMapExec.git || true && \
-    # bloodhound-python 从 git 安装
-    pipx install git+https://github.com/fox-it/BloodHound.py.git || true
+    pipx install git+https://github.com/fox-it/BloodHound.py.git || true && \
+    # GitHacker - 手动克隆安装
+    (git clone --depth 1 https://github.com/WangYihang/GitHacker.git /tmp/githacker && \
+     cd /tmp/githacker && pip install . || true && \
+     rm -rf /tmp/githacker) || true
+
+# Metasploit Framework 安装
+RUN curl https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb > msfinstall && \
+    chmod 755 msfinstall && \
+    ./msfinstall 2>/dev/null || true && \
+    rm -f msfinstall || true
 
 RUN gem install zsteg one_gadget
 
@@ -76,15 +96,14 @@ RUN mkdir -p /app/thirdparty \
     /app/.memory \
     /app/log
 
-# ===== Layer 5.5: 工具目录 (放在/opt下，避免被volume挂载覆盖) =====
+# ===== Layer 5.5: 工具目录 =====
 RUN mkdir -p /opt/tools/potato \
     /opt/tools/ad \
     /opt/tools/linux \
     /opt/tools/windows \
     /opt/frp
 
-# ===== Layer 6: 下载所有第三方工具 (偶尔变，但都在代码复制之前) =====
-# 网络失败不影响构建，所有下载命令都有容错处理
+# ===== Layer 6: 下载所有第三方工具 =====
 RUN echo "Starting git clones..."; \
     # SSRF工具
     git clone --depth 1 https://github.com/swisskyrepo/SSRFmap.git /app/thirdparty/SSRFmap 2>/dev/null || true; \
@@ -104,11 +123,17 @@ RUN echo "Starting git clones..."; \
     git clone --depth 1 https://github.com/fofapro/fapro.git /app/thirdparty/fapro 2>/dev/null || true; \
     # AD工具
     git clone --depth 1 https://github.com/topotam/PetitPotam.git /app/thirdparty/PetitPotam 2>/dev/null || true; \
+    git clone --depth 1 https://github.com/0xdea/ad-attacks.git /app/thirdparty/ad-attacks 2>/dev/null || true; \
+    # AJPShooter (Ghostcat)
+    git clone --depth 1 https://github.com/00theway/Ghostcat-CNVD-2020-10487.git /app/thirdparty/ajpshooter 2>/dev/null || true; \
+    # JSFinder
+    git clone --depth 1 https://github.com/Threezh1/JSFinder.git /app/thirdparty/jsfinder 2>/dev/null || true; \
+    # xxe-injector
+    git clone --depth 1 https://github.com/enjoiz/XXEinjector.git /app/thirdparty/xxe-injector 2>/dev/null || true; \
+    # marshalsec 编译
     git clone --depth 1 https://github.com/mbechler/marshalsec.git /app/thirdparty/marshalsec 2>/dev/null || true; \
     cd /app/thirdparty/marshalsec && mvn package -DskipTests 2>/dev/null && \
     cp target/marshalsec-*.jar /app/thirdparty/marshalsec.jar 2>/dev/null || true; \
-    # xxe-injector
-    git clone --depth 1 https://github.com/enjoiz/XXEinjector.git /app/thirdparty/xxe-injector 2>/dev/null || true; \
     # fscan 编译
     git clone --depth 1 https://github.com/shadow1ng/fscan.git /app/thirdparty/fscan 2>/dev/null || true; \
     cd /app/thirdparty/fscan && go build -o /usr/local/bin/fscan . 2>/dev/null || true; \
@@ -131,7 +156,6 @@ RUN echo "Starting binary downloads..."; \
     mv /tmp/frp_win/frp_0.52.3_windows_amd64/frps.exe /opt/tools/windows/ 2>/dev/null || true; \
     rm -rf frp_0.52.3_windows_amd64.zip /tmp/frp_win || true; \
     echo "frp completed"; \
-    # fscan - Linux版本 (已编译到/usr/local/bin/fscan) \
     # fscan - Windows版本
     wget -q -O /opt/tools/windows/fscan.exe https://github.com/shadow1ng/fscan/releases/download/v1.8.2/fscan.exe 2>/dev/null || true; \
     echo "fscan completed"; \
@@ -146,9 +170,15 @@ RUN echo "Starting binary downloads..."; \
     # mimikatz
     wget -q -O /tmp/mimikatz.zip \
         "https://github.com/gentilkiwi/mimikatz/releases/download/v2.2.0-20220919/mimikatz_trunk.zip" 2>/dev/null && \
-    unzip -q /tmp/mimikatz.zip -d /opt/tools/ 2>/dev/null && \
-    rm -f /tmp/mimikatz.zip || true; \
+    unzip -q /tmp/mimikatz.zip -d /tmp/mimikatz_extract 2>/dev/null && \
+    mv /tmp/mimikatz_extract/mimikatz_trunk/x64 /opt/tools/ 2>/dev/null || true && \
+    mv /tmp/mimikatz_extract/mimikatz_trunk/Win32 /opt/tools/ 2>/dev/null || true && \
+    rm -rf /tmp/mimikatz.zip /tmp/mimikatz_extract || true; \
     echo "mimikatz completed"; \
+    # Rubeus
+    wget -q -O /opt/tools/windows/Rubeus.exe \
+        "https://github.com/GhostPack/Rubeus/releases/download/2.2.0/Rubeus.exe" 2>/dev/null || true; \
+    echo "Rubeus completed"; \
     # nuclei templates
     /root/go/bin/nuclei -update-templates 2>/dev/null || true; \
     # xray 漏洞扫描器
@@ -190,5 +220,4 @@ COPY deploy/web/ ./web/
 EXPOSE 8000 7000 10800 4444
 
 # ===== 入口点 =====
-# 默认启动bash，由docker-compose指定具体命令
 CMD ["tail", "-f", "/dev/null"]

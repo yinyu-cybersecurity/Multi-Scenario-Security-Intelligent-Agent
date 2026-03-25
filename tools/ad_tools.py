@@ -5,9 +5,8 @@ AD域渗透工具集
 包含:
 - PetitPotam: EfsRpc强制认证攻击
 - Rubeus: Kerberos票据操作
-- dacledit: AD ACL编辑
 
-基于实战使用添加
+注意: dacledit 已移至 impacket_tools.py
 """
 import os
 import shutil
@@ -163,8 +162,22 @@ class RubeusTool(CommandLineTool):
     }
 
     def __init__(self):
-        self.binary_path = os.path.join("data", "tools", "Rubeus.exe")
-        self.cmd_path = self.binary_path
+        # 检查多个可能的路径
+        possible_paths = [
+            "/opt/tools/windows/Rubeus.exe",  # Dockerfile下载路径
+            os.path.join("data", "tools", "Rubeus.exe"),
+            os.path.join("tools", "Rubeus.exe"),
+            "./Rubeus.exe",
+            "C:\\tools\\Rubeus.exe",
+        ]
+
+        self.binary_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                self.binary_path = path
+                break
+
+        self.cmd_path = self.binary_path or "Rubeus.exe"
         super().__init__(self.cmd_path)
         self.timeout = 60
 
@@ -178,7 +191,7 @@ class RubeusTool(CommandLineTool):
         return ["Kerberos Attack", "Ticket Manipulation", "S4U Delegation"]
 
     def check_available(self) -> bool:
-        return os.path.exists(self.binary_path)
+        return self.binary_path is not None
 
     def expected_params(self) -> Dict[str, Dict[str, Any]]:
         return {
@@ -275,149 +288,8 @@ class RubeusTool(CommandLineTool):
         }
 
 
-class DacleditTool(CommandLineTool):
-    """
-    dacledit.py - AD ACL编辑工具
-
-    用途: 修改Active Directory对象的ACL
-    场景: 授予DCSync权限等
-    """
-
-    def __init__(self):
-        self.cmd_path = "python3"
-        self.script_path = None
-
-        # dacledit.py通常在impacket扩展中
-        possible_paths = [
-            "/usr/share/doc/python3-impacket/examples/dacledit.py",
-            "./dacledit.py",
-            "/opt/impacket/examples/dacledit.py",
-        ]
-        for path in possible_paths:
-            if os.path.exists(path):
-                self.script_path = path
-                break
-
-        super().__init__(self.cmd_path)
-        self.timeout = 60
-
-    def name(self) -> str:
-        return "dacledit"
-
-    def description(self) -> str:
-        return "dacledit.py - AD ACL编辑，可授予DCSync等权限"
-
-    def supported_vulns(self) -> list:
-        return ["ACL Abuse", "DCSync Attack", "AD Privilege Escalation"]
-
-    def check_available(self) -> bool:
-        return self.script_path is not None
-
-    def expected_params(self) -> Dict[str, Dict[str, Any]]:
-        return {
-            "target": {
-                "type": "str",
-                "description": "目标DN (如 DC=xiaorang,DC=lab)",
-                "required": True
-            },
-            "principal": {
-                "type": "str",
-                "description": "要授予权限的主体",
-                "required": True
-            },
-            "rights": {
-                "type": "str",
-                "description": "权限类型: DCSync, WriteDACL, etc.",
-                "required": True
-            },
-            "action": {
-                "type": "str",
-                "description": "操作: read/write/remove",
-                "required": False,
-                "default": "write"
-            },
-            "username": {
-                "type": "str",
-                "description": "认证用户名",
-                "required": True
-            },
-            "password": {
-                "type": "str",
-                "description": "密码",
-                "required": False
-            },
-            "hash": {
-                "type": "str",
-                "description": "NTLM哈希",
-                "required": False
-            },
-            "domain": {
-                "type": "str",
-                "description": "域名",
-                "required": True
-            },
-            "dc_ip": {
-                "type": "str",
-                "description": "域控IP",
-                "required": True
-            }
-        }
-
-    def execute(self, target: str, params: Dict) -> Dict:
-        if not self.script_path:
-            return {
-                "error": "dacledit.py 未找到",
-                "success": False,
-                "hint": "从impacket扩展获取dacledit.py"
-            }
-
-        username = params.get("username", "")
-        domain = params.get("domain", "")
-        dc_ip = params.get("dc_ip", "")
-        target_dn = params.get("target", "")
-        principal = params.get("principal", "")
-        rights = params.get("rights", "DCSync")
-        action = params.get("action", "write")
-        password = params.get("password", "")
-        hash_val = params.get("hash", "")
-
-        # 构建命令
-        cmd = [self.cmd_path, self.script_path]
-
-        # 认证
-        auth = f"{domain}/{username}" if domain else username
-        cmd.append(auth)
-
-        if hash_val:
-            cmd.extend(["-hashes", hash_val])
-        elif password:
-            pass  # 密码在URL格式中
-
-        cmd.extend([
-            "-action", action,
-            "-rights", rights,
-            "-principal", principal,
-            "-target-dn", target_dn,
-            "-dc-ip", dc_ip
-        ])
-
-        try:
-            result = self._run_command(cmd, timeout=self.timeout)
-            return {
-                "success": True,
-                "action": action,
-                "rights": rights,
-                "principal": principal,
-                "output": result.get("stdout", ""),
-                "notes": f"已授予 {principal} 的 {rights} 权限"
-            }
-        except Exception as e:
-            return {"error": str(e), "success": False}
-
-
 def register():
     """注册AD工具"""
     from tool_framework import ToolRegistry
     ToolRegistry.register(PetitPotamTool())
     ToolRegistry.register(RubeusTool())
-    ToolRegistry.register(DacleditTool())
