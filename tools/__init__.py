@@ -36,3 +36,7 @@ def load_all_tools(registry: ToolRegistry):
                         not inspect.isabstract(obj)):
                     # 实例化并注册
                     registry.register(obj())
+
+
+# 自动加载所有工具
+load_all_tools(ToolRegistry)
