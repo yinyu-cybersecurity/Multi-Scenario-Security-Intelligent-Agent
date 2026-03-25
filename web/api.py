@@ -274,6 +274,12 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/monitor')
+def monitor():
+    """监控面板"""
+    return render_template('monitor.html')
+
+
 @app.route('/api/graph')
 def api_graph():
     """获取图结构"""

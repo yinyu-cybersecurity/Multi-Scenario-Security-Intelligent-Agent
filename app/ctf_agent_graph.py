@@ -12,15 +12,19 @@ from urllib.parse import urlparse
 # 上下文压缩和链条记录
 from context_compressor import get_chain_recorder, get_compressor
 
-# 🚀 抑制 SSL 安全警告 (CTF 环境中通常不需要)
+# 统一日志系统
+from logger import get_logger
+logger = get_logger(__name__)
+
+# 抑制 SSL 安全警告 (CTF 环境中通常不需要)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# 🚀 修复 ChromaDB 在 Linux/Docker 环境下的 SQLite3 版本兼容性问题
+# 修复 ChromaDB 在 Linux/Docker 环境下的 SQLite3 版本兼容性问题
 try:
     import pysqlite3
     sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
 except ImportError:
-    pass
+    pass  # pysqlite3 未安装，使用系统 sqlite3
 
 # [性能优化] 增加全局默认线程池，防止大量工具调用或 AI 分析阻塞
 # 降低最大并发数并添加任务队列保护

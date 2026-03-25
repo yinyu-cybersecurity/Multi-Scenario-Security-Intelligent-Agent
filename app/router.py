@@ -1,6 +1,5 @@
-# router.py - 系统的"导航" [P3优化版 + 内网模式扩展 + AI驱动]
+# router.py - 系统的"导航"
 # 作用：定义节点间的跳转逻辑，防止死循环，处理多路径汇合
-# 负责人：智能体架构师
 
 from state import CTFState
 from config import config
@@ -9,6 +8,9 @@ import time
 import json
 from langgraph.graph import END
 from llm_client import llm_client
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 class RouteGuard:
     """路由守卫 - 防止死循环和异常跳转"""
@@ -49,7 +51,7 @@ class RouteGuard:
 
         # 规则1: 同一节点连续访问超过10次（大幅上调，避免误判）
         if self.loop_count.get(next_node, 0) > 10:
-            print(f"[RouteGuard] 节点 {next_node} 连续访问超过10次")
+            logger.warning(f"节点 {next_node} 连续访问超过10次")
             return True
 
         # 规则2: 检测 A->B->A 来回循环 (需要6次以上才触发)
@@ -62,13 +64,13 @@ class RouteGuard:
                     last6[3][1] == last6[5][0] and
                     last6[0][0] == last6[2][0] and
                     last6[1][0] == last6[3][0]):
-                print(f"⚠️ [RouteGuard] 检测到持续来回循环: {last6}")
+                logger.warning(f"检测到持续来回循环: {last6}")
                 return True
 
         # 规则3: 长时间没有进展（超过600秒，10分钟）
         current_time = time.time()
         if current_time - self.last_transition_time > 600:
-            print(f"⚠️ [RouteGuard] 600秒无进展，可能卡死")
+            logger.warning("600秒无进展，可能卡死")
             self.last_transition_time = current_time
             return True
 
@@ -125,7 +127,7 @@ def route_mode(state: CTFState, current_node: str) -> str:
         # 检查状态大小
         state_size = len(str(state))
         if state_size > 50000:  # 状态超过50KB时压缩
-            print(f"[Route] 状态过大 ({state_size} bytes)，执行压缩...")
+            logger.info(f"状态过大 ({state_size} bytes)，执行压缩...")
             compressor = get_compressor()
             compressed = compressor.compress(dict(state))
             # 更新状态（保留关键字段）
@@ -134,24 +136,23 @@ def route_mode(state: CTFState, current_node: str) -> str:
                 for key in ["attack_results", "page_history", "visited_urls"]:
                     if key in compressed and len(str(state.get(key, ""))) > 5000:
                         state[key] = compressed.get(key, state.get(key, []))
-                print(f"[Route] 压缩完成")
+                logger.debug("压缩完成")
     except Exception as e:
         # 压缩失败不影响路由
-        pass
+        logger.debug(f"压缩检查跳过: {e}")
 
     # [核心修复] 检查当前 URL 是否已经过侦察
     current_url = state.get("current_url")
     visited_urls = state.get("visited_urls", [])
 
     # 如果当前 URL 没在访问列表中，且当前不是在进行探索或创新模式，强制先去侦察
-    # [P3修复] innovate 模式也需要跳过这个检查，因为可能是全新思路
     if current_url and current_url not in visited_urls and next_node not in ["explore", "innovate"]:
-        print(f"[Route] 检测到新 URL: {current_url}，强制切换至侦察模式")
+        logger.info(f"检测到新 URL: {current_url}，强制切换至侦察模式")
         return "recon"
 
     # 1. 死循环检测
     if _route_guard.check_dead_loop(current_node, next_node):
-        print(f"⚠️ [Route] 检测到死循环，但在自动模式下尝试自动恢复")
+        logger.warning("检测到死循环，尝试自动恢复")
         # 重置循环计数，避免日志刷屏
         _route_guard.reset_loop_count(next_node)
 
@@ -161,14 +162,14 @@ def route_mode(state: CTFState, current_node: str) -> str:
         # 如果卡在攻击模式，保持现状或让 ModeManager 决定（通常会因为失败分增加而自然切换）
         return next_node
 
-    # 2. [P3修复] 移除错误的 temp_rules 检查
+    # 2. 移除错误的 temp_rules 检查
     # temp_rules 是 innovator_node 执行后生成的，不应在进入前检查
     # 如果 innovator 执行后没有生成有效规则，会在 strategy_filter 中处理
 
     # 3. 安全检查：探索模式但已经探索很多轮，考虑切回
     if next_node == "explore" and state.get("exploration_rounds", 0) > config.EXPLORE_ROUNDS_FOR_INNOVATE:
         if not state.get("site_topology"):  # 没有发现新路径
-            print(f"[Route] 探索多轮无发现，尝试攻击模式")
+            logger.info("探索多轮无发现，尝试攻击模式")
             return "exploit"
 
     return next_node
@@ -193,7 +194,7 @@ def route_verify(state: CTFState, current_node: str) -> str:
     """
     # 1. 最高优先级：找到flag
     if state.get("found_flag"):
-        print(f"🎉 [Route] 成功找到flag，进入进化流程")
+        logger.info("成功找到flag，进入进化流程")
         _route_guard.reset_loop_count("verifier")  # 重置计数
         return "evolution"
 
@@ -202,19 +203,19 @@ def route_verify(state: CTFState, current_node: str) -> str:
     post_exploit_status = state.get("post_exploit_status", "")
 
     if shell_session and post_exploit_status in ["ready_for_internal", "web_only"]:
-        print(f"[Shell] 检测到shell会话，进入后渗透处理")
+        logger.info("检测到shell会话，进入后渗透处理")
         return "post_exploit"
 
     # 如果后渗透已完成且发现内网，进入内网模式
     if post_exploit_status == "ready_for_internal" and state.get("internal_network_range"):
-        print(f"[Internal] 后渗透完成，进入内网渗透")
+        logger.info("后渗透完成，进入内网渗透")
         return "internal_recon"
 
     # 3. 如果步数太多但失败分不高，强制加一个失败分触发探索
     steps = state.get("execution_steps", 0)
     score = state.get("failure_weighted_score", 0)
     if steps > config.MAX_TOTAL_ROUNDS * 0.7 and score < config.FAILURE_SCORE_FOR_EXPLORE:
-        print(f"[Route] 步数 {steps} 已较多但失败分低，强制加0.5分触发探索")
+        logger.debug(f"步数 {steps} 已较多但失败分低，强制加0.5分触发探索")
         state["failure_weighted_score"] = score + 0.5
 
     # 4. 正常回到mode_manager
@@ -232,7 +233,7 @@ def route_evolution(state: CTFState, current_node: str) -> str:
     Returns:
         END
     """
-    print(f"[Route] 进化完成，结束流程")
+    logger.info("进化完成，结束流程")
     return END
 
 
