@@ -29,6 +29,11 @@ class FlaskUnsignTool(CommandLineTool):
         return ["Session Tampering", "Flask Session Forgery", "Cookie Manipulation", "Insecure Session"]
 
     def check_available(self) -> bool:
+        import shutil
+        # pipx安装的是命令行工具，用which检查
+        if shutil.which("flask-unsign"):
+            return True
+        # 也检查模块是否可导入
         try:
             import flask_unsign
             return True

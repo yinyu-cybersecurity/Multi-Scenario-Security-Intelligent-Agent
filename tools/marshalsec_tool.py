@@ -15,8 +15,19 @@ class MarshalsecTool(CommandLineTool):
 
     def __init__(self):
         super().__init__("java")
-        self.jar_path = "/app/thirdparty/marshalsec.jar"
-        self.local_jar = os.path.join(os.getcwd(), "thirdparty", "marshalsec.jar")
+        # 支持多种路径格式
+        self.jar_paths = [
+            "/app/thirdparty/marshalsec.jar",
+            "/app/thirdparty/marshalsec/target/marshalsec.jar",  # 编译后路径
+            "/app/thirdparty/Marshalsec.jar",
+            os.path.join(os.getcwd(), "thirdparty", "marshalsec.jar"),
+            os.path.join(os.getcwd(), "thirdparty", "marshalsec", "target", "marshalsec.jar"),
+        ]
+        self.jar_path = None
+        for path in self.jar_paths:
+            if os.path.exists(path):
+                self.jar_path = path
+                break
         self.timeout = 60
 
     def name(self) -> str:
@@ -31,7 +42,7 @@ class MarshalsecTool(CommandLineTool):
     def check_available(self) -> bool:
         import shutil
         java_exists = shutil.which("java") is not None
-        jar_exists = os.path.exists(self.jar_path) or os.path.exists(self.local_jar)
+        jar_exists = self.jar_path is not None
         return java_exists and jar_exists
 
     def expected_params(self) -> Dict[str, Dict[str, Any]]:

@@ -70,8 +70,11 @@ class MimikatzTool(CommandLineTool):
             "./tools/mimikatz.exe",
             "C:\\tools\\mimikatz.exe",
             os.path.expanduser("~/tools/mimikatz.exe"),
-            "/opt/tools/mimikatz.exe",  # 镜像内置路径
-            "/opt/tools/mimikatz/x64/mimikatz.exe"  # 解压后的路径
+            "/opt/tools/mimikatz.exe",
+            "/opt/tools/mimikatz/x64/mimikatz.exe",
+            "/opt/tools/x64/mimikatz.exe",  # 可能的解压路径
+            "/opt/tools/mimikatz/Win32/mimikatz.exe",
+            "/opt/tools/Win32/mimikatz.exe",
         ]
 
         for path in common_paths:

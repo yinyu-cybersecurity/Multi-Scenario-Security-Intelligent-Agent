@@ -19,6 +19,7 @@ RUN sed -i 's@archive.ubuntu.com@mirrors.aliyun.com@g' /etc/apt/sources.list && 
     libimage-exiftool-perl binwalk foremost \
     libmagic1 \
     proxychains4 \
+    hydra \
     && rm -rf /var/lib/apt/lists/*
 
 # ===== Layer 2: Go 环境 (几乎不变) =====
@@ -57,6 +58,7 @@ RUN pipx install sqlmap || true && \
     pipx install impacket || true && \
     pipx install pwntools || true && \
     pipx install ROPgadget || true && \
+    pipx install git-hacker || true && \
     # crackmapexec 从 git 安装
     pipx install git+https://github.com/Porchetta-Industries/CrackMapExec.git || true && \
     # bloodhound-python 从 git 安装
@@ -103,6 +105,10 @@ RUN echo "Starting git clones..."; \
     # AD工具
     git clone --depth 1 https://github.com/topotam/PetitPotam.git /app/thirdparty/PetitPotam 2>/dev/null || true; \
     git clone --depth 1 https://github.com/mbechler/marshalsec.git /app/thirdparty/marshalsec 2>/dev/null || true; \
+    cd /app/thirdparty/marshalsec && mvn package -DskipTests 2>/dev/null && \
+    cp target/marshalsec-*.jar /app/thirdparty/marshalsec.jar 2>/dev/null || true; \
+    # xxe-injector
+    git clone --depth 1 https://github.com/enjoiz/XXEinjector.git /app/thirdparty/xxe-injector 2>/dev/null || true; \
     # fscan 编译
     git clone --depth 1 https://github.com/shadow1ng/fscan.git /app/thirdparty/fscan 2>/dev/null || true; \
     cd /app/thirdparty/fscan && go build -o /usr/local/bin/fscan . 2>/dev/null || true; \

@@ -17,9 +17,23 @@ class XXEInjectorTool(CommandLineTool):
         cmd = "python3" if os.path.exists("/.dockerenv") else "python"
         super().__init__(cmd)
 
-        docker_path = "/app/thirdparty/xxe-injector/XXEinjector.rb"
-        local_path = os.path.join(os.getcwd(), "thirdparty", "xxe-injector", "XXEinjector.rb")
-        self.script_path = docker_path if os.path.exists(docker_path) else local_path
+        # 查找 XXEinjector 脚本
+        docker_paths = [
+            "/app/thirdparty/xxe-injector/XXEinjector.rb",
+            "/app/thirdparty/XXEinjector/XXEinjector.rb",
+            "/app/thirdparty/xxeinjector.rb",
+        ]
+        local_paths = [
+            os.path.join(os.getcwd(), "thirdparty", "xxe-injector", "XXEinjector.rb"),
+            os.path.join(os.getcwd(), "thirdparty", "XXEinjector.rb"),
+        ]
+
+        self.script_path = None
+        for path in docker_paths + local_paths:
+            if os.path.exists(path):
+                self.script_path = path
+                break
+
         self.timeout = 60
 
     def name(self) -> str:

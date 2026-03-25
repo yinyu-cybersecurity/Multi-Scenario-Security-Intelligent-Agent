@@ -28,11 +28,14 @@ class PetitPotamTool(CommandLineTool):
         self.cmd_path = "python3"
         self.script_path = None
 
-        # 查找PetitPotam.py
+        # 查找PetitPotam.py - 添加更多路径
         possible_paths = [
             "./PetitPotam.py",
             "/opt/PetitPotam/PetitPotam.py",
             "/usr/share/PetitPotam.py",
+            "/app/thirdparty/PetitPotam/PetitPotam.py",  # Dockerfile路径
+            "/app/thirdparty/petitpotam/PetitPotam.py",
+            "/opt/tools/ad/PetitPotam.py",
         ]
         for path in possible_paths:
             if os.path.exists(path):
