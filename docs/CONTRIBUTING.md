@@ -93,18 +93,25 @@ pytest tests/ -v --cov=app
 ## 项目结构
 
 ```
-ctf-agent/
+deploy/
 ├── app/                    # 主应用代码
 │   ├── ctf_agent_graph.py  # 主图定义
-│   ├── state.py            # 状态定义
+│   ├── state_v2.py         # 状态定义
 │   ├── router.py           # 路由逻辑
-│   └── ...
-├── tools/                  # 工具实现
+│   ├── logger.py           # 统一日志系统
+│   ├── performance.py      # 性能监控
+│   └── topology/           # 拓扑分析
+├── tools/                  # 40+安全工具
 ├── internal_network/       # 内网渗透模块
+├── remote_executor/        # 远程执行模块
 ├── crypto/                 # Crypto 模块
+├── pwn/                    # Pwn 模块
+├── reverse/                # Reverse 模块
+├── misc/                   # Misc 模块
+├── web/                    # Web UI & API
+├── rag_builder/            # RAG知识检索
 ├── tests/                  # 测试文件
-├── docs/                   # 文档
-└── deploy/                 # 部署配置
+└── docs/                   # 文档
 ```
 
 ---

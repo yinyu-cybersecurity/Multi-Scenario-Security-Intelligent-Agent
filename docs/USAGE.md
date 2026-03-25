@@ -4,7 +4,7 @@
 
 ### 1. 启动容器
 ```bash
-cd D:\LangGraph2.0\langGraph\deploy
+cd deploy
 docker-compose up -d
 ```
 
@@ -16,10 +16,13 @@ docker exec -it ctf-agent bash
 ### 3. 运行任务
 ```bash
 # 系统自检
-python /app/ctf_agent_graph.py --skip
+python self_check.py
 
-# 运行CTF任务
-python /app/ctf_agent_graph.py --target http://目标地址
+# 运行CTF任务 (命令行模式)
+python app/ctf_agent_graph.py --target http://目标地址
+
+# 或使用 Web UI
+# 访问 http://localhost:5000
 ```
 
 ---
@@ -61,11 +64,15 @@ python -c "from llm_client import llm_client; print(llm_client.chat('Hello')[:50
 ## 配置文件
 
 ### config.yaml 位置
-- 宿主机: `D:\LangGraph2.0\langGraph\deploy\config.yaml`
+- 本地运行: `deploy/config.yaml`
 - 容器内: `/app/config.yaml`
 
 ### 修改配置后
 ```bash
+# 本地运行
+# 重启web服务即可
+
+# Docker运行
 docker-compose restart
 ```
 
@@ -73,11 +80,12 @@ docker-compose restart
 
 ## 目录说明
 
-### 宿主机目录
+### 项目目录
 ```
 deploy/
 ├── app/           # 核心代码
 ├── tools/         # 安全工具
+├── web/           # Web UI
 ├── config.yaml    # 配置文件
 └── docker-compose.yml
 ```

@@ -211,29 +211,44 @@ internal_network_range                    SOCKS5代理
 
 ### 完整配置示例
 ```yaml
-# LLM配置
+# ===== LLM配置 =====
 LLM_API_KEY: "sk-xxx"
 LLM_BASE_URL: "https://api.deepseek.com/v1"
 
-# 模型选择
-ANALYST_MODEL: "deepseek-chat"
-ATTACKER_MODEL: "deepseek-chat"
-INNOVATOR_MODEL: "deepseek-chat"
+# ===== 模型选择 =====
+ANALYST_MODEL: "deepseek-chat"      # 分析兵 - 需要强推理能力
+ATTACKER_MODEL: "deepseek-chat"     # 攻击兵 - 需要代码生成能力
+VERIFIER_MODEL: "deepseek-chat"     # 核验兵 - 需要长文本阅读
+INNOVATOR_MODEL: "deepseek-chat"    # 头脑风暴 - 需要发散思维
 
-# 系统控制
-MAX_TOTAL_ROUNDS: 60
-FAILURE_SCORE_FOR_EXPLORE: 3.0
-FAILURE_SCORE_FOR_INNOVATE: 8.0
-NODE_TIMEOUT: 3000  # 50分钟
+# ===== 超时配置 =====
+NODE_TIMEOUT: 1800              # 单个节点最大执行时间(秒) - 30分钟
+TASK_TIMEOUT: 1200              # Web CTF任务超时(秒) - 20分钟
+INTERNAL_TASK_TIMEOUT: 3000     # 内网渗透任务超时(秒) - 50分钟
+TOOL_TIMEOUT_DEFAULT: 300       # 工具默认超时(秒) - 5分钟
+TOOL_TIMEOUT_NETWORK: 600       # 网络扫描超时(秒) - 10分钟
+LLM_TIMEOUT: 120                # LLM调用超时(秒) - 2分钟
 
-# VPS配置 (内网渗透必需)
-LOCAL_PUBLIC_IP: "x.x.x.x"
-HTTP_SERVER_PORT: 8000
-FRP_SERVER_PORT: 7000
-FRP_SOCKS5_PORT: 10800
+# ===== 重试配置 =====
+LLM_RETRY_COUNT: 3              # LLM调用重试次数
+TOOL_RETRY_COUNT: 2             # 工具执行重试次数
+LLM_MAX_CONCURRENT: 5           # LLM并发限制
 
-# 工具目录
+# ===== 模式切换阈值 =====
+FAILURE_SCORE_FOR_EXPLORE: 5.0  # 失败分达到此值进入探索模式
+FAILURE_SCORE_FOR_INNOVATE: 10.0  # 失败分达到此值进入创新模式
+FAILURE_SCORE_ABANDON: 15.0     # 失败分达到此值放弃任务
+MAX_TOTAL_ROUNDS: 60            # 最大总运行轮次
+
+# ===== VPS配置 (内网渗透必需) =====
+LOCAL_PUBLIC_IP: "x.x.x.x"      # 本机公网IP
+HTTP_SERVER_PORT: 8000          # HTTP文件服务器端口
+FRP_SERVER_PORT: 7000           # frps监听端口
+FRP_SOCKS5_PORT: 10800          # SOCKS5代理端口
+
+# ===== 工具目录 =====
 TOOLS_DIR: "/opt/tools"
+FRP_DIR: "/opt/frp"
 ```
 
 ---

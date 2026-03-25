@@ -86,6 +86,30 @@ try:
 except Exception as e:
     check('self_correction module', False, str(e))
 
+try:
+    from logger import get_logger, set_task, node_log
+    check('logger module', True)
+except Exception as e:
+    check('logger module', False, str(e))
+
+try:
+    from performance import PerformanceMonitor, performance_monitor
+    check('performance module', True)
+except Exception as e:
+    check('performance module', False, str(e))
+
+try:
+    from topology.builder import TopologyBuilder
+    check('topology.builder module', True)
+except Exception as e:
+    check('topology.builder module', False, str(e))
+
+try:
+    from topology.analyzer import TopologyAnalyzer
+    check('topology.analyzer module', True)
+except Exception as e:
+    check('topology.analyzer module', False, str(e))
+
 # ========================================
 # 2. New Tool Imports
 # ========================================
