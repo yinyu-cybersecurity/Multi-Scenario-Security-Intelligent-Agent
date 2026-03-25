@@ -115,9 +115,9 @@ python app/ctf_agent_graph.py --target http://目标地址
 deploy/
 ├── app/                        # 核心代码
 │   ├── ctf_agent_graph.py      # 主程序入口 & 图定义
-│   ├── state.py                # CTFState 状态定义（原有）
-│   ├── state_v2.py             # 增强状态定义（拓扑字段）
-│   ├── state_types/            # [新增] 模块化状态类型
+│   ├── state.py                # 状态定义兼容层 (转发导入)
+│   ├── state_v2.py             # CTFState 状态定义 (实际定义)
+│   ├── state_types/            # 模块化状态类型
 │   │   ├── base.py             # 基础状态（通用字段）
 │   │   ├── web.py              # Web CTF 状态
 │   │   ├── internal_network.py # 内网渗透状态
