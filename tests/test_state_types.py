@@ -76,15 +76,20 @@ class TestReducers:
     def test_cap_list_reducer_basic(self):
         """测试 cap_list_reducer 基本功能"""
         from state_types.reducers import cap_list_reducer
-        result = cap_list_reducer([1, 2], [3, 4], cap=10)
+        # 新签名: cap_list_reducer(x, y)，固定上限为 20
+        result = cap_list_reducer([1, 2], [3, 4])
         assert result == [1, 2, 3, 4]
 
     def test_cap_list_reducer_cap(self):
         """测试 cap_list_reducer 上限功能"""
         from state_types.reducers import cap_list_reducer
-        result = cap_list_reducer([1, 2, 3], [4, 5, 6], cap=4)
-        assert len(result) == 4
-        assert result == [3, 4, 5, 6]  # 保留最后4个
+        # 上限固定为 20，测试超过 20 的情况
+        long_list = list(range(15))
+        new_items = list(range(15, 25))  # 总共 25 项
+        result = cap_list_reducer(long_list, new_items)
+        assert len(result) == 20
+        # 保留最后 20 个
+        assert result == list(range(5, 25))
 
     def test_cap_candidates_reducer_dedup(self):
         """测试 cap_candidates_reducer 去重功能"""

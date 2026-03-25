@@ -15,23 +15,22 @@ from typing import List, Dict, Any, TypeVar, Callable
 T = TypeVar('T')
 
 
-def cap_list_reducer(x: List[T], y: List[T], cap: int = 20) -> List[T]:
+def cap_list_reducer(x: List[T], y: List[T]) -> List[T]:
     """
     带上限的列表追加规约器
 
     Args:
         x: 现有状态列表
         y: 新增数据列表
-        cap: 允许保留的最大条目数
 
     Returns:
-        合并后的列表（不超过 cap 条）
+        合并后的列表（不超过 20 条）
 
     Example:
-        >>> cap_list_reducer([1, 2], [3, 4], cap=5)
+        >>> cap_list_reducer([1, 2], [3, 4])
         [1, 2, 3, 4]
-        >>> cap_list_reducer(list(range(10)), [11, 12], cap=10)
-        [3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        >>> cap_list_reducer(list(range(15)), [15, 16])
+        [7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     """
     if x is None:
         x = []
@@ -41,12 +40,13 @@ def cap_list_reducer(x: List[T], y: List[T], cap: int = 20) -> List[T]:
         return x
 
     new_list = x + y
+    cap = 20  # 固定上限
     if len(new_list) > cap:
         return new_list[-cap:]
     return new_list
 
 
-def cap_results_reducer(x: List[Dict], y: List[Dict], cap: int = 20) -> List[Dict]:
+def cap_results_reducer(x: List[Dict], y: List[Dict]) -> List[Dict]:
     """
     攻击结果规约器
 
@@ -55,19 +55,14 @@ def cap_results_reducer(x: List[Dict], y: List[Dict], cap: int = 20) -> List[Dic
     Args:
         x: 现有结果
         y: 新结果
-        cap: 最大保留数量
 
     Returns:
-        合并后的结果列表
+        合并后的结果列表（最多20条）
     """
-    return cap_list_reducer(x, y, cap=cap)
+    return cap_list_reducer(x, y)
 
 
-def cap_candidates_reducer(
-    x: List[Dict],
-    y: List[Dict],
-    cap: int = 10
-) -> List[Dict]:
+def cap_candidates_reducer(x: List[Dict], y: List[Dict]) -> List[Dict]:
     """
     漏洞候选项规约器
 
@@ -77,10 +72,9 @@ def cap_candidates_reducer(
     Args:
         x: 现有候选项
         y: 新候选项
-        cap: 最大保留数量
 
     Returns:
-        去重后的候选项列表
+        去重后的候选项列表（最多10条）
     """
     if x is None:
         x = []
@@ -101,7 +95,7 @@ def cap_candidates_reducer(
             existing_map[key] = new_cand
 
     new_list = list(existing_map.values())
-    return new_list[-cap:] if len(new_list) > cap else new_list
+    return new_list[-10:] if len(new_list) > 10 else new_list
 
 
 def dedupe_list_reducer(x: List[str], y: List[str]) -> List[str]:
@@ -145,10 +139,41 @@ def merge_dict_reducer(x: Dict, y: Dict) -> Dict:
 
 
 # 预定义的规约器实例（用于 Annotated 类型）
-visited_urls_reducer = lambda x, y: cap_list_reducer(x, y, cap=100)
-visited_fingerprints_reducer = lambda x, y: cap_list_reducer(x, y, cap=100)
-attack_results_reducer = lambda x, y: cap_list_reducer(x, y, cap=20)
-tool_calls_reducer = lambda x, y: cap_list_reducer(x, y, cap=100)
-failed_payloads_reducer = lambda x, y: cap_list_reducer(x, y, cap=50)
-credentials_reducer = lambda x, y: cap_list_reducer(x, y, cap=30)
-internal_hosts_reducer = lambda x, y: cap_list_reducer(x, y, cap=50)
+# LangGraph 要求 reducer 签名为 (x, y) -> result，不能有额外参数
+# 所以我们使用闭包创建符合签名的 reducer
+
+def _make_cap_reducer(cap: int):
+    """创建带固定上限的 reducer"""
+    def reducer(x, y):
+        if x is None: x = []
+        if y is None: y = []
+        if not y: return x
+        new_list = x + y
+        return new_list[-cap:] if len(new_list) > cap else new_list
+    return reducer
+
+def _make_candidates_reducer(cap: int):
+    """创建带去重功能的候选项 reducer"""
+    def reducer(x, y):
+        if x is None: x = []
+        if y is None: y = []
+        if not y: return x
+        existing_map = {f"{c.get('location', '')}_{c.get('type', '')}": c for c in x}
+        for new_cand in y:
+            key = f"{new_cand.get('location', '')}_{new_cand.get('type', '')}"
+            if key in existing_map:
+                existing_map[key].update(new_cand)
+            else:
+                existing_map[key] = new_cand
+        new_list = list(existing_map.values())
+        return new_list[-cap:] if len(new_list) > cap else new_list
+    return reducer
+
+# 导出的 reducer 实例
+visited_urls_reducer = _make_cap_reducer(100)
+visited_fingerprints_reducer = _make_cap_reducer(100)
+attack_results_reducer = _make_cap_reducer(20)
+tool_calls_reducer = _make_cap_reducer(100)
+failed_payloads_reducer = _make_cap_reducer(50)
+credentials_reducer = _make_cap_reducer(30)
+internal_hosts_reducer = _make_cap_reducer(50)
