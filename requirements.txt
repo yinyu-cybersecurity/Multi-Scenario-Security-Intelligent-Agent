@@ -43,5 +43,9 @@ gmpy2>=2.1.0
 Pillow>=10.0.0
 python-magic>=0.4.27
 
+# Web API
+flask>=3.0.0
+flask-cors>=4.0.0
+
 # MCP (Model Context Protocol)
 mcp>=1.0.0

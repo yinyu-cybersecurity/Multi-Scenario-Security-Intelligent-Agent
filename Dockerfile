@@ -41,7 +41,9 @@ RUN go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest || true && 
     go install -v github.com/tomnomnom/qsreplace@latest || true
 
 # ===== Layer 4: Python/Ruby 工具 (偶尔变) =====
-RUN pip3 install pipx && pipx ensurepath && \
+# pipx 安装可执行工具，pip 安装库
+RUN pip3 install pipx && \
+    pipx ensurepath && \
     pipx install sqlmap || true && \
     pipx install fenjing || true && \
     pipx install flask-unsign || true && \
@@ -49,9 +51,12 @@ RUN pip3 install pipx && pipx ensurepath && \
     pipx install bloodhound-python || true && \
     pipx install impacket || true && \
     pipx install pwntools || true && \
-    pipx install ROPgadget || true && \
-    pipx install jwt-tool || true && \
-    pipx install paramiko || true
+    pipx install ROPgadget || true
+    # 注意: jwt-tool 已从 GitHub 克隆到 /app/thirdparty/jwt_tool
+    # 注意: paramiko 是库，已在 requirements.txt 中，不需要 pipx 安装
+
+# 确保 pipx 安装的工具在 PATH 中可用
+ENV PATH="/root/.local/bin:$PATH"
 
 RUN gem install zsteg one_gadget
 
@@ -155,6 +160,7 @@ RUN pip install --upgrade pip && \
 
 # ===== Layer 8: 应用代码 (经常变，放最后) =====
 COPY deploy/app/*.py ./
+COPY deploy/app/state_types ./state_types/
 COPY deploy/app/topology ./topology/
 COPY deploy/tools/ ./tools/
 COPY deploy/internal_network/ ./internal_network/
@@ -167,9 +173,12 @@ COPY deploy/memory/ ./memory/
 COPY deploy/rag_builder/ ./rag_builder/
 COPY deploy/config.yaml.example /app/config.yaml.example
 COPY deploy/self_check.py /app/self_check.py
+COPY deploy/refactoring_test.py /app/refactoring_test.py
+COPY deploy/web/ ./web/
 
 # ===== 端口暴露 =====
 EXPOSE 8000 7000 10800 4444
 
 # ===== 入口点 =====
-ENTRYPOINT ["tail", "-f", "/dev/null"]
+# 默认启动bash，由docker-compose指定具体命令
+CMD ["tail", "-f", "/dev/null"]

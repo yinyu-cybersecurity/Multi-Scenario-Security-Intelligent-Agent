@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CTF-Agent Control Center</title>
+    <link href="https://cdn.jsdelivr.net/npm/element-plus@2.4.0/dist/index.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.prod.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/element-plus@2.4.0/dist/index.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@element-plus/icons-vue@2.3.1/dist/index.iife.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0f;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(90deg, #1a1a2e 0%, #16213e 100%);
+            border-bottom: 1px solid #2a2a4a;
+            padding: 0 20px;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #00d4ff;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .header-status {
+            display: flex;
+            gap: 20px;
+            font-size: 12px;
+        }
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+        .status-dot.online { background: #00ff88; box-shadow: 0 0 10px #00ff88; }
+        .status-dot.offline { background: #ff4444; }
+
+        /* Main Layout */
+        .main-container {
+            display: grid;
+            grid-template-columns: 280px 1fr 320px;
+            height: calc(100vh - 56px);
+        }
+
+        /* Sidebar */
+        .sidebar {
+            background: #12121a;
+            border-right: 1px solid #2a2a4a;
+            display: flex;
+            flex-direction: column;
+        }
+        .sidebar-header {
+            padding: 16px;
+            border-bottom: 1px solid #2a2a4a;
+        }
+        .task-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+        .task-item {
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .task-item:hover { background: #1f1f35; }
+        .task-item.active {
+            border-color: #00d4ff;
+            background: #0d1f35;
+        }
+        .task-url {
+            font-size: 13px;
+            color: #fff;
+            word-break: break-all;
+            margin-bottom: 6px;
+        }
+        .task-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #888;
+        }
+        .task-status {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+        }
+        .status-running { background: #1a3a5c; color: #00d4ff; }
+        .status-completed { background: #1a3a2a; color: #00ff88; }
+        .status-error { background: #3a1a1a; color: #ff4444; }
+        .status-cancelled { background: #2a2a2a; color: #888; }
+
+        /* Center Panel */
+        .center-panel {
+            display: flex;
+            flex-direction: column;
+            background: #0a0a12;
+        }
+        .toolbar {
+            background: #12121a;
+            padding: 12px 16px;
+            border-bottom: 1px solid #2a2a4a;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        .input-url {
+            flex: 1;
+            max-width: 400px;
+        }
+        .input-url input {
+            background: #1a1a2e !important;
+            border-color: #2a2a4a !important;
+            color: #fff !important;
+        }
+
+        /* Graph Container */
+        .graph-container {
+            flex: 1;
+            position: relative;
+            background: radial-gradient(circle at center, #0d0d15 0%, #0a0a0f 100%);
+        }
+        #graph-svg {
+            width: 100%;
+            height: 100%;
+        }
+        .node {
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .node circle {
+            stroke-width: 2px;
+            transition: all 0.3s;
+        }
+        .node:hover circle {
+            filter: brightness(1.3);
+        }
+        .node.active circle {
+            stroke: #00d4ff;
+            stroke-width: 3px;
+            filter: drop-shadow(0 0 15px rgba(0, 212, 255, 0.8));
+        }
+        .node.visited {
+            opacity: 0.5;
+        }
+        .node text {
+            font-size: 11px;
+            fill: #fff;
+            font-weight: 500;
+        }
+        .edge {
+            fill: none;
+            stroke: #3a3a5a;
+            stroke-width: 1px;
+            opacity: 0.6;
+        }
+        .edge.active {
+            stroke: #00d4ff;
+            stroke-width: 2px;
+            opacity: 1;
+        }
+
+        /* Legend */
+        .legend {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            background: rgba(18, 18, 26, 0.95);
+            padding: 12px 16px;
+            border-radius: 8px;
+            border: 1px solid #2a2a4a;
+            font-size: 11px;
+        }
+        .legend-title {
+            color: #888;
+            margin-bottom: 8px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        .legend-color {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        /* Node Detail Panel */
+        .node-detail {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            background: rgba(18, 18, 26, 0.95);
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid #2a2a4a;
+            max-width: 280px;
+        }
+        .node-detail h4 {
+            color: #00d4ff;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .node-detail p {
+            color: #aaa;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        /* Log Panel */
+        .log-panel {
+            height: 180px;
+            background: #0d0d12;
+            border-top: 1px solid #2a2a4a;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 11px;
+            overflow-y: auto;
+            padding: 8px 12px;
+        }
+        .log-entry {
+            padding: 2px 0;
+            display: flex;
+            gap: 10px;
+        }
+        .log-time {
+            color: #4a9eff;
+            min-width: 60px;
+        }
+        .log-msg { color: #ccc; }
+        .log-entry.success .log-msg { color: #00ff88; }
+        .log-entry.error .log-msg { color: #ff4444; }
+        .log-entry.warning .log-msg { color: #ffaa00; }
+
+        /* Right Panel */
+        .right-panel {
+            background: #12121a;
+            border-left: 1px solid #2a2a4a;
+            display: flex;
+            flex-direction: column;
+        }
+        .panel-tabs {
+            display: flex;
+            border-bottom: 1px solid #2a2a4a;
+        }
+        .panel-tab {
+            flex: 1;
+            padding: 12px;
+            text-align: center;
+            font-size: 12px;
+            cursor: pointer;
+            color: #888;
+            transition: all 0.2s;
+        }
+        .panel-tab:hover { color: #fff; background: #1a1a2e; }
+        .panel-tab.active {
+            color: #00d4ff;
+            border-bottom: 2px solid #00d4ff;
+        }
+        .panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+        }
+
+        /* Result Cards */
+        .result-section {
+            margin-bottom: 16px;
+        }
+        .result-section h5 {
+            color: #888;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+        .result-card {
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 6px;
+        }
+        .result-card.vuln { border-left: 3px solid #ff4444; }
+        .result-card.cred { border-left: 3px solid #ffaa00; }
+        .result-card.host { border-left: 3px solid #00d4ff; }
+        .result-card.flag { border-left: 3px solid #00ff88; background: #0d2a1a; }
+
+        .card-title {
+            font-size: 12px;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+        .card-detail {
+            font-size: 11px;
+            color: #888;
+        }
+
+        /* Tool Status */
+        .tool-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+        }
+        .tool-item {
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 4px;
+            padding: 8px;
+            font-size: 11px;
+        }
+        .tool-name { color: #fff; }
+        .tool-status {
+            font-size: 9px;
+            margin-top: 2px;
+        }
+        .tool-status.available { color: #00ff88; }
+        .tool-status.unavailable { color: #ff4444; }
+
+        /* Progress Bar */
+        .progress-bar {
+            height: 3px;
+            background: #1a1a2e;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00d4ff, #00ff88);
+            transition: width 0.3s;
+        }
+
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .stat-card {
+            background: #1a1a2e;
+            border-radius: 6px;
+            padding: 12px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 20px;
+            font-weight: 600;
+            color: #00d4ff;
+        }
+        .stat-label {
+            font-size: 10px;
+            color: #888;
+            margin-top: 4px;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+        }
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0a0a0f; }
+        ::-webkit-scrollbar-thumb { background: #3a3a5a; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #4a4a6a; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <div class="header">
+            <h1>
+                <span style="font-size: 24px;">&#9889;</span>
+                CTF-Agent Control Center
+            </h1>
+            <div class="header-status">
+                <div class="status-item">
+                    <span class="status-dot" :class="systemStatus.llm_connected ? 'online' : 'offline'"></span>
+                    <span>LLM {{ systemStatus.llm_connected ? 'Connected' : 'Offline' }}</span>
+                </div>
+                <div class="status-item">
+                    <span>{{ systemStatus.tools_loaded }} Tools</span>
+                </div>
+                <div class="status-item">
+                    <span>{{ systemStatus.active_sessions }} Sessions</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="main-container">
+            <!-- Left Sidebar - Task List -->
+            <div class="sidebar">
+                <div class="sidebar-header">
+                    <el-button type="primary" style="width: 100%;" @click="showNewTask = true">
+                        + New Task
+                    </el-button>
+                </div>
+                <div class="task-list">
+                    <div v-for="task in taskList" :key="task.id"
+                         class="task-item"
+                         :class="{ active: currentTaskId === task.id }"
+                         @click="selectTask(task.id)">
+                        <div class="task-url">{{ task.target_url }}</div>
+                        <div class="task-meta">
+                            <span>{{ task.created_at.split(' ')[1] || task.created_at }}</span>
+                            <span class="task-status" :class="'status-' + task.status">
+                                {{ task.status }}
+                            </span>
+                        </div>
+                    </div>
+                    <div v-if="taskList.length === 0" class="empty-state">
+                        <div class="empty-state-icon">&#128196;</div>
+                        <div>No tasks yet</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center Panel -->
+            <div class="center-panel">
+                <!-- Toolbar -->
+                <div class="toolbar">
+                    <el-input v-model="targetUrl" placeholder="Target URL (http://example.com)"
+                              class="input-url" clearable @keyup.enter="startTask">
+                    </el-input>
+                    <el-button type="primary" @click="startTask" :loading="starting">
+                        Start Attack
+                    </el-button>
+                    <el-button @click="cancelTask" :disabled="!canCancel">
+                        Cancel
+                    </el-button>
+                    <el-button @click="refreshAll">
+                        Refresh
+                    </el-button>
+                </div>
+
+                <!-- Graph -->
+                <div class="graph-container">
+                    <svg id="graph-svg"></svg>
+
+                    <!-- Legend -->
+                    <div class="legend">
+                        <div class="legend-title">Node Types</div>
+                        <div v-for="(group, key) in graphData.groups" :key="key" class="legend-item">
+                            <div class="legend-color" :style="{ background: group.color }"></div>
+                            <span>{{ group.name }}</span>
+                        </div>
+                    </div>
+
+                    <!-- Node Detail -->
+                    <div v-if="selectedNode" class="node-detail">
+                        <h4>{{ selectedNode.name }}</h4>
+                        <p>{{ selectedNode.description }}</p>
+                    </div>
+
+                    <!-- Progress -->
+                    <div class="progress-bar" v-if="currentTask">
+                        <div class="progress-fill" :style="{ width: currentTask.progress + '%' }"></div>
+                    </div>
+                </div>
+
+                <!-- Log Panel -->
+                <div class="log-panel" ref="logPanel">
+                    <div v-for="(log, idx) in logs" :key="idx" class="log-entry" :class="log.type">
+                        <span class="log-time">{{ log.time }}</span>
+                        <span class="log-msg">{{ log.msg }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel -->
+            <div class="right-panel">
+                <div class="panel-tabs">
+                    <div class="panel-tab" :class="{ active: rightTab === 'status' }" @click="rightTab = 'status'">Status</div>
+                    <div class="panel-tab" :class="{ active: rightTab === 'results' }" @click="rightTab = 'results'">Results</div>
+                    <div class="panel-tab" :class="{ active: rightTab === 'tools' }" @click="rightTab = 'tools'">Tools</div>
+                </div>
+                <div class="panel-content">
+                    <!-- Status Tab -->
+                    <div v-show="rightTab === 'status'">
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-value">{{ systemStatus.tasks_total || 0 }}</div>
+                                <div class="stat-label">Total</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value">{{ systemStatus.tasks_running || 0 }}</div>
+                                <div class="stat-label">Running</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value">{{ systemStatus.tasks_completed || 0 }}</div>
+                                <div class="stat-label">Done</div>
+                            </div>
+                        </div>
+
+                        <div class="result-section" v-if="currentTask">
+                            <h5>Current Task</h5>
+                            <div class="result-card">
+                                <div class="card-title">{{ currentTask.task_name || 'Running...' }}</div>
+                                <div class="card-detail">
+                                    Mode: {{ taskResult.current_mode || '-' }}<br>
+                                    Steps: {{ taskResult.execution_steps || 0 }}<br>
+                                    Score: {{ taskResult.failure_weighted_score || 0 }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="result-section" v-if="sessions.length > 0">
+                            <h5>Active Sessions</h5>
+                            <div v-for="s in sessions" :key="s.id" class="result-card host">
+                                <div class="card-title">{{ s.target }}</div>
+                                <div class="card-detail">{{ s.type }} | {{ s.os_type }}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Results Tab -->
+                    <div v-show="rightTab === 'results'">
+                        <!-- FLAG -->
+                        <div class="result-section" v-if="currentTask && currentTask.found_flag">
+                            <h5>Flag Found!</h5>
+                            <div class="result-card flag">
+                                <div class="card-title" style="color: #00ff88;">{{ currentTask.final_flag }}</div>
+                            </div>
+                        </div>
+
+                        <!-- Vulnerabilities -->
+                        <div class="result-section" v-if="taskResult.vuln_candidates && taskResult.vuln_candidates.length > 0">
+                            <h5>Vulnerabilities ({{ taskResult.vuln_candidates.length }})</h5>
+                            <div v-for="v in taskResult.vuln_candidates.slice(0, 10)" :key="v.location" class="result-card vuln">
+                                <div class="card-title">{{ v.type }}</div>
+                                <div class="card-detail">{{ v.location }} | {{ (v.confidence * 100).toFixed(0) }}%</div>
+                            </div>
+                        </div>
+
+                        <!-- Credentials -->
+                        <div class="result-section" v-if="taskResult.credentials && taskResult.credentials.length > 0">
+                            <h5>Credentials ({{ taskResult.credentials.length }})</h5>
+                            <div v-for="c in taskResult.credentials.slice(0, 10)" :key="c.username" class="result-card cred">
+                                <div class="card-title">{{ c.username }}:{{ c.password }}</div>
+                                <div class="card-detail">{{ c.host || c.source || '' }}</div>
+                            </div>
+                        </div>
+
+                        <!-- Internal Hosts -->
+                        <div class="result-section" v-if="taskResult.internal_hosts && taskResult.internal_hosts.length > 0">
+                            <h5>Internal Hosts ({{ taskResult.internal_hosts.length }})</h5>
+                            <div v-for="h in taskResult.internal_hosts.slice(0, 10)" :key="h.ip" class="result-card host">
+                                <div class="card-title">{{ h.ip }}</div>
+                                <div class="card-detail">
+                                    <span v-for="p in (h.ports || []).slice(0, 5)" :key="p.port">{{ p.port }} </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-if="!currentTask" class="empty-state">
+                            <div class="empty-state-icon">&#128269;</div>
+                            <div>Select a task to view results</div>
+                        </div>
+                    </div>
+
+                    <!-- Tools Tab -->
+                    <div v-show="rightTab === 'tools'">
+                        <div class="result-section">
+                            <h5>Available Tools</h5>
+                            <div class="tool-grid">
+                                <div v-for="tool in tools" :key="tool.name" class="tool-item">
+                                    <div class="tool-name">{{ tool.name }}</div>
+                                    <div class="tool-status" :class="tool.available ? 'available' : 'unavailable'">
+                                        {{ tool.available ? 'Ready' : 'Unavailable' }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- New Task Dialog -->
+        <el-dialog v-model="showNewTask" title="New Attack Task" width="500px">
+            <el-form label-width="100px">
+                <el-form-item label="Target URL">
+                    <el-input v-model="targetUrl" placeholder="http://target.com"></el-input>
+                </el-form-item>
+                <el-form-item label="Task Name">
+                    <el-input v-model="taskName" placeholder="Optional"></el-input>
+                </el-form-item>
+            </el-form>
+            <template #footer>
+                <el-button @click="showNewTask = false">Cancel</el-button>
+                <el-button type="primary" @click="startTask">Start</el-button>
+            </template>
+        </el-dialog>
+    </div>
+
+    <script>
+        const { createApp, ref, reactive, computed, onMounted, watch, nextTick } = Vue;
+
+        const app = createApp({
+            setup() {
+                // State
+                const tasks = ref({});
+                const currentTaskId = ref(null);
+                const targetUrl = ref('');
+                const taskName = ref('');
+                const logs = ref([]);
+                const starting = ref(false);
+                const showNewTask = ref(false);
+                const graphData = ref({ nodes: [], edges: [], groups: {} });
+                const rightTab = ref('status');
+                const selectedNode = ref(null);
+                const taskResult = ref({});
+                const systemStatus = ref({});
+                const tools = ref([]);
+                const sessions = ref([]);
+
+                // Computed
+                const taskList = computed(() => Object.values(tasks.value));
+                const currentTask = computed(() => tasks.value[currentTaskId.value]);
+                const canCancel = computed(() => currentTask.value && currentTask.value.status === 'running');
+
+                // Fetch functions
+                async function fetchGraph() {
+                    try {
+                        const res = await fetch('/api/graph');
+                        graphData.value = await res.json();
+                        renderGraph();
+                    } catch (e) {
+                        console.error('Failed to fetch graph:', e);
+                    }
+                }
+
+                async function fetchTasks() {
+                    try {
+                        const res = await fetch('/api/tasks');
+                        const data = await res.json();
+                        const taskMap = {};
+                        data.tasks.forEach(t => taskMap[t.id] = t);
+                        tasks.value = taskMap;
+                    } catch (e) {
+                        console.error('Failed to fetch tasks:', e);
+                    }
+                }
+
+                async function fetchSystemStatus() {
+                    try {
+                        const res = await fetch('/api/system/status');
+                        systemStatus.value = await res.json();
+                    } catch (e) {
+                        console.error('Failed to fetch system status:', e);
+                    }
+                }
+
+                async function fetchTools() {
+                    try {
+                        const res = await fetch('/api/tools');
+                        const data = await res.json();
+                        tools.value = data.tools || [];
+                    } catch (e) {
+                        console.error('Failed to fetch tools:', e);
+                    }
+                }
+
+                async function fetchSessions() {
+                    try {
+                        const res = await fetch('/api/sessions');
+                        const data = await res.json();
+                        sessions.value = data.sessions || [];
+                    } catch (e) {
+                        console.error('Failed to fetch sessions:', e);
+                    }
+                }
+
+                async function selectTask(taskId) {
+                    currentTaskId.value = taskId;
+                    logs.value = [];
+                    taskResult.value = {};
+                    await fetchTaskDetail();
+                    pollTaskStatus();
+                }
+
+                async function fetchTaskDetail() {
+                    if (!currentTaskId.value) return;
+                    try {
+                        const res = await fetch(`/api/task/${currentTaskId.value}`);
+                        const data = await res.json();
+                        tasks.value[currentTaskId.value] = data;
+                        taskResult.value = data;
+
+                        // Fetch logs
+                        const logsRes = await fetch(`/api/task/${currentTaskId.value}/logs`);
+                        const logsData = await logsRes.json();
+                        logs.value = logsData.logs || [];
+
+                        updateGraphHighlight(data.current_node, data.visited_nodes);
+                        scrollToBottom();
+                    } catch (e) {
+                        console.error('Failed to fetch task detail:', e);
+                    }
+                }
+
+                async function startTask() {
+                    if (!targetUrl.value) {
+                        ElementPlus.ElMessage.warning('Please enter target URL');
+                        return;
+                    }
+
+                    starting.value = true;
+                    try {
+                        const res = await fetch('/api/task/start', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                target_url: targetUrl.value,
+                                task_name: taskName.value
+                            })
+                        });
+                        const data = await res.json();
+                        currentTaskId.value = data.task_id;
+                        showNewTask.value = false;
+                        targetUrl.value = '';
+                        taskName.value = '';
+                        await fetchTasks();
+                        pollTaskStatus();
+                    } catch (e) {
+                        ElementPlus.ElMessage.error('Failed to start task');
+                    }
+                    starting.value = false;
+                }
+
+                async function cancelTask() {
+                    if (!currentTaskId.value) return;
+                    try {
+                        await fetch(`/api/task/${currentTaskId.value}/cancel`, { method: 'POST' });
+                        await fetchTasks();
+                    } catch (e) {
+                        console.error('Failed to cancel task:', e);
+                    }
+                }
+
+                let pollTimer = null;
+                async function pollTaskStatus() {
+                    if (pollTimer) clearTimeout(pollTimer);
+                    if (!currentTaskId.value) return;
+
+                    await fetchTaskDetail();
+
+                    if (tasks.value[currentTaskId.value]?.status === 'running') {
+                        pollTimer = setTimeout(pollTaskStatus, 1500);
+                    } else {
+                        await fetchSystemStatus();
+                        await fetchSessions();
+                    }
+                }
+
+                function refreshAll() {
+                    fetchGraph();
+                    fetchTasks();
+                    fetchSystemStatus();
+                    fetchTools();
+                    fetchSessions();
+                }
+
+                // Graph rendering
+                function renderGraph() {
+                    const svg = d3.select('#graph-svg');
+                    const container = document.querySelector('.graph-container');
+                    const width = container.clientWidth;
+                    const height = container.clientHeight - 30;
+
+                    svg.selectAll('*').remove();
+
+                    const nodes = graphData.value.nodes.map(n => ({
+                        ...n,
+                        color: graphData.value.groups[n.group]?.color || '#409EFF'
+                    }));
+
+                    const edges = graphData.value.edges.map((e, i) => ({
+                        ...e,
+                        id: i,
+                        source: e.source,
+                        target: e.target
+                    }));
+
+                    const simulation = d3.forceSimulation(nodes)
+                        .force('link', d3.forceLink(edges).id(d => d.id).distance(100))
+                        .force('charge', d3.forceManyBody().strength(-300))
+                        .force('center', d3.forceCenter(width / 2, height / 2))
+                        .force('collision', d3.forceCollide().radius(35));
+
+                    const link = svg.append('g')
+                        .selectAll('path')
+                        .data(edges)
+                        .enter().append('path')
+                        .attr('class', 'edge')
+                        .attr('id', d => `edge-${d.source.id || d.source}-${d.target.id || d.target}`);
+
+                    const node = svg.append('g')
+                        .selectAll('g')
+                        .data(nodes)
+                        .enter().append('g')
+                        .attr('class', 'node')
+                        .attr('id', d => `node-${d.id}`)
+                        .on('click', (event, d) => {
+                            selectedNode.value = d;
+                        })
+                        .call(d3.drag()
+                            .on('start', dragstarted)
+                            .on('drag', dragged)
+                            .on('end', dragended));
+
+                    node.append('circle')
+                        .attr('r', 20)
+                        .attr('fill', d => d.color)
+                        .attr('stroke', '#fff');
+
+                    node.append('text')
+                        .attr('dy', 4)
+                        .attr('text-anchor', 'middle')
+                        .text(d => d.name.substring(0, 3));
+
+                    simulation.on('tick', () => {
+                        link.attr('d', d => {
+                            const sx = d.source.x, sy = d.source.y;
+                            const tx = d.target.x, ty = d.target.y;
+                            return `M${sx},${sy}L${tx},${ty}`;
+                        });
+                        node.attr('transform', d => `translate(${d.x},${d.y})`);
+                    });
+
+                    function dragstarted(event) {
+                        if (!event.active) simulation.alphaTarget(0.3).restart();
+                        event.subject.fx = event.subject.x;
+                        event.subject.fy = event.subject.y;
+                    }
+
+                    function dragged(event) {
+                        event.subject.fx = event.x;
+                        event.subject.fy = event.y;
+                    }
+
+                    function dragended(event) {
+                        if (!event.active) simulation.alphaTarget(0);
+                        event.subject.fx = null;
+                        event.subject.fy = null;
+                    }
+                }
+
+                function updateGraphHighlight(currentNode, visitedNodes) {
+                    d3.selectAll('.node')
+                        .classed('active', d => d.id === currentNode)
+                        .classed('visited', d => visitedNodes && visitedNodes.includes(d.id));
+                }
+
+                function scrollToBottom() {
+                    nextTick(() => {
+                        const panel = document.querySelector('.log-panel');
+                        if (panel) panel.scrollTop = panel.scrollHeight;
+                    });
+                }
+
+                // Initialize
+                onMounted(() => {
+                    fetchGraph();
+                    fetchTasks();
+                    fetchSystemStatus();
+                    fetchTools();
+                    fetchSessions();
+
+                    // Refresh periodically
+                    setInterval(() => {
+                        fetchSystemStatus();
+                        fetchSessions();
+                    }, 10000);
+
+                    window.addEventListener('resize', renderGraph);
+                });
+
+                return {
+                    tasks, currentTaskId, currentTask, targetUrl, taskName,
+                    logs, starting, showNewTask, graphData, rightTab,
+                    selectedNode, taskResult, systemStatus, tools, sessions,
+                    taskList, canCancel,
+                    selectTask, startTask, cancelTask, refreshAll
+                };
+            }
+        });
+
+        // Register icons
+        for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+            app.component(key, component);
+        }
+
+        app.use(ElementPlus);
+        app.mount('#app');
+    </script>
+</body>
+</html>

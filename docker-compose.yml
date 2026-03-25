@@ -6,6 +6,7 @@ services:
     container_name: ctf-agent
     # network_mode: host  # Windows不支持，使用端口映射
     ports:
+      - "5000:5000"   # Web UI
       - "8000:8000"   # HTTP Server (工具下载服务)
       - "7000:7000"   # frps (FRP服务端)
       - "10800:10800" # SOCKS5代理
@@ -17,6 +18,7 @@ services:
       - ./config.yaml:/app/config.yaml:ro
       - ./app:/app/app          # 代码热更新
       - ./tools:/app/tools      # 工具热更新
+      - ./web:/app/web          # Web UI热更新
     environment:
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_BASE_URL=${LLM_BASE_URL:-https://api.deepseek.com/v1}
@@ -25,5 +27,32 @@ services:
       - FRP_SERVER_PORT=${FRP_SERVER_PORT:-7000}
       - FRP_SOCKS5_PORT=${FRP_SOCKS5_PORT:-10800}
     restart: unless-stopped
+    stdin_open: true
+    tty: true
+    # 默认启动Web UI
+    command: python /app/web/api.py
+
+  # CLI模式 - 命令行交互
+  ctf-agent-cli:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: ctf-agent-cli
+    ports:
+      - "8001:8000"   # HTTP Server
+      - "7001:7000"   # frps
+      - "10801:10800" # SOCKS5代理
+    privileged: true
+    volumes:
+      - ../data:/app/data
+      - ./config.yaml:/app/config.yaml:ro
+      - ./app:/app/app
+      - ./tools:/app/tools
+    environment:
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.deepseek.com/v1}
+      - LOCAL_PUBLIC_IP=${LOCAL_PUBLIC_IP}
+    profiles:
+      - cli
     stdin_open: true
     tty: true
