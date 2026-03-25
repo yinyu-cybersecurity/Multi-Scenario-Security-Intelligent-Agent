@@ -8,16 +8,19 @@
 3. AI智能压缩冗余数据
 
 设计理念：
-- CRITICAL: 凭据、FLAG、Shell会话 → 完整保留
-- HIGH: 漏洞、攻击链、内网资产 → 保留结构
-- MEDIUM: 扫描结果、页面特征 → 去重摘要
-- LOW: 攻击结果、工具调用 → 只保留成功+统计
+- CRITICAL: 凭据、FLAG、Shell会话 -> 完整保留
+- HIGH: 漏洞、攻击链、内网资产 -> 保留结构
+- MEDIUM: 扫描结果、页面特征 -> 去重摘要
+- LOW: 攻击结果、工具调用 -> 只保留成功+统计
 """
 
 import json
 import time
+import logging
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 from llm_client import llm_client
 from config import config
 
@@ -186,14 +189,15 @@ class ContextCompressor:
         try:
             state_str = json.dumps(state, ensure_ascii=False, default=str)
             return self.estimate_tokens(state_str)
-        except Exception:
+        except Exception as e:
             # 如果序列化失败，使用近似估算
+            logger.debug(f"状态序列化失败，使用近似估算: {e}")
             total = 0
             for key, value in state.items():
                 try:
                     total += self.estimate_tokens(str(key) + str(value))
-                except Exception:
-                    pass
+                except Exception as ex:
+                    logger.debug(f"估算字段 {key} 失败: {ex}")
             return total
 
     def should_compress(self, state: Dict) -> bool:
