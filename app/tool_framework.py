@@ -535,6 +535,47 @@ class ToolRegistry:
         return cls._tools.get(vuln_type, [])
 
     @classmethod
+    def get_all_tools(cls) -> List['CTFTool']:
+        """获取所有已注册的唯一工具列表"""
+        seen_names = set()
+        unique_tools = []
+        for tools in cls._tools.values():
+            for tool in tools:
+                if tool.name() not in seen_names:
+                    seen_names.add(tool.name())
+                    unique_tools.append(tool)
+        return unique_tools
+
+    @classmethod
+    def get_tool_names(cls) -> List[str]:
+        """获取所有已注册工具的名称列表"""
+        return [tool.name() for tool in cls.get_all_tools()]
+
+    @classmethod
+    def get_tool_by_name(cls, name: str) -> Optional['CTFTool']:
+        """根据名称获取工具实例"""
+        for tool in cls.get_all_tools():
+            if tool.name() == name:
+                return tool
+        return None
+
+    @classmethod
+    def tool_exists(cls, name: str) -> bool:
+        """检查工具是否已注册"""
+        return cls.get_tool_by_name(name) is not None
+
+    @classmethod
+    def get_statistics(cls) -> Dict[str, Any]:
+        """获取工具注册统计信息"""
+        unique_tools = cls.get_all_tools()
+        return {
+            "total_tools": len(unique_tools),
+            "vuln_types": len(cls._tools),
+            "tool_names": [t.name() for t in unique_tools],
+            "vuln_type_names": list(cls._tools.keys())
+        }
+
+    @classmethod
     def get_all_tools_info(cls, scenes: Dict = None) -> str:
         """
         获取所有注册工具的能力声明，用于构建 LLM Prompt。
