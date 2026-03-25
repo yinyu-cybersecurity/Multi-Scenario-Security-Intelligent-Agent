@@ -25,12 +25,13 @@ CTF-Agent 是一个智能化的渗透测试代理，能够自主完成从信息�
 | Reverse | reverse_analyst, reverse_decompiler | `_llm_reverse_analysis()` |
 | Misc | misc_analyst, misc_extractor | `_llm_misc_analysis()` |
 
-#### 🔧 33+ 安全工具
+#### 🔧 40+ 安全工具
 - **注入工具**: sqlmap, fenjing (SSTI)
-- **漏洞扫描**: nuclei, xray, fscan
-- **反序列化**: ysoserial, phpggc, pickle-pwn
-- **内网渗透**: impacket, crackmapexec, mimikatz
-- **隧道代理**: frp, chisel
+- **漏洞扫描**: nuclei, xray, fscan, nmap, cve_scanner
+- **反序列化**: ysoserial, phpggc, pickle-pwn, marshalsec
+- **内网渗透**: impacket, crackmapexec, mimikatz, frp
+- **域渗透**: bloodhound, petitpotam, rubeus
+- **权限提升**: potato系列 (PrintSpoofer/SweetPotato)
 
 #### ✨ 系统改进（2026-03 更新）
 - **模块化状态类型**: 场景分离的状态定义（WebCTFState, InternalNetworkState, CryptoCTFState 等）
@@ -139,7 +140,7 @@ deploy/
 │   ├── innovator_agent.py      # 头脑风暴节点
 │   ├── evolution.py            # 进化闭环
 │   └── topology/               # 拓扑分析
-├── tools/                      # 33个安全工具
+├── tools/                      # 40+安全工具
 ├── internal_network/           # 内网渗透模块
 │   ├── nodes.py                # 内网节点实现
 │   └── post_exploit.py         # 后渗透处理

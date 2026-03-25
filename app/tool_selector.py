@@ -199,8 +199,8 @@ class ToolSelector:
             "横向移动": ["impacket", "crackmapexec"],
             "psexec": ["impacket", "crackmapexec"],
             "wmi": ["impacket", "crackmapexec"],
-            "代理": ["frp-manager", "chisel"],
-            "socks5": ["frp-manager", "chisel"],
+            "代理": ["frp-manager"],
+            "socks5": ["frp-manager"],
 
             # 域渗透
             "kerberos": ["impacket", "bloodhound"],
