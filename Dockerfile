@@ -43,8 +43,12 @@ RUN go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest || true && 
 # ===== Layer 4: Python/Ruby 工具 (偶尔变) =====
 # pipx 安装可执行工具，pip 安装库
 RUN pip3 install pipx && \
-    pipx ensurepath && \
-    pipx install sqlmap || true && \
+    pipx ensurepath
+
+# 确保 pipx 安装的工具在 PATH 中可用（必须在 install 之前设置）
+ENV PATH="/root/.local/bin:$PATH"
+
+RUN pipx install sqlmap || true && \
     pipx install fenjing || true && \
     pipx install flask-unsign || true && \
     pipx install crackmapexec || pipx install cme || true && \
@@ -54,9 +58,6 @@ RUN pip3 install pipx && \
     pipx install ROPgadget || true
     # 注意: jwt-tool 已从 GitHub 克隆到 /app/thirdparty/jwt_tool
     # 注意: paramiko 是库，已在 requirements.txt 中，不需要 pipx 安装
-
-# 确保 pipx 安装的工具在 PATH 中可用
-ENV PATH="/root/.local/bin:$PATH"
 
 RUN gem install zsteg one_gadget
 
