@@ -212,7 +212,8 @@ class PotatoTool(CommandLineTool):
         try:
             result = self._run_command(
                 [binary_path] + exec_cmd.split()[1:],
-                timeout=self.timeout
+                timeout=self.timeout,
+                stream_output=True
             )
             return {
                 "success": result.get("success", False),

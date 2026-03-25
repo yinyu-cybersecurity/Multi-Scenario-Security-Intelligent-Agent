@@ -80,7 +80,7 @@ class ImpacketTool(CommandLineTool):
         """执行命令并返回结果"""
         cmd = self._build_cmd() + args
         try:
-            result = self._run_command(cmd, timeout=timeout or self.timeout)
+            result = self._run_command(cmd, timeout=timeout or self.timeout, stream_output=True)
             return {
                 "success": result.get("returncode", 0) == 0,
                 "output": result.get("stdout", ""),

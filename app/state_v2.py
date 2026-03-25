@@ -62,7 +62,7 @@ class CTFStateV2(TypedDict):
     start_time: float
     current_round: int
     execution_steps: int
-    current_mode: Literal['exploit', 'explore', 'innovate', 'end', 'hitl']
+    current_mode: Literal['exploit', 'explore', 'innovate', 'end']
     failure_weighted_score: float
     exploration_rounds: int
     rule_miss_count: int
@@ -108,6 +108,7 @@ class CTFStateV2(TypedDict):
     # =====================================================
     # [I] 内网渗透字段
     # =====================================================
+    internal_mode: bool  # 是否处于内网渗透模式
     internal_network_detected: bool
     internal_network_range: str
     internal_hosts: Annotated[List[InternalHost], internal_hosts_reducer]
@@ -120,6 +121,19 @@ class CTFStateV2(TypedDict):
     socks5_port: int
     uploaded_tools: List[str]
     privilege_level: str
+    pivot_host: str  # 跳板机IP
+    proxy_info: Optional[Dict[str, Any]]  # SOCKS5代理信息
+    upload_status: str  # 工具上传状态: pending/completed/commands_generated/failed
+    tunnel_status: str  # 隧道状态: pending/configured/failed
+    post_exploit_status: str  # 后渗透状态: no_shell/ready_for_internal/web_only
+    current_internal_target: str  # 当前内网目标IP
+
+    # =====================================================
+    # [I] 内网渗透扩展字段 - 多主机Flag搜索
+    # =====================================================
+    found_flags: Annotated[List[str], dedupe_list_reducer]  # 所有发现的flag
+    compromised_hosts: Annotated[List[str], dedupe_list_reducer]  # 已攻陷的主机IP
+    current_compromise_phase: str  # 当前阶段: flag_search/lateral_move/complete
 
 
 # 向后兼容别名

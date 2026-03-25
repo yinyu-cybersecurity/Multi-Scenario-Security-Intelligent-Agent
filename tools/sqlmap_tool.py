@@ -209,7 +209,7 @@ class SqlmapTool(CommandLineTool):
         else: cmd.append("--banner") # 默认只跑 banner 确认注入存在
 
         try:
-            raw_result = self._run_command(cmd)
+            raw_result = self._run_command(cmd, stream_output=True)
             stdout = raw_result.get("stdout", "")
             stderr = raw_result.get("stderr", "")
 

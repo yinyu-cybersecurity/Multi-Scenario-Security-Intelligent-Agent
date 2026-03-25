@@ -105,6 +105,8 @@ RUN mkdir -p /opt/tools/potato \
 
 # ===== Layer 6: 下载所有第三方工具 =====
 RUN echo "Starting git clones..."; \
+    # dirsearch 目录扫描
+    git clone --depth 1 https://github.com/maurosoria/dirsearch.git /app/thirdparty/dirsearch 2>/dev/null || true; \
     # SSRF工具
     git clone --depth 1 https://github.com/swisskyrepo/SSRFmap.git /app/thirdparty/SSRFmap 2>/dev/null || true; \
     git clone --depth 1 https://github.com/tarunkant/Gopherus.git /app/thirdparty/Gopherus 2>/dev/null || true; \
@@ -188,6 +190,30 @@ RUN echo "Starting binary downloads..."; \
     chmod +x /usr/local/bin/xray 2>/dev/null || true; \
     rm -rf /tmp/xray.zip /tmp/xray_extract || true; \
     echo "Binary downloads completed"
+
+# ===== Layer 6.5: Linux工具符号链接 =====
+# 为HTTP服务器创建Linux工具的符号链接
+# HTTP服务器根目录为/opt，/usr/local/bin/下的工具需要链接到这里
+RUN mkdir -p /opt/linux && \
+    # fscan
+    ln -sf /usr/local/bin/fscan /opt/linux/fscan && \
+    # nuclei
+    ln -sf /usr/local/bin/nuclei /opt/linux/nuclei && \
+    # xray
+    ln -sf /usr/local/bin/xray /opt/linux/xray && \
+    # ffuf
+    ln -sf /usr/local/bin/ffuf /opt/linux/ffuf && \
+    # httpx
+    ln -sf /usr/local/bin/httpx /opt/linux/httpx && \
+    # subfinder
+    ln -sf /usr/local/bin/subfinder /opt/linux/subfinder && \
+    # httprobe
+    ln -sf /usr/local/bin/httprobe /opt/linux/httprobe && \
+    # gf
+    ln -sf /usr/local/bin/gf /opt/linux/gf && \
+    # qsreplace
+    ln -sf /usr/local/bin/qsreplace /opt/linux/qsreplace && \
+    echo "Linux tool symlinks created in /opt/linux/"
 
 # ===== Layer 7: Python 依赖 (偶尔变) =====
 COPY deploy/requirements.txt .

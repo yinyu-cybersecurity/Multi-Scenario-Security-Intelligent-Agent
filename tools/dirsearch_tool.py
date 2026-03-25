@@ -16,16 +16,40 @@ class DirsearchTool(CommandLineTool):
     def __init__(self):
         import sys
         import os
-        
+
         # 智能选择 Python 解释器
         cmd = "python3" if os.path.exists("/.dockerenv") else sys.executable
         super().__init__(cmd)
-        
+
         # 智能路径探测
         docker_path = "/app/thirdparty/dirsearch/dirsearch.py"
         local_path = os.path.join(os.getcwd(), "thirdparty", "dirsearch", "dirsearch.py")
-        
-        self.script_path = docker_path if os.path.exists(docker_path) else local_path
+
+        # 检查多个可能的路径
+        possible_paths = [
+            docker_path,
+            local_path,
+            "/app/thirdparty/dirsearch/dirsearch.py",
+            "thirdparty/dirsearch/dirsearch.py",
+        ]
+
+        self.script_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                self.script_path = path
+                break
+
+        # 如果都不存在，尝试使用系统安装的 dirsearch
+        if not self.script_path:
+            import shutil
+            if shutil.which("dirsearch"):
+                self.script_path = "dirsearch"
+                self.is_system = True
+            else:
+                self.script_path = docker_path  # 保留默认值，运行时会报错
+                self.is_system = False
+        else:
+            self.is_system = False
 
     def name(self) -> str:
         return "dirsearch"
@@ -40,6 +64,24 @@ class DirsearchTool(CommandLineTool):
         return "目录扫描工具。发现隐藏路径、备份文件、管理后台、API端点。适合：无明确漏洞方向时的资产发现。"
 
     def check_available(self) -> bool:
+        """检查 dirsearch 是否可用"""
+        import shutil
+
+        # 如果是系统命令
+        if hasattr(self, 'is_system') and self.is_system:
+            return shutil.which("dirsearch") is not None
+
+        # 检查脚本文件是否存在
+        if self.script_path is None:
+            return False
+
+        if not os.path.exists(self.script_path):
+            return False
+
+        # 还要检查 Python 解释器是否存在
+        if not shutil.which(self.cmd_path):
+            return False
+
         return True
 
     def expected_params(self) -> Dict[str, Dict[str, Any]]:
@@ -110,8 +152,20 @@ class DirsearchTool(CommandLineTool):
         if not url:
             raise ValueError("必须提供目标 URL")
 
-        # 将脚本路径 self.script_path 加在解释器和 -u 参数之间
-        cmd = [self.cmd_path, self.script_path, "-u", url]
+        # 检查脚本是否存在
+        if not self.check_available():
+            return {
+                "success": False,
+                "error": f"dirsearch 脚本不存在: {self.script_path}",
+                "vulnerable": False,
+                "summary": "工具不可用"
+            }
+
+        # 构建命令
+        if hasattr(self, 'is_system') and self.is_system:
+            cmd = ["dirsearch", "-u", url]
+        else:
+            cmd = [self.cmd_path, self.script_path, "-u", url]
 
         # 1. 强制性能优化参数
         # -q: 静默模式，只输出结果
@@ -153,8 +207,8 @@ class DirsearchTool(CommandLineTool):
         # cmd.append("--minimal-mode") 
 
         try:
-            # 执行命令，设置工具层的物理超时 (120秒)，防止单个工具拖垮节点
-            raw_result = self._run_command(cmd, timeout=120)
+            # 执行命令 - 使用流式输出，设置工具层的物理超时 (120秒)
+            raw_result = self._run_command(cmd, timeout=120, stream_output=True)
             stdout = raw_result.get("stdout", "")
             stderr = raw_result.get("stderr", "")
 

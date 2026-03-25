@@ -205,7 +205,7 @@ class MimikatzTool(CommandLineTool):
         ]
 
         try:
-            result = self._run_command(full_cmd, timeout=self.timeout)
+            result = self._run_command(full_cmd, timeout=self.timeout, stream_output=True)
             stdout = result.get("stdout", "")
 
             # 解析凭据

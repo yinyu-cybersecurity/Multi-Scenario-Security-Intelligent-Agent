@@ -119,7 +119,7 @@ class XXEInjectorTool(CommandLineTool):
                     "summary": "参数不足"
                 }
 
-            raw_result = self._run_command(cmd, timeout=self.timeout)
+            raw_result = self._run_command(cmd, timeout=self.timeout, stream_output=True)
             stdout = raw_result.get("stdout", "")
             stderr = raw_result.get("stderr", "")
 

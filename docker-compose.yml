@@ -16,9 +16,20 @@ services:
       - ../data:/app/data
       - ../.memory:/app/.memory
       - ./config.yaml:/app/config.yaml:ro
-      - ./app:/app/app          # 代码热更新
-      - ./tools:/app/tools      # 工具热更新
-      - ./web:/app/web          # Web UI热更新
+      # 代码热更新 - 挂载所有模块目录
+      - ./app:/app
+      - ./tools:/app/tools
+      - ./web:/app/web
+      - ./internal_network:/app/internal_network
+      - ./remote_executor:/app/remote_executor
+      - ./crypto:/app/crypto
+      - ./pwn:/app/pwn
+      - ./reverse:/app/reverse
+      - ./misc:/app/misc
+      - ./memory:/app/memory
+      - ./rag_builder:/app/rag_builder
+      # 保护thirdparty目录不被覆盖（使用匿名卷）
+      - /app/thirdparty
     environment:
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_BASE_URL=${LLM_BASE_URL:-https://api.deepseek.com/v1}

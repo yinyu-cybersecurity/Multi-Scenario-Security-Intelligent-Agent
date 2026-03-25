@@ -335,8 +335,13 @@ def _scan_local(network_range: str, strategy: Dict) -> Dict:
             }
         )
 
-        if fscan_result and fscan_result.get("result", {}).get("success"):
-            result = fscan_result.get("result", {})
+        if not fscan_result:
+            return {"success": False, "error": "扫描返回空结果"}
+
+        # execute_cached 总是返回 {"cached": ..., "result": ...} 格式
+        result = fscan_result.get("result", {})
+
+        if result.get("success"):
             hosts_data = result.get("hosts", [])
 
             hosts = []
@@ -365,7 +370,7 @@ def _scan_local(network_range: str, strategy: Dict) -> Dict:
 
             return {"success": True, "hosts": hosts}
 
-        return {"success": False, "error": "扫描无结果"}
+        return {"success": False, "error": result.get("error", "扫描无结果")}
 
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -1683,3 +1688,328 @@ def _execute_kerberoast(target: str, credentials: List, proxy_info: Dict) -> Dic
         pass
 
     return {"success": False}
+
+
+def flag_search_node(state: Dict) -> Dict:
+    """
+    [Flag搜索节点] 在已攻陷主机的管理员文件夹中搜索Flag
+
+    输入:
+        - active_sessions: 活跃会话
+        - compromised_hosts: 已攻陷主机列表
+        - shell_session: Shell会话信息
+
+    输出:
+        - found_flags: 发现的flag列表
+        - compromised_hosts: 更新已攻陷主机
+
+    工作流程:
+        1. 遍历所有已攻陷主机
+        2. 在管理员文件夹中搜索flag
+        3. 收集所有发现的flag
+        4. 标记主机已完成flag搜索
+    """
+    active_sessions = state.get("active_sessions") or []
+    shell_session = state.get("shell_session", {})
+    compromised_hosts = state.get("compromised_hosts") or []
+    found_flags = state.get("found_flags") or []
+
+    if not active_sessions and not shell_session:
+        return {
+            "error": "没有可用的会话进行Flag搜索",
+            "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5
+        }
+
+    print(f"[FlagSearch] 开始在已攻陷主机中搜索Flag...")
+
+    # 收集新发现的flag
+    new_flags = []
+    newly_compromised = []
+
+    # 获取会话信息
+    session_id = shell_session.get("session_id", "")
+    os_type = shell_session.get("os_type", "linux")
+    current_target = shell_session.get("target", "")
+
+    if REMOTE_EXEC_AVAILABLE and session_id:
+        session_manager = get_session_manager()
+        session = session_manager.get_session(session_id)
+
+        if session:
+            # 在当前主机的管理员文件夹中搜索flag
+            flags_found = _search_flags_on_host(session, os_type, current_target)
+            new_flags.extend(flags_found)
+
+            if current_target and current_target not in compromised_hosts:
+                newly_compromised.append(current_target)
+
+    # 遍历其他活跃会话
+    for sess in active_sessions:
+        host = sess.get("host", "")
+        sess_os = sess.get("os_type", os_type)
+
+        if host and host in compromised_hosts:
+            continue  # 已经搜索过
+
+        # 如果有远程执行能力，尝试搜索
+        if REMOTE_EXEC_AVAILABLE and sess.get("session_id"):
+            session_manager = get_session_manager()
+            remote_session = session_manager.get_session(sess["session_id"])
+
+            if remote_session:
+                flags_found = _search_flags_on_host(remote_session, sess_os, host)
+                new_flags.extend(flags_found)
+
+                if host not in compromised_hosts:
+                    newly_compromised.append(host)
+
+    # 去重
+    new_flags = list(set(new_flags))
+    newly_compromised = list(set(newly_compromised))
+
+    if new_flags:
+        print(f"[FlagSearch] 发现 {len(new_flags)} 个Flag!")
+        for flag in new_flags:
+            print(f"   🚩 {flag}")
+
+    # 决定下一步
+    all_compromised = compromised_hosts + newly_compromised
+    internal_hosts = state.get("internal_hosts") or []
+    unexplored = [h.get("ip") for h in internal_hosts if isinstance(h, dict) and h.get("ip") not in all_compromised]
+
+    if unexplored:
+        next_phase = "lateral_move"
+        print(f"[FlagSearch] 还有 {len(unexplored)} 台主机未攻陷，继续横向移动")
+    else:
+        next_phase = "complete"
+        print(f"[FlagSearch] 所有内网主机已攻陷，内网渗透完成")
+
+    return {
+        "found_flags": new_flags,
+        "compromised_hosts": newly_compromised,
+        "current_compromise_phase": next_phase,
+        "execution_steps": state.get("execution_steps", 0) + 1
+    }
+
+
+def _search_flags_on_host(session, os_type: str, host: str) -> List[str]:
+    """
+    在单台主机上搜索Flag
+
+    搜索位置:
+    Windows:
+        - C:\\Users\\Administrator\\Desktop\\
+        - C:\\Users\\Administrator\\Documents\\
+        - C:\\Users\\Administrator\\
+        - C:\\flags\\
+        - C:\\
+
+    Linux:
+        - /home/admin/
+        - /home/*/Desktop/
+        - /root/
+        - /tmp/
+        - /opt/
+    """
+    import re
+
+    flags = []
+
+    # 定义搜索路径
+    if os_type == "windows":
+        search_paths = [
+            "C:\\Users\\Administrator\\Desktop\\",
+            "C:\\Users\\Administrator\\Documents\\",
+            "C:\\Users\\Administrator\\",
+            "C:\\flags\\",
+            "C:\\",
+        ]
+        # 列出文件命令
+        list_cmd = "dir /b \"{path}\""
+        # 搜索flag文件命令
+        search_cmd = "type \"{path}{file}\""
+    else:
+        search_paths = [
+            "/home/admin/",
+            "/home/*/Desktop/",
+            "/root/",
+            "/tmp/",
+            "/opt/",
+        ]
+        list_cmd = "ls -la {path} 2>/dev/null"
+        search_cmd = "cat {path}{file} 2>/dev/null"
+
+    # Flag正则模式
+    flag_patterns = [
+        r'flag\{[^\}]+\}',
+        r'FLAG\{[^\}]+\}',
+        r'ctf\{[^\}]+\}',
+        r'CTF\{[^\}]+\}',
+        r'key\{[^\}]+\}',
+        r'KEY\{[^\}]+\}',
+        r'f[l1]ag\{[^\}]+\}',  # 变形flag
+    ]
+
+    for path in search_paths:
+        try:
+            # 列出目录内容
+            cmd = list_cmd.format(path=path)
+            result = execute_on_session(session, cmd, timeout=30)
+
+            if not result.success or not result.output:
+                continue
+
+            # 分析目录内容，寻找可疑文件
+            suspicious_files = _identify_suspicious_files(result.output, os_type)
+
+            for filename in suspicious_files:
+                try:
+                    # 读取文件内容
+                    cat_cmd = search_cmd.format(path=path, file=filename)
+                    file_result = execute_on_session(session, cat_cmd, timeout=30)
+
+                    if file_result.success and file_result.output:
+                        # 在内容中搜索flag
+                        for pattern in flag_patterns:
+                            matches = re.findall(pattern, file_result.output, re.IGNORECASE)
+                            flags.extend(matches)
+
+                except Exception:
+                    continue
+
+            # 直接在目录列表中搜索flag
+            for pattern in flag_patterns:
+                matches = re.findall(pattern, result.output, re.IGNORECASE)
+                flags.extend(matches)
+
+        except Exception as e:
+            print(f"[FlagSearch] 搜索 {path} 失败: {e}")
+            continue
+
+    # 额外: 执行常见flag查找命令
+    try:
+        if os_type == "windows":
+            # Windows: 使用findstr搜索
+            extra_cmds = [
+                'findstr /s /i "flag" C:\\*.txt',
+                'findstr /s /i "flag" C:\\Users\\*.txt',
+            ]
+        else:
+            # Linux: 使用grep递归搜索
+            extra_cmds = [
+                'grep -r "flag{" /home/ 2>/dev/null | head -20',
+                'grep -r "flag{" /root/ 2>/dev/null | head -20',
+                'grep -r "flag{" /tmp/ 2>/dev/null | head -20',
+            ]
+
+        for cmd in extra_cmds:
+            try:
+                result = execute_on_session(session, cmd, timeout=60)
+                if result.success and result.output:
+                    for pattern in flag_patterns:
+                        matches = re.findall(pattern, result.output, re.IGNORECASE)
+                        flags.extend(matches)
+            except Exception:
+                continue
+
+    except Exception:
+        pass
+
+    return list(set(flags))
+
+
+def _identify_suspicious_files(output: str, os_type: str) -> List[str]:
+    """
+    从目录列表中识别可疑文件
+
+    可疑文件特征:
+    - 包含flag关键字的文件名
+    - txt文件
+    - 隐藏文件
+    """
+    import re
+
+    suspicious = []
+
+    # 文件名模式
+    suspicious_patterns = [
+        r'flag',
+        r'key',
+        r'secret',
+        r'password',
+        r'credential',
+        r'\.txt$',
+        r'\.ini$',
+        r'\.conf$',
+        r'\.cfg$',
+    ]
+
+    lines = output.strip().split('\n')
+
+    for line in lines:
+        # 提取文件名
+        if os_type == "windows":
+            # Windows dir输出: 文件名直接显示
+            parts = line.split()
+            if parts:
+                filename = parts[-1]  # 最后一个部分通常是文件名
+        else:
+            # Linux ls -la输出: 权限 链接 所属 组 大小 月 日 时间 文件名
+            parts = line.split()
+            if len(parts) >= 9:
+                filename = parts[-1]
+            else:
+                filename = line.strip()
+
+        # 检查是否匹配可疑模式
+        for pattern in suspicious_patterns:
+            if re.search(pattern, filename, re.IGNORECASE):
+                suspicious.append(filename)
+                break
+
+    return suspicious[:10]  # 限制数量
+
+
+def get_next_internal_target(state: Dict) -> str:
+    """
+    获取下一个需要攻陷的内网目标
+
+    优先级:
+    1. 未攻陷的高价值主机 (域控、数据库)
+    2. 未攻陷的普通主机
+    3. 空字符串 (所有主机已攻陷)
+    """
+    internal_hosts = state.get("internal_hosts") or []
+    compromised_hosts = state.get("compromised_hosts") or []
+    active_sessions = state.get("active_sessions") or []
+
+    # 从活跃会话中也获取已攻陷主机
+    session_hosts = [s.get("host") for s in active_sessions if s.get("host")]
+    all_compromised = set(compromised_hosts + session_hosts)
+
+    # 高价值端口
+    high_value_ports = [88, 389, 636, 3268, 1433, 3306, 5432, 445]
+
+    # 优先选择高价值目标
+    for host in internal_hosts:
+        if not isinstance(host, dict):
+            continue
+        ip = host.get("ip", "")
+        if not ip or ip in all_compromised:
+            continue
+
+        ports = host.get("ports") or []
+        port_numbers = [p.get("port") for p in ports if isinstance(p, dict) and p.get("port")]
+
+        if any(p in port_numbers for p in high_value_ports):
+            return ip
+
+    # 选择第一个未攻陷的主机
+    for host in internal_hosts:
+        if not isinstance(host, dict):
+            continue
+        ip = host.get("ip", "")
+        if ip and ip not in all_compromised:
+            return ip
+
+    return ""  # 所有主机已攻陷

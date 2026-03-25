@@ -128,7 +128,7 @@ class PetitPotamTool(CommandLineTool):
         cmd.append(target)
 
         try:
-            result = self._run_command(cmd, timeout=self.timeout)
+            result = self._run_command(cmd, timeout=self.timeout, stream_output=True)
             return {
                 "success": True,
                 "target": target,

@@ -26,7 +26,7 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 def start_http_server(
     port: int = 8000,
-    directory: str = "/opt/tools",
+    directory: str = "/opt",
     daemon: bool = True
 ) -> Optional[threading.Thread]:
     """
@@ -34,11 +34,21 @@ def start_http_server(
 
     Args:
         port: 监听端口
-        directory: 服务目录 (默认使用镜像内置的工具目录)
+        directory: 服务目录 (默认使用/opt，包含tools和frp子目录)
         daemon: 是否作为守护线程运行
 
     Returns:
         服务器线程对象
+
+    目录结构:
+        /opt/
+        ├── tools/
+        │   ├── windows/   -> http://server/tools/windows/xxx.exe
+        │   ├── potato/    -> http://server/tools/potato/xxx.exe
+        │   ├── x64/       -> http://server/tools/x64/mimikatz.exe
+        │   └── ad/
+        ├── frp/           -> http://server/frp/frpc
+        └── linux/         -> http://server/linux/fscan (符号链接到/usr/local/bin/)
     """
     if not os.path.exists(directory):
         print(f"[HTTPServer] 警告: 目录不存在 {directory}")
@@ -88,7 +98,7 @@ def check_tools_directory() -> dict:
         "tools": "/opt/tools",
         "potato": "/opt/tools/potato",
         "ad": "/opt/tools/ad",
-        "linux": "/opt/tools/linux",
+        "linux": "/opt/linux",  # Linux工具符号链接目录
         "windows": "/opt/tools/windows",
         "frp": "/opt/frp"
     }
@@ -121,7 +131,7 @@ def ensure_tools_directories():
         "/opt/tools",
         "/opt/tools/potato",
         "/opt/tools/ad",
-        "/opt/tools/linux",
+        "/opt/linux",  # Linux工具符号链接目录
         "/opt/tools/windows",
         "/opt/frp"
     ]

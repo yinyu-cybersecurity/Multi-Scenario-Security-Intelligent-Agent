@@ -141,7 +141,7 @@ class BloodHoundTool(CommandLineTool):
             cmd.extend(["--hash", hash_val])
 
         try:
-            result = self._run_command(cmd, timeout=self.timeout)
+            result = self._run_command(cmd, timeout=self.timeout, stream_output=True)
             stdout = result.get("stdout", "")
             stderr = result.get("stderr", "")
 

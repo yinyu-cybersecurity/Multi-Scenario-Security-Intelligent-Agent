@@ -162,7 +162,7 @@ class FenjingTool(CommandLineTool):
         params["url"] = url
 
         cmd = self._build_command(subcommand, params)
-        raw_result = self._run_command(cmd)
+        raw_result = self._run_command(cmd, stream_output=True)
         stdout = raw_result.get("stdout", "")
         stderr = raw_result.get("stderr", "")
         full_output = stdout + ("\n" + stderr if stderr else "")

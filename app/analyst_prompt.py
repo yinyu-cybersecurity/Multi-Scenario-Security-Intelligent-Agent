@@ -73,6 +73,11 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
 不要因为漏扫无结果就放弃该方向，尝试手工构造攻击请求。
 """
 
+    # 预格式化JSON（f-string不支持反斜杠）
+    page_features_json = json.dumps(page_features, indent=2, ensure_ascii=False)[:1000]
+    rule_candidates_json = json.dumps(rule_candidates, indent=2, ensure_ascii=False)[:500]
+    topology_section = f"## 拓扑分析\n{topology_hint}\n" if topology_hint else ""
+
     return f"""
 # CTF 分析兵
 
@@ -100,12 +105,12 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
 
 {scenes_section}
 {focus_section}
-{f"## 拓扑分析\n{topology_hint}\n" if topology_hint else ""}
+{topology_section}
 ## 页面特征
-{json.dumps(page_features, indent=2, ensure_ascii=False)[:1000]}
+{page_features_json}
 
 ## 规则引擎预警
-{json.dumps(rule_candidates, indent=2, ensure_ascii=False)[:500]}
+{rule_candidates_json}
 
 ## 可用工具
 {tools_info if tools_info else "见工具列表"}

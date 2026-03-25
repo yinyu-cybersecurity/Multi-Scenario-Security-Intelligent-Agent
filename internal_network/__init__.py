@@ -11,17 +11,24 @@
 3. 共享CTFState状态
 
 模块组成:
-- nodes.py: 内网侦察节点、横向移动节点、权限提升节点、凭据收集节点
+- nodes.py: 内网侦察节点、横向移动节点、权限提升节点、凭据收集节点、Flag搜索节点
 - orchestrator.py: 内网渗透编排器
 - prompts.py: 内网渗透提示词模块
 - advanced_operations.py: 高级操作（提权、文件传输、凭据转储）
+
+目标:
+1. 外网打点获取初始Flag
+2. 攻陷所有内网主机
+3. 在每台主机的管理员文件夹中搜索Flag
 """
 
 from .nodes import (
     internal_recon_node,
     lateral_move_node,
     privilege_escalation_node,
-    credential_gather_node
+    credential_gather_node,
+    flag_search_node,
+    get_next_internal_target
 )
 from .orchestrator import InternalNetworkOrchestrator
 from .prompts import (
@@ -39,6 +46,9 @@ __all__ = [
     'lateral_move_node',
     'privilege_escalation_node',
     'credential_gather_node',
+    'flag_search_node',
+    # 辅助函数
+    'get_next_internal_target',
     # 编排器
     'InternalNetworkOrchestrator',
     # 提示词

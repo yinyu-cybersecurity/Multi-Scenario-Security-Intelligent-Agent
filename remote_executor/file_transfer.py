@@ -38,11 +38,29 @@ class FileTransfer:
     根据目标系统自动选择最佳传输方式
     """
 
-    # 常用工具下载链接
+    # 工具路径配置 (根据Dockerfile)
+    # Linux工具在系统PATH: /usr/local/bin/
+    # Windows工具在: /opt/tools/windows/
+    # frp在: /opt/frp/
+    TOOL_PATHS = {
+        # Linux工具 (已在系统PATH中，HTTP服务时需要映射)
+        "fscan_linux": "/usr/local/bin/fscan",
+        "frpc_linux": "/opt/frp/frpc",
+        "frps_linux": "/opt/frp/frps",
+        # Windows工具 (在/opt/tools/windows/)
+        "fscan_windows": "/opt/tools/windows/fscan.exe",
+        "frpc_windows": "/opt/tools/windows/frpc.exe",
+        "frps_windows": "/opt/tools/windows/frps.exe",
+        "mimikatz": "/opt/tools/x64/mimikatz.exe",
+        "printspoofer": "/opt/tools/potato/PrintSpoofer64.exe",
+        "sweetpotato": "/opt/tools/potato/SweetPotato.exe",
+        "godpotato": "/opt/tools/potato/GodPotato.exe",
+        "rubeus": "/opt/tools/windows/Rubeus.exe",
+    }
+
+    # 常用工具下载链接 (备用，优先使用本机HTTP服务器)
     TOOL_URLS = {
-        "fscan_linux": "https://github.com/shadow1ng/fscan/releases/download/v1.8.2/fscan",
         "fscan_windows": "https://github.com/shadow1ng/fscan/releases/download/v1.8.2/fscan.exe",
-        "frpc_linux": "https://github.com/fatedier/frp/releases/download/v0.52.3/frp_0.52.3_linux_amd64.tar.gz",
         "frpc_windows": "https://github.com/fatedier/frp/releases/download/v0.52.3/frp_0.52.3_windows_amd64.zip",
         "mimikatz": "https://github.com/gentilkiwi/mimikatz/releases/download/v2.2.0-20220919/mimikatz_trunk.zip",
         "printspoofer": "https://github.com/itm4n/PrintSpoofer/releases/download/v1.0/PrintSpoofer64.exe",
@@ -150,32 +168,51 @@ class FileTransfer:
         生成上传工具的命令
 
         Args:
-            tool_name: 工具名称
+            tool_name: 工具名称 (fscan, frpc, mimikatz等)
             remote_path: 远程保存路径
             os_type: 操作系统类型
 
         Returns:
             上传命令
         """
-        # 确定工具URL
+        # 确定工具key
         tool_key = f"{tool_name.lower()}_{os_type.lower()}"
-        if tool_key not in self.TOOL_URLS:
-            tool_key = tool_name.lower()
 
-        if tool_key not in self.TOOL_URLS:
-            return {"error": f"未知工具: {tool_name}"}
+        # 获取工具本地路径
+        local_path = self.TOOL_PATHS.get(tool_key)
+        if not local_path:
+            # 尝试直接使用tool_name
+            local_path = self.TOOL_PATHS.get(tool_name.lower())
 
-        tool_url = self.TOOL_URLS[tool_key]
+        if not local_path:
+            return {"error": f"未知工具: {tool_name}", "available_tools": list(self.TOOL_PATHS.keys())}
 
-        # 如果有自定义HTTP服务器，替换URL
+        # 生成下载URL
         if self.http_server:
-            file_name = tool_url.split('/')[-1]
-            tool_url = f"{self.http_server}/{file_name}"
+            # 使用本机HTTP服务器 (HTTP服务器根目录为/opt)
+            # URL映射规则: /opt/xxx -> http://server/xxx
+            # /opt/tools/windows/xxx.exe -> http://server/tools/windows/xxx.exe
+            # /opt/tools/potato/xxx.exe -> http://server/tools/potato/xxx.exe
+            # /opt/tools/x64/xxx.exe -> http://server/tools/x64/xxx.exe
+            # /opt/frp/frpc -> http://server/frp/frpc
+            if local_path.startswith("/opt/"):
+                # 直接去掉/opt前缀
+                tool_url = f"{self.http_server}{local_path[4:]}"
+            else:
+                # Linux工具在系统PATH，需要从其他位置获取
+                file_name = os.path.basename(local_path)
+                tool_url = f"{self.http_server}/linux/{file_name}"
+        else:
+            # 使用GitHub备用链接
+            tool_url = self.TOOL_URLS.get(tool_key, self.TOOL_URLS.get(tool_name.lower(), ""))
+            if not tool_url:
+                return {"error": f"无可用的下载链接: {tool_name}", "local_path": local_path}
 
         commands = self.generate_upload_commands(tool_url, remote_path, os_type)
 
         result = {
             "tool": tool_name,
+            "local_path": local_path,
             "url": tool_url,
             "remote_path": remote_path,
             "commands": commands,
@@ -298,11 +335,16 @@ def list_available_tools() -> Dict[str, List[str]]:
     }
 
     base_dir = "/opt/tools"
-    for category in ["potato", "ad", "linux", "windows"]:
+    for category in ["potato", "ad", "windows"]:
         category_dir = os.path.join(base_dir, category)
         if os.path.exists(category_dir):
             for f in os.listdir(category_dir):
                 tools[category].append(f)
+
+    # Linux工具目录 (符号链接)
+    linux_dir = "/opt/linux"
+    if os.path.exists(linux_dir):
+        tools["linux"] = [f for f in os.listdir(linux_dir) if os.path.isfile(os.path.join(linux_dir, f)) or os.path.islink(os.path.join(linux_dir, f))]
 
     # frp 目录
     frp_dir = "/opt/frp"

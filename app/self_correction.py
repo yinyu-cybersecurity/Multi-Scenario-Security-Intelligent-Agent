@@ -519,7 +519,7 @@ class SelfCorrectionManager:
 
         failure_score = state.get("failure_weighted_score", 0)
         if failure_score > 15:
-            return "hitl"  # 人工介入
+            return "mode_switch:innovate"  # 创新模式（最终尝试）
 
         if failure_score > 10:
             return "mode_switch:innovate"  # 创新模式

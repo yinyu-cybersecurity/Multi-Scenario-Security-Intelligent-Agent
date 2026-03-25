@@ -57,7 +57,7 @@ class PHPFilterChainTool(CommandLineTool):
         cmd = [self.cmd_path, self.script_path, "--chain", code]
 
         try:
-            raw_result = self._run_command(cmd, timeout=self.timeout)
+            raw_result = self._run_command(cmd, timeout=self.timeout, stream_output=True)
             stdout = raw_result.get("stdout", "")
             stderr = raw_result.get("stderr", "")
 

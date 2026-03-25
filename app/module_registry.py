@@ -65,6 +65,7 @@ class ModuleRegistry:
             'lateral_move': cls._import_node('internal_network.nodes', 'lateral_move_node'),
             'privilege_escalation': cls._import_node('internal_network.nodes', 'privilege_escalation_node'),
             'credential_gather': cls._import_node('internal_network.nodes', 'credential_gather_node'),
+            'flag_search': cls._import_node('internal_network.nodes', 'flag_search_node'),
         })
 
         # 后渗透模块
@@ -100,15 +101,15 @@ class ModuleRegistry:
 
         # 性能监控模块 (在app目录下)
         cls.register('performance', lambda: {
-            'performance_monitor': cls._import_attr('app.performance', 'performance_monitor'),
-            'get_system_status': cls._import_attr('app.performance', 'get_system_status'),
-            'ParallelExecutor': cls._import_attr('app.performance', 'ParallelExecutor'),
+            'performance_monitor': cls._import_attr('performance', 'performance_monitor'),
+            'get_system_status': cls._import_attr('performance', 'get_system_status'),
+            'ParallelExecutor': cls._import_attr('performance', 'ParallelExecutor'),
         })
 
         # 自我纠错模块 (在app目录下)
         cls.register('self_correction', lambda: {
-            'self_correction_manager': cls._import_attr('app.self_correction', 'self_correction_manager'),
-            'ErrorSeverity': cls._import_attr('app.self_correction', 'ErrorSeverity'),
+            'self_correction_manager': cls._import_attr('self_correction', 'self_correction_manager'),
+            'ErrorSeverity': cls._import_attr('self_correction', 'ErrorSeverity'),
         })
 
     @classmethod

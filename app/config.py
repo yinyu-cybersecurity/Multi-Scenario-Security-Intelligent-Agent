@@ -72,11 +72,11 @@ class Config:
     # 单个节点最大执行时间（秒）- 内网渗透可能很慢
     NODE_TIMEOUT: int = 1800  # 30分钟
 
-    # 单个任务最大执行时间（秒）- Web CTF
-    TASK_TIMEOUT: int = 1200  # 20分钟
+    # 单个任务最大执行时间（秒）- Web CTF / 外网打点
+    TASK_TIMEOUT: int = 1800  # 30分钟 (外网打点)
 
     # 内网渗透任务最大执行时间（秒）
-    INTERNAL_TASK_TIMEOUT: int = 3000  # 50分钟
+    INTERNAL_TASK_TIMEOUT: int = 3000  # 50分钟 (内网渗透)
 
     # AI决策间隔（秒）- 每隔多久问一次AI是否继续
     DECISION_INTERVAL: int = 360  # 6分钟
@@ -104,7 +104,7 @@ class Config:
     # 失败分达到此值进入创新模式
     FAILURE_SCORE_FOR_INNOVATE: float = 10.0
 
-    # 失败分达到此值放弃任务（原HITL阈值）
+    # 失败分达到此值放弃任务
     FAILURE_SCORE_ABANDON: float = 15.0
 
     # 规则引擎连续多少次没匹配到漏洞，强制进入创新模式

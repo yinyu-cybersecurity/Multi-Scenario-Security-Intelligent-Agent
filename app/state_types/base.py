@@ -54,7 +54,7 @@ class BaseCTFState(TypedDict):
     execution_steps: int
 
     # 当前工作模式
-    current_mode: Literal['exploit', 'explore', 'innovate', 'end', 'hitl']
+    current_mode: Literal['exploit', 'explore', 'innovate', 'end']
 
     # 失败加权分数（用于模式切换决策）
     failure_weighted_score: float

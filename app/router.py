@@ -112,7 +112,7 @@ def route_mode(state: CTFState, current_node: str) -> str:
         current_node: 当前节点名（用于死循环检测）
 
     Returns:
-        目标节点名称: 'attacker'/'explorer'/'innovator'/'hitl'/END
+        目标节点名称: 'attacker'/'explorer'/'innovator'/END
     """
     next_node = state.get("current_mode", "exploit")
 
@@ -179,9 +179,11 @@ def route_verify(state: CTFState, current_node: str) -> str:
     """
     验证后路由 [P3优化版] - 成功则进化，失败则回到决策
 
+    新目标: 找到flag后继续内网渗透，攻陷所有主机
+
     优先级：
-        1. 找到flag -> evolution（最高优先级）
-        2. 获取shell -> post_exploit（后渗透处理）
+        1. 获取shell -> post_exploit（后渗透处理）
+        2. 找到flag -> 继续内网渗透（不再结束）
         3. 失败分过高 -> mode_manager (自动进入创新模式)
         4. 正常情况 -> mode_manager
 
@@ -192,31 +194,36 @@ def route_verify(state: CTFState, current_node: str) -> str:
     Returns:
         "evolution" / "post_exploit" / "mode_manager"
     """
-    # 1. 最高优先级：找到flag
-    if state.get("found_flag"):
-        logger.info("成功找到flag，进入进化流程")
-        _route_guard.reset_loop_count("verifier")  # 重置计数
-        return "evolution"
-
-    # 2. 检查是否获取了shell且需要后渗透处理
+    # 1. 检查是否获取了shell且需要后渗透处理
     shell_session = state.get("shell_session")
     post_exploit_status = state.get("post_exploit_status", "")
 
-    if shell_session and post_exploit_status in ["ready_for_internal", "web_only"]:
+    # 如果有shell会话且还没执行过后渗透处理，进入post_exploit
+    if shell_session and not post_exploit_status:
         logger.info("检测到shell会话，进入后渗透处理")
         return "post_exploit"
 
-    # 如果后渗透已完成且发现内网，进入内网模式
-    if post_exploit_status == "ready_for_internal" and state.get("internal_network_range"):
-        logger.info("后渗透完成，进入内网渗透")
-        return "internal_recon"
+    # 2. 检查是否找到flag
+    found_flags = state.get("found_flags") or []
+    if state.get("found_flag") or found_flags:
+        # 如果是Web CTF模式，找到flag后结束
+        if not state.get("internal_mode"):
+            logger.info("Web CTF模式下找到flag，进入进化流程")
+            _route_guard.reset_loop_count("verifier")
+            return "evolution"
+        # 如果是内网渗透模式，继续攻陷其他主机
+        else:
+            logger.info(f"内网渗透模式下找到{len(found_flags)}个flag，继续攻陷其他主机")
+            return "mode_manager"
 
     # 3. 如果步数太多但失败分不高，强制加一个失败分触发探索
-    steps = state.get("execution_steps", 0)
-    score = state.get("failure_weighted_score", 0)
-    if steps > config.MAX_TOTAL_ROUNDS * 0.7 and score < config.FAILURE_SCORE_FOR_EXPLORE:
-        logger.debug(f"步数 {steps} 已较多但失败分低，强制加0.5分触发探索")
-        state["failure_weighted_score"] = score + 0.5
+    # 仅对Web CTF模式生效，内网渗透不受此限制
+    if not state.get("internal_mode", False):
+        steps = state.get("execution_steps", 0)
+        score = state.get("failure_weighted_score", 0)
+        if steps > config.MAX_TOTAL_ROUNDS * 0.7 and score < config.FAILURE_SCORE_FOR_EXPLORE:
+            logger.debug(f"步数 {steps} 已较多但失败分低，强制加0.5分触发探索")
+            state["failure_weighted_score"] = score + 0.5
 
     # 4. 正常回到mode_manager
     return "mode_manager"
@@ -299,6 +306,9 @@ def _ai_route_internal_decision(context: Dict, state: CTFState) -> str:
 
     根据当前态势选择最优节点
     """
+    # 获取当前攻击阶段
+    current_phase = state.get("current_compromise_phase", "")
+
     # 规则优先 (快速响应常见情况)
     # 规则1: 如果还没有侦察过，先侦察
     if context["internal_hosts_count"] == 0:
@@ -315,6 +325,37 @@ def _ai_route_internal_decision(context: Dict, state: CTFState) -> str:
         print(f"[InternalRoute] 隧道搭建阶段")
         return "setup_tunnel"
 
+    # 规则4: 根据当前阶段决定下一步
+    if current_phase == "flag_search":
+        print(f"[InternalRoute] Flag搜索阶段")
+        return "flag_search"
+
+    if current_phase == "complete":
+        print(f"[InternalRoute] 内网渗透完成")
+        return "mode_manager"
+
+    # 规则5: 如果有活跃会话但还没搜索flag，先搜索flag
+    active_sessions = state.get("active_sessions") or []
+    compromised_hosts = state.get("compromised_hosts") or []
+    found_flags = state.get("found_flags") or []
+
+    if active_sessions and len(found_flags) == 0:
+        # 刚获取shell，先搜索flag
+        print(f"[InternalRoute] 有活跃会话，先搜索Flag")
+        return "flag_search"
+
+    # 规则6: 检查是否所有主机都已攻陷
+    internal_hosts = state.get("internal_hosts") or []
+    session_hosts = [s.get("host") for s in active_sessions if s.get("host")]
+    all_compromised = set(compromised_hosts + session_hosts)
+
+    unexplored_count = sum(1 for h in internal_hosts
+                          if isinstance(h, dict) and h.get("ip") and h.get("ip") not in all_compromised)
+
+    if unexplored_count > 0 and context["credentials_count"] > 0:
+        print(f"[InternalRoute] 还有{unexplored_count}台主机未攻陷，继续横向移动")
+        return "lateral_move"
+
     # 复杂情况交给AI决策
     prompt = f"""
 分析内网渗透态势，决定下一步行动。
@@ -323,6 +364,9 @@ def _ai_route_internal_decision(context: Dict, state: CTFState) -> str:
 - 发现主机: {context['internal_hosts_count']} 台
 - 已获取凭据: {context['credentials_count']} 组
 - 活跃会话: {context['active_sessions_count']} 个
+- 已发现Flag: {len(found_flags)} 个
+- 已攻陷主机: {len(all_compromised)} 台
+- 未攻陷主机: {unexplored_count} 台
 - 工具上传: {context['upload_status']}
 - 隧道状态: {context['tunnel_status']}
 - 当前目标: {context['current_target'] or '未确定'}
@@ -332,6 +376,12 @@ def _ai_route_internal_decision(context: Dict, state: CTFState) -> str:
 - credential_gather: 收集凭据
 - lateral_move: 横向移动到其他主机
 - privilege_escalation: 提升当前会话权限
+- flag_search: 在已攻陷主机上搜索Flag
+
+## 目标
+1. 首先搜索Flag
+2. 然后攻陷所有内网主机
+3. 在每台主机的管理员文件夹中寻找Flag
 
 ## 要求
 1. 选择最优下一步
@@ -356,11 +406,11 @@ def _ai_route_internal_decision(context: Dict, state: CTFState) -> str:
             response = response.split("```json")[1].split("```")[0]
 
         result = json.loads(response.strip())
-        next_node = result.get("next_node", "internal_recon")
+        next_node = result.get("next_node", "flag_search")
         print(f"[InternalRoute] AI决策: {next_node} - {result.get('reason', '')}")
 
         # 验证节点名称
-        valid_nodes = ["internal_recon", "credential_gather", "lateral_move", "privilege_escalation", "upload_tools", "setup_tunnel"]
+        valid_nodes = ["internal_recon", "credential_gather", "lateral_move", "privilege_escalation", "upload_tools", "setup_tunnel", "flag_search"]
         if next_node in valid_nodes:
             return next_node
 
@@ -371,11 +421,11 @@ def _ai_route_internal_decision(context: Dict, state: CTFState) -> str:
     if context["credentials_count"] < 2 and context["current_target"]:
         return "credential_gather"
 
-    if context["credentials_count"] > 0 and context["internal_hosts_count"] > 0:
+    if context["credentials_count"] > 0 and unexplored_count > 0:
         return "lateral_move"
 
     if context["active_sessions_count"] > 0:
-        return "privilege_escalation"
+        return "flag_search"
 
     return "internal_recon"
 
@@ -384,7 +434,8 @@ def route_internal_to_web(state: CTFState) -> str:
     """
     内网到Web模式的切换判断
 
-    当内网渗透完成或需要回到Web攻击时调用
+    新目标: 攻陷所有内网主机，在每台主机上搜索Flag
+    结束条件: 50分钟超时 或 所有主机已攻陷
 
     Args:
         state: 当前状态
@@ -396,18 +447,29 @@ def route_internal_to_web(state: CTFState) -> str:
     if not state.get("internal_mode", False):
         return "web"
 
-    # 如果找到了最终目标（如域控被攻陷）
-    active_sessions = state.get("active_sessions", [])
-    for session in active_sessions:
-        if session.get("is_dc", False) and session.get("is_admin", False):
-            print(f"[InternalRoute] 域控已被攻陷，完成内网渗透")
-            return "web"
-
-    # 如果步数过多，考虑回到Web模式
-    steps = state.get("execution_steps", 0)
-    if steps > config.MAX_TOTAL_ROUNDS * 0.8:
-        print(f"[InternalRoute] 步数过多，切换回Web模式")
+    # 检查当前阶段
+    current_phase = state.get("current_compromise_phase", "")
+    if current_phase == "complete":
+        print(f"[InternalRoute] 内网渗透已完成")
         return "web"
+
+    # 检查是否所有主机都已攻陷
+    internal_hosts = state.get("internal_hosts") or []
+    compromised_hosts = state.get("compromised_hosts") or []
+    active_sessions = state.get("active_sessions") or []
+
+    session_hosts = [s.get("host") for s in active_sessions if s.get("host")]
+    all_compromised = set(compromised_hosts + session_hosts)
+
+    unexplored = [h for h in internal_hosts
+                  if isinstance(h, dict) and h.get("ip") and h.get("ip") not in all_compromised]
+
+    if not unexplored and internal_hosts:
+        print(f"[InternalRoute] 所有主机已攻陷，内网渗透完成")
+        return "web"
+
+    # 内网渗透只按时间超时结束，不受步数限制
+    # 移除了 MAX_TOTAL_ROUNDS 检查，因为内网渗透有自己的 INTERNAL_TASK_TIMEOUT
 
     return "internal"
 

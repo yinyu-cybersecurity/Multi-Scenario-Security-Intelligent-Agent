@@ -224,6 +224,7 @@ if INTERNAL_NETWORK_AVAILABLE:
     lateral_move_node = ModuleRegistry.get_node('internal_network', 'lateral_move')
     privilege_escalation_node = ModuleRegistry.get_node('internal_network', 'privilege_escalation')
     credential_gather_node = ModuleRegistry.get_node('internal_network', 'credential_gather')
+    flag_search_node = ModuleRegistry.get_node('internal_network', 'flag_search')
     try:
         from internal_network.orchestrator import InternalNetworkOrchestrator
     except ImportError:
@@ -640,17 +641,29 @@ def recon_node(state: CTFState) -> Dict:
                 })
                 if fscan_result and fscan_result.get("result", {}).get("success"):
                     result_data = fscan_result.get("result", {})
-                    # fscan 返回 hosts 和 vulnerabilities
+                    # fscan 返回 hosts 和 vulnerabilities (由 AI 解析)
                     hosts = result_data.get("hosts", [])
                     vulns = result_data.get("vulnerabilities", [])
                     # 合并为findings格式
                     findings = []
                     for v in vulns:
+                        # 兼容两种格式：AI解析返回 target，正则解析返回 ip
+                        vuln_target = v.get("target") or v.get("ip", target_ip)
+                        # 提取端口（可能是数字或 "ip:port" 格式）
+                        vuln_port = v.get("port", "?")
+                        if isinstance(vuln_target, str) and ":" in vuln_target:
+                            parts = vuln_target.split(":")
+                            vuln_target = parts[0]
+                            vuln_port = parts[1] if len(parts) > 1 else vuln_port
+
                         findings.append({
                             "type": v.get("type", "vulnerability"),
-                            "target": v.get("ip", target_ip),
-                            "port": v.get("port", "?"),
-                            "info": v.get("info", "")
+                            "target": vuln_target,
+                            "port": vuln_port,
+                            "info": v.get("info", v.get("description", "")),
+                            "severity": v.get("severity", "high"),
+                            "poc": v.get("poc", ""),
+                            "cve": v.get("cve", "")
                         })
                     for h in hosts:
                         for p in h.get("ports", []):
@@ -901,6 +914,9 @@ def recon_node(state: CTFState) -> Dict:
     vuln_hints = recon_data.get("vuln_hints", [])
     analyst_intel_parts = []
 
+    # 并行扫描发现的漏洞候选（用于传递给analyst）
+    parallel_scan_vuln_candidates = []
+
     # 处理检测到的框架
     detected_frameworks = baseline.get("detected_frameworks", [])
     if detected_frameworks:
@@ -933,6 +949,24 @@ def recon_node(state: CTFState) -> Dict:
                     analyst_intel_parts.append(f"[并行扫描发现] {agg_result['total_vulns']} 个漏洞! (工具: {', '.join(agg_result['successful_tools'])})")
                     for v in agg_result["vulnerabilities"][:5]:
                         vuln_hints.append(f"{v.get('cve_id', v.get('plugin', v.get('name', '?')))}: {v.get('severity', '?')} [by {v.get('detected_by', '?')}]")
+
+                    # [核心修复] 将扫描发现的漏洞转换为 vuln_candidates 格式
+                    for vuln in agg_result["vulnerabilities"]:
+                        vuln_candidate = {
+                            "type": vuln.get("plugin", vuln.get("type", "cve")),
+                            "location": vuln.get("url", vuln.get("matched_at", http_url)),
+                            "confidence": 0.9 if vuln.get("severity") in ["critical", "high"] else 0.75,
+                            "reason": f"由 {vuln.get('detected_by', '?')} 检测到: {vuln.get('name', vuln.get('description', ''))[:200]}",
+                            "recommended_tools": ["requests"],  # 手工验证
+                            "context": {
+                                "cve_id": vuln.get("cve_id", ""),
+                                "severity": vuln.get("severity", ""),
+                                "template_id": vuln.get("template_id", ""),
+                                "source": vuln.get("detected_by", "")
+                            },
+                            "url": http_url
+                        }
+                        parallel_scan_vuln_candidates.append(vuln_candidate)
 
                 # 同时保留单个工具的详细结果
                 nuclei_result = scan_results.get("nuclei", {})
@@ -1006,6 +1040,9 @@ def recon_node(state: CTFState) -> Dict:
             "evidence": info
         })
 
+    # [核心修复] 合并 fscan 发现和并行扫描发现的漏洞候选
+    all_vuln_candidates = fscan_vuln_candidates + parallel_scan_vuln_candidates
+
     res = {
         "page_features": features,
         "raw_html_snippet": raw_html[:8000],
@@ -1021,8 +1058,17 @@ def recon_node(state: CTFState) -> Dict:
         "focused_scene": focused_scene,
         "scene_attack_attempts": scene_attack_attempts,
         "scene_exhausted": scene_exhausted,
-        "vuln_candidates": fscan_vuln_candidates  # 将 fscan 发现添加到漏洞候选
+        "vuln_candidates": all_vuln_candidates  # 合并所有漏洞候选
     }
+
+    # [关键修复] 如果发现了漏洞，直接添加攻击动作
+    if all_vuln_candidates:
+        log(f"   🎯 发现 {len(all_vuln_candidates)} 个漏洞候选，优先处理")
+        # 将高置信度的漏洞直接加入状态
+        high_confidence_vulns = [v for v in all_vuln_candidates if v.get("confidence", 0) > 0.7]
+        if high_confidence_vulns:
+            res["high_priority_vulns"] = high_confidence_vulns
+
     log_node_data("recon", {"url": url}, res)
     return res
 
@@ -1173,70 +1219,76 @@ def mode_manager_node(state: CTFState) -> Dict:
     """
     模式决策器 - 增强版
 
+    结束条件：只有时间超时
+    - 外网打点：30分钟 (TASK_TIMEOUT)
+    - 内网渗透：50分钟 (INTERNAL_TASK_TIMEOUT)
+
     核心逻辑：
-    1. 如果有明确的聚焦场景（如识别到 Tomcat），优先在该场景内深度挖掘
-    2. 只有当场景穷尽后，才切换到探索模式
-    3. 这样避免"漏扫没结果就放弃已知目标"的问题
+    1. 检查时间超时
+    2. 如果有明确的聚焦场景，优先深度挖掘
+    3. 场景穷尽后切换探索模式
     """
     score = state.get("failure_weighted_score", 0)
     steps = state.get("execution_steps", 0)
     current_url = state.get("current_url")
     node_status = state.get("node_attack_status", {})
+    start_time = state.get("start_time", time.time())
+    internal_mode = state.get("internal_mode", False)
 
     # 获取场景聚焦信息
     focused_scene = state.get("focused_scene", "")
     scene_attack_attempts = state.get("scene_attack_attempts", 0)
     scene_exhausted = state.get("scene_exhausted", False)
 
-    # 0. 尊重上游设置的模式（如 HITL 返回的 end/explore）
-    # 但 innovate 模式是"一次性"的，innovator 执行后应该重置
+    # 0. 尊重上游设置的模式
     preset_mode = state.get("current_mode")
     if preset_mode == "end":
         log(f"📍 保持预设模式: end")
         return {"current_mode": "end"}
     elif preset_mode == "explore":
-        # explore 可能需要多轮，保持
         log(f"📍 保持预设模式: explore")
         return {"current_mode": "explore"}
     elif preset_mode == "innovate":
-        # [关键修复] innovate 是一次性的，innovator 已执行过，重置分数并切回 exploit
         log(f"📍 创新模式已执行，重置分数并切回攻击模式")
         return {
             "current_mode": "exploit",
-            "failure_weighted_score": 0,  # 重置分数，给新规则机会
+            "failure_weighted_score": 0,
             "current_round": state.get("current_round", 0) + 1
         }
 
-    # 1. 检查是否结束
-    if steps >= config.MAX_TOTAL_ROUNDS:
+    # 1. [唯一结束条件] 时间超时检查
+    elapsed_time = time.time() - start_time
+    timeout = config.INTERNAL_TASK_TIMEOUT if internal_mode else config.TASK_TIMEOUT
+
+    if elapsed_time >= timeout:
+        log(f"⏰ 任务超时: {elapsed_time/60:.1f}分钟 >= {timeout/60:.0f}分钟")
         return {"current_mode": "end"}
 
-    # 2. 场景聚焦判断 - 核心逻辑
-    # 如果有明确的聚焦场景，且未穷尽，继续在该场景内攻击
-    MAX_SCENE_ATTEMPTS = 5  # 每个场景最多尝试5种不同攻击方式
+    # 剩余时间提醒
+    remaining = timeout - elapsed_time
+    if remaining < 300:  # 剩余不足5分钟
+        log(f"⏰ 剩余时间: {remaining/60:.1f}分钟")
+
+    # 2. 场景聚焦判断
+    MAX_SCENE_ATTEMPTS = 5
 
     if focused_scene and not scene_exhausted:
         if scene_attack_attempts < MAX_SCENE_ATTEMPTS:
             log(f"🎯 聚焦场景 [{focused_scene}] 继续攻击 ({scene_attack_attempts}/{MAX_SCENE_ATTEMPTS})")
             return {"current_mode": "exploit"}
         else:
-            # 场景已穷尽
             log(f"🔄 场景 [{focused_scene}] 已穷尽 {scene_attack_attempts} 次攻击，切换探索模式")
             return {
                 "current_mode": "explore",
                 "scene_exhausted": True
             }
 
-    # 3. 检查是否需要创新模式（原HITL触发条件，改为自动进入innovate）
-    # [重要] 头脑风暴只在Web CTF模式下触发，内网渗透不触发
-    internal_mode = state.get("internal_mode", False)
-    if not internal_mode and (steps >= config.MAX_STEPS_BEFORE_HITL or score >= config.HITL_FAILURE_SCORE):
+    # 3. 创新模式检查 (仅Web CTF)
+    if not internal_mode and (steps >= config.MAX_STEPS_BEFORE_INNOVATE or score >= config.FAILURE_SCORE_FOR_INNOVATE):
         log(f"💡 自动进入创新模式 (步数:{steps}, 失败分:{score:.1f})")
         return {"current_mode": "innovate"}
     elif internal_mode:
-        # 内网模式下不触发头脑风暴，继续内网渗透
-        # 内网渗透只有唯一结束条件：50分钟超时（由NODE_TIMEOUT控制）
-        log(f"🌐 内网模式，跳过头脑风暴，继续渗透 (步数:{steps}, 失败分:{score:.1f})")
+        log(f"🌐 内网模式，继续渗透 (已运行:{elapsed_time/60:.1f}分钟, 失败分:{score:.1f})")
 
     # 3. 节点状态管理 - 智能放弃判断
     # 不再仅凭 attempt_count 判断，而是看最近的攻击是否有进展
@@ -1256,11 +1308,12 @@ def mode_manager_node(state: CTFState) -> Dict:
                 log(f"   📊 节点仍有进展（成功率 {success_rate*100:.0f}%），继续攻击")
 
     # 4. 模式切换 - 简化阈值
-    # [重要] 头脑风暴只在Web CTF模式下触发
+    # [重要] 头脑风暴和探索模式只在Web CTF模式下触发
+    # 内网渗透只按时间超时结束，不受失败分影响
     if score >= config.FAILURE_SCORE_FOR_INNOVATE and not internal_mode:
         log(f"💡 创新模式 (失败分:{score:.1f})")
         return {"current_mode": "innovate"}
-    elif score >= config.FAILURE_SCORE_FOR_EXPLORE:
+    elif score >= config.FAILURE_SCORE_FOR_EXPLORE and not internal_mode:
         log(f"🗺️ 探索模式 (失败分:{score:.1f})")
         return {"current_mode": "explore"}
     else:
@@ -1499,8 +1552,14 @@ def execute_single_attack(action: Dict, current_url: str, page_history: Dict) ->
 def attacker_node(state: CTFState) -> Dict:
     """
     [攻击兵] (同步并发执行优化版)
+
+    攻击策略:
+    1. 首先使用nuclei/xray等工具批量验证漏洞
+    2. 然后使用手工payload进行攻击
+    3. 综合两种方式的结果
     """
     current_url = state.get("current_url")
+    target_url = state.get("target_url", current_url)  # 原始目标URL
     log(f"⚔️ [攻击] 目标: {current_url}")
 
     # 获取拓扑优先级
@@ -1508,9 +1567,25 @@ def attacker_node(state: CTFState) -> Dict:
     priority_dict = {url: score for url, score in topology_priority}
     current_priority = priority_dict.get(current_url, 0.5)
 
-    # [核心修复] 只攻击匹配当前 URL 的候选点
+    # [核心修复] 获取所有漏洞候选，不再仅限当前URL
+    # 因为fscan扫描出的漏洞URL可能与current_url不同
     all_candidates = state.get("vuln_candidates", [])
-    candidates = [c for c in all_candidates if c.get("url") == current_url]
+
+    # 优先处理当前URL的候选，但也保留其他候选
+    candidates_for_current = [c for c in all_candidates if c.get("url") == current_url]
+    other_candidates = [c for c in all_candidates if c.get("url") != current_url and c.get("url")]
+
+    # 如果当前URL没有候选，但有其他URL的候选，使用其他候选
+    if not candidates_for_current and other_candidates:
+        log(f"   📌 当前URL无候选，使用其他URL的漏洞候选 ({len(other_candidates)}个)")
+        candidates = other_candidates[:10]
+    elif candidates_for_current:
+        # 优先使用当前URL的候选，补充其他URL的高置信度候选
+        high_conf_other = [c for c in other_candidates if c.get("confidence", 0) >= 0.7][:3]
+        candidates = candidates_for_current + high_conf_other
+    else:
+        # 都没有，使用所有候选
+        candidates = all_candidates
 
     # 按拓扑优先级 + 置信度排序
     if candidates and priority_dict:
@@ -1541,6 +1616,83 @@ def attacker_node(state: CTFState) -> Dict:
             "current_mode": "explore",  # 直接设置模式
             "execution_steps": state.get("execution_steps", 0) + 1
         }
+
+    # =====================================================
+    # [新增] 阶段1: 使用nuclei/xray进行批量漏洞验证
+    # =====================================================
+    vuln_verification_results = []
+    verified_vulns = []
+
+    # 提取需要验证的目标URL
+    target_urls = set()
+    for c in candidates[:5]:  # 最多验证前5个候选
+        c_url = c.get("url") or c.get("target") or current_url
+        if c_url:
+            target_urls.add(c_url)
+    if current_url:
+        target_urls.add(current_url)
+
+    log(f"   🔬 开始并行漏洞验证 (nuclei/xray)...")
+
+    # 并行执行nuclei和xray扫描
+    for t_url in list(target_urls)[:3]:  # 限制目标数量
+        # Nuclei快速扫描
+        try:
+            nuclei_result = ToolRegistry.execute_cached(
+                "nuclei",
+                t_url,
+                {"target": t_url, "severity": "high", "tags": "rce,sqli,xss,lfi"}
+            )
+            if nuclei_result and nuclei_result.get("result", {}).get("vulnerable"):
+                vulns = nuclei_result["result"].get("vulnerabilities", [])
+                for v in vulns:
+                    verified_vulns.append({
+                        "source": "nuclei",
+                        "url": t_url,
+                        "vuln": v,
+                        "exploit_hint": v.get("curl_command", "")
+                    })
+                log(f"   ✅ Nuclei发现 {len(vulns)} 个漏洞")
+        except Exception as e:
+            log(f"   ⚠️ Nuclei扫描异常: {e}")
+
+        # Xray扫描 (如果可用)
+        try:
+            xray_result = ToolRegistry.execute_cached(
+                "xray",
+                t_url,
+                {"target": t_url, "mode": "webscan"}
+            )
+            if xray_result and xray_result.get("result", {}).get("vulnerable"):
+                vulns = xray_result["result"].get("vulnerabilities", [])
+                for v in vulns:
+                    verified_vulns.append({
+                        "source": "xray",
+                        "url": t_url,
+                        "vuln": v,
+                        "exploit_hint": v.get("request", "")[:500]
+                    })
+                log(f"   ✅ Xray发现 {len(vulns)} 个漏洞")
+        except Exception as e:
+            log(f"   ⚠️ Xray扫描异常: {e}")
+
+    # 如果工具验证发现了漏洞，将其加入候选
+    if verified_vulns:
+        log(f"   🎯 工具验证发现 {len(verified_vulns)} 个漏洞，合并到攻击计划")
+        for vv in verified_vulns:
+            # 将验证结果转换为候选格式
+            candidates.append({
+                "type": vv["vuln"].get("plugin", vv["vuln"].get("name", "verified_vuln")),
+                "url": vv["url"],
+                "confidence": 0.75,  # 工具验证的置信度（下调自0.9）
+                "source": vv["source"],
+                "exploit_hint": vv.get("exploit_hint", ""),
+                "verified": True
+            })
+
+    # =====================================================
+    # 阶段2: LLM生成手工攻击Payload
+    # =====================================================
 
     # 1. 扩容动作数量：实现饱和测试（高优先级目标增加动作数量）
     # 动态获取所有注册工具的详细定义（含参数规范）
@@ -2329,6 +2481,7 @@ if INTERNAL_NETWORK_AVAILABLE:
     workflow.add_node("lateral_move", lateral_move_node)  # type: ignore # 横向移动
     workflow.add_node("privilege_escalation", privilege_escalation_node)  # type: ignore # 权限提升
     workflow.add_node("credential_gather", credential_gather_node)  # type: ignore # 凭据收集
+    workflow.add_node("flag_search", flag_search_node)  # type: ignore # Flag搜索节点
     workflow.add_node("post_exploit", post_exploit_node)  # type: ignore # 后渗透节点
     workflow.add_node("upload_tools", upload_tools_node)  # type: ignore # 工具上传节点
     workflow.add_node("setup_tunnel", setup_tunnel_node)  # type: ignore # 隧道搭建节点
@@ -2499,6 +2652,7 @@ if INTERNAL_NETWORK_AVAILABLE:
             "credential_gather": "credential_gather",
             "lateral_move": "lateral_move",
             "privilege_escalation": "privilege_escalation",
+            "flag_search": "flag_search",
             "upload_tools": "upload_tools",
             "setup_tunnel": "setup_tunnel",
             "mode_manager": "mode_manager"
@@ -2514,6 +2668,7 @@ if INTERNAL_NETWORK_AVAILABLE:
             "credential_gather": "credential_gather",
             "lateral_move": "lateral_move",
             "privilege_escalation": "privilege_escalation",
+            "flag_search": "flag_search",
             "upload_tools": "upload_tools",
             "setup_tunnel": "setup_tunnel",
             "mode_manager": "mode_manager"
@@ -2529,6 +2684,7 @@ if INTERNAL_NETWORK_AVAILABLE:
             "credential_gather": "credential_gather",
             "lateral_move": "lateral_move",
             "privilege_escalation": "privilege_escalation",
+            "flag_search": "flag_search",
             "upload_tools": "upload_tools",
             "setup_tunnel": "setup_tunnel",
             "mode_manager": "mode_manager"
@@ -2544,6 +2700,7 @@ if INTERNAL_NETWORK_AVAILABLE:
             "credential_gather": "credential_gather",
             "lateral_move": "lateral_move",
             "privilege_escalation": "privilege_escalation",
+            "flag_search": "flag_search",
             "upload_tools": "upload_tools",
             "setup_tunnel": "setup_tunnel",
             "mode_manager": "mode_manager"
@@ -2579,6 +2736,22 @@ if INTERNAL_NETWORK_AVAILABLE:
         lambda state: route_post_exploit(state, "setup_tunnel"),
         {
             "internal_recon": "internal_recon",
+            "mode_manager": "mode_manager"
+        }
+    )
+
+    # Flag搜索后路由
+    workflow.add_conditional_edges(
+        "flag_search",
+        lambda state: route_internal_mode(state, "flag_search"),
+        {
+            "internal_recon": "internal_recon",
+            "credential_gather": "credential_gather",
+            "lateral_move": "lateral_move",
+            "privilege_escalation": "privilege_escalation",
+            "flag_search": "flag_search",
+            "upload_tools": "upload_tools",
+            "setup_tunnel": "setup_tunnel",
             "mode_manager": "mode_manager"
         }
     )
@@ -2809,6 +2982,71 @@ def system_check():
 
     log("[System] 自检完成。\n")
 
+def _start_internal_network_services():
+    """
+    启动内网渗透基础设施
+
+    启动服务:
+    1. HTTP服务器 - 用于工具分发
+    2. frps服务 - 用于接收反向隧道
+    """
+    log("[InternalNet] 启动内网渗透基础设施...")
+
+    # 1. 检查并启动HTTP服务器
+    if config.LOCAL_PUBLIC_IP:
+        try:
+            from remote_executor.http_server import start_http_server, check_tools_directory
+
+            # 检查工具目录
+            tools_status = check_tools_directory()
+            log(f"   📁 工具目录状态: {sum(s.get('count', 0) for s in tools_status.values())} 个文件")
+
+            # 启动HTTP服务器 (根目录为/opt，包含tools、frp、linux子目录)
+            http_thread = start_http_server(
+                port=config.HTTP_SERVER_PORT,
+                directory="/opt",  # HTTP服务器根目录，提供tools/frp/linux访问
+                daemon=True
+            )
+
+            if http_thread:
+                log(f"   ✅ HTTP服务器已启动: {config.HTTP_SERVER}")
+            else:
+                log(f"   ⚠️ HTTP服务器启动失败或端口被占用")
+
+        except ImportError:
+            log("   ⚠️ HTTP服务器模块未加载")
+        except Exception as e:
+            log(f"   ⚠️ HTTP服务器启动异常: {e}")
+
+        # 2. 检查并启动frps
+        try:
+            from remote_executor.tunnel_manager import start_local_frps, check_frps_status
+
+            # 检查frps是否已运行
+            if check_frps_status(config.FRP_SERVER_PORT):
+                log(f"   ✅ frps已在运行: 端口 {config.FRP_SERVER_PORT}")
+            else:
+                # 启动frps
+                frps_process = start_local_frps(
+                    port=config.FRP_SERVER_PORT,
+                    frp_dir=config.FRP_DIR
+                )
+
+                if frps_process:
+                    log(f"   ✅ frps已启动: 端口 {config.FRP_SERVER_PORT}")
+                else:
+                    log(f"   ⚠️ frps启动失败，请检查 {config.FRP_DIR}")
+
+        except ImportError:
+            log("   ⚠️ 隧道管理模块未加载")
+        except Exception as e:
+            log(f"   ⚠️ frps启动异常: {e}")
+    else:
+        log("   ⚠️ LOCAL_PUBLIC_IP未配置，内网渗透功能受限")
+        log("   💡 请在config.yaml中设置LOCAL_PUBLIC_IP以启用完整功能")
+
+    log("[InternalNet] 基础设施启动完成")
+
 def main():
     """主运行函数
 
@@ -2831,6 +3069,11 @@ def main():
 
     # [清理] 启动时清理过期缓存
     page_diff_manager.cleanup_cache(max_age_seconds=86400) # 保留24小时
+
+    # =========================================================================
+    # [新增] 启动内网渗透基础设施
+    # =========================================================================
+    _start_internal_network_services()
 
     # 执行系统自检 (除非指定了 -skip)
     if args.skip:

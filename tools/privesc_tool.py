@@ -292,7 +292,8 @@ class PrivEscTool(CommandLineTool):
             try:
                 result = self._run_command(
                     [binary_path] + command.split()[1:],
-                    timeout=self.timeout
+                    timeout=self.timeout,
+                    stream_output=True
                 )
                 return {
                     "success": result.get("success", False),
@@ -311,7 +312,7 @@ class PrivEscTool(CommandLineTool):
             command = self.LINUX_METHODS[method]["command"]
 
             try:
-                result = self._run_command(command, timeout=self.timeout, shell=True)
+                result = self._run_command(command.split(), timeout=self.timeout, stream_output=True)
                 output = result.get("stdout", "")
 
                 # 解析SUID扫描结果

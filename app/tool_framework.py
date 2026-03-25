@@ -149,13 +149,14 @@ class CommandLineTool(CTFTool):
         self.cmd_path = cmd_path
         self.timeout = 300  # 默认 5 分钟超时，适配大型扫描工具
 
-    def _run_command(self, cmd: List[str], timeout: Optional[int] = None) -> Dict:
+    def _run_command(self, cmd: List[str], timeout: Optional[int] = None, stream_output: bool = True) -> Dict:
         """
         统一执行系统命令并捕获输出
 
         增强功能:
         - 使用进程组，确保超时时杀死所有子进程
         - 统一返回格式，包含 success 和 error 字段
+        - 支持实时流输出到控制台
         """
         run_timeout = timeout or self.timeout
         process = None
@@ -172,6 +173,109 @@ class CommandLineTool(CTFTool):
                 start_new_session=True  # 创建新进程组
             )
 
+            # 实时流输出模式
+            if stream_output:
+                import threading
+                import queue
+
+                output_queue = queue.Queue()
+                stdout_lines = []
+                stderr_lines = []
+                timed_out = False
+
+                def read_stream(stream, stream_type):
+                    """读取流并放入队列"""
+                    try:
+                        for line in iter(stream.readline, ''):
+                            if line:
+                                output_queue.put((stream_type, line.rstrip('\n')))
+                                if stream_type == 'stdout':
+                                    stdout_lines.append(line)
+                                else:
+                                    stderr_lines.append(line)
+                    except Exception:
+                        pass
+                    finally:
+                        stream.close()
+
+                # 启动线程读取stdout和stderr
+                stdout_thread = threading.Thread(target=read_stream, args=(process.stdout, 'stdout'))
+                stderr_thread = threading.Thread(target=read_stream, args=(process.stderr, 'stderr'))
+                stdout_thread.daemon = True
+                stderr_thread.daemon = True
+                stdout_thread.start()
+                stderr_thread.start()
+
+                # 实时打印输出
+                start_time = time.time()
+                while True:
+                    # 检查超时（优先检查）
+                    if time.time() - start_time > run_timeout:
+                        timed_out = True
+                        break
+
+                    try:
+                        stream_type, line = output_queue.get(timeout=0.1)
+                        # 打印到控制台，带工具名前缀
+                        if stream_type == 'stdout':
+                            print(f"[{self.name()}] {line}")
+                        else:
+                            print(f"[{self.name()}][ERR] {line}")
+                    except queue.Empty:
+                        # 进程结束后，继续读取队列直到为空
+                        if process.poll() is not None:
+                            # 进程已结束，排空队列中剩余数据
+                            while True:
+                                try:
+                                    stream_type, line = output_queue.get(timeout=0.05)
+                                    if stream_type == 'stdout':
+                                        print(f"[{self.name()}] {line}")
+                                    else:
+                                        print(f"[{self.name()}][ERR] {line}")
+                                except queue.Empty:
+                                    break
+                            # 队列排空后退出
+                            break
+
+                # 超时处理
+                if timed_out:
+                    try:
+                        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                        process.wait(timeout=2)
+                    except:
+                        try:
+                            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                        except:
+                            pass
+                        process.wait()
+                    print(f"[{self.name()}] 执行超时 ({run_timeout}秒)，已终止")
+
+                # 等待线程结束
+                stdout_thread.join(timeout=1)
+                stderr_thread.join(timeout=1)
+
+                stdout = ''.join(stdout_lines)
+                stderr = ''.join(stderr_lines)
+
+                if timed_out:
+                    return ensure_result_format({
+                        "success": False,
+                        "error": f"执行超时 ({run_timeout}秒)，进程组已终止",
+                        "command": ' '.join(cmd),
+                        "stdout": stdout,
+                        "stderr": stderr,
+                        "timeout": True
+                    })
+
+                return ensure_result_format({
+                    "success": process.returncode == 0,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "returncode": process.returncode,
+                    "command": ' '.join(cmd)
+                })
+
+            # 原有的阻塞模式
             try:
                 stdout, stderr = process.communicate(timeout=run_timeout)
                 return ensure_result_format({
@@ -515,6 +619,10 @@ class ToolRegistry:
         """自动注册工具并按支持的漏洞类型建立索引"""
         # 检查工具是否已经注册过（通过名称判断）
         already_registered = False
+
+        # 检查工具是否可用
+        available = tool.check_available()
+
         for vuln_type in tool.supported_vulns():
             if vuln_type not in cls._tools:
                 cls._tools[vuln_type] = []
@@ -527,7 +635,8 @@ class ToolRegistry:
 
         # 只在第一次注册时打印
         if not already_registered:
-            print(f"[ToolRegistry] Registered: {tool.name()} (supports: {', '.join(tool.supported_vulns())})")
+            status = "✅" if available else "❌"
+            print(f"[ToolRegistry] {status} {tool.name()} (supports: {', '.join(tool.supported_vulns())}) - {'available' if available else 'unavailable'}")
 
     @classmethod
     def get_tools(cls, vuln_type: str) -> List['CTFTool']:

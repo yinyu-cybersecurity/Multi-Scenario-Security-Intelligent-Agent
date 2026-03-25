@@ -80,7 +80,7 @@ class AJPShooterTool(CommandLineTool):
             if mode == "eval":
                 cmd.append("-e")
 
-            raw_result = self._run_command(cmd, timeout=self.timeout)
+            raw_result = self._run_command(cmd, timeout=self.timeout, stream_output=True)
             stdout = raw_result.get("stdout", "")
             stderr = raw_result.get("stderr", "")
 

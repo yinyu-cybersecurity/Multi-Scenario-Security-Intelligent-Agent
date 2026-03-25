@@ -152,13 +152,10 @@ class XrayScanner(CommandLineTool):
                 if poc:
                     cmd.extend(["--poc", poc])
 
-            # 执行扫描
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout
-            )
+            # 执行扫描 - 使用基类的流式输出方法
+            raw_result = self._run_command(cmd, timeout=self.timeout, stream_output=True)
+            stdout = raw_result.get("stdout", "")
+            stderr = raw_result.get("stderr", "")
 
             # 解析结果
             vulnerabilities = []
@@ -177,19 +174,13 @@ class XrayScanner(CommandLineTool):
                 "success": True,
                 "vulnerable": len(vulnerabilities) > 0,
                 "target": target,
-                "command": " ".join(cmd),
+                "command": raw_result.get('command', ''),
                 "vulnerabilities": vulnerabilities,
                 "total_found": len(vulnerabilities),
-                "stdout": result.stdout[:2000] if result.stdout else "",
-                "stderr": result.stderr[:1000] if result.stderr else ""
+                "stdout": stdout[:5000] if stdout else "",
+                "stderr": stderr[:2000] if stderr else ""
             }
 
-        except subprocess.TimeoutExpired:
-            return {
-                "error": f"扫描超时 ({self.timeout}秒)",
-                "success": False,
-                "target": target
-            }
         except Exception as e:
             return {
                 "error": str(e),

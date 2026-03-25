@@ -172,7 +172,7 @@ class HydraTool(CommandLineTool):
             cmd.append(f"{protocol}://{target}")
 
         try:
-            result = self._run_command(cmd, timeout=self.timeout)
+            result = self._run_command(cmd, timeout=self.timeout, stream_output=True)
             stdout = result.get("stdout", "")
 
             # 解析结果

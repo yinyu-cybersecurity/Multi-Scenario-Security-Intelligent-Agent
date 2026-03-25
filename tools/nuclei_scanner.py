@@ -166,18 +166,23 @@ class NucleiScanner(CommandLineTool):
         if templates:
             cmd.extend(["-t", templates])
 
-        # 执行扫描
+        # 执行扫描 - 使用基类的流式输出方法
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout
-            )
+            raw_result = self._run_command(cmd, timeout=self.timeout, stream_output=True)
+            stdout = raw_result.get("stdout", "")
+            stderr = raw_result.get("stderr", "")
+
+            if not raw_result.get("success") and "error" in raw_result:
+                return {
+                    "success": False,
+                    "error": raw_result.get("error"),
+                    "target": target,
+                    "command": ' '.join(cmd)
+                }
 
             # 解析结果
             vulnerabilities = []
-            for line in result.stdout.strip().split("\n"):
+            for line in stdout.strip().split("\n"):
                 if line:
                     try:
                         vuln = json.loads(line)
@@ -192,17 +197,13 @@ class NucleiScanner(CommandLineTool):
                 "success": True,
                 "vulnerable": has_vulns,
                 "target": target,
-                "command": " ".join(cmd),
+                "command": raw_result.get('command', ''),
                 "vulnerabilities": vulnerabilities,
-                "total_found": len(vulnerabilities)
+                "total_found": len(vulnerabilities),
+                "stdout": stdout,  # 保留原始输出用于日志
+                "stderr": stderr
             }
 
-        except subprocess.TimeoutExpired:
-            return {
-                "error": f"扫描超时 ({self.timeout}秒)",
-                "success": False,
-                "target": target
-            }
         except Exception as e:
             return {
                 "error": str(e),

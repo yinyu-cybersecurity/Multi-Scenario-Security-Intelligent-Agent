@@ -12,12 +12,14 @@
 - meterpreter: MSF会话
 """
 
-from .session_manager import ShellSessionManager, ShellSession, ShellType
+from .session_manager import ShellSessionManager, ShellSession, ShellType, get_session_manager
 from .executors import (
     WebShellExecutor,
     SSHExecutor,
     ImpacketExecutor,
-    ProxyExecutor
+    ProxyExecutor,
+    execute_on_session,
+    ExecutionResult
 )
 from .file_transfer import FileTransfer
 from .tunnel_manager import (
@@ -33,10 +35,13 @@ __all__ = [
     'ShellSessionManager',
     'ShellSession',
     'ShellType',
+    'get_session_manager',
     'WebShellExecutor',
     'SSHExecutor',
     'ImpacketExecutor',
     'ProxyExecutor',
+    'execute_on_session',
+    'ExecutionResult',
     'FileTransfer',
     'TunnelManager',
     'TunnelConfig',
