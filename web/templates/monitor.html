@@ -39,12 +39,27 @@
         .task-meta { display: flex; justify-content: space-between; font-size: 12px; color: #999; }
 
         .center-area { flex: 1; display: flex; flex-direction: column; background: #fff; }
-        .graph-area { flex: 1; min-height: 300px; background: #fafafa; position: relative; }
-        #graph-svg { width: 100%; height: 100%; }
-        .node circle { stroke-width: 2px; cursor: pointer; }
-        .node text { font-size: 10px; fill: #333; }
-        .edge { fill: none; stroke: #d9d9d9; stroke-width: 1px; }
-        .edge.active { stroke: #1890ff; }
+        .graph-area { flex: 1; min-height: 300px; background: #fafafa; position: relative; overflow: hidden; }
+        #graph-svg { width: 100%; height: 100%; cursor: grab; }
+        #graph-svg:active { cursor: grabbing; }
+        .node circle { stroke-width: 2px; cursor: pointer; transition: opacity 0.3s; }
+        .node.disabled circle { opacity: 0.3; }
+        .node.disabled text { opacity: 0.3; }
+        .node text { font-size: 11px; fill: #333; font-weight: 500; pointer-events: none; }
+        .node .full-name { font-size: 9px; fill: #666; }
+        .edge { fill: none; stroke: #d9d9d9; stroke-width: 1.5px; transition: opacity 0.3s; }
+        .edge.disabled { opacity: 0.15; }
+        .edge.active { stroke: #1890ff; stroke-width: 2px; }
+        .node-tooltip { position: absolute; background: #fff; border: 1px solid #e8e8e8; border-radius: 6px; padding: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 10; max-width: 280px; pointer-events: none; }
+        .tooltip-title { font-weight: 600; font-size: 14px; margin-bottom: 8px; }
+        .tooltip-row { font-size: 12px; color: #666; margin: 4px 0; }
+        .tooltip-status { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; }
+        .tooltip-status.enabled { background: #f6ffed; color: #52c41a; }
+        .tooltip-status.disabled { background: #fafafa; color: #999; }
+
+        .graph-controls { position: absolute; bottom: 12px; left: 12px; display: flex; gap: 4px; }
+        .graph-btn { width: 32px; height: 32px; background: #fff; border: 1px solid #d9d9d9; border-radius: 4px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 16px; color: #666; }
+        .graph-btn:hover { border-color: #1890ff; color: #1890ff; }
 
         .graph-legend { position: absolute; top: 12px; right: 12px; background: #fff; padding: 10px; border-radius: 4px; border: 1px solid #e8e8e8; font-size: 12px; }
         .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
@@ -132,9 +147,26 @@
             </div>
 
             <div class="center-area">
-                <div class="graph-area"><svg id="graph-svg"></svg>
+                <div class="graph-area">
+                    <svg id="graph-svg"></svg>
                     <div class="graph-legend">
                         <div v-for="(g, k) in graphData.groups" :key="k" class="legend-item"><div class="legend-dot" :style="{ background: g.color }"></div><span>{{ g.name }}</span></div>
+                    </div>
+                    <div class="graph-controls">
+                        <button class="graph-btn" title="放大" @click="zoomIn">+</button>
+                        <button class="graph-btn" title="缩小" @click="zoomOut">−</button>
+                        <button class="graph-btn" title="重置" @click="zoomReset">⟲</button>
+                    </div>
+                    <div class="node-tooltip" v-if="tooltipNode" :style="{ left: tooltipX + 'px', top: tooltipY + 'px' }">
+                        <div class="tooltip-title">{{ tooltipNode.name }}</div>
+                        <div class="tooltip-row">ID: {{ tooltipNode.id }}</div>
+                        <div class="tooltip-row">分组: {{ tooltipNode.groupName || tooltipNode.group }}</div>
+                        <div class="tooltip-row" v-if="tooltipNode.description">{{ tooltipNode.description }}</div>
+                        <div class="tooltip-row">
+                            状态: <span class="tooltip-status" :class="tooltipNode.enabled ? 'enabled' : 'disabled'">
+                                {{ tooltipNode.enabled ? '已启用' : '已禁用' }}
+                            </span>
+                        </div>
                     </div>
                 </div>
                 <div class="log-area">
@@ -216,6 +248,10 @@
                 const compressionStats = ref({});
                 const recoveryStats = ref({});
                 const strategyStats = ref({});
+                const tooltipNode = ref(null);
+                const tooltipX = ref(0);
+                const tooltipY = ref(0);
+                let currentZoom = null;
 
                 const taskList = computed(() => Object.values(tasks.value).sort((a, b) => b.created_at.localeCompare(a.created_at)));
                 const currentTask = computed(() => tasks.value[currentTaskId.value]);
@@ -254,24 +290,115 @@
 
                 function refreshAll() { fetchGraph(); fetchTasks(); fetchSystemStatus(); fetchTools(); fetchLLMStatus(); fetchCompressionStats(); fetchRecoveryStats(); fetchStrategyStats(); }
 
+                function zoomIn() { if (currentZoom) currentZoom.scaleBy(d3.select('#graph-svg'), 1.3); }
+                function zoomOut() { if (currentZoom) currentZoom.scaleBy(d3.select('#graph-svg'), 0.7); }
+                function zoomReset() { if (currentZoom) currentZoom.transform(d3.select('#graph-svg'), d3.zoomIdentity); }
+
                 function renderGraph() {
                     const svg = d3.select('#graph-svg');
                     const container = document.querySelector('.graph-area');
                     if (!container) return;
                     const w = container.clientWidth, h = container.clientHeight;
                     svg.selectAll('*').remove();
-                    const nodes = graphData.value.nodes.map(n => ({ ...n, color: graphData.value.groups[n.group]?.color || '#1890ff' }));
-                    const edges = graphData.value.edges.map((e, i) => ({ ...e, id: i }));
-                    const sim = d3.forceSimulation(nodes).force('link', d3.forceLink(edges).id(d => d.id).distance(80)).force('charge', d3.forceManyBody().strength(-200)).force('center', d3.forceCenter(w / 2, h / 2));
-                    const link = svg.append('g').selectAll('line').data(edges).enter().append('line').attr('class', 'edge');
-                    const node = svg.append('g').selectAll('g').data(nodes).enter().append('g').attr('class', 'node');
-                    node.append('circle').attr('r', 14).attr('fill', d => d.color).attr('stroke', '#fff');
-                    node.append('text').attr('dy', 4).attr('text-anchor', 'middle').text(d => d.name.substring(0, 2));
-                    sim.on('tick', () => { link.attr('x1', d => d.source.x).attr('y1', d => d.source.y).attr('x2', d => d.target.x).attr('y2', d => d.target.y); node.attr('transform', d => `translate(${d.x},${d.y})`); });
+
+                    // 构建节点数据，标记禁用状态
+                    const nodes = graphData.value.nodes.map(n => ({
+                        ...n,
+                        color: graphData.value.groups[n.group]?.color || '#1890ff',
+                        enabled: n.enabled !== false
+                    }));
+
+                    // 构建边数据，标记是否涉及禁用节点
+                    const edges = graphData.value.edges.map((e, i) => ({
+                        ...e,
+                        id: i,
+                        disabled: e.disabled === true
+                    }));
+
+                    // 创建缩放行为
+                    const zoom = d3.zoom()
+                        .scaleExtent([0.3, 3])
+                        .on('zoom', (event) => g.attr('transform', event.transform));
+                    currentZoom = zoom;
+                    svg.call(zoom);
+
+                    const g = svg.append('g');
+
+                    // 创建力导向图
+                    const sim = d3.forceSimulation(nodes)
+                        .force('link', d3.forceLink(edges).id(d => d.id).distance(100))
+                        .force('charge', d3.forceManyBody().strength(-300))
+                        .force('center', d3.forceCenter(w / 2, h / 2))
+                        .force('collision', d3.forceCollide().radius(30));
+
+                    // 绘制边
+                    const link = g.append('g').selectAll('line')
+                        .data(edges).enter().append('line')
+                        .attr('class', d => `edge ${d.disabled ? 'disabled' : ''}`);
+
+                    // 绘制节点组
+                    const node = g.append('g').selectAll('g')
+                        .data(nodes).enter().append('g')
+                        .attr('class', d => `node ${d.enabled ? '' : 'disabled'}`)
+                        .call(d3.drag()
+                            .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+                            .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+                            .on('end', (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+                    // 节点圆形 (更大)
+                    node.append('circle')
+                        .attr('r', 22)
+                        .attr('fill', d => d.enabled ? d.color : '#d9d9d9')
+                        .attr('stroke', '#fff')
+                        .attr('stroke-width', 2);
+
+                    // 节点名称 (显示更多字符)
+                    node.append('text')
+                        .attr('dy', 4)
+                        .attr('text-anchor', 'middle')
+                        .text(d => d.name.length > 5 ? d.name.substring(0, 5) : d.name);
+
+                    // 节点详情悬浮事件
+                    node.on('mouseenter', (event, d) => {
+                        tooltipNode.value = d;
+                        const rect = container.getBoundingClientRect();
+                        tooltipX.value = event.clientX - rect.left + 15;
+                        tooltipY.value = event.clientY - rect.top - 10;
+                    }).on('mousemove', (event) => {
+                        const rect = container.getBoundingClientRect();
+                        tooltipX.value = event.clientX - rect.left + 15;
+                        tooltipY.value = event.clientY - rect.top - 10;
+                    }).on('mouseleave', () => {
+                        tooltipNode.value = null;
+                    });
+
+                    // 点击切换节点状态
+                    node.on('click', async (event, d) => {
+                        event.stopPropagation();
+                        try {
+                            const resp = await fetch(`/api/nodes/${d.id}/toggle`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ enabled: !d.enabled })
+                            });
+                            const data = await resp.json();
+                            if (data.success) {
+                                await fetchGraph();
+                            }
+                        } catch (e) { console.error(e); }
+                    });
+
+                    sim.on('tick', () => {
+                        link.attr('x1', d => d.source.x)
+                            .attr('y1', d => d.source.y)
+                            .attr('x2', d => d.target.x)
+                            .attr('y2', d => d.target.y);
+                        node.attr('transform', d => `translate(${d.x},${d.y})`);
+                    });
                 }
 
                 onMounted(() => { refreshAll(); setInterval(() => { fetchSystemStatus(); fetchLLMStatus(); fetchRecoveryStats(); }, 5000); window.addEventListener('resize', renderGraph); });
-                return { tasks, taskList, currentTaskId, currentTask, targetUrl, logs, starting, graphData, tab, taskResult, systemStatus, tools, llmStatus, compressionStats, recoveryStats, strategyStats, selectTask, startTask, refreshAll, statusText };
+                return { tasks, taskList, currentTaskId, currentTask, targetUrl, logs, starting, graphData, tab, taskResult, systemStatus, tools, llmStatus, compressionStats, recoveryStats, strategyStats, tooltipNode, tooltipX, tooltipY, selectTask, startTask, refreshAll, statusText, zoomIn, zoomOut, zoomReset };
             }
         });
         app.use(ElementPlus).mount('#app');

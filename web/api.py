@@ -168,13 +168,14 @@ def get_graph_structure():
         {"source": "misc_extractor", "target": "evolution"},
     ]
 
-    # 过滤边：如果source或target节点被禁用，则移除该边
+    # 返回所有边，但标记禁用状态（前端负责淡化显示）
     edges = []
     for edge in all_edges:
         source_enabled = node_enabled.get(edge["source"], True)
         target_enabled = node_enabled.get(edge["target"], True)
-        if source_enabled and target_enabled:
-            edges.append(edge)
+        edge_copy = edge.copy()
+        edge_copy["disabled"] = not (source_enabled and target_enabled)
+        edges.append(edge_copy)
 
     return {
         "nodes": nodes,
