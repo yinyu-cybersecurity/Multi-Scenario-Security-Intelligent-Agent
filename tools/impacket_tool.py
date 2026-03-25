@@ -215,3 +215,98 @@ class ImpacketTool(CommandLineTool):
 
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    def execute_commands(self, script: str, target: str, creds: Dict,
+                         commands: List[str]) -> Dict:
+        """
+        执行命令序列（用于批量执行）
+
+        Args:
+            script: 脚本名 (psexec, wmiexec, smbexec, atexec)
+            target: 目标IP/主机名
+            creds: 凭据 {username, password, hash, domain}
+            commands: 要执行的命令列表
+
+        Returns:
+            {
+                "success": bool,
+                "results": [{"command": "", "output": "", "success": bool}, ...],
+                "summary": "执行摘要"
+            }
+        """
+        if script not in ["psexec", "wmiexec", "smbexec", "atexec", "dcomexec"]:
+            return {
+                "success": False,
+                "results": [],
+                "error": f"脚本 {script} 不支持命令序列执行"
+            }
+
+        results = []
+        success_count = 0
+
+        for cmd in commands:
+            result = self.execute(target, {
+                "script": script,
+                "target": target,
+                "username": creds.get("username", ""),
+                "password": creds.get("password", ""),
+                "hash": creds.get("hash", ""),
+                "domain": creds.get("domain", ""),
+                "command": cmd
+            })
+
+            results.append({
+                "command": cmd,
+                "output": result.get("output", ""),
+                "error": result.get("error", ""),
+                "success": result.get("success", False)
+            })
+
+            if result.get("success"):
+                success_count += 1
+
+        return {
+            "success": success_count > 0,
+            "results": results,
+            "summary": f"执行 {len(commands)} 条命令，成功 {success_count} 条"
+        }
+
+    def check_access(self, target: str, creds: Dict) -> Dict:
+        """
+        快速检查访问权限
+
+        Args:
+            target: 目标IP
+            creds: 凭据
+
+        Returns:
+            {
+                "success": bool,
+                "is_admin": bool,
+                "os": "操作系统",
+                "info": "详细信息"
+            }
+        """
+        # 使用 crackmapexec 或 psexec 测试连接
+        try:
+            result = self.execute(target, {
+                "script": "psexec",
+                "target": target,
+                "username": creds.get("username", ""),
+                "password": creds.get("password", ""),
+                "hash": creds.get("hash", ""),
+                "domain": creds.get("domain", ""),
+                "command": "whoami"
+            })
+
+            output = result.get("output", "")
+
+            return {
+                "success": result.get("success", False),
+                "is_admin": "admin" in output.lower() or "administrator" in output.lower(),
+                "os": "windows" if "windows" in output.lower() else "unknown",
+                "info": output[:200] if output else result.get("error", "")
+            }
+
+        except Exception as e:
+            return {"success": False, "is_admin": False, "os": "", "info": str(e)}

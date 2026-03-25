@@ -586,6 +586,14 @@ def execute_on_session(session, command: str, timeout: int = 60) -> ExecutionRes
     """
     from .session_manager import ShellType
 
+    # [FIX] Handle None session
+    if session is None:
+        return ExecutionResult(
+            success=False,
+            output="",
+            error="Session is None - session not registered or expired"
+        )
+
     if session.session_type == ShellType.WEBSHELL:
         executor = WebShellExecutor(
             url=session.url,
