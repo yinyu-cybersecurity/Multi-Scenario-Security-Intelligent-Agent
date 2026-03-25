@@ -12,20 +12,27 @@ Fscan Tool - 内网综合扫描工具
 - 比nmap更快
 - 自动识别常见漏洞
 - 支持多种协议爆破
+
+使用 NetworkScanTool 基类，复用验证逻辑
 """
 import re
 import json
 import shutil
 import subprocess
-from typing import Dict, Any, List
-from tool_framework import CommandLineTool
+from typing import Dict, Any, List, Tuple
+from tool_framework import NetworkScanTool
 from llm_client import llm_client
 from config import config
 
 
-class FscanTool(CommandLineTool):
+class FscanTool(NetworkScanTool):
     """
     Fscan 内网综合扫描工具封装
+
+    继承 NetworkScanTool 基类，复用：
+    - validate_target: 目标验证
+    - validate_ports: 端口验证
+    - ai_analyze_results: AI 分析框架
 
     CTF场景特点:
     - 快速端口发现
@@ -139,7 +146,7 @@ class FscanTool(CommandLineTool):
                 "type": "bool",
                 "description": "跳过存活检测，直接扫描",
                 "required": False,
-                "default": True
+                "default": False
             }
         }
 
@@ -163,7 +170,7 @@ class FscanTool(CommandLineTool):
         else:
             # IP/网段扫描模式
             # 验证目标格式
-            is_valid, error_msg = self._validate_target(target)
+            is_valid, error_msg = self.validate_target(target)
             if not is_valid:
                 return {"error": f"目标验证失败: {error_msg}", "success": False}
             cmd.extend(["-h", target])
@@ -173,6 +180,10 @@ class FscanTool(CommandLineTool):
         ports = params.get("ports")
 
         if ports:
+            # 验证端口参数
+            is_valid_ports, ports_error = self.validate_ports(ports)
+            if not is_valid_ports:
+                return {"success": False, "error": f"端口参数验证失败: {ports_error}"}
             cmd.extend(["-p", ports])
         elif scan_type == "full":
             cmd.extend(["-p", "1-65535"])
@@ -181,7 +192,7 @@ class FscanTool(CommandLineTool):
         # quick 使用默认端口
 
         # 跳过存活检测（CTF场景通常需要）
-        if params.get("no_ping", True):
+        if params.get("no_ping", False):
             cmd.append("-np")
 
         # 弱口令爆破
@@ -218,10 +229,10 @@ class FscanTool(CommandLineTool):
                 }
             else:
                 # 网络扫描模式
-                hosts = self._parse_output(stdout + "\n" + stderr)
-                analysis = self._analyze_results(hosts, target)
+                hosts, parsed_vulns = self._parse_output(stdout + "\n" + stderr)
+                analysis = self._analyze_results(hosts, target, parsed_vulns)
 
-                has_vulnerabilities = len(analysis.get("vulnerabilities", [])) > 0
+                has_vulnerabilities = len(parsed_vulns) > 0 or len(analysis.get("vulnerabilities", [])) > 0
                 has_hosts = len(hosts) > 0
 
                 return {
@@ -231,7 +242,7 @@ class FscanTool(CommandLineTool):
                     "command": raw_result.get('command', ''),
                     "hosts": hosts,
                     "summary": analysis.get("summary", ""),
-                    "vulnerabilities": analysis.get("vulnerabilities", []),
+                    "vulnerabilities": parsed_vulns + analysis.get("vulnerabilities", []),
                     "recommendations": analysis.get("recommendations", []),
                     "raw_output": stdout[:5000] if len(stdout) > 5000 else stdout
                 }
@@ -243,125 +254,16 @@ class FscanTool(CommandLineTool):
                 "target": target
             }
 
-    def _validate_target(self, target: str) -> tuple:
-        """验证目标格式"""
-        if not target or not isinstance(target, str):
-            return False, "目标不能为空"
+    def _parse_output(self, output: str) -> Tuple[List[Dict], List[Dict]]:
+        """使用AI解析fscan输出"""
+        from tool_output_parser import parse_output
 
-        target = target.strip()
+        result = parse_output("fscan", output, "")
 
-        if len(target) > 256:
-            return False, "目标长度超过限制"
+        hosts = result.get("hosts", [])
+        vulnerabilities = result.get("vulnerabilities", [])
 
-        # 检查危险字符
-        dangerous_chars = [';', '|', '&', '$', '`', '(', ')', '{', '}', '<', '>', '\n', '\r']
-        for char in dangerous_chars:
-            if char in target:
-                return False, f"目标包含非法字符: {char}"
-
-        # IP或CIDR验证
-        ip_pattern = r'^(\d{1,3}\.){3}\d{1,3}(/\d{1,2})?$'
-        if re.match(ip_pattern, target):
-            return True, ""
-
-        return True, ""  # 允许其他格式
-
-    def _parse_output(self, output: str) -> List[Dict]:
-        """解析fscan输出"""
-        hosts = {}
-        vulnerabilities = []
-
-        lines = output.split('\n')
-
-        # fscan 实际输出格式:
-        # 39.98.115.11:22 open
-        # [*] 39.98.115.11:22 SSH-2.0-OpenSSH_8.9p1
-        # [*] [mysql] 39.98.115.11:3306 mysql weak password: root/
-        # [+] 192.168.1.1:3306 mysql unauthorized
-
-        # 端口开放: IP:port open
-        port_pattern = re.compile(r'^(\d+\.\d+\.\d+\.\d+):(\d+)\s+open')
-        # 服务信息: [*] IP:port service_info
-        service_pattern = re.compile(r'\[\*\]\s*(\d+\.\d+\.\d+\.\d+):(\d+)\s+(.+)')
-        # 漏洞发现: [*] [service] IP:port ... 或 [+] IP:port ...
-        vuln_pattern = re.compile(r'\[\+\]|\[\*\]\s*\[\w+\]', re.IGNORECASE)
-        weak_pwd_pattern = re.compile(r'weak\s*password[:\s]*(\S+?)/(\S*)', re.IGNORECASE)
-
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-
-            # 1. 解析开放端口
-            port_match = port_pattern.match(line)
-            if port_match:
-                ip = port_match.group(1)
-                port = int(port_match.group(2))
-
-                if ip not in hosts:
-                    hosts[ip] = {"ip": ip, "ports": []}
-
-                hosts[ip]["ports"].append({
-                    "port": port,
-                    "state": "open",
-                    "service": ""
-                })
-                continue
-
-            # 2. 解析服务信息
-            service_match = service_pattern.match(line)
-            if service_match:
-                ip = service_match.group(1)
-                port = int(service_match.group(2))
-                info = service_match.group(3).strip()
-
-                if ip not in hosts:
-                    hosts[ip] = {"ip": ip, "ports": []}
-
-                # 更新端口的服务信息
-                port_entry = next((p for p in hosts[ip]["ports"] if p["port"] == port), None)
-                if port_entry:
-                    # 提取服务名
-                    service_name = info.split()[0] if info else ""
-                    if service_name.startswith("["):
-                        # 格式: [mysql] ... 提取方括号内容
-                        service_name = re.search(r'\[(\w+)\]', info)
-                        service_name = service_name.group(1) if service_name else ""
-                    port_entry["service"] = service_name.lower()
-                else:
-                    hosts[ip]["ports"].append({
-                        "port": port,
-                        "state": "open",
-                        "service": info.split()[0].lower() if info else ""
-                    })
-
-                # 3. 检查是否包含漏洞信息
-                if "weak password" in line.lower() or "weak_password" in line.lower():
-                    weak_match = weak_pwd_pattern.search(line)
-                    username = weak_match.group(1) if weak_match else "unknown"
-                    password = weak_match.group(2).strip() if weak_match and weak_match.group(2) else ""
-                    vulnerabilities.append({
-                        "ip": ip,
-                        "port": port,
-                        "type": "weak_password",
-                        "info": f"弱口令: {username}/{password}"
-                    })
-                elif "unauthorized" in line.lower():
-                    vulnerabilities.append({
-                        "ip": ip,
-                        "port": port,
-                        "type": "unauthorized",
-                        "info": info
-                    })
-                elif "rce" in line.lower() or "vuln" in line.lower():
-                    vulnerabilities.append({
-                        "ip": ip,
-                        "port": port,
-                        "type": "vulnerability",
-                        "info": info
-                    })
-
-        return list(hosts.values())
+        return hosts, vulnerabilities
 
     def _parse_web_output(self, output: str) -> List[Dict]:
         """解析fscan Web扫描输出"""
@@ -413,8 +315,26 @@ class FscanTool(CommandLineTool):
 
         return vulnerabilities
 
-    def _analyze_results(self, hosts: List[Dict], target: str) -> Dict:
+    def _analyze_results(self, hosts: List[Dict], target: str, parsed_vulns: List[Dict] = None) -> Dict:
         """AI分析扫描结果"""
+        parsed_vulns = parsed_vulns or []
+
+        if not hosts and not parsed_vulns:
+            return {
+                "summary": "未发现存活主机或漏洞",
+                "vulnerabilities": [],
+                "recommendations": []
+            }
+
+        # 如果已经有解析出的漏洞，直接返回
+        if parsed_vulns:
+            summary = f"发现 {len(parsed_vulns)} 个漏洞"
+            return {
+                "summary": summary,
+                "vulnerabilities": [],  # 漏洞已在 parsed_vulns 中
+                "recommendations": []
+            }
+
         if not hosts:
             return {
                 "summary": "未发现存活主机",

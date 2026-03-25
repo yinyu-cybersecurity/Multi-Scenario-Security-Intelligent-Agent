@@ -9,6 +9,9 @@ import traceback
 import urllib3
 from urllib.parse import urlparse
 
+# 上下文压缩和链条记录
+from context_compressor import get_chain_recorder, get_compressor
+
 # 🚀 抑制 SSL 安全警告 (CTF 环境中通常不需要)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -176,84 +179,59 @@ from router import (
 )
 from state import CTFState, VulnerabilityCandidate, AttackAction, PageFeatures, Hint, ToolCall
 
-# 自我纠错模块
-try:
-    from self_correction import self_correction_manager, ErrorSeverity
-    SELF_CORRECTION_AVAILABLE = True
-except ImportError:
-    print("[Warning] Self-correction module not available")
-    SELF_CORRECTION_AVAILABLE = False
+# 使用模块注册机制替代重复的 try/except
+from module_registry import ModuleRegistry
 
-# 内网渗透模块导入
-try:
-    from internal_network.nodes import (
-        internal_recon_node,
-        lateral_move_node,
-        privilege_escalation_node,
-        credential_gather_node
-    )
-    from internal_network.orchestrator import InternalNetworkOrchestrator
-    from internal_network.post_exploit import (
-        post_exploit_node,
-        upload_tools_node,
-        setup_tunnel_node
-    )
-    INTERNAL_NETWORK_AVAILABLE = True
-except ImportError:
-    print("[Warning] Internal network module not available")
-    INTERNAL_NETWORK_AVAILABLE = False
+# 模块可用性标志（通过 ModuleRegistry 自动管理）
+SELF_CORRECTION_AVAILABLE = ModuleRegistry.is_available('self_correction')
+INTERNAL_NETWORK_AVAILABLE = ModuleRegistry.is_available('internal_network')
+POST_EXPLOIT_AVAILABLE = ModuleRegistry.is_available('post_exploit')
+CRYPTO_AVAILABLE = ModuleRegistry.is_available('crypto')
+PWN_AVAILABLE = ModuleRegistry.is_available('pwn')
+REVERSE_AVAILABLE = ModuleRegistry.is_available('reverse')
+MISC_AVAILABLE = ModuleRegistry.is_available('misc')
+PERFORMANCE_AVAILABLE = ModuleRegistry.is_available('performance')
 
-# Crypto模块导入
-try:
-    from crypto.nodes import (
-        crypto_analyst_node,
-        crypto_solver_node
-    )
-    CRYPTO_AVAILABLE = True
-except ImportError:
-    print("[Warning] Crypto module not available")
-    CRYPTO_AVAILABLE = False
+# 导入可用模块的节点函数
+if SELF_CORRECTION_AVAILABLE:
+    self_correction_manager = ModuleRegistry.get_node('self_correction', 'self_correction_manager')
+    ErrorSeverity = ModuleRegistry.get_node('self_correction', 'ErrorSeverity')
 
-# Pwn模块导入
-try:
-    from pwn.nodes import (
-        pwn_analyst_node,
-        pwn_exploiter_node
-    )
-    PWN_AVAILABLE = True
-except ImportError:
-    print("[Warning] Pwn module not available")
-    PWN_AVAILABLE = False
+if INTERNAL_NETWORK_AVAILABLE:
+    internal_recon_node = ModuleRegistry.get_node('internal_network', 'internal_recon')
+    lateral_move_node = ModuleRegistry.get_node('internal_network', 'lateral_move')
+    privilege_escalation_node = ModuleRegistry.get_node('internal_network', 'privilege_escalation')
+    credential_gather_node = ModuleRegistry.get_node('internal_network', 'credential_gather')
+    try:
+        from internal_network.orchestrator import InternalNetworkOrchestrator
+    except ImportError:
+        InternalNetworkOrchestrator = None
 
-# Reverse模块导入
-try:
-    from reverse.nodes import (
-        reverse_analyst_node,
-        reverse_decompiler_node
-    )
-    REVERSE_AVAILABLE = True
-except ImportError:
-    print("[Warning] Reverse module not available")
-    REVERSE_AVAILABLE = False
+if POST_EXPLOIT_AVAILABLE:
+    post_exploit_node = ModuleRegistry.get_node('post_exploit', 'post_exploit')
+    upload_tools_node = ModuleRegistry.get_node('post_exploit', 'upload_tools')
+    setup_tunnel_node = ModuleRegistry.get_node('post_exploit', 'setup_tunnel')
 
-# Misc模块导入
-try:
-    from misc.nodes import (
-        misc_analyst_node,
-        misc_extractor_node
-    )
-    MISC_AVAILABLE = True
-except ImportError:
-    print("[Warning] Misc module not available")
-    MISC_AVAILABLE = False
+if CRYPTO_AVAILABLE:
+    crypto_analyst_node = ModuleRegistry.get_node('crypto', 'crypto_analyst')
+    crypto_solver_node = ModuleRegistry.get_node('crypto', 'crypto_solver')
 
-# 性能监控模块导入
-try:
-    from performance import performance_monitor, get_system_status, ParallelExecutor
-    PERFORMANCE_AVAILABLE = True
-except ImportError:
-    print("[Warning] Performance module not available")
-    PERFORMANCE_AVAILABLE = False
+if PWN_AVAILABLE:
+    pwn_analyst_node = ModuleRegistry.get_node('pwn', 'pwn_analyst')
+    pwn_exploiter_node = ModuleRegistry.get_node('pwn', 'pwn_exploiter')
+
+if REVERSE_AVAILABLE:
+    reverse_analyst_node = ModuleRegistry.get_node('reverse', 'reverse_analyst')
+    reverse_decompiler_node = ModuleRegistry.get_node('reverse', 'reverse_decompiler')
+
+if MISC_AVAILABLE:
+    misc_analyst_node = ModuleRegistry.get_node('misc', 'misc_analyst')
+    misc_extractor_node = ModuleRegistry.get_node('misc', 'misc_extractor')
+
+if PERFORMANCE_AVAILABLE:
+    performance_monitor = ModuleRegistry.get_node('performance', 'performance_monitor')
+    get_system_status = ModuleRegistry.get_node('performance', 'get_system_status')
+    ParallelExecutor = ModuleRegistry.get_node('performance', 'ParallelExecutor')
 import networkx as nx
 import json
 import yaml
@@ -978,6 +956,34 @@ def recon_node(state: CTFState) -> Dict:
         visited_urls.append(baseline["final_url"])
         page_diff_manager.save_page(baseline["final_url"], raw_html.encode('utf-8'), page_history)
 
+    # 将 fscan 发现的漏洞转换为 vuln_candidates 格式
+    fscan_vuln_candidates = []
+    for f in fscan_findings:
+        vuln_type = f.get("type", "unknown")
+        target = f.get("target", "")
+        port = f.get("port", "")
+        info = f.get("info", "")
+
+        # 根据漏洞类型确定置信度
+        confidence = 0.7  # 默认置信度
+        if vuln_type == "weak_password":
+            confidence = 0.95  # 弱口令置信度很高
+        elif vuln_type == "unauthorized":
+            confidence = 0.9
+        elif vuln_type == "vulnerability":
+            confidence = 0.85
+        elif vuln_type == "port":
+            confidence = 0.5  # 仅端口开放，置信度较低
+
+        fscan_vuln_candidates.append({
+            "type": vuln_type,
+            "location": f"{target}:{port}" if port else target,
+            "description": info,
+            "confidence": confidence,
+            "source": "fscan",
+            "evidence": info
+        })
+
     res = {
         "page_features": features,
         "raw_html_snippet": raw_html[:8000],
@@ -992,7 +998,8 @@ def recon_node(state: CTFState) -> Dict:
         "detected_scenes": detected_scenes,
         "focused_scene": focused_scene,
         "scene_attack_attempts": scene_attack_attempts,
-        "scene_exhausted": scene_exhausted
+        "scene_exhausted": scene_exhausted,
+        "vuln_candidates": fscan_vuln_candidates  # 将 fscan 发现添加到漏洞候选
     }
     log_node_data("recon", {"url": url}, res)
     return res
@@ -1420,7 +1427,14 @@ def execute_single_attack(action: Dict, current_url: str, page_history: Dict) ->
                 "file_path": tool_res.get("full_log_path"),
                 "duration": exec_result.get("duration", 0),
                 "is_exploit": vulnerable,
-                "diff_analysis": {"changed": vulnerable, "reason": tool_res.get("summary", "Tool findings")}
+                "diff_analysis": {"changed": vulnerable, "reason": tool_res.get("summary", "Tool findings")},
+                # 保留AI解析的结构化数据
+                "vulnerabilities": tool_res.get("vulnerabilities", []),
+                "hosts": tool_res.get("hosts", []),
+                "credentials": tool_res.get("credentials", []),
+                "attack_paths": tool_res.get("attack_paths", []),
+                "domain_info": tool_res.get("domain_info", {}),
+                "summary": tool_res.get("summary", "")
             }
             if extracted_flag:
                 result["extracted_flag"] = extracted_flag
@@ -1658,12 +1672,69 @@ def attacker_node(state: CTFState) -> Dict:
     if success_found:
         print("   🔥 有动作命中目标！")
 
+    # 4. 合并工具发现的结构化数据
+    discovered_vulns = []
+    discovered_creds = []
+    discovered_hosts = []
+
+    for r in attack_results:
+        # 漏洞
+        for v in r.get("vulnerabilities", []):
+            # 去重
+            if not any(dv.get("target") == v.get("target") and dv.get("type") == v.get("type")
+                       for dv in discovered_vulns):
+                discovered_vulns.append(v)
+
+        # 凭据
+        for c in r.get("credentials", []):
+            if c not in discovered_creds:
+                discovered_creds.append(c)
+
+        # 主机
+        for h in r.get("hosts", []):
+            if not any(dh.get("ip") == h.get("ip") for dh in discovered_hosts):
+                discovered_hosts.append(h)
+
+    # 打印发现摘要
+    if discovered_vulns:
+        print(f"   📌 发现 {len(discovered_vulns)} 个新漏洞")
+    if discovered_creds:
+        print(f"   🔑 发现 {len(discovered_creds)} 个新凭据")
+    if discovered_hosts:
+        print(f"   🖥️ 发现 {len(discovered_hosts)} 个新主机")
+
+    # 记录攻击链
+    try:
+        from context_compressor import record_node
+        attack_summary = f"执行{len(attack_actions)}个攻击动作"
+        changes = []
+        if discovered_vulns:
+            changes.append(f"发现{len(discovered_vulns)}个漏洞")
+        if discovered_creds:
+            changes.append(f"发现{len(discovered_creds)}个凭据")
+        if discovered_hosts:
+            changes.append(f"发现{len(discovered_hosts)}个主机")
+
+        record_node(
+            node="attacker",
+            decision=f"攻击目标: {current_url}",
+            result=attack_summary,
+            changes=changes,
+            success=len(discovered_vulns) > 0 or len(discovered_creds) > 0
+        )
+    except Exception as e:
+        print(f"   ⚠️ 记录攻击链失败: {e}")
+
     res = {
         "attack_batch": attack_actions,
         "attack_results": attack_results,
         "page_history": state.get("page_history", {}),
         "node_attack_status": node_status,
         "execution_steps": state.get("execution_steps", 0) + 1,
+        # 新发现的结构化数据（会自动合并到状态）
+        "vuln_candidates": discovered_vulns,
+        "credentials": discovered_creds,
+        "internal_hosts": discovered_hosts,
     }
     log_node_data("attacker", {"prompt": prompt, "actions": attack_actions}, res)
     return res
@@ -2013,7 +2084,75 @@ def verifier_node(state: CTFState) -> Dict:
 
         # 攻击成功
         if is_exploit_successful:
-            print(f"   🔥 攻击有效: {evidence[:100] if evidence else 'N/A'}")
+            print(f"   [+] Attack effective: {evidence[:100] if evidence else 'N/A'}")
+
+            # 检测并管理交互式会话 - 创建完整的ShellSession对象
+            shell_session_info = None
+            try:
+                for res in recent_results:
+                    output = res.get("output", "")
+                    tool = res.get("tool", "")
+
+                    # 检测 meterpreter 会话
+                    if "meterpreter" in output.lower() or tool in ["metasploit", "msfvenom"]:
+                        print(f"   [MSF] Detected Meterpreter session, connecting...")
+                        try:
+                            from tools.metasploit_manager import get_msf_manager
+                            from remote_executor.session_manager import ShellSession, ShellType, get_session_manager
+
+                            msf = get_msf_manager()
+                            if msf.connect():
+                                sessions = msf.list_sessions()
+                                if sessions:
+                                    latest_session = sessions[-1]
+                                    print(f"   [MSF] Connected to session: {latest_session.id}")
+
+                                    # 创建 ShellSession 对象并注册
+                                    session_manager = get_session_manager()
+                                    shell_session = ShellSession(
+                                        id=str(latest_session.id),
+                                        session_type=ShellType.METERPRETER,
+                                        target=latest_session.target,
+                                        os_type=latest_session.platform or "unknown",
+                                        metadata={
+                                            "rpc_host": msf.host,
+                                            "rpc_port": msf.port,
+                                            "rpc_password": msf.password,
+                                            "via_exploit": latest_session.via_exploit
+                                        }
+                                    )
+                                    # 注册到 session_manager
+                                    session_manager.sessions[shell_session.id] = shell_session
+                                    session_manager._save_sessions()
+
+                                    # 返回给状态的信息
+                                    shell_session_info = {
+                                        "type": "meterpreter",
+                                        "session_id": shell_session.id,
+                                        "target": latest_session.target,
+                                        "platform": latest_session.platform
+                                    }
+                                    print(f"   [MSF] Session registered: {shell_session.id}")
+
+                                    # 获取系统信息
+                                    sysinfo = msf.execute(latest_session.id, "sysinfo")
+                                    if sysinfo.get("success"):
+                                        print(f"   [MSF] System info: {sysinfo.get('output', '')[:100]}")
+                        except Exception as msf_err:
+                            print(f"   [!] MSF connection failed: {msf_err}")
+                        break
+
+                    # 检测其他 shell 类型
+                    elif any(indicator in output.lower() for indicator in
+                            ["shell>", "cmd>", "whoami", "uid=", "c:\\"]):
+                        print(f"   [Shell] Detected shell session")
+                        shell_session_info = {
+                            "type": "shell",
+                            "output_sample": output[:500]
+                        }
+                        break
+            except Exception as e:
+                print(f"   [!] Session detection failed: {e}")
 
             new_known_facts = ""
             if updated_known_facts:
@@ -2042,6 +2181,8 @@ def verifier_node(state: CTFState) -> Dict:
             }
             if new_known_facts:
                 result_dict["known_facts"] = new_known_facts
+            if shell_session_info:
+                result_dict["shell_session"] = shell_session_info
             return result_dict
 
         # 攻击失败 - [P3合并] 处理节点决策

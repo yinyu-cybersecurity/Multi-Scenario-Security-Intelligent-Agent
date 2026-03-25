@@ -32,6 +32,13 @@ CTF-Agent 是一个智能化的渗透测试代理，能够自主完成从信息�
 - **内网渗透**: impacket, crackmapexec, mimikatz
 - **隧道代理**: frp, chisel
 
+#### ✨ 系统改进（2026-03 更新）
+- **模块化状态类型**: 场景分离的状态定义（WebCTFState, InternalNetworkState, CryptoCTFState 等）
+- **统一错误处理**: ToolResult 类型和 AI 驱动的错误恢复
+- **并发控制**: LLMRateLimiter 实现的 API 调用限流
+- **任务持久化**: SQLite 存储，支持断点续传
+- **模块注册机制**: 延迟导入，代码简化 38%
+
 ---
 
 ## Quick Start
@@ -59,22 +66,37 @@ FRP_SERVER_PORT: 7000
 FRP_SOCKS5_PORT: 10800
 ```
 
-### 3. Docker 部署
+### 3. Web UI 部署 (推荐)
+
+#### Docker 部署
 ```bash
-docker-compose build
 docker-compose up -d
 
-# 进入容器
-docker exec -it ctf-agent bash
-
-# 系统自检
-python /app/self_check.py
-
-# 运行任务
-python /app/ctf_agent_graph.py --target http://目标地址
+# 访问 Web UI
+# Windows: http://localhost:5000
+# Linux: http://服务器IP:5000
 ```
 
-### 4. 本地运行
+#### 本地运行
+```bash
+pip install -r requirements.txt
+
+# Windows
+start_web.bat
+
+# Linux
+chmod +x start_web.sh
+./start_web.sh
+```
+
+### 4. 命令行模式
+```bash
+docker-compose --profile cli up -d ctf-agent-cli
+docker exec -it ctf-agent-cli bash
+python /app/app/ctf_agent_graph.py --target http://目标地址
+```
+
+### 5. 本地命令行运行
 ```bash
 pip install -r requirements.txt
 python app/ctf_agent_graph.py --target http://目标地址
@@ -88,10 +110,21 @@ python app/ctf_agent_graph.py --target http://目标地址
 deploy/
 ├── app/                        # 核心代码
 │   ├── ctf_agent_graph.py      # 主程序入口 & 图定义
-│   ├── state.py                # CTFState 状态定义
+│   ├── state.py                # CTFState 状态定义（原有）
+│   ├── state_types/            # [新增] 模块化状态类型
+│   │   ├── base.py             # 基础状态（通用字段）
+│   │   ├── web.py              # Web CTF 状态
+│   │   ├── internal_network.py # 内网渗透状态
+│   │   └── reducers.py         # 状态规约器
+│   ├── module_registry.py      # [新增] 模块注册机制
+│   ├── task_persistence.py     # [新增] 任务持久化
+│   ├── attack_strategy_evaluator.py  # [新增] 策略评估
+│   ├── context_compressor.py   # [新增] 上下文压缩
 │   ├── router.py               # 节点路由逻辑
-│   ├── llm_client.py           # LLM 客户端
-│   ├── config.py               # 配置加载
+│   ├── llm_client.py           # LLM 客户端（并发控制）
+│   ├── self_correction.py      # 自我纠错（AI驱动恢复）
+│   ├── config.py               # 配置加载（常量集中）
+│   ├── tool_framework.py       # 工具框架（NetworkScanTool 基类）
 │   ├── tool_selector.py        # AI驱动工具选择
 │   ├── analyst_prompt.py       # 分析兵提示词
 │   ├── attacker_prompt.py      # 攻击兵提示词
@@ -108,8 +141,17 @@ deploy/
 ├── reverse/                    # 逆向模块
 ├── misc/                       # Misc模块
 ├── remote_executor/            # 远程执行模块
+├── web/                        # [新增] Web UI & API
+│   ├── api.py                  # REST API 服务
+│   ├── templates/              # 前端模板
+│   └── static/                 # 静态资源
+├── docs/                       # [新增] 文档
+│   ├── REFACTOR_PLAN.md        # 重构计划
+│   └── IMPROVEMENT_LOG.md      # 改进日志
 ├── rag_builder/                # RAG知识检索
 ├── config.yaml.example         # 配置模板
+├── refactoring_test.py         # [新增] 自动化测试脚本
+├── self_check.py               # 自检脚本
 ├── Dockerfile
 ├── docker-compose.yml
 └── requirements.txt

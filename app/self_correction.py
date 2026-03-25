@@ -7,13 +7,21 @@
 - 自动状态恢复
 - 错误链追踪
 - 优雅关闭机制
+
+AI驱动的错误恢复:
+- analyze_failure_with_ai: AI分析失败根因
+- attempt_ai_recovery: AI生成恢复策略
+- 智能错误模式识别
 """
+import json
 import time
 import traceback
-from typing import Dict, List, Any, Optional, Callable
+from typing import Dict, List, Any, Optional, Callable, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 from state import CTFState
+from llm_client import llm_client
+from config import config
 
 
 class ErrorSeverity(Enum):
@@ -155,6 +163,243 @@ class SelfCorrectionManager:
     def _handle_permission_denied(self, record: ErrorRecord) -> str:
         """处理权限拒绝"""
         return "尝试提权或绕过方法"
+
+    # =========================================================================
+    # AI 驱动的错误分析与恢复
+    # =========================================================================
+
+    def analyze_failure_with_ai(self, error_record: ErrorRecord, context: Dict = None) -> Dict:
+        """
+        使用 AI 分析失败原因
+
+        Args:
+            error_record: 错误记录
+            context: 额外上下文（如目标URL、攻击历史等）
+
+        Returns:
+            分析结果，包含根因、建议、恢复策略
+        """
+        context = context or {}
+
+        # 构建分析 prompt
+        prompt = f"""分析以下渗透测试失败，找出根因并给出恢复建议。
+
+## 错误信息
+- 节点: {error_record.node}
+- 类型: {error_record.error_type}
+- 消息: {error_record.error_message}
+- 严重度: {error_record.severity.name}
+
+## 上下文
+- 目标: {context.get('target_url', '未知')}
+- 最近动作: {json.dumps(context.get('recent_actions', [])[:5], ensure_ascii=False)}
+- 已尝试次数: {context.get('attempts', 0)}
+
+## 最近错误历史
+{self._format_recent_errors()}
+
+## 输出格式 (JSON)
+{{
+  "root_cause": "根本原因分析",
+  "error_category": "network/tool/config/logic/permission",
+  "is_recoverable": true/false,
+  "recovery_strategies": [
+    {{
+      "strategy": "策略名称",
+      "action": "具体动作",
+      "priority": 1-5,
+      "estimated_success_rate": 0.0-1.0
+    }}
+  ],
+  "recommended_next_node": "建议跳转的节点",
+  "should_skip_target": true/false
+}}
+"""
+
+        try:
+            response = llm_client.call_chat_completion(
+                model=config.ANALYST_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                json_mode=True
+            )
+
+            # 清理 markdown 标记
+            if "```json" in response:
+                response = response.split("```json")[1].split("```")[0]
+            elif "```" in response:
+                response = response.split("```")[1].split("```")[0]
+
+            result = json.loads(response.strip())
+            result["analysis_time"] = time.time()
+            return result
+
+        except Exception as e:
+            return {
+                "root_cause": f"AI分析失败: {str(e)}",
+                "error_category": "unknown",
+                "is_recoverable": True,
+                "recovery_strategies": [{
+                    "strategy": "default_retry",
+                    "action": "重试当前操作",
+                    "priority": 1,
+                    "estimated_success_rate": 0.3
+                }],
+                "recommended_next_node": None,
+                "should_skip_target": False
+            }
+
+    def attempt_ai_recovery(self, state: CTFState, analysis: Dict) -> Tuple[Dict, bool]:
+        """
+        根据AI分析结果执行恢复
+
+        Args:
+            state: 当前状态
+            analysis: AI分析结果
+
+        Returns:
+            (state_updates, recovered): 状态更新和是否成功恢复
+        """
+        updates = {}
+        recovered = False
+
+        strategies = analysis.get("recovery_strategies", [])
+        # 按优先级排序
+        strategies.sort(key=lambda x: x.get("priority", 5))
+
+        for strategy in strategies[:3]:  # 最多尝试3个策略
+            strategy_name = strategy.get("strategy", "")
+            action = strategy.get("action", "")
+
+            print(f"[SelfCorrection] 尝试恢复策略: {strategy_name} - {action}")
+
+            result = self._execute_recovery_strategy(state, strategy_name, action)
+            if result.get("success"):
+                updates.update(result.get("updates", {}))
+                recovered = True
+                self.health_status.consecutive_failures = 0
+                print(f"[SelfCorrection] 恢复成功: {strategy_name}")
+                break
+            else:
+                updates.update(result.get("updates", {}))
+
+        # 如果建议跳过目标
+        if analysis.get("should_skip_target") and not recovered:
+            updates["skip_current_target"] = True
+            updates["skip_reason"] = analysis.get("root_cause", "AI建议跳过")
+
+        return updates, recovered
+
+    def _execute_recovery_strategy(self, state: CTFState, strategy: str, action: str) -> Dict:
+        """执行具体的恢复策略"""
+        strategy_handlers = {
+            "retry_with_different_params": self._strategy_retry_different,
+            "switch_tool": self._strategy_switch_tool,
+            "change_attack_vector": self._strategy_change_vector,
+            "reset_session": self._strategy_reset_session,
+            "escalate_privilege": self._strategy_escalate,
+            "skip_current_step": self._strategy_skip_step,
+            "default_retry": self._strategy_default_retry,
+        }
+
+        handler = strategy_handlers.get(strategy, self._strategy_default_retry)
+        return handler(state, action)
+
+    def _strategy_retry_different(self, state: CTFState, action: str) -> Dict:
+        """策略：使用不同参数重试"""
+        return {
+            "success": True,
+            "updates": {
+                "force_retry": True,
+                "retry_with_different_params": True
+            }
+        }
+
+    def _strategy_switch_tool(self, state: CTFState, action: str) -> Dict:
+        """策略：切换工具"""
+        # 从action中解析建议的工具
+        import re
+        tools = re.findall(r'(sqlmap|nmap|fscan|gobuster|hydra|nikto)', action.lower())
+        if tools:
+            return {
+                "success": True,
+                "updates": {
+                    "preferred_tool": tools[0],
+                    "tool_switch_reason": action
+                }
+            }
+        return {"success": False, "updates": {}}
+
+    def _strategy_change_vector(self, state: CTFState, action: str) -> Dict:
+        """策略：改变攻击向量"""
+        return {
+            "success": True,
+            "updates": {
+                "attack_vector": action,
+                "force_recon": True
+            }
+        }
+
+    def _strategy_reset_session(self, state: CTFState, action: str) -> Dict:
+        """策略：重置会话"""
+        return {
+            "success": True,
+            "updates": {
+                "shell_session": None,
+                "session_reset": True
+            }
+        }
+
+    def _strategy_escalate(self, state: CTFState, action: str) -> Dict:
+        """策略：提权"""
+        return {
+            "success": True,
+            "updates": {
+                "need_privilege_escalation": True,
+                "escalation_method": action
+            }
+        }
+
+    def _strategy_skip_step(self, state: CTFState, action: str) -> Dict:
+        """策略：跳过当前步骤"""
+        return {
+            "success": True,
+            "updates": {
+                "skip_current_step": True,
+                "skip_reason": action
+            }
+        }
+
+    def _strategy_default_retry(self, state: CTFState, action: str) -> Dict:
+        """策略：默认重试"""
+        return {
+            "success": True,
+            "updates": {"retry_count": state.get("retry_count", 0) + 1}
+        }
+
+    def _format_recent_errors(self, count: int = 5) -> str:
+        """格式化最近错误用于AI分析"""
+        recent = self.error_history[-count:] if self.error_history else []
+        if not recent:
+            return "无最近错误"
+
+        lines = []
+        for e in recent:
+            lines.append(f"- [{e.severity.name}] {e.node}: {e.error_type} - {e.error_message[:100]}")
+        return "\n".join(lines)
+
+    def get_recovery_stats(self) -> Dict:
+        """获取恢复统计信息"""
+        total = len(self.error_history)
+        recovered = sum(1 for e in self.error_history if e.recovered)
+
+        return {
+            "total_errors": total,
+            "recovered_errors": recovered,
+            "recovery_rate": recovered / total if total > 0 else 0,
+            "consecutive_failures": self.health_status.consecutive_failures,
+            "is_healthy": self.health_status.is_healthy
+        }
 
     def check_health(self, state: CTFState) -> HealthStatus:
         """

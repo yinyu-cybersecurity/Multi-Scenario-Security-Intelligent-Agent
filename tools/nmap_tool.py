@@ -13,80 +13,18 @@ CTF场景优化:
 - 快速扫描模式
 - 常用端口预设
 - 自动解析输出
+
+使用 NetworkScanTool 基类，复用验证逻辑
 """
 import re
-import sys
 import json
 import shutil
-import subprocess
 import xml.etree.ElementTree as ET
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
-from tool_framework import CommandLineTool
+from tool_framework import NetworkScanTool
 from llm_client import llm_client
 from config import config
-
-
-# [安全修复] IP/域名/CIDR 验证正则
-IPV4_PATTERN = re.compile(
-    r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}'
-    r'(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
-)
-CIDR_PATTERN = re.compile(
-    r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}'
-    r'(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)'
-    r'/(?:[0-9]|[12][0-9]|3[0-2])$'
-)
-HOSTNAME_PATTERN = re.compile(
-    r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?'
-    r'(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$'
-)
-# IPv6 简化模式
-IPV6_PATTERN = re.compile(
-    r'^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$|'
-    r'^::([0-9a-fA-F]{0,4}:){0,5}[0-9a-fA-F]{0,4}$|'
-    r'^[0-9a-fA-F]{0,4}::([0-9a-fA-F]{0,4}:){0,5}[0-9a-fA-F]{0,4}$'
-)
-
-
-def validate_target(target: str) -> Tuple[bool, str]:
-    """
-    [安全修复] 验证目标参数，防止命令注入
-
-    Args:
-        target: 用户输入的目标
-
-    Returns:
-        (is_valid, error_message): 验证结果和错误信息
-    """
-    if not target or not isinstance(target, str):
-        return False, "目标不能为空"
-
-    # 去除首尾空格
-    target = target.strip()
-
-    # 长度限制
-    if len(target) > 256:
-        return False, "目标长度超过限制"
-
-    # 检查危险字符（命令注入防护）
-    dangerous_chars = [';', '|', '&', '$', '`', '(', ')', '{', '}', '<', '>', '\n', '\r']
-    for char in dangerous_chars:
-        if char in target:
-            return False, f"目标包含非法字符: {char}"
-
-    # 验证格式
-    is_valid = (
-        IPV4_PATTERN.match(target) or
-        IPV6_PATTERN.match(target) or
-        CIDR_PATTERN.match(target) or
-        HOSTNAME_PATTERN.match(target)
-    )
-
-    if not is_valid:
-        return False, f"无效的目标格式: {target}"
-
-    return True, ""
 
 
 @dataclass
@@ -112,9 +50,14 @@ class NmapHost:
     ports: List[NmapPort] = field(default_factory=list)
 
 
-class NmapTool(CommandLineTool):
+class NmapTool(NetworkScanTool):
     """
     Nmap 网络扫描工具封装
+
+    继承 NetworkScanTool 基类，复用：
+    - validate_target: 目标验证
+    - validate_ports: 端口验证
+    - ai_analyze_results: AI 分析框架
 
     CTF场景特点:
     - 快速扫描优先
@@ -249,7 +192,7 @@ class NmapTool(CommandLineTool):
             return {"error": "必须提供目标", "success": False}
 
         # [安全修复] 验证目标参数，防止命令注入
-        is_valid, error_msg = validate_target(target)
+        is_valid, error_msg = self.validate_target(target)
         if not is_valid:
             return {"error": f"目标验证失败: {error_msg}", "success": False}
 
@@ -294,6 +237,10 @@ class NmapTool(CommandLineTool):
             else:
                 cmd.extend(["-p", self.PORT_PRESETS[ports]])
         else:
+            # 验证自定义端口参数
+            is_valid_ports, ports_error = self.validate_ports(ports)
+            if not is_valid_ports:
+                return {"success": False, "error": f"端口参数验证失败: {ports_error}"}
             cmd.extend(["-p", ports])
 
         # 服务检测

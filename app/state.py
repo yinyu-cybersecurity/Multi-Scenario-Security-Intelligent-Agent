@@ -364,6 +364,7 @@ class CTFState(TypedDict):
 
     # --- 后渗透状态 ---
     shell_session: Dict[str, Any]  # Shell会话信息
+    post_exploit_status: str  # 后渗透处理状态: no_shell/ready_for_internal/web_only
     upload_status: str  # 工具上传状态
     tunnel_status: str  # 隧道状态
     proxy_info: Dict[str, Any]  # SOCKS5代理信息

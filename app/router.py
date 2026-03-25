@@ -47,26 +47,28 @@ class RouteGuard:
 
         # ---------- 死循环检测规则 ----------
 
-        # 规则1: 同一节点连续访问超过5次（上调自3次）
-        if self.loop_count.get(next_node, 0) > 5:
-            print(f"[RouteGuard] 节点 {next_node} 连续访问超过5次")
+        # 规则1: 同一节点连续访问超过10次（大幅上调，避免误判）
+        if self.loop_count.get(next_node, 0) > 10:
+            print(f"[RouteGuard] 节点 {next_node} 连续访问超过10次")
             return True
 
-        # 规则2: 检测 A->B->A 来回循环
-        if len(self.path_history) >= 4:
-            last4 = self.path_history[-4:]
-            # 模式: A->B, B->A, A->B, B->A
-            if (last4[0][1] == last4[2][0] and
-                    last4[1][1] == last4[3][0] and
-                    last4[0][0] == last4[2][0] and
-                    last4[1][0] == last4[3][0]):
-                print(f"⚠️ [RouteGuard] 检测到来回循环: {last4}")
+        # 规则2: 检测 A->B->A 来回循环 (需要6次以上才触发)
+        if len(self.path_history) >= 6:
+            last6 = self.path_history[-6:]
+            # 模式: A->B, B->A, A->B, B->A, A->B, B->A (连续3次来回)
+            if (last6[0][1] == last6[2][0] and
+                    last6[1][1] == last6[3][0] and
+                    last6[2][1] == last6[4][0] and
+                    last6[3][1] == last6[5][0] and
+                    last6[0][0] == last6[2][0] and
+                    last6[1][0] == last6[3][0]):
+                print(f"⚠️ [RouteGuard] 检测到持续来回循环: {last6}")
                 return True
 
-        # 规则3: 长时间没有进展（超过300秒还在同一个模式）
+        # 规则3: 长时间没有进展（超过600秒，10分钟）
         current_time = time.time()
-        if current_time - self.last_transition_time > 300:
-            print(f"⚠️ [RouteGuard] 300秒无进展，可能卡死")
+        if current_time - self.last_transition_time > 600:
+            print(f"⚠️ [RouteGuard] 600秒无进展，可能卡死")
             self.last_transition_time = current_time
             return True
 
@@ -98,9 +100,10 @@ def route_mode(state: CTFState, current_node: str) -> str:
 
     处理流程：
         1. 从状态获取目标模式
-        2. 死循环检测
-        3. 异常情况处理
-        4. 返回下一节点
+        2. 上下文压缩检查
+        3. 死循环检测
+        4. 异常情况处理
+        5. 返回下一节点
 
     Args:
         state: 当前状态
@@ -111,6 +114,31 @@ def route_mode(state: CTFState, current_node: str) -> str:
     """
     next_node = state.get("current_mode", "exploit")
 
+    # 上下文压缩检查 - 防止状态无限增长
+    try:
+        from context_compressor import get_compressor, get_chain_recorder
+
+        # 获取攻击链摘要
+        chain_recorder = get_chain_recorder()
+        chain_summary_text = chain_recorder.get_chain_summary()
+
+        # 检查状态大小
+        state_size = len(str(state))
+        if state_size > 50000:  # 状态超过50KB时压缩
+            print(f"[Route] 状态过大 ({state_size} bytes)，执行压缩...")
+            compressor = get_compressor()
+            compressed = compressor.compress(dict(state))
+            # 更新状态（保留关键字段）
+            if compressed:
+                # 只压缩列表类型的字段
+                for key in ["attack_results", "page_history", "visited_urls"]:
+                    if key in compressed and len(str(state.get(key, ""))) > 5000:
+                        state[key] = compressed.get(key, state.get(key, []))
+                print(f"[Route] 压缩完成")
+    except Exception as e:
+        # 压缩失败不影响路由
+        pass
+
     # [核心修复] 检查当前 URL 是否已经过侦察
     current_url = state.get("current_url")
     visited_urls = state.get("visited_urls", [])
@@ -118,7 +146,7 @@ def route_mode(state: CTFState, current_node: str) -> str:
     # 如果当前 URL 没在访问列表中，且当前不是在进行探索或创新模式，强制先去侦察
     # [P3修复] innovate 模式也需要跳过这个检查，因为可能是全新思路
     if current_url and current_url not in visited_urls and next_node not in ["explore", "innovate"]:
-        print(f"📡 [Route] 检测到新 URL: {current_url}，强制切换至侦察模式")
+        print(f"[Route] 检测到新 URL: {current_url}，强制切换至侦察模式")
         return "recon"
 
     # 1. 死循环检测
@@ -174,12 +202,12 @@ def route_verify(state: CTFState, current_node: str) -> str:
     post_exploit_status = state.get("post_exploit_status", "")
 
     if shell_session and post_exploit_status in ["ready_for_internal", "web_only"]:
-        print(f"🔓 [Route] 检测到shell会话，进入后渗透处理")
+        print(f"[Shell] 检测到shell会话，进入后渗透处理")
         return "post_exploit"
 
     # 如果后渗透已完成且发现内网，进入内网模式
     if post_exploit_status == "ready_for_internal" and state.get("internal_network_range"):
-        print(f"🌐 [Route] 后渗透完成，进入内网渗透")
+        print(f"[Internal] 后渗透完成，进入内网渗透")
         return "internal_recon"
 
     # 3. 如果步数太多但失败分不高，强制加一个失败分触发探索
@@ -459,16 +487,16 @@ def route_post_exploit(state: CTFState, current_node: str) -> str:
     if post_exploit_status == "ready_for_internal" and internal_range:
         # 步骤1: 上传工具
         if upload_status not in ["completed", "commands_generated"]:
-            print(f"🌐 [PostExploitRoute] 发现内网，准备上传工具")
+            print(f"[PostExploitRoute] 发现内网，准备上传工具")
             return "upload_tools"
 
         # 步骤2: 搭建隧道
         if tunnel_status != "configured":
-            print(f"🌐 [PostExploitRoute] 工具就绪，准备搭建隧道")
+            print(f"[PostExploitRoute] 工具就绪，准备搭建隧道")
             return "setup_tunnel"
 
         # 步骤3: 开始内网侦察
-        print(f"🌐 [PostExploitRoute] 隧道就绪，进入内网侦察")
+        print(f"[PostExploitRoute] 隧道就绪，进入内网侦察")
         return "internal_recon"
 
     # 如果只是Web shell，继续Web攻击流程

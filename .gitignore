@@ -145,8 +145,11 @@ OPEN_SOURCE_TOOLS.md
 README_GITHUB.md
 
 # =============================================================================
-# Writeups and solutions (not for GitHub)
+# Development plans (not for GitHub)
 # =============================================================================
+docs/IMPLEMENTATION_PLAN.md
+docs/TOOL_OUTPUT_PLAN.md
+docs/TOOL_OUTPUT_FIX_PLAN.md
 靶机wp/
 writeups/
 solutions/
@@ -159,6 +162,12 @@ test_output/
 test_results/
 .pytest_cache/
 test_suite/output/
+logs/test_results_*.json
+
+# =============================================================================
+# Claude Code memory
+# =============================================================================
+.claude/
 
 # =============================================================================
 # RAG / Vector DB

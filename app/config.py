@@ -1,6 +1,8 @@
 # config.py - 系统全局配置
 # 作用：所有阈值集中管理，方便调参
-# 使用方式：from config import Config
+# 使用方式：from config import config
+#
+# 配置常量集中化：所有魔法值统一管理，每个常量有注释说明用途
 from typing import List
 from dataclasses import dataclass,field
 import os
@@ -19,40 +21,121 @@ class Config:
         修改yaml文件后，重启应用生效
     """
 
-    # ===== 模式切换阈值 =====
+    # =========================================================================
+    # 状态限制常量 - 用于防止内存溢出和数据膨胀
+    # =========================================================================
+
+    # 最大访问URL数（visited_urls 列表上限）
+    # 超过此值后，旧记录会被丢弃
+    MAX_VISITED_URLS: int = 100
+
+    # 最大访问页面数（visited_fingerprints 列表上限）
+    MAX_VISITED_PAGES: int = 100
+
+    # 最大漏洞候选项（vuln_candidates 列表上限）
+    # 分析兵发现的潜在漏洞最多保留10条
+    MAX_VULN_CANDIDATES: int = 10
+
+    # 最大攻击结果记录（attack_results 列表上限）
+    # 保留最近的攻击结果用于反思分析
+    MAX_ATTACK_RESULTS: int = 20
+
+    # 最大工具调用记录（tool_calls 列表上限）
+    MAX_TOOL_CALLS: int = 100
+
+    # 最大失败payload记录（failed_payloads 列表上限）
+    # 避免重复执行已失败的payload
+    MAX_FAILED_PAYLOADS: int = 50
+
+    # 最大页面历史记录（page_history 字典键数上限）
+    MAX_PAGE_HISTORY: int = 30
+
+    # 最大已知凭据数（credentials 列表上限）
+    MAX_CREDENTIALS: int = 30
+
+    # 最大内网主机数（internal_hosts 列表上限）
+    MAX_INTERNAL_HOSTS: int = 50
+
+    # =========================================================================
+    # 超时常量 - 所有超时相关配置
+    # =========================================================================
+
+    # 工具默认超时（秒）- 普通工具如 sqlmap
+    TOOL_TIMEOUT_DEFAULT: int = 300  # 5分钟
+
+    # 网络扫描超时（秒）- nmap/fscan 等慢速扫描
+    TOOL_TIMEOUT_NETWORK: int = 600  # 10分钟
+
+    # LLM调用超时（秒）
+    LLM_TIMEOUT: int = 120  # 2分钟
+
+    # 单个节点最大执行时间（秒）- 内网渗透可能很慢
+    NODE_TIMEOUT: int = 1800  # 30分钟
+
+    # 单个任务最大执行时间（秒）- Web CTF
+    TASK_TIMEOUT: int = 1200  # 20分钟
+
+    # 内网渗透任务最大执行时间（秒）
+    INTERNAL_TASK_TIMEOUT: int = 3000  # 50分钟
+
+    # AI决策间隔（秒）- 每隔多久问一次AI是否继续
+    DECISION_INTERVAL: int = 360  # 6分钟
+
+    # =========================================================================
+    # 重试常量 - 控制重试行为
+    # =========================================================================
+
+    # LLM调用重试次数
+    LLM_RETRY_COUNT: int = 3
+
+    # 工具执行重试次数
+    TOOL_RETRY_COUNT: int = 2
+
+    # LLM并发限制（同时进行的LLM请求数）
+    LLM_MAX_CONCURRENT: int = 5
+
+    # =========================================================================
+    # 决策阈值 - 控制模式切换
+    # =========================================================================
+
     # 失败分达到此值进入探索模式
-    FAILURE_SCORE_FOR_EXPLORE: float = 5.0  # [上调] 原2.0，给攻击更多机会
+    FAILURE_SCORE_FOR_EXPLORE: float = 5.0
 
     # 失败分达到此值进入创新模式
-    FAILURE_SCORE_FOR_INNOVATE: float = 10.0  # [上调] 原5.0，让攻击更充分
+    FAILURE_SCORE_FOR_INNOVATE: float = 10.0
 
-    # 在探索模式至少尝试多少轮后，才允许进入创新模式
-    EXPLORE_ROUNDS_FOR_INNOVATE: int = 5
+    # 失败分达到此值放弃任务（原HITL阈值）
+    FAILURE_SCORE_ABANDON: float = 15.0
 
     # 规则引擎连续多少次没匹配到漏洞，强制进入创新模式
     RULE_MISS_FOR_INNOVATE: int = 5
 
-    # ===== 系统控制 =====
-    # 最大总运行轮次，防止无限烧Token
+    # 在探索模式至少尝试多少轮后，才允许进入创新模式
+    EXPLORE_ROUNDS_FOR_INNOVATE: int = 5
+
+    # 节点最大循环次数（防止死循环）
+    MAX_LOOP_COUNT: int = 10
+
+    # 最大总运行轮次（防止无限烧Token）
     MAX_TOTAL_ROUNDS: int = 60
 
-    # 最大记录页面数，防止内存溢出
-    MAX_VISITED_PAGES: int = 60
+    # 步数达到此值自动进入创新模式
+    MAX_STEPS_BEFORE_INNOVATE: int = 50
 
-    # 漏洞候选队列最大长度
-    MAX_VULN_CANDIDATES: int = 10
+    # =========================================================================
+    # Token 限制 - 控制上下文大小
+    # =========================================================================
 
-    # ===== 节点熔断配置 =====
-    # 单个节点的最大攻击时间（秒），超时强制放弃
-    NODE_TIMEOUT: int = 1800  # 30分钟
+    # 触发压缩的Token阈值
+    MAX_CONTEXT_TOKENS: int = 30000
 
-    # 单个任务最大执行时间（秒）
-    TASK_TIMEOUT: int = 1200  # 20分钟
+    # Token估算因子（字符/token，中文约1.5，英文约4，代码约2-3）
+    CHARS_PER_TOKEN: float = 2.5
 
-    # AI决策间隔（秒），每隔多久问一次AI是否继续
-    DECISION_INTERVAL: int = 360  # 6分钟
+    # =========================================================================
+    # 失败权重 - 用于计算 failure_weighted_score
+    # =========================================================================
 
-    # ===== 失败权重 =====
     # 404/403/500: 明显错误，权重高
     HARD_FAILURE_WEIGHT: float = 0.8
 
@@ -62,85 +145,101 @@ class Config:
     # 200 OK且页面有变化但没Flag: 值得关注，权重低
     SUSPICIOUS_WEIGHT: float = 0.2
 
-    # ===== 批处理配置 =====
+    # =========================================================================
+    # 批处理配置
+    # =========================================================================
+
     # 攻击兵每次生成的并发攻击动作数量
     BATCH_SIZE: int = 5
 
-    # 并行Agent数量（2个LLM + 规则引擎）
+    # 并行Agent数量
     PARALLEL_AGENTS: int = 2
 
-    # ===== 图数据库配置 =====
-    GRAPH_MAX_DEPTH: int = 5  # 最大探索深度
-    GRAPH_PRUNE_STATUS: List[int] = field(default_factory=lambda: [403, 404, 500])  # 剪枝状态码
-    GRAPH_MAX_NODES: int = 1000  # 最大节点数
-    GRAPH_ENABLE_VISUALIZATION: bool = False  # 是否启用可视化
+    # =========================================================================
+    # 图数据库配置
+    # =========================================================================
 
+    # 最大探索深度
+    GRAPH_MAX_DEPTH: int = 5
 
+    # 剪枝状态码（遇到这些状态码的节点不继续探索）
+    GRAPH_PRUNE_STATUS: List[int] = field(default_factory=lambda: [403, 404, 500])
 
-    # ===== 页面变化检测配置 =====
-    # 页面快照存储目录（用于基线对比）
+    # 最大节点数
+    GRAPH_MAX_NODES: int = 1000
+
+    # 是否启用可视化
+    GRAPH_ENABLE_VISUALIZATION: bool = False
+
+    # =========================================================================
+    # 页面变化检测配置
+    # =========================================================================
+
+    # 页面快照存储目录
     CACHE_DIR: str = "/tmp/ctf_cache"
-    
+
     # 用于分析页面变化的轻量级模型
     CHANGE_DETECTION_MODEL: str = "deepseek-chat"
-    
-    # 变化检测置信度阈值（超过此值才视为有效攻击）
-    CHANGE_DETECTION_CONFIDENCE: float = 0.8
-    
-    # 失败分调整策略（用于智能体进化）
-    SCORE_NO_CHANGE: float = 0.5       # MD5完全相同（攻击无效）
-    SCORE_CHANGE_NOT_EXPLOIT: float = 0.2  # MD5不同但非漏洞（如动态内容变化）
-    SCORE_CHANGE_EXPLOIT: float = 0.0      # 疑似漏洞利用成功（不扣分，甚至奖励）
 
-    # ===== 外带(OOB)配置 =====
+    # 变化检测置信度阈值
+    CHANGE_DETECTION_CONFIDENCE: float = 0.8
+
+    # 失败分调整策略
+    SCORE_NO_CHANGE: float = 0.5              # MD5完全相同
+    SCORE_CHANGE_NOT_EXPLOIT: float = 0.2     # MD5不同但非漏洞
+    SCORE_CHANGE_EXPLOIT: float = 0.0         # 疑似漏洞利用成功
+
+    # =========================================================================
     # 外带(OOB)配置
+    # =========================================================================
+
     # 用于SSRF/XSS/RCE回连的服务器IP或域名
-    # 会替换Payload中的 {{OOB_HOST}}
     OOB_HOST: str = "127.0.0.1"
 
-    # ===== 内网渗透配置 =====
-    # 注意：框架直接运行在VPS服务器上，以下配置用于本地服务
+    # =========================================================================
+    # 内网渗透配置
+    # 注意：框架直接运行在VPS服务器上
+    # =========================================================================
 
     # 本机公网IP (框架运行的VPS的公网IP)
-    # 用于生成隧道配置、回调地址等
     LOCAL_PUBLIC_IP: str = ""
 
-    # HTTP文件服务器端口 (本机提供工具下载服务)
-    # 工具目录: /opt/tools/ (镜像内置，HTTP服务器服务此目录)
+    # HTTP文件服务器端口
     HTTP_SERVER_PORT: int = 8000
 
-    # 工具目录 (镜像内置路径)
+    # 工具目录
     TOOLS_DIR: str = "/opt/tools"
     FRP_DIR: str = "/opt/frp"
 
-    # 本机HTTP服务器地址 (自动生成，无需手动配置)
-    # 格式: http://{LOCAL_PUBLIC_IP}:{HTTP_SERVER_PORT}
     @property
     def HTTP_SERVER(self) -> str:
+        """本机HTTP服务器地址"""
         if self.LOCAL_PUBLIC_IP:
             return f"http://{self.LOCAL_PUBLIC_IP}:{self.HTTP_SERVER_PORT}"
         return ""
 
-    # frp配置 (frps运行在本机)
-    FRP_SERVER_PORT: int = 7000      # frps监听端口
-    FRP_SOCKS5_PORT: int = 10800     # SOCKS5代理端口
+    # frp配置
+    FRP_SERVER_PORT: int = 7000
+    FRP_SOCKS5_PORT: int = 10800
 
-    # ===== LLM 配置 =====
-    # 请在 config.yaml 中配置，不要在这里硬编码
+    # =========================================================================
+    # LLM 配置
+    # =========================================================================
+
     LLM_API_KEY: str = ""
     LLM_BASE_URL: str = "https://api.deepseek.com/v1"
 
-    # ===== HITL & 熔断配置 =====
-    # 原HITL配置已删除，现在自动进入创新模式
-    # 以下配置用于触发创新模式的阈值
-    MAX_STEPS_BEFORE_HITL: int = 50  # 步数达到此值自动进入创新模式
-    HITL_FAILURE_SCORE: float = 15.0  # 失败分达到此值自动进入创新模式
+    # =========================================================================
+    # RAG配置
+    # =========================================================================
 
-    # ===== RAG配置 =====
-    RAG_ENABLED: bool = True  # 是否启用RAG知识库
-    RAG_FOR_WEB_ONLY: bool = True  # 只在Web CTF场景使用RAG
+    RAG_ENABLED: bool = True
+    RAG_FOR_WEB_ONLY: bool = True
 
-    # ===== 模型配置 =====
+    # =========================================================================
+    # 模型配置 - 不同任务使用不同模型
+    # =========================================================================
+
     # 分析兵：需要强推理能力
     ANALYST_MODEL: str = "deepseek-chat"
 
@@ -160,20 +259,16 @@ class Config:
     def from_yaml(cls, path: str = "config.yaml"):
         """从YAML文件加载配置
 
-        如果配置文件存在，则加载并覆盖默认值；
-        如果不存在，则使用默认配置。
-
         Args:
             path: YAML配置文件路径
 
         Returns:
             Config: 配置对象
         """
-        # 尝试多个可能的路径
         possible_paths = [
-            path,  # 当前目录
-            os.path.join(os.path.dirname(__file__), '..', path),  # 父目录
-            os.path.join(os.path.dirname(__file__), '..', '..', path),  # 上两级目录
+            path,
+            os.path.join(os.path.dirname(__file__), '..', path),
+            os.path.join(os.path.dirname(__file__), '..', '..', path),
         ]
 
         for p in possible_paths:
@@ -184,6 +279,5 @@ class Config:
         return cls()
 
 
-# ===== 全局配置实例 =====
-# 其他地方使用：from config import config
+# 全局配置实例
 config = Config.from_yaml()

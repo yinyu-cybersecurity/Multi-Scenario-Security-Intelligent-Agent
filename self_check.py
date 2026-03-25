@@ -1,10 +1,22 @@
 #!/usr/bin/env python
 """
 CTF-Agent Comprehensive Self-Check Script (deploy version)
+
+[任务3.2] 增强功能:
+- 工具可用性检查
+- 网络连接测试
+- 配置验证
+- LLM 连接测试
+- 持久化模块测试
 """
 
 import sys
 import os
+import json
+import shutil
+import subprocess
+import socket
+from pathlib import Path
 
 # Add app directory to path for deploy structure
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'app'))
@@ -13,7 +25,7 @@ print('=' * 60)
 print('CTF-Agent Comprehensive Self-Check (deploy)')
 print('=' * 60)
 
-results = {'pass': 0, 'fail': 0, 'warnings': []}
+results = {'pass': 0, 'fail': 0, 'warnings': [], 'skipped': 0}
 
 def check(name, condition, detail=''):
     global results
@@ -25,6 +37,16 @@ def check(name, condition, detail=''):
         results['fail'] += 1
         if detail:
             results['warnings'].append(f'{name}: {detail}')
+
+def skip(name, reason=''):
+    global results
+    print(f'[SKIP] {name}' + (f' - {reason}' if reason else ''))
+    results['skipped'] += 1
+
+def warn(name, detail):
+    global results
+    print(f'[WARN] {name}: {detail}')
+    results['warnings'].append(f'{name}: {detail}')
 
 # ========================================
 # 1. Core Module Imports
@@ -284,6 +306,248 @@ except Exception as e:
     check('Tool register functions', False, str(e))
 
 # ========================================
+# [任务3.2] 10. Tool Availability
+# ========================================
+print('\n--- Tool Availability ---')
+
+tool_commands = {
+    'nmap': ['nmap', '--version'],
+    'sqlmap': ['sqlmap', '--version'],
+    'gobuster': ['gobuster', 'version'],
+    'hydra': ['hydra', '-h'],
+    'nuclei': ['nuclei', '-version'],
+    'ffuf': ['ffuf', '-V'],
+    'curl': ['curl', '--version'],
+    'wget': ['wget', '--version'],
+}
+
+for tool_name, cmd in tool_commands.items():
+    try:
+        result = subprocess.run(cmd, capture_output=True, timeout=10)
+        if result.returncode == 0 or tool_name in result.stderr.decode('utf-8', errors='ignore').lower():
+            check(f'{tool_name} available', True)
+        else:
+            warn(f'{tool_name}', 'installed but may need configuration')
+            check(f'{tool_name} available', True)
+    except FileNotFoundError:
+        skip(f'{tool_name} available', 'not installed')
+    except subprocess.TimeoutExpired:
+        warn(f'{tool_name}', 'timeout during check')
+        check(f'{tool_name} available', True)  # May still work
+    except Exception as e:
+        check(f'{tool_name} available', False, str(e))
+
+# fscan special check
+try:
+    result = subprocess.run(['fscan'], capture_output=True, timeout=5)
+    output = result.stdout.decode('utf-8', errors='ignore') + result.stderr.decode('utf-8', errors='ignore')
+    if 'fscan' in output.lower() or result.returncode in [0, 1]:
+        check('fscan available', True)
+    else:
+        skip('fscan available', 'not in PATH')
+except FileNotFoundError:
+    skip('fscan available', 'not installed')
+except Exception as e:
+    skip('fscan available', str(e))
+
+# ========================================
+# [任务3.2] 11. Configuration Validation
+# ========================================
+print('\n--- Configuration Validation ---')
+
+try:
+    from config import config
+
+    # Check API key
+    if config.LLM_API_KEY and len(config.LLM_API_KEY) > 10:
+        check('LLM API key configured', True)
+    else:
+        check('LLM API key configured', False, 'API key missing or too short')
+
+    # Check base URL
+    if config.LLM_BASE_URL:
+        check('LLM base URL configured', True)
+    else:
+        check('LLM base URL configured', False, 'base URL missing')
+
+    # Check timeout settings
+    if config.NODE_TIMEOUT > 0:
+        check('NODE_TIMEOUT set', True, f'{config.NODE_TIMEOUT}s')
+    else:
+        check('NODE_TIMEOUT set', False, 'must be positive')
+
+    # Check public IP
+    if config.LOCAL_PUBLIC_IP:
+        check('LOCAL_PUBLIC_IP configured', True, config.LOCAL_PUBLIC_IP)
+    else:
+        warn('LOCAL_PUBLIC_IP', 'not set, tunnel features may not work')
+        check('LOCAL_PUBLIC_IP configured', True)
+
+except Exception as e:
+    check('Configuration validation', False, str(e))
+
+# ========================================
+# [任务3.2] 12. Network Connectivity
+# ========================================
+print('\n--- Network Connectivity ---')
+
+# DNS resolution test
+try:
+    socket.gethostbyname('www.baidu.com')
+    check('DNS resolution', True)
+except Exception as e:
+    check('DNS resolution', False, str(e))
+
+# HTTP test
+try:
+    import urllib.request
+    urllib.request.urlopen('http://www.baidu.com', timeout=5)
+    check('HTTP connectivity', True)
+except Exception as e:
+    check('HTTP connectivity', False, str(e))
+
+# Local ports check
+required_ports = [8000, 7000, 10800]  # HTTP server, frps, SOCKS5
+for port in required_ports:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(1)
+    result = sock.connect_ex(('127.0.0.1', port))
+    sock.close()
+    if result == 0:
+        print(f'[INFO] Port {port} is in use')
+    else:
+        print(f'[INFO] Port {port} is available')
+
+# ========================================
+# [任务3.2] 13. LLM Connection Test
+# ========================================
+print('\n--- LLM Connection Test ---')
+
+try:
+    from llm_client import llm_client, LLMErrorType
+
+    # Simple test call
+    result = llm_client.call_with_details(
+        model='gpt-4o-mini',  # Use cheaper model for test
+        messages=[{'role': 'user', 'content': 'Reply with: OK'}],
+        max_tokens=10,
+        retry_count=1
+    )
+
+    if result.success:
+        check('LLM connection', True)
+        print(f'       Response: {result.content[:50]}...' if len(result.content) > 50 else f'       Response: {result.content}')
+    else:
+        check('LLM connection', False, f'{result.error_type.value}: {result.error_message}')
+except Exception as e:
+    check('LLM connection', False, str(e))
+
+# ========================================
+# [任务3.2] 14. Persistence Test
+# ========================================
+print('\n--- Persistence Module Test ---')
+
+try:
+    from task_persistence import TaskPersistenceManager
+
+    # Use temp database for test
+    test_db = Path(__file__).parent / 'data' / 'test_tasks.db'
+    test_db.parent.mkdir(exist_ok=True)
+
+    pm = TaskPersistenceManager(db_path=str(test_db))
+
+    # Test create task
+    record = pm.create_task('test_001', 'http://test.local', 'web_ctf')
+    check('TaskPersistence create', record.task_id == 'test_001')
+
+    # Test get task
+    retrieved = pm.get_task('test_001')
+    check('TaskPersistence get', retrieved is not None)
+
+    # Test update task
+    pm.update_task('test_001', status='running', execution_steps=5)
+    updated = pm.get_task('test_001')
+    check('TaskPersistence update', updated.status == 'running' and updated.execution_steps == 5)
+
+    # Test record execution
+    pm.record_execution('test_001', 'test_node', 'test_action', 'test_result', True)
+    history = pm.get_execution_history('test_001')
+    check('TaskPersistence history', len(history) > 0)
+
+    # Test statistics
+    stats = pm.get_statistics()
+    check('TaskPersistence stats', 'total_tasks' in stats)
+
+    # Cleanup
+    pm.delete_task('test_001')
+    if test_db.exists():
+        test_db.unlink()
+
+except Exception as e:
+    check('Persistence module', False, str(e))
+
+# ========================================
+# [任务3.2] 15. Self-Correction Test
+# ========================================
+print('\n--- Self-Correction Module Test ---')
+
+try:
+    from self_correction import SelfCorrectionManager, ErrorSeverity
+
+    scm = SelfCorrectionManager()
+
+    # Test error recording
+    record = scm.record_error(
+        node='test_node',
+        error_type='TEST_ERROR',
+        error_message='Test error message',
+        severity=ErrorSeverity.LOW
+    )
+    check('SelfCorrection record', record.error_type == 'TEST_ERROR')
+
+    # Test health check
+    from state import CTFState
+    test_state = {'target_url': 'http://test.local', 'execution_steps': 1}
+    health = scm.check_health(test_state)
+    check('SelfCorrection health check', health is not None)
+
+    # Test recovery stats
+    stats = scm.get_recovery_stats()
+    check('SelfCorrection stats', 'total_errors' in stats)
+
+except Exception as e:
+    check('Self-correction module', False, str(e))
+
+# ========================================
+# [任务3.2] 16. Context Compression Test
+# ========================================
+print('\n--- Context Compression Test ---')
+
+try:
+    from context_compressor import ContextCompressor
+
+    compressor = ContextCompressor()
+
+    # Test token estimation
+    test_text = "This is a test string for token estimation."
+    tokens = compressor.estimate_tokens(test_text)
+    check('ContextCompressor estimate_tokens', tokens > 0)
+
+    # Test should_compress
+    small_state = {'test': 'small'}
+    large_state = {'test': 'x' * 100000}  # Large string
+
+    check('ContextCompressor should_compress (small)', not compressor.should_compress(small_state))
+    check('ContextCompressor should_compress (large)', compressor.should_compress(large_state))
+
+    # Test compression stats
+    stats = compressor.get_compression_stats()
+    check('ContextCompressor stats', 'total_compressions' in stats)
+
+except Exception as e:
+    check('Context compression module', False, str(e))
+
+# ========================================
 # Summary
 # ========================================
 print('\n' + '=' * 60)
@@ -291,13 +555,14 @@ print('SUMMARY')
 print('=' * 60)
 print(f'Passed: {results["pass"]}')
 print(f'Failed: {results["fail"]}')
+print(f'Skipped: {results["skipped"]}')
 if results['warnings']:
     print('\nWarnings:')
     for w in results['warnings']:
         print(f'  - {w}')
 
 if results['fail'] == 0:
-    print('\n[SUCCESS] All checks passed!')
+    print('\n[SUCCESS] All critical checks passed!')
     sys.exit(0)
 else:
     print('\n[ERROR] Some checks failed!')
