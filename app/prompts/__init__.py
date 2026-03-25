@@ -141,11 +141,18 @@ def _auto_register():
     # Web CTF Prompts
     try:
         from analyst_prompt import get_analyst_prompt
+        # 使用 lambda 包装，提供默认参数支持
         PromptRegistry.register(
             name='analyst',
             category='web',
             description='分析兵 Prompt - 漏洞识别和分析',
-            get_func=get_analyst_prompt,
+            get_func=lambda page_features=None, raw_html='', rule_candidates=None, **kw:
+                get_analyst_prompt(
+                    page_features or {},
+                    raw_html,
+                    rule_candidates or [],
+                    **{k: v for k, v in kw.items() if k in ['task_name', 'task_description', 'baseline_response', 'detected_scenes', 'tools_info', 'focused_scene', 'scene_tested']}
+                ),
             aliases=['web_analyst']
         )
     except ImportError:
@@ -153,11 +160,17 @@ def _auto_register():
 
     try:
         from attacker_prompt import get_attacker_prompt
+        # 使用 lambda 包装
         PromptRegistry.register(
             name='attacker',
             category='web',
             description='攻击兵 Prompt - 漏洞利用',
-            get_func=get_attacker_prompt,
+            get_func=lambda vuln_candidates=None, tool_definitions='', **kw:
+                get_attacker_prompt(
+                    vuln_candidates or [],
+                    tool_definitions,
+                    **{k: v for k, v in kw.items() if k in ['attack_history', 'task_info', 'tactical_guidance', 'analyst_intel', 'known_facts']}
+                ),
             aliases=['web_attacker']
         )
     except ImportError:
@@ -169,7 +182,12 @@ def _auto_register():
             name='verifier',
             category='web',
             description='核验兵 Prompt - 结果验证',
-            get_func=get_verifier_prompt,
+            get_func=lambda attack_batch=None, results=None, **kw:
+                get_verifier_prompt(
+                    attack_batch or [],
+                    results or [],
+                    **{k: v for k, v in kw.items() if k in ['analyst_intel', 'node_info', 'known_facts', 'human_hint']}
+                ),
             aliases=['web_verifier']
         )
     except ImportError:

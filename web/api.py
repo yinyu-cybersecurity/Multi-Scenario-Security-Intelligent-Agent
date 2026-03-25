@@ -280,6 +280,12 @@ def monitor():
     return render_template('monitor.html')
 
 
+@app.route('/modules')
+def modules():
+    """模块管理"""
+    return render_template('modules.html')
+
+
 @app.route('/api/graph')
 def api_graph():
     """获取图结构"""
@@ -711,10 +717,115 @@ def api_compression_status():
         return jsonify({"error": "Compressor not available"}), 503
 
 
+# =============================================================================
+# 模块管理 API
+# =============================================================================
+
+@app.route('/api/modules')
+def api_modules():
+    """获取所有模块状态"""
+    try:
+        from module_registry import ModuleRegistry
+        report = ModuleRegistry.get_status_report()
+        return jsonify(report)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/modules/<module_name>')
+def api_module_detail(module_name):
+    """获取单个模块详情"""
+    try:
+        from module_registry import ModuleRegistry
+        info = ModuleRegistry.get_module_info(module_name)
+        if info:
+            return jsonify({
+                "name": info.name,
+                "available": info.available,
+                "nodes": list(info.nodes.keys()) if info.available else [],
+                "error": info.error
+            })
+        return jsonify({"error": "Module not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/modules/<module_name>/nodes')
+def api_module_nodes(module_name):
+    """获取模块中的节点列表"""
+    try:
+        from module_registry import ModuleRegistry
+        info = ModuleRegistry.get_module_info(module_name)
+        if info and info.available:
+            nodes = []
+            for node_name, node_func in info.nodes.items():
+                nodes.append({
+                    "name": node_name,
+                    "available": node_func is not None
+                })
+            return jsonify({"nodes": nodes})
+        return jsonify({"error": "Module not available"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# =============================================================================
+# 拓扑图 API
+# =============================================================================
+
+@app.route('/api/topology/<task_id>')
+def api_topology(task_id):
+    """获取任务的拓扑图数据"""
+    if task_id not in task_results:
+        return jsonify({"error": "Task not found"}), 404
+
+    result = task_results.get(task_id, {})
+    topology = result.get("site_topology", {})
+
+    if not topology:
+        return jsonify({"nodes": [], "edges": [], "message": "No topology data available"})
+
+    # 转换为 D3.js 格式
+    nodes = []
+    edges = []
+    seen_nodes = set()
+
+    for source, targets in topology.items():
+        if source not in seen_nodes:
+            nodes.append({"id": source, "name": source.split("/")[-1] or "/"})
+            seen_nodes.add(source)
+        for target in targets:
+            if target not in seen_nodes:
+                nodes.append({"id": target, "name": target.split("/")[-1] or "/"})
+                seen_nodes.add(target)
+            edges.append({"source": source, "target": target})
+
+    return jsonify({
+        "nodes": nodes,
+        "edges": edges,
+        "stats": {
+            "total_nodes": len(nodes),
+            "total_edges": len(edges)
+        }
+    })
+
+
+@app.route('/api/topology/<task_id>/critical')
+def api_topology_critical(task_id):
+    """获取关键节点"""
+    if task_id not in task_results:
+        return jsonify({"error": "Task not found"}), 404
+
+    result = task_results.get(task_id, {})
+    critical_nodes = result.get("critical_nodes", [])
+
+    return jsonify({"critical_nodes": critical_nodes})
+
+
 if __name__ == '__main__':
     print("=" * 50)
     print("CTF-Agent Web UI")
     print("=" * 50)
-    print(f"URL: http://localhost:5000")
+    print(f"URL: http://localhost:5001")
     print("=" * 50)
-    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
+    app.run(host='0.0.0.0', port=5001, debug=True, threaded=True)

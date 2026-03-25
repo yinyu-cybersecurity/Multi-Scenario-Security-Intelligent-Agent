@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CTF-Agent Module Manager</title>
+    <link href="https://cdn.jsdelivr.net/npm/element-plus@2.4.0/dist/index.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.prod.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/element-plus@2.4.0/dist/index.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@element-plus/icons-vue@2.3.1/dist/index.iife.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f1a;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(90deg, #1a1a2e 0%, #16213e 100%);
+            border-bottom: 1px solid #2a2a4a;
+            padding: 0 20px;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .header h1 {
+            font-size: 18px;
+            color: #00d4ff;
+        }
+        .header-links a {
+            color: #888;
+            text-decoration: none;
+            margin-left: 20px;
+            font-size: 13px;
+        }
+        .header-links a:hover { color: #00d4ff; }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .section-title {
+            font-size: 14px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #2a2a4a;
+        }
+
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 28px;
+            font-weight: 600;
+            color: #00d4ff;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #888;
+            margin-top: 4px;
+        }
+
+        .modules-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        .module-card {
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 8px;
+            padding: 16px;
+            transition: all 0.2s;
+        }
+        .module-card:hover { border-color: #3a3a5a; }
+        .module-card.available { border-left: 3px solid #00ff88; }
+        .module-card.unavailable { border-left: 3px solid #ff4444; }
+
+        .module-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .module-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+        }
+        .module-status {
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        .module-status.available { background: #1a3a2a; color: #00ff88; }
+        .module-status.unavailable { background: #3a1a1a; color: #ff4444; }
+
+        .module-nodes {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 8px;
+        }
+        .module-nodes span {
+            display: inline-block;
+            background: #0f0f1a;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin: 2px;
+            font-size: 11px;
+        }
+        .module-error {
+            font-size: 11px;
+            color: #ff4444;
+            margin-top: 8px;
+            padding: 8px;
+            background: #2a1515;
+            border-radius: 4px;
+        }
+
+        .tools-section {
+            margin-top: 32px;
+        }
+        .tools-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 8px;
+        }
+        .tool-item {
+            background: #1a1a2e;
+            border-radius: 6px;
+            padding: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .tool-name { font-size: 12px; color: #fff; }
+        .tool-status {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .tool-status.available { background: #1a3a2a; color: #00ff88; }
+        .tool-status.unavailable { background: #3a1a1a; color: #ff4444; }
+
+        .config-section {
+            margin-top: 32px;
+        }
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+        }
+        .config-card {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 16px;
+        }
+        .config-key {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+        .config-value {
+            font-size: 14px;
+            color: #fff;
+            font-family: monospace;
+        }
+        .config-value.masked { color: #666; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0a0a0f; }
+        ::-webkit-scrollbar-thumb { background: #3a3a5a; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <div class="header">
+            <h1>CTF-Agent Module Manager</h1>
+            <div class="header-links">
+                <a href="/">Dashboard</a>
+                <a href="/monitor">Monitor</a>
+                <a href="/modules">Modules</a>
+            </div>
+        </div>
+
+        <div class="container">
+            <!-- Stats -->
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-value">{{ modulesStatus.total_modules || 0 }}</div>
+                    <div class="stat-label">Total Modules</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" style="color: #00ff88;">{{ modulesStatus.available_modules || 0 }}</div>
+                    <div class="stat-label">Available</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{{ tools.length }}</div>
+                    <div class="stat-label">Tools Loaded</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{{ totalNodes }}</div>
+                    <div class="stat-label">Graph Nodes</div>
+                </div>
+            </div>
+
+            <!-- Modules -->
+            <div class="section-title">System Modules</div>
+            <div class="modules-grid">
+                <div v-for="(info, name) in modules" :key="name"
+                     class="module-card"
+                     :class="info.available ? 'available' : 'unavailable'">
+                    <div class="module-header">
+                        <span class="module-name">{{ name }}</span>
+                        <span class="module-status" :class="info.available ? 'available' : 'unavailable'">
+                            {{ info.available ? 'Available' : 'Unavailable' }}
+                        </span>
+                    </div>
+                    <div class="module-nodes" v-if="info.available && info.nodes.length">
+                        <span v-for="node in info.nodes" :key="node">{{ node }}</span>
+                    </div>
+                    <div class="module-error" v-if="!info.available && info.error">
+                        {{ info.error }}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tools -->
+            <div class="tools-section">
+                <div class="section-title">Registered Tools ({{ tools.length }})</div>
+                <div class="tools-grid">
+                    <div v-for="tool in tools" :key="tool.name" class="tool-item">
+                        <span class="tool-name">{{ tool.name }}</span>
+                        <span class="tool-status" :class="tool.available ? 'available' : 'unavailable'">
+                            {{ tool.available ? 'Ready' : 'N/A' }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Config -->
+            <div class="config-section">
+                <div class="section-title">Configuration</div>
+                <div class="config-grid">
+                    <div class="config-card">
+                        <div class="config-key">LLM Base URL</div>
+                        <div class="config-value">{{ config.LLM_BASE_URL || 'Not set' }}</div>
+                    </div>
+                    <div class="config-card">
+                        <div class="config-key">LLM API Key</div>
+                        <div class="config-value masked">{{ config.LLM_API_KEY ? '***' + config.LLM_API_KEY.slice(-6) : 'Not set' }}</div>
+                    </div>
+                    <div class="config-card">
+                        <div class="config-key">Analyst Model</div>
+                        <div class="config-value">{{ config.ANALYST_MODEL || 'Not set' }}</div>
+                    </div>
+                    <div class="config-card">
+                        <div class="config-key">Max Total Rounds</div>
+                        <div class="config-value">{{ config.MAX_TOTAL_ROUNDS || 'Default' }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                const modulesStatus = ref({});
+                const modules = ref({});
+                const tools = ref([]);
+                const config = ref({});
+
+                const totalNodes = computed(() => {
+                    let count = 0;
+                    for (const info of Object.values(modules.value)) {
+                        if (info.available && info.nodes) {
+                            count += info.nodes.length;
+                        }
+                    }
+                    return count;
+                });
+
+                async function fetchModules() {
+                    try {
+                        const res = await fetch('/api/modules');
+                        const data = await res.json();
+                        modulesStatus.value = data;
+                        modules.value = data.modules || {};
+                    } catch (e) {
+                        console.error('Failed to fetch modules:', e);
+                    }
+                }
+
+                async function fetchTools() {
+                    try {
+                        const res = await fetch('/api/tools');
+                        const data = await res.json();
+                        tools.value = data.tools || [];
+                    } catch (e) {
+                        console.error('Failed to fetch tools:', e);
+                    }
+                }
+
+                async function fetchConfig() {
+                    try {
+                        const res = await fetch('/api/system/status');
+                        const data = await res.json();
+                        // Config is partially exposed
+                        config.value = {
+                            LLM_BASE_URL: data.llm_base_url,
+                            LLM_API_KEY: data.llm_api_key,
+                            ANALYST_MODEL: data.analyst_model,
+                            MAX_TOTAL_ROUNDS: data.max_rounds
+                        };
+                    } catch (e) {
+                        console.error('Failed to fetch config:', e);
+                    }
+                }
+
+                function refreshAll() {
+                    fetchModules();
+                    fetchTools();
+                    fetchConfig();
+                }
+
+                onMounted(() => {
+                    refreshAll();
+                    setInterval(refreshAll, 30000);
+                });
+
+                return {
+                    modulesStatus, modules, tools, config, totalNodes
+                };
+            }
+        }).use(ElementPlus).mount('#app');
+    </script>
+</body>
+</html>
