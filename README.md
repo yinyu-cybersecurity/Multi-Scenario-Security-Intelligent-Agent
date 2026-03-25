@@ -50,61 +50,70 @@ CTF-Agent 是一个智能化的渗透测试代理，能够自主完成从信息�
 
 ### 1. 环境要求
 - Python 3.10+
-- Docker (可选)
+- Docker (可选，推荐)
 
 ### 2. 配置
 ```bash
 cp config.yaml.example config.yaml
 ```
 
-编辑 `config.yaml`:
+编辑 `config.yaml`，填入API Key：
 ```yaml
-# LLM 配置
 LLM_API_KEY: "your-api-key"
 LLM_BASE_URL: "https://api.deepseek.com/v1"
-ANALYST_MODEL: "deepseek-chat"
-
-# VPS配置 (内网渗透需要)
-LOCAL_PUBLIC_IP: "your-vps-ip"
-HTTP_SERVER_PORT: 8000
-FRP_SERVER_PORT: 7000
-FRP_SOCKS5_PORT: 10800
 ```
 
-### 3. Web UI 部署 (推荐)
+### 3. 启动 Web UI
 
-#### Docker 部署
+#### Docker 部署 (推荐)
 ```bash
-docker-compose up -d
+# 构建并启动
+docker-compose up -d --build
 
-# 访问 Web UI
-# Windows: http://localhost:5000
-# Linux: http://服务器IP:5000
+# 查看日志
+docker logs -f ctf-agent
+
+# 访问地址
+# 本地: http://localhost:5000
+# 远程: http://服务器IP:5000
 ```
 
 #### 本地运行
 ```bash
+# 安装依赖
 pip install -r requirements.txt
 
+# 启动 Web 服务
 # Windows
 start_web.bat
 
-# Linux
-chmod +x start_web.sh
-./start_web.sh
+# Linux/Mac
+chmod +x start_web.sh && ./start_web.sh
+
+# 或直接运行
+python web/api.py
 ```
+
+#### Web UI 功能
+- **任务管理**: 创建/暂停/恢复任务
+- **实时监控**: 查看节点执行状态、日志
+- **拓扑图**: 可视化站点结构
+- **性能面板**: 节点/LLM/工具耗时统计
+- **模块管理**: 启用/禁用功能模块
 
 ### 4. 命令行模式
-```bash
-docker-compose --profile cli up -d ctf-agent-cli
-docker exec -it ctf-agent-cli bash
-python /app/app/ctf_agent_graph.py --target http://目标地址
-```
 
-### 5. 本地命令行运行
 ```bash
-pip install -r requirements.txt
+# Docker 命令行
+docker exec -it ctf-agent python app/ctf_agent_graph.py --target http://目标地址
+
+# 本地命令行
 python app/ctf_agent_graph.py --target http://目标地址
+
+# 可选参数
+--mode exploit      # 直接进入攻击模式
+--mode explore      # 直接进入探索模式
+--max-rounds 30     # 最大轮次
 ```
 
 ---
