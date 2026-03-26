@@ -560,34 +560,37 @@ def api_tools():
     try:
         from tool_framework import ToolRegistry
 
-        # 定义工具分类 - 与实际注册的工具名称匹配
+        # 定义工具分类 - 与实际注册的64个工具完全匹配
         categories = {
             "impacket": {
                 "name": "Impacket工具集",
                 "tools": [
-                    # 远程执行
+                    # 远程执行 (5)
                     "psexec", "wmiexec", "smbexec", "atexec", "dcomexec",
-                    # 凭据导出
+                    # 凭据导出 (1)
                     "secretsdump",
-                    # Kerberos攻击
+                    # Kerberos攻击 (4)
                     "getnpusers", "getuserspns", "ticketer", "goldenpac",
-                    # NTLM中继
+                    # NTLM中继 (1)
                     "ntlmrelayx",
-                    # AD域渗透
+                    # AD域渗透 (3)
                     "dacledit", "getadusers", "raisechild",
-                    # SMB工具
+                    # SMB工具 (3)
                     "smbclient", "lookupsid", "smbserver",
-                    # MSSQL工具
+                    # MSSQL工具 (2)
                     "mssqlclient", "mssqlinstance",
-                    # RPC工具
+                    # RPC工具 (2)
                     "rpcdump", "samrdump",
-                    # 其他
+                    # 其他 (3)
                     "reg", "services", "getarch"
                 ]
             },
             "web_attack": {
                 "name": "Web攻击",
-                "tools": ["sqlmap", "ffuf", "dirsearch", "nuclei", "xray", "nmap"]
+                "tools": [
+                    "sqlmap", "ffuf", "dirsearch", "nuclei", "xray", "nmap",
+                    "dalfox", "oa-exploiter"
+                ]
             },
             "java_deserialize": {
                 "name": "Java反序列化",
@@ -615,7 +618,27 @@ def api_tools():
             },
             "framework": {
                 "name": "框架工具",
-                "tools": ["fscan", "hydra"]
+                "tools": ["fscan", "hydra", "msfvenom"]
+            },
+            "deserialization": {
+                "name": "反序列化",
+                "tools": ["phpggc", "pickle-pwn", "phar-gen"]
+            },
+            "file_attack": {
+                "name": "文件攻击",
+                "tools": ["php-filter-chain", "file-creator"]
+            },
+            "scanner": {
+                "name": "扫描器",
+                "tools": ["cve-scanner", "ssrf-scanner", "cloud-scanner"]
+            },
+            "database": {
+                "name": "数据库攻击",
+                "tools": ["db-attacks"]
+            },
+            "utility": {
+                "name": "实用工具",
+                "tools": ["python-exec", "container-escape-checker", "frp-manager", "ai-attacker"]
             },
             "other": {
                 "name": "其他工具",
