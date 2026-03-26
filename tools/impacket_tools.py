@@ -61,44 +61,48 @@ class ImpacketTool(CommandLineTool):
 
     def _find_script(self, name: str) -> Optional[str]:
         """查找脚本路径"""
+        # 特殊工具名称映射
+        special_names = {
+            'getadusers': 'GetADUsers',
+            'getnpusers': 'GetNPUsers',
+            'getuserspns': 'GetUserSPNs',
+            'goldenpac': 'goldenPac',
+            'raisechild': 'raiseChild',
+            'dacledit': 'dacledit',
+            'ntlmrelayx': 'ntlmrelayx',
+            'getarch': 'getArch',
+        }
+
+        # 获取规范名称
+        canonical_name = special_names.get(name.lower(), name)
+
         # 尝试不同的名称格式
         name_variants = [
-            name,                    # 原始名称 (getadusers)
-            name.lower(),            # 全小写 (getadusers)
-            name.upper(),            # 全大写 (GETADUSERS)
-            name.capitalize(),       # 首字母大写 (Getadusers)
+            name,
+            name.lower(),
+            canonical_name,
+            canonical_name.lower(),
         ]
 
-        # 特殊处理驼峰命名 (getADUsers -> GetADUsers)
-        if name.lower() != name:
-            # 已经是驼峰格式
-            name_variants.append(name)
-        else:
-            # 尝试从下划线转换
-            if '_' in name:
-                camel_case = ''.join(word.capitalize() for word in name.split('_'))
-                name_variants.append(camel_case)
-            # 尝试常见的 impacket 工具命名
-            special_names = {
-                'getadusers': 'GetADUsers',
-                'getnpusers': 'GetNPUsers',
-                'getuserspns': 'GetUserSPNs',
-                'goldenpac': 'goldenPac',
-                'raisechild': 'raiseChild',
-                'dacledit': 'dacledit',
-                'ntlmrelayx': 'ntlmrelayx',
-            }
-            if name in special_names:
-                name_variants.append(special_names[name])
+        # 去重
+        name_variants = list(dict.fromkeys(name_variants))
 
         for path_template in self.COMMON_PATHS:
             for variant in name_variants:
                 if '{name_caps}' in path_template:
-                    path = path_template.format(name=name.lower(), name_caps=variant)
+                    path = path_template.format(name=variant.lower(), name_caps=variant)
                 else:
                     path = path_template.format(name=variant)
                 if os.path.exists(path):
                     return path
+
+        # 最后直接检查 .py 文件
+        for variant in name_variants:
+            for base in ['/root/.local/bin', '/opt/venv/bin']:
+                py_path = f"{base}/{variant}.py"
+                if os.path.exists(py_path):
+                    return py_path
+
         return None
 
     def check_available(self) -> bool:
