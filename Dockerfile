@@ -153,8 +153,7 @@ RUN mkdir -p /opt/linux && \
     ln -sf /usr/local/bin/httpx /opt/linux/httpx && \
     ln -sf /usr/local/bin/subfinder /opt/linux/subfinder && \
     ln -sf /app/thirdparty/dirsearch/dirsearch.py /usr/local/bin/dirsearch && \
-    ln -sf /app/thirdparty/php_filter_chain/php_filter_chain.py /usr/local/bin/php-filter-chain && \
-    chmod +x /usr/local/bin/dirsearch /usr/local/bin/php-filter-chain
+    ln -sf /app/thirdparty/php_filter_chain/php_filter_chain.py /usr/local/bin/php-filter-chain || true
 
 COPY requirements.txt .
 RUN python3.11 -m venv /opt/venv
