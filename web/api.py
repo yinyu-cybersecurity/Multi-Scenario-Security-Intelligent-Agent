@@ -1674,10 +1674,3 @@ if __name__ == '__main__':
     print("=" * 60)
 
     app.run(host=HOST, port=PORT, debug=DEBUG, threaded=True)
-else:
-    # 被导入时也注册 Blueprint（防止重复注册）
-    try:
-        app.register_blueprint(bp)
-    except AssertionError:
-        # Blueprint 已注册，忽略
-        pass
