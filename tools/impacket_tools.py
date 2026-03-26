@@ -33,13 +33,16 @@ class ImpacketTool(CommandLineTool):
 
     # 常见安装路径
     COMMON_PATHS = [
-        "/root/.local/bin/{name}",      # pipx 安装
-        "/root/.local/bin/{name}.py",
+        "/root/.local/bin/{name}",      # pipx 安装 (小写)
+        "/root/.local/bin/{name}.py",   # pipx 安装 (.py后缀)
+        "/root/.local/bin/{name_caps}", # pipx 安装 (首字母大写)
+        "/root/.local/bin/{name_caps}.py",
         "/usr/local/bin/{name}",        # 全局安装
         "/usr/local/bin/{name}.py",
         "/opt/venv/bin/{name}",         # venv 安装
         "/opt/venv/bin/{name}.py",
         "/opt/impacket/examples/{name}.py",
+        "/opt/impacket/examples/{name_caps}.py",
         "/usr/share/impacket/{name}.py",
         "/usr/share/doc/python3-impacket/examples/{name}.py",
     ]
@@ -58,10 +61,24 @@ class ImpacketTool(CommandLineTool):
 
     def _find_script(self, name: str) -> Optional[str]:
         """查找脚本路径"""
+        # 尝试不同的名称格式
+        name_variants = [
+            name,                    # 原始名称 (getadusers)
+            name.lower(),            # 全小写
+            name.upper(),            # 全大写
+            name.capitalize(),       # 首字母大写
+            # 特殊处理: getADUsers 格式
+            ''.join(word.capitalize() for word in name.split('_')) if '_' in name else name,
+        ]
+
         for path_template in self.COMMON_PATHS:
-            path = path_template.format(name=name)
-            if os.path.exists(path):
-                return path
+            for variant in name_variants:
+                if '{name_caps}' in path_template:
+                    path = path_template.format(name=name.lower(), name_caps=variant)
+                else:
+                    path = path_template.format(name=variant)
+                if os.path.exists(path):
+                    return path
         return None
 
     def check_available(self) -> bool:

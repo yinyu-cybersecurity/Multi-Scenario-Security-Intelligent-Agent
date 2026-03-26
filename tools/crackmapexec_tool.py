@@ -15,6 +15,7 @@ CTF场景优化:
 - 自动凭据测试
 - 会话管理
 """
+import os
 import re
 import sys
 import json
@@ -38,7 +39,16 @@ class CrackMapExecTool(CommandLineTool):
 
     def __init__(self):
         # 检测 crackmapexec 是否可用
-        self.executable = shutil.which("crackmapexec") or shutil.which("cme")
+        # 优先检查 pipx 安装路径
+        pipx_path = "/root/.local/bin/crackmapexec"
+        pipx_cme_path = "/root/.local/bin/cme"
+
+        if os.path.exists(pipx_path):
+            self.executable = pipx_path
+        elif os.path.exists(pipx_cme_path):
+            self.executable = pipx_cme_path
+        else:
+            self.executable = shutil.which("crackmapexec") or shutil.which("cme")
 
         if self.executable:
             self.cmd_path = self.executable

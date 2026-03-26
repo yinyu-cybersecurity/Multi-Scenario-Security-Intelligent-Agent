@@ -24,27 +24,33 @@ ENV GOPROXY=https://goproxy.cn,direct
 
 # 下载 nuclei（使用 moeyy.cn 文件加速）
 RUN wget -q -O /tmp/nuclei.zip https://moeyy.cn/gh-proxy/https://github.com/projectdiscovery/nuclei/releases/download/v3.3.0/nuclei_3.3.0_linux_amd64.zip && \
-    unzip -o /tmp/nuclei.zip -d /usr/local/bin && \
-    chmod +x /usr/local/bin/nuclei && \
-    rm -f /tmp/nuclei.zip || true
+    unzip -o /tmp/nuclei.zip -d /tmp/nuclei_extract && \
+    mv /tmp/nuclei_extract/nuclei /usr/local/bin/nuclei 2>/dev/null || mv /tmp/nuclei_extract/nuclei_linux_amd64 /usr/local/bin/nuclei 2>/dev/null || true && \
+    chmod +x /usr/local/bin/nuclei || true && \
+    rm -rf /tmp/nuclei* || true
 
 # 下载 ffuf
 RUN wget -q -O /tmp/ffuf.tar.gz https://moeyy.cn/gh-proxy/https://github.com/projectdiscovery/ffuf/releases/download/v2.1.0/ffuf_2.1.0_linux_amd64.tar.gz && \
-    tar -xzf /tmp/ffuf.tar.gz -C /usr/local/bin && \
-    chmod +x /usr/local/bin/ffuf && \
-    rm -f /tmp/ffuf.tar.gz || true
+    mkdir -p /tmp/ffuf_extract && \
+    tar -xzf /tmp/ffuf.tar.gz -C /tmp/ffuf_extract && \
+    mv /tmp/ffuf_extract/ffuf /usr/local/bin/ffuf 2>/dev/null || mv /tmp/ffuf_extract/ffuf_linux_amd64 /usr/local/bin/ffuf 2>/dev/null || true && \
+    chmod +x /usr/local/bin/ffuf || true && \
+    rm -rf /tmp/ffuf* || true
 
 # 下载 httpx
 RUN wget -q -O /tmp/httpx.zip https://moeyy.cn/gh-proxy/https://github.com/projectdiscovery/httpx/releases/download/v1.6.0/httpx_1.6.0_linux_amd64.zip && \
-    unzip -o /tmp/httpx.zip -d /usr/local/bin && \
-    chmod +x /usr/local/bin/httpx && \
-    rm -f /tmp/httpx.zip || true
+    unzip -o /tmp/httpx.zip -d /tmp/httpx_extract && \
+    mv /tmp/httpx_extract/httpx /usr/local/bin/httpx 2>/dev/null || mv /tmp/httpx_extract/httpx_linux_amd64 /usr/local/bin/httpx 2>/dev/null || true && \
+    chmod +x /usr/local/bin/httpx || true && \
+    rm -rf /tmp/httpx* || true
 
 # 下载 subfinder
 RUN wget -q -O /tmp/subfinder.tar.gz https://moeyy.cn/gh-proxy/https://github.com/projectdiscovery/subfinder/releases/download/v2.6.5/subfinder_2.6.5_linux_amd64.tar.gz && \
-    tar -xzf /tmp/subfinder.tar.gz -C /usr/local/bin && \
-    chmod +x /usr/local/bin/subfinder && \
-    rm -f /tmp/subfinder.tar.gz || true
+    mkdir -p /tmp/subfinder_extract && \
+    tar -xzf /tmp/subfinder.tar.gz -C /tmp/subfinder_extract && \
+    mv /tmp/subfinder_extract/subfinder /usr/local/bin/subfinder 2>/dev/null || mv /tmp/subfinder_extract/subfinder_linux_amd64 /usr/local/bin/subfinder 2>/dev/null || true && \
+    chmod +x /usr/local/bin/subfinder || true && \
+    rm -rf /tmp/subfinder* || true
 
 # 下载 httprobe
 RUN wget -q -O /usr/local/bin/httprobe https://moeyy.cn/gh-proxy/https://github.com/tomnomnom/httprobe/releases/download/v0.2/httprobe-linux-amd64 && \

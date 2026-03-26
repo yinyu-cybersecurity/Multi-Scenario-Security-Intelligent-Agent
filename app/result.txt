@@ -1,0 +1,47 @@
+[2026-03-25 12:23:53] [PORT] 目标:39.99.153.27 状态:open 详情:port=143
+[2026-03-25 12:23:53] [PORT] 目标:39.99.153.27 状态:open 详情:port=110
+[2026-03-25 12:23:53] [PORT] 目标:39.99.153.27 状态:open 详情:port=80
+[2026-03-25 12:23:53] [PORT] 目标:39.99.153.27 状态:open 详情:port=22
+[2026-03-25 12:23:56] [SERVICE] 目标:39.99.153.27 状态:identified 详情:length=5578, server_info=map[content-type:text/html; charset=utf-8 date:Wed, 25 Mar 2026 12:23:56 GMT length:5578 server:Apache/2.4.41 (Ubuntu) status_code:200 title:Bootstrap Material Admin vary:Accept-Encoding], fingerprints=[], port=80, service=http, title=Bootstrap Material Admin, Url=http://39.99.153.27, status_code=200
+[2026-03-25 12:23:59] [VULN] 目标:http://39.99.153.27:80 状态:vulnerable 详情:vulnerability_type=poc-yaml-thinkphp5023-method-rce, vulnerability_name=poc1, references=[https://github.com/vulhub/vulhub/tree/master/thinkphp/5.0.23-rce]
+[2026-03-25 12:29:38] [PORT] 目标:39.99.153.27 状态:open 详情:port=143
+[2026-03-25 12:29:38] [PORT] 目标:39.99.153.27 状态:open 详情:port=110
+[2026-03-25 12:29:39] [PORT] 目标:39.99.153.27 状态:open 详情:port=22
+[2026-03-25 12:51:46] [PORT] 目标:39.99.153.27 状态:open 详情:port=110
+[2026-03-25 12:51:46] [PORT] 目标:39.99.153.27 状态:open 详情:port=443
+[2026-03-25 12:51:46] [PORT] 目标:39.99.153.27 状态:open 详情:port=80
+[2026-03-25 12:51:46] [PORT] 目标:39.99.153.27 状态:open 详情:port=143
+[2026-03-25 12:51:46] [PORT] 目标:39.99.153.27 状态:open 详情:port=22
+[2026-03-25 12:51:49] [SERVICE] 目标:39.99.153.27 状态:identified 详情:Url=http://39.99.153.27, status_code=502, length=0, server_info=map[content-length:0 length:0 status_code:502 title:无标题], fingerprints=[], port=80, service=http, title=无标题
+[2026-03-25 12:51:50] [SERVICE] 目标:39.99.153.27 状态:identified 详情:status_code=502, length=0, server_info=map[content-length:0 length:0 status_code:502 title:无标题], fingerprints=[], port=443, service=http, title=无标题, Url=http://39.99.153.27
+[2026-03-25 12:54:36] [PORT] 目标:39.99.153.27 状态:open 详情:port=110
+[2026-03-25 12:54:36] [PORT] 目标:39.99.153.27 状态:open 详情:port=143
+[2026-03-25 12:54:36] [PORT] 目标:39.99.153.27 状态:open 详情:port=80
+[2026-03-25 12:54:36] [PORT] 目标:39.99.153.27 状态:open 详情:port=22
+[2026-03-25 12:54:39] [SERVICE] 目标:39.99.153.27 状态:identified 详情:fingerprints=[], port=80, service=http, title=Bootstrap Material Admin, Url=http://39.99.153.27, status_code=200, length=5578, server_info=map[content-type:text/html; charset=utf-8 date:Wed, 25 Mar 2026 12:54:39 GMT length:5578 server:Apache/2.4.41 (Ubuntu) status_code:200 title:Bootstrap Material Admin vary:Accept-Encoding]
+[2026-03-25 12:54:43] [VULN] 目标:http://39.99.153.27:80 状态:vulnerable 详情:vulnerability_type=poc-yaml-thinkphp5023-method-rce, vulnerability_name=poc1, references=[https://github.com/vulhub/vulhub/tree/master/thinkphp/5.0.23-rce]
+[2026-03-25 13:28:18] [PORT] 目标:39.99.153.27 状态:open 详情:port=110
+[2026-03-25 13:28:18] [PORT] 目标:39.99.153.27 状态:open 详情:port=143
+[2026-03-25 13:40:36] [PORT] 目标:39.99.153.27 状态:open 详情:port=80
+[2026-03-25 13:40:36] [PORT] 目标:39.99.153.27 状态:open 详情:port=22
+[2026-03-25 13:40:36] [PORT] 目标:39.99.153.27 状态:open 详情:port=143
+[2026-03-25 13:40:36] [PORT] 目标:39.99.153.27 状态:open 详情:port=110
+[2026-03-25 13:40:39] [SERVICE] 目标:39.99.153.27 状态:identified 详情:title=Bootstrap Material Admin, Url=http://39.99.153.27, status_code=200, length=5578, server_info=map[content-type:text/html; charset=utf-8 date:Wed, 25 Mar 2026 13:40:40 GMT length:5578 server:Apache/2.4.41 (Ubuntu) status_code:200 title:Bootstrap Material Admin vary:Accept-Encoding], fingerprints=[], port=80, service=http
+[2026-03-25 13:40:43] [VULN] 目标:http://39.99.153.27:80 状态:vulnerable 详情:vulnerability_type=poc-yaml-thinkphp5023-method-rce, vulnerability_name=poc1, references=[https://github.com/vulhub/vulhub/tree/master/thinkphp/5.0.23-rce]
+[2026-03-26 05:26:10] [PORT] 目标:47.109.157.54 状态:open 详情:port=110
+[2026-03-26 05:26:10] [PORT] 目标:47.109.157.54 状态:open 详情:port=143
+[2026-03-26 05:26:10] [PORT] 目标:47.109.157.54 状态:open 详情:port=7000
+[2026-03-26 05:26:10] [PORT] 目标:47.109.157.54 状态:open 详情:port=80
+[2026-03-26 05:26:10] [PORT] 目标:47.109.157.54 状态:open 详情:port=22
+[2026-03-26 05:26:10] [PORT] 目标:47.109.157.54 状态:open 详情:port=443
+[2026-03-26 05:26:13] [SERVICE] 目标:47.109.157.54 状态:identified 详情:fingerprints=[], port=80, service=http, title=301 Moved Permanently, Url=http://47.109.157.54, status_code=301, length=178, server_info=map[content-length:178 content-type:text/html date:Thu, 26 Mar 2026 05:26:13 GMT length:178 location:https://47.109.157.54/ redirect_Url:https://47.109.157.54/ server:nginx/1.18.0 (Ubuntu) status_code:301 title:301 Moved Permanently]
+[2026-03-26 05:26:13] [SERVICE] 目标:47.109.157.54 状态:identified 详情:service=http, title=斗地主, Url=https://47.109.157.54, status_code=200, length=957, server_info=map[content-type:text/html date:Thu, 26 Mar 2026 05:26:13 GMT etag:W/"69afc030-3bd" last-modified:Tue, 10 Mar 2026 06:54:40 GMT length:957 referrer-policy:no-referrer-when-downgrade server:nginx status_code:200 title:斗地主 x-content-type-options:nosniff x-frame-options:SAMEORIGIN x-xss-protection:1; mode=block], fingerprints=[], port=443
+[2026-03-26 05:26:13] [SERVICE] 目标:47.109.157.54 状态:identified 详情:length=957, server_info=map[content-type:text/html date:Thu, 26 Mar 2026 05:26:13 GMT etag:W/"69afc030-3bd" last-modified:Tue, 10 Mar 2026 06:54:40 GMT length:957 referrer-policy:no-referrer-when-downgrade server:nginx status_code:200 title:斗地主 x-content-type-options:nosniff x-frame-options:SAMEORIGIN x-xss-protection:1; mode=block], fingerprints=[], port=80, service=http, title=斗地主, Url=https://47.109.157.54/, status_code=200
+[2026-03-26 09:32:23] [PORT] 目标:47.109.157.54 状态:open 详情:port=22
+[2026-03-26 09:32:23] [PORT] 目标:47.109.157.54 状态:open 详情:port=80
+[2026-03-26 09:32:23] [PORT] 目标:47.109.157.54 状态:open 详情:port=143
+[2026-03-26 09:32:23] [PORT] 目标:47.109.157.54 状态:open 详情:port=110
+[2026-03-26 09:32:23] [PORT] 目标:47.109.157.54 状态:open 详情:port=443
+[2026-03-26 09:32:26] [SERVICE] 目标:47.109.157.54 状态:identified 详情:port=80, service=http, title=301 Moved Permanently, Url=http://47.109.157.54, status_code=301, length=178, server_info=map[content-length:178 content-type:text/html date:Thu, 26 Mar 2026 09:32:26 GMT length:178 location:https://47.109.157.54/ redirect_Url:https://47.109.157.54/ server:nginx/1.18.0 (Ubuntu) status_code:301 title:301 Moved Permanently], fingerprints=[]
+[2026-03-26 09:32:26] [SERVICE] 目标:47.109.157.54 状态:identified 详情:fingerprints=[], port=443, service=http, title=斗地主, Url=https://47.109.157.54, status_code=200, length=957, server_info=map[content-type:text/html date:Thu, 26 Mar 2026 09:32:26 GMT etag:W/"69afc030-3bd" last-modified:Tue, 10 Mar 2026 06:54:40 GMT length:957 referrer-policy:no-referrer-when-downgrade server:nginx status_code:200 title:斗地主 x-content-type-options:nosniff x-frame-options:SAMEORIGIN x-xss-protection:1; mode=block]
+[2026-03-26 09:32:26] [SERVICE] 目标:47.109.157.54 状态:identified 详情:fingerprints=[], port=80, service=http, title=斗地主, Url=https://47.109.157.54/, status_code=200, length=957, server_info=map[content-type:text/html date:Thu, 26 Mar 2026 09:32:26 GMT etag:W/"69afc030-3bd" last-modified:Tue, 10 Mar 2026 06:54:40 GMT length:957 referrer-policy:no-referrer-when-downgrade server:nginx status_code:200 title:斗地主 x-content-type-options:nosniff x-frame-options:SAMEORIGIN x-xss-protection:1; mode=block]

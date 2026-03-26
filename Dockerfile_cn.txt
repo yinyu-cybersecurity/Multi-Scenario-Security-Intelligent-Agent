@@ -1,0 +1,98 @@
+FROM registry.cn-hangzhou.aliyuncs.com/library/ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN sed -i 's@archive.ubuntu.com@mirrors.aliyun.com@g' /etc/apt/sources.list && sed -i 's@security.ubuntu.com@mirrors.aliyun.com@g' /etc/apt/sources.list && apt-get update && apt-get install -y --no-install-recommends python3.11 python3.11-venv python3-pip python3.10-venv git curl wget unzip nmap openjdk-17-jdk maven ruby php-cli libssl-dev libssh-dev libimage-exiftool-perl binwalk foremost libmagic1 proxychains4 hydra && rm -rf /var/lib/apt/lists/*
+
+RUN wget -q https://mirrors.aliyun.com/golang/go1.22.0.linux-amd64.tar.gz && tar -C /usr/local -xzf go1.22.0.linux-amd64.tar.gz && rm go1.22.0.linux-amd64.tar.gz
+
+ENV GOPATH=/root/go
+ENV PATH=/usr/local/go/bin:$PATH:/root/go/bin
+ENV GOPROXY=https://goproxy.cn,direct
+
+RUN wget -q -O /tmp/nuclei.zip https://ghproxy.com/https://github.com/projectdiscovery/nuclei/releases/download/v3.3.0/nuclei_3.3.0_linux_amd64.zip && unzip -o /tmp/nuclei.zip -d /usr/local/bin && chmod +x /usr/local/bin/nuclei || true
+
+RUN wget -q -O /tmp/ffuf.tar.gz https://ghproxy.com/https://github.com/projectdiscovery/ffuf/releases/download/v2.1.0/ffuf_2.1.0_linux_amd64.tar.gz && tar -xzf /tmp/ffuf.tar.gz -C /usr/local/bin && chmod +x /usr/local/bin/ffuf || true
+
+RUN wget -q -O /tmp/httpx.zip https://ghproxy.com/https://github.com/projectdiscovery/httpx/releases/download/v1.6.0/httpx_1.6.0_linux_amd64.zip && unzip -o /tmp/httpx.zip -d /usr/local/bin && chmod +x /usr/local/bin/httpx || true
+
+RUN wget -q -O /tmp/subfinder.tar.gz https://ghproxy.com/https://github.com/projectdiscovery/subfinder/releases/download/v2.6.5/subfinder_2.6.5_linux_amd64.tar.gz && tar -xzf /tmp/subfinder.tar.gz -C /usr/local/bin && chmod +x /usr/local/bin/subfinder || true
+
+RUN wget -q -O /usr/local/bin/httprobe https://ghproxy.com/https://github.com/tomnomnom/httprobe/releases/download/v0.2/httprobe-linux-amd64 && chmod +x /usr/local/bin/httprobe || true
+
+RUN wget -q -O /usr/local/bin/qsreplace https://ghproxy.com/https://github.com/tomnomnom/qsreplace/releases/download/v0.0.2/qsreplace-linux-amd64 && chmod +x /usr/local/bin/qsreplace || true
+
+RUN pip3 install pipx -i https://pypi.tuna.tsinghua.edu.cn/simple && pipx ensurepath
+
+ENV PATH="/root/.local/bin:$PATH"
+
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+
+RUN pipx install sqlmap || true
+RUN pipx install fenjing || true
+RUN pipx install flask-unsign || true
+RUN pipx install impacket || true
+RUN pipx install pwntools || true
+RUN pipx install ROPgadget || true
+
+RUN gem sources --add https://gems.ruby-china.com/ --remove https://rubygems.org/ || true
+RUN gem install zsteg one_gadget || true
+
+WORKDIR /app
+
+RUN mkdir -p /app/thirdparty /app/data/tool_outputs /app/data/tool_raw_logs /app/data/sessions /app/data/tunnels /app/.memory /app/log /opt/tools/potato /opt/tools/ad /opt/tools/linux /opt/tools/windows /opt/frp
+
+RUN git clone --depth 1 https://gitee.com/mirrors/dirsearch.git /app/thirdparty/dirsearch || true
+RUN git clone --depth 1 https://github.com/swisskyrepo/SSRFmap.git /app/thirdparty/SSRFmap || true
+RUN git clone --depth 1 https://github.com/tarunkant/Gopherus.git /app/thirdparty/Gopherus || true
+RUN git clone --depth 1 https://github.com/ambionics/phpggc.git /app/thirdparty/phpggc || true
+RUN git clone --depth 1 https://github.com/ticarpi/jwt_tool.git /app/thirdparty/jwt_tool || true
+RUN git clone --depth 1 https://gitee.com/mirrors/SecLists.git /app/thirdparty/SecLists || true
+RUN git clone --depth 1 https://gitee.com/mirrors/PayloadsAllTheThings.git /app/thirdparty/PayloadsAllTheThings || true
+RUN git clone --depth 1 https://github.com/Threezh1/JSFinder.git /app/thirdparty/jsfinder || true
+RUN git clone --depth 1 https://github.com/enjoiz/XXEinjector.git /app/thirdparty/xxe-injector || true
+
+RUN git clone --depth 1 https://github.com/mbechler/marshalsec.git /app/thirdparty/marshalsec || true
+RUN cd /app/thirdparty/marshalsec && mvn package -DskipTests 2>/dev/null && cp target/marshalsec-*.jar /app/thirdparty/marshalsec.jar || true
+
+RUN git clone --depth 1 https://github.com/shadow1ng/fscan.git /app/thirdparty/fscan || true
+RUN cd /app/thirdparty/fscan && go build -o /usr/local/bin/fscan . || true
+
+RUN wget -q -O /app/thirdparty/ysoserial.jar https://ghproxy.com/https://github.com/frohoff/ysoserial/releases/download/v0.0.6/ysoserial-all.jar || true
+RUN wget -q -O /app/thirdparty/JNDIExploit.jar https://ghproxy.com/https://github.com/exploitblizzard/JNDIExploit/releases/download/v1.0/JNDIExploit.jar || true
+
+RUN wget -q https://ghproxy.com/https://github.com/fatedier/frp/releases/download/v0.52.3/frp_0.52.3_linux_amd64.tar.gz && tar -xzf frp_0.52.3_linux_amd64.tar.gz -C /opt/frp --strip-components=1 && rm -f frp_0.52.3_linux_amd64.tar.gz || true
+
+RUN wget -q -O /opt/tools/windows/fscan.exe https://ghproxy.com/https://github.com/shadow1ng/fscan/releases/download/v1.8.2/fscan.exe || true
+RUN wget -q -O /opt/tools/potato/PrintSpoofer64.exe https://ghproxy.com/https://github.com/itm4n/PrintSpoofer/releases/download/v1.0/PrintSpoofer64.exe || true
+RUN wget -q -O /opt/tools/potato/GodPotato.exe https://ghproxy.com/https://github.com/BeichenDream/GodPotato/releases/download/V1.20/GodPotato_Net40.exe || true
+RUN wget -q -O /opt/tools/windows/Rubeus.exe https://ghproxy.com/https://github.com/GhostPack/Rubeus/releases/download/2.2.0/Rubeus.exe || true
+
+RUN wget -q -O /tmp/xray.zip https://ghproxy.com/https://github.com/chaitin/xray/releases/download/1.9.11/xray_linux_amd64.zip && unzip -o /tmp/xray.zip -d /tmp/xray && mv /tmp/xray/xray_linux_amd64 /usr/local/bin/xray && chmod +x /usr/local/bin/xray && rm -rf /tmp/xray* || true
+
+RUN mkdir -p /opt/linux && ln -sf /usr/local/bin/fscan /opt/linux/fscan && ln -sf /usr/local/bin/nuclei /opt/linux/nuclei && ln -sf /usr/local/bin/xray /opt/linux/xray && ln -sf /usr/local/bin/ffuf /opt/linux/ffuf && ln -sf /usr/local/bin/httpx /opt/linux/httpx && ln -sf /usr/local/bin/subfinder /opt/linux/subfinder
+
+COPY requirements.txt .
+RUN python3.11 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install --upgrade pip && pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install -r requirements.txt
+
+COPY app/*.py ./
+COPY app/state_types ./state_types/
+COPY app/topology ./topology/
+COPY tools/ ./tools/
+COPY internal_network/ ./internal_network/
+COPY remote_executor/ ./remote_executor/
+COPY crypto/ ./crypto/
+COPY pwn/ ./pwn/
+COPY reverse/ ./reverse/
+COPY misc/ ./misc/
+COPY memory/ ./memory/
+COPY rag_builder/ ./rag_builder/
+COPY config.yaml.example /app/config.yaml.example
+COPY self_check.py /app/self_check.py
+COPY web/ ./web/
+
+EXPOSE 8000 7000 10800 4444
+
+CMD ["tail", "-f", "/dev/null"]
