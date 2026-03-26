@@ -1,6 +1,7 @@
 # tools/marshalsec_tool.py
 # Marshalsec - Java 反序列化漏洞利用工具
 import os
+import glob
 import json
 import subprocess
 from typing import Dict, Any
@@ -18,11 +19,12 @@ class MarshalsecTool(CommandLineTool):
         # 支持多种路径格式
         self.jar_paths = [
             "/app/thirdparty/marshalsec.jar",
-            "/app/thirdparty/marshalsec/target/marshalsec.jar",  # 编译后路径
             "/app/thirdparty/Marshalsec.jar",
-            os.path.join(os.getcwd(), "thirdparty", "marshalsec.jar"),
-            os.path.join(os.getcwd(), "thirdparty", "marshalsec", "target", "marshalsec.jar"),
         ]
+        # 使用 glob 查找编译后的 jar
+        compiled_jars = glob.glob("/app/thirdparty/marshalsec/target/marshalsec-*.jar")
+        self.jar_paths.extend(compiled_jars)
+
         self.jar_path = None
         for path in self.jar_paths:
             if os.path.exists(path):

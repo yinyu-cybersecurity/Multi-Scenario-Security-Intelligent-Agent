@@ -64,12 +64,32 @@ class ImpacketTool(CommandLineTool):
         # 尝试不同的名称格式
         name_variants = [
             name,                    # 原始名称 (getadusers)
-            name.lower(),            # 全小写
-            name.upper(),            # 全大写
-            name.capitalize(),       # 首字母大写
-            # 特殊处理: getADUsers 格式
-            ''.join(word.capitalize() for word in name.split('_')) if '_' in name else name,
+            name.lower(),            # 全小写 (getadusers)
+            name.upper(),            # 全大写 (GETADUSERS)
+            name.capitalize(),       # 首字母大写 (Getadusers)
         ]
+
+        # 特殊处理驼峰命名 (getADUsers -> GetADUsers)
+        if name.lower() != name:
+            # 已经是驼峰格式
+            name_variants.append(name)
+        else:
+            # 尝试从下划线转换
+            if '_' in name:
+                camel_case = ''.join(word.capitalize() for word in name.split('_'))
+                name_variants.append(camel_case)
+            # 尝试常见的 impacket 工具命名
+            special_names = {
+                'getadusers': 'GetADUsers',
+                'getnpusers': 'GetNPUsers',
+                'getuserspns': 'GetUserSPNs',
+                'goldenpac': 'goldenPac',
+                'raisechild': 'raiseChild',
+                'dacledit': 'dacledit',
+                'ntlmrelayx': 'ntlmrelayx',
+            }
+            if name in special_names:
+                name_variants.append(special_names[name])
 
         for path_template in self.COMMON_PATHS:
             for variant in name_variants:

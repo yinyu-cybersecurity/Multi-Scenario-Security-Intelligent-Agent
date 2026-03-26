@@ -51,8 +51,12 @@ class FRPManager(CommandLineTool):
     def check_available(self) -> bool:
         """检查frp文件是否存在"""
         linux_frp = self.FRP_DIR / "frpc"
-        windows_frp = self.FRP_DIR / "frpc.exe"
-        return linux_frp.exists() or windows_frp.exists()
+        windows_frp = Path("/opt/tools/windows/frpc.exe")
+
+        # 也检查系统 PATH
+        system_frpc = shutil.which("frpc")
+
+        return linux_frp.exists() or windows_frp.exists() or system_frpc is not None
 
     def expected_params(self) -> Dict[str, Dict[str, Any]]:
         return {

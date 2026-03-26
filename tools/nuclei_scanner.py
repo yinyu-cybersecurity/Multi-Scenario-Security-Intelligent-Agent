@@ -41,12 +41,15 @@ class NucleiScanner(CommandLineTool):
         if nuclei:
             return nuclei
 
-        # 检查常见路径
+        # 检查常见路径（多种可能的文件名）
         common_paths = [
             "/usr/local/bin/nuclei",
+            "/usr/local/bin/nuclei_linux_amd64",  # 解压后原始文件名
+            "/usr/local/bin/nuclei_3.3.0_linux_amd64",
             "/usr/bin/nuclei",
             "/root/go/bin/nuclei",
             "/home/user/go/bin/nuclei",
+            "/opt/linux/nuclei",
         ]
         for path in common_paths:
             if os.path.exists(path):

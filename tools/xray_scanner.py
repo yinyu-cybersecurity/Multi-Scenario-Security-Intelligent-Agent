@@ -39,13 +39,20 @@ class XrayScanner(CommandLineTool):
         # 检查常见路径
         common_paths = [
             "/usr/local/bin/xray",
+            "/usr/local/bin/xray_linux_amd64",  # 解压后原始文件名
             "/usr/bin/xray",
             "/app/xray",
-            shutil.which("xray") or ""
+            "/opt/linux/xray",
         ]
         for path in common_paths:
             if path and os.path.exists(path):
                 return path
+
+        # 检查系统 PATH
+        xray = shutil.which("xray")
+        if xray:
+            return xray
+
         return None
 
     def name(self) -> str:

@@ -3,6 +3,7 @@
 import os
 import json
 import re
+import shutil
 from typing import Dict, Any
 from tool_framework import CommandLineTool
 
@@ -27,9 +28,26 @@ class FFUFTool(CommandLineTool):
         return ["Hidden Paths", "API Discovery", "Parameter Discovery", "Subdomain Discovery", "Information Disclosure"]
 
     def check_available(self) -> bool:
-        # 检查 ffuf 是否在 PATH 中
+        # 检查 ffuf 是否在 PATH 中或常见路径
         import shutil
-        return shutil.which("ffuf") is not None
+
+        # 检查系统 PATH
+        if shutil.which("ffuf"):
+            return True
+
+        # 检查常见路径（多种可能的文件名）
+        common_paths = [
+            "/usr/local/bin/ffuf",
+            "/usr/local/bin/ffuf_linux_amd64",  # 解压后原始文件名
+            "/usr/local/bin/ffuf_2.1.0_linux_amd64",
+            "/usr/bin/ffuf",
+            "/opt/linux/ffuf",
+        ]
+        for path in common_paths:
+            if os.path.exists(path):
+                return True
+
+        return False
 
     def expected_params(self) -> Dict[str, Dict[str, Any]]:
         return {

@@ -23,29 +23,45 @@ class GitHackerTool(CommandLineTool):
         # 智能路径探测 - 多种方式尝试
         self.script_path = None
         self.use_module = False
+        self.available = False
 
-        # 方式1: 检查是否通过 pipx 安装 (推荐)
-        pipx_path = "/root/.local/bin/githacker"
-        if os.path.exists(pipx_path):
-            self.cmd_path = pipx_path
-            self.use_module = True
-            self.script_path = "installed"
-        elif shutil.which("githacker"):
-            self.cmd_path = "githacker"
-            self.use_module = True
-            self.script_path = "installed"
-        else:
-            # 方式2: 检查源码目录 (备用)
+        # 方式1: 检查 pipx 安装路径 (多种可能的可执行文件名)
+        pipx_paths = [
+            "/root/.local/bin/git-hacker",  # 带连字符
+            "/root/.local/bin/githacker",   # 不带连字符
+        ]
+        for path in pipx_paths:
+            if os.path.exists(path):
+                self.cmd_path = path
+                self.use_module = True
+                self.script_path = "installed"
+                self.available = True
+                break
+
+        # 方式2: 检查系统 PATH
+        if not self.available:
+            for name in ["git-hacker", "githacker"]:
+                if shutil.which(name):
+                    self.cmd_path = name
+                    self.use_module = True
+                    self.script_path = "installed"
+                    self.available = True
+                    break
+
+        # 方式3: 检查源码目录 (备用)
+        if not self.available:
             docker_path = "/app/thirdparty/git-hacker"
-            local_path = os.path.join(os.getcwd(), "thirdparty", "git-hacker")
+            local_path = os.path.join(os.getcwd(), "thirdparty", "git-hacker") if os.getcwd() else ""
             self.source_dir = docker_path if os.path.exists(docker_path) else local_path
 
             if os.path.exists(self.source_dir):
-                self.use_module = True
-                self.script_path = self.source_dir
-            else:
-                self.use_module = False
-                self.script_path = None
+                # 检查是否有 githacker.py 或 githacker 目录
+                githacker_py = os.path.join(self.source_dir, "githacker.py")
+                githacker_dir = os.path.join(self.source_dir, "githacker")
+                if os.path.exists(githacker_py) or os.path.exists(githacker_dir):
+                    self.use_module = True
+                    self.script_path = self.source_dir
+                    self.available = True
 
         self.timeout = 120
 
@@ -60,14 +76,7 @@ class GitHackerTool(CommandLineTool):
 
     def check_available(self) -> bool:
         """检查工具是否可用"""
-        # 方式1: 已通过 pip 安装
-        if shutil.which("githacker"):
-            return True
-        # 方式2: 源码目录存在且有 githacker 模块
-        if hasattr(self, 'source_dir') and os.path.exists(self.source_dir):
-            githacker_dir = os.path.join(self.source_dir, "githacker")
-            return os.path.exists(githacker_dir)
-        return False
+        return self.available
 
     def expected_params(self) -> Dict[str, Dict[str, Any]]:
         return {
