@@ -53,7 +53,7 @@ class ToolSelector:
             ("python-exec", 6, "自定义模板注入脚本"),
         ],
         VulnCategory.XSS: [
-            ("xsser", 9, "XSS自动化扫描工具"),
+            ("dalfox", 10, "XSS自动化扫描工具"),
             ("requests", 7, "手动构造XSS Payload"),
         ],
         VulnCategory.XXE: [
@@ -84,8 +84,7 @@ class ToolSelector:
             ("phar-gen", 8, "Phar文件生成"),
         ],
         VulnCategory.RCE: [
-            ("nuclei", 9, "CVE模板扫描"),
-            ("metasploit", 9, "渗透框架"),
+            ("nuclei", 10, "CVE模板扫描"),
             ("jndi-exploit", 9, "JNDI注入RCE"),
             ("python-exec", 7, "自定义RCE脚本"),
         ],
@@ -147,7 +146,7 @@ class ToolSelector:
             "sqli": ["sqlmap", "db-attacks", "requests"],
             "ssti": ["fenjing", "requests", "python-exec"],
             "模板注入": ["fenjing", "requests", "python-exec"],
-            "xss": ["xsser", "xsstrike", "requests"],
+            "xss": ["dalfox", "requests"],
             "xxe": ["xxe-injector", "nuclei", "requests"],
             "ssrf": ["ssrf-scanner", "cloud-scanner", "requests"],
             "lfi": ["php-filter-chain", "ffuf", "dirsearch", "requests"],

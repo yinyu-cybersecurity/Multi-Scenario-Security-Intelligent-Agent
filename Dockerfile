@@ -10,8 +10,7 @@ RUN sed -i 's@archive.ubuntu.com@mirrors.aliyun.com@g' /etc/apt/sources.list && 
         python3.11 python3.11-venv python3-pip python3.10-venv \
         git curl wget unzip nmap openjdk-17-jdk maven ruby php-cli \
         libssl-dev libssh-dev libimage-exiftool-perl binwalk foremost \
-        libmagic1 proxychains4 hydra \
-        binutils tshark && \
+        libmagic1 proxychains4 hydra && \
     rm -rf /var/lib/apt/lists/*
 
 # 下载 Go（国内镜像）
@@ -97,11 +96,17 @@ RUN mkdir -p /app/thirdparty /app/data/tool_outputs /app/data/tool_raw_logs /app
 # 使用 Gitee 上仍然可用的镜像（dirsearch 仍在）
 RUN git clone --depth 1 https://gitee.com/mirrors/dirsearch.git /app/thirdparty/dirsearch || true
 
-# SecLists - 官方源（无镜像，直接克隆）
-RUN git clone --depth 1 https://github.com/danielmiessler/SecLists.git /app/thirdparty/SecLists || true
+# SecLists - 改用 wget 下载压缩包
+RUN wget -q -O /tmp/SecLists.zip https://github.com/danielmiessler/SecLists/archive/refs/heads/master.zip && \
+    unzip -q /tmp/SecLists.zip -d /app/thirdparty/ && \
+    mv /app/thirdparty/SecLists-master /app/thirdparty/SecLists && \
+    rm -f /tmp/SecLists.zip || true
 
-# PayloadsAllTheThings - 官方源（无镜像，直接克隆）
-RUN git clone --depth 1 https://github.com/swisskyrepo/PayloadsAllTheThings.git /app/thirdparty/PayloadsAllTheThings || true
+# PayloadsAllTheThings - 改用 wget 下载压缩包
+RUN wget -q -O /tmp/PayloadsAllTheThings.zip https://github.com/swisskyrepo/PayloadsAllTheThings/archive/refs/heads/master.zip && \
+    unzip -q /tmp/PayloadsAllTheThings.zip -d /app/thirdparty/ && \
+    mv /app/thirdparty/PayloadsAllTheThings-master /app/thirdparty/PayloadsAllTheThings && \
+    rm -f /tmp/PayloadsAllTheThings.zip || true
 
 # SSRFmap
 RUN git clone --depth 1 https://github.com/swisskyrepo/SSRFmap.git /app/thirdparty/SSRFmap || \

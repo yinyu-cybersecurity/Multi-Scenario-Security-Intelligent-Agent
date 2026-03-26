@@ -34,6 +34,65 @@ def smart_truncate_output(output: str, max_length: int = 300) -> str:
     return output[:half] + " ... " + output[-half:]
 
 
+def get_relevant_payloads(vuln_candidates: List[Dict], limit: int = 5) -> str:
+    """
+    根据漏洞类型获取相关 Payload 参考
+
+    Args:
+        vuln_candidates: 漏洞候选列表
+        limit: 每种漏洞类型的 Payload 数量限制
+
+    Returns:
+        格式化的 Payload 参考字符串
+    """
+    try:
+        from payload_loader import payload_loader
+
+        if not payload_loader.is_available():
+            return ""
+
+        payload_sections = []
+        seen_types = set()
+
+        for vuln in vuln_candidates[:5]:  # 最多处理5个候选
+            vuln_type = vuln.get("type", "").lower()
+
+            # 标准化漏洞类型
+            type_mapping = {
+                "sql": "sql_injection",
+                "sqli": "sql_injection",
+                "xss": "xss",
+                "ssti": "ssti",
+                "template": "ssti",
+                "xxe": "xxe",
+                "ssrf": "ssrf",
+                "lfi": "lfi",
+                "traversal": "path_traversal",
+                "rce": "rce",
+                "deserialization": "deserialization",
+            }
+
+            std_type = None
+            for key, val in type_mapping.items():
+                if key in vuln_type:
+                    std_type = val
+                    break
+
+            if std_type and std_type not in seen_types:
+                seen_types.add(std_type)
+                payloads = payload_loader.load_payloads(std_type, limit=limit)
+                if payloads:
+                    payload_str = "\n".join([f"  - {p[:100]}" for p in payloads[:limit]])
+                    payload_sections.append(f"**{vuln_type.upper()} Payload 参考**:\n{payload_str}")
+
+        if payload_sections:
+            return "\n\n".join(payload_sections)
+        return ""
+
+    except Exception as e:
+        return ""
+
+
 def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
                         attack_history: List[Dict] = None,
                         task_info: Dict = None,
@@ -41,10 +100,12 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
                         analyst_intel: str = None,
                         known_facts: str = None,
                         failed_payloads: List[str] = None,
-                        human_hint: str = None) -> str:
+                        human_hint: str = None,
+                        include_payloads: bool = True) -> str:
     """
     [P3优化版] 生成攻击兵提示词
     移除了 reflector_guidance，由 verifier 统一输出 tactical_guidance
+    增加了 Payload 参考支持
     """
     # 历史攻击记录
     history_desc = "无"
@@ -92,6 +153,11 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
 {failed_items}
 """
 
+    # 获取相关 Payload 参考
+    payload_ref = ""
+    if include_payloads and vuln_candidates:
+        payload_ref = get_relevant_payloads(vuln_candidates)
+
     return f"""# CTF 攻击手
 
 ## 目标
@@ -120,6 +186,8 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
 
 ## 可用工具
 {tool_definitions}
+
+{payload_ref}
 
 
 
