@@ -560,7 +560,7 @@ def api_tools():
     try:
         from tool_framework import ToolRegistry
 
-        # 定义工具分类
+        # 定义工具分类 - 与实际注册的工具名称匹配
         categories = {
             "impacket": {
                 "name": "Impacket工具集",
@@ -587,11 +587,11 @@ def api_tools():
             },
             "web_attack": {
                 "name": "Web攻击",
-                "tools": ["sqlmap", "ffuf", "dirsearch", "nuclei", "xray", "nmap", "httpx", "subfinder", "httprobe"]
+                "tools": ["sqlmap", "ffuf", "dirsearch", "nuclei", "xray", "nmap"]
             },
             "java_deserialize": {
                 "name": "Java反序列化",
-                "tools": ["ysoserial", "jndi-exploit", "marshalsec", "jdbc-exploit"]
+                "tools": ["ysoserial", "jndi-exploit", "marshalsec"]
             },
             "ad_attack": {
                 "name": "AD域攻击",
@@ -615,7 +615,7 @@ def api_tools():
             },
             "framework": {
                 "name": "框架工具",
-                "tools": ["metasploit", "metasploit-manager", "fscan", "hydra"]
+                "tools": ["fscan", "hydra"]
             },
             "other": {
                 "name": "其他工具",
