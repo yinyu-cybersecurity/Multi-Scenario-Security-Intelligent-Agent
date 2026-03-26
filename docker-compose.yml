@@ -1,8 +1,8 @@
 services:
   ctf-agent:
     build:
-      context: ..
-      dockerfile: deploy/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     container_name: ctf-agent
     # network_mode: host  # Windows不支持，使用端口映射
     ports:
@@ -13,8 +13,8 @@ services:
       - "4444:4444"   # Reverse Shell监听
     privileged: true
     volumes:
-      - ../data:/app/data
-      - ../.memory:/app/.memory
+      - ./data:/app/data
+      - ./.memory:/app/.memory
       - ./config.yaml:/app/config.yaml:ro
       # 代码热更新 - 挂载所有模块目录
       - ./app:/app
@@ -46,8 +46,8 @@ services:
   # CLI模式 - 命令行交互
   ctf-agent-cli:
     build:
-      context: ..
-      dockerfile: deploy/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     container_name: ctf-agent-cli
     ports:
       - "8001:8000"   # HTTP Server
@@ -55,7 +55,7 @@ services:
       - "10801:10800" # SOCKS5代理
     privileged: true
     volumes:
-      - ../data:/app/data
+      - ./data:/app/data
       - ./config.yaml:/app/config.yaml:ro
       - ./app:/app/app
       - ./tools:/app/tools
