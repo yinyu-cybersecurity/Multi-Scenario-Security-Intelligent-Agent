@@ -317,7 +317,10 @@ def run_task(task_id, target_url):
                     "shell_session": state.get("shell_session", {}),
                     "current_mode": state.get("current_mode", "exploit"),
                     "failure_weighted_score": state.get("failure_weighted_score", 0),
-                    "execution_steps": state.get("execution_steps", 0)
+                    "execution_steps": state.get("execution_steps", 0),
+                    "site_topology": state.get("site_topology", {}),
+                    "critical_nodes": state.get("critical_nodes", []),
+                    "topology_priority": state.get("topology_priority", [])
                 }
 
         if not hasattr(ctf_app, '_node_callbacks'):
