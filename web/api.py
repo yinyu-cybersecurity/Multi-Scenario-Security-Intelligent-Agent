@@ -62,8 +62,7 @@ CORS(app)
 app.jinja_env.variable_start_string = '[['
 app.jinja_env.variable_end_string = ']]'
 
-# 注册 Blueprint
-app.register_blueprint(bp)
+# Blueprint 在路由定义后注册（见文件末尾）
 
 # 任务存储（内存缓存）
 tasks = {}
@@ -1656,6 +1655,9 @@ def api_logs_node(task_id, node_name):
 
 
 if __name__ == '__main__':
+    # 注册 Blueprint（确保所有路由已定义）
+    app.register_blueprint(bp)
+
     # 配置
     HOST = '0.0.0.0'
     PORT = 54565
@@ -1672,3 +1674,10 @@ if __name__ == '__main__':
     print("=" * 60)
 
     app.run(host=HOST, port=PORT, debug=DEBUG, threaded=True)
+else:
+    # 被导入时也注册 Blueprint（防止重复注册）
+    try:
+        app.register_blueprint(bp)
+    except AssertionError:
+        # Blueprint 已注册，忽略
+        pass
