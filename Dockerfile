@@ -96,17 +96,11 @@ RUN mkdir -p /app/thirdparty /app/data/tool_outputs /app/data/tool_raw_logs /app
 # 使用 Gitee 上仍然可用的镜像（dirsearch 仍在）
 RUN git clone --depth 1 https://gitee.com/mirrors/dirsearch.git /app/thirdparty/dirsearch || true
 
-# SecLists - 改用 wget 下载压缩包
-RUN wget -q -O /tmp/SecLists.zip https://github.com/danielmiessler/SecLists/archive/refs/heads/master.zip && \
-    unzip -q /tmp/SecLists.zip -d /app/thirdparty/ && \
-    mv /app/thirdparty/SecLists-master /app/thirdparty/SecLists && \
-    rm -f /tmp/SecLists.zip || true
+# SecLists - 使用 Gitee 镜像（极速）
+RUN git clone --depth 1 https://gitee.com/RichardoMrMu/SecLists.git /app/thirdparty/SecLists || true
 
-# PayloadsAllTheThings - 改用 wget 下载压缩包
-RUN wget -q -O /tmp/PayloadsAllTheThings.zip https://github.com/swisskyrepo/PayloadsAllTheThings/archive/refs/heads/master.zip && \
-    unzip -q /tmp/PayloadsAllTheThings.zip -d /app/thirdparty/ && \
-    mv /app/thirdparty/PayloadsAllTheThings-master /app/thirdparty/PayloadsAllTheThings && \
-    rm -f /tmp/PayloadsAllTheThings.zip || true
+# PayloadsAllTheThings - 使用 Gitee 镜像（极速）
+RUN git clone --depth 1 https://gitee.com/RichardoMrMu/PayloadsAllTheThings.git /app/thirdparty/PayloadsAllTheThings || true
 
 # SSRFmap
 RUN git clone --depth 1 https://github.com/swisskyrepo/SSRFmap.git /app/thirdparty/SSRFmap || \
@@ -169,20 +163,29 @@ RUN wget -q -O /app/thirdparty/ysoserial.jar https://moeyy.cn/gh-proxy/https://g
 RUN wget -q -O /app/thirdparty/JNDIExploit.jar https://moeyy.cn/gh-proxy/https://github.com/exploitblizzard/JNDIExploit/releases/download/v1.0/JNDIExploit.jar || \
     wget -q -O /app/thirdparty/JNDIExploit.jar https://github.com/exploitblizzard/JNDIExploit/releases/download/v1.0/JNDIExploit.jar || true
 
-# frp
+# frp (Linux)
 RUN wget -q https://moeyy.cn/gh-proxy/https://github.com/fatedier/frp/releases/download/v0.52.3/frp_0.52.3_linux_amd64.tar.gz && \
     tar -xzf frp_0.52.3_linux_amd64.tar.gz -C /opt/frp --strip-components=1 && \
     rm -f frp_0.52.3_linux_amd64.tar.gz || true
+
+# frpc (Windows) - 内网渗透必需
+RUN wget -q -O /tmp/frpc_windows.zip https://moeyy.cn/gh-proxy/https://github.com/fatedier/frp/releases/download/v0.52.3/frp_0.52.3_windows_amd64.zip && \
+    unzip -o /tmp/frpc_windows.zip -d /tmp/frpc_win && \
+    mv /tmp/frpc_win/frpc.exe /opt/tools/windows/frpc.exe 2>/dev/null || \
+    mv /tmp/frpc_win/frp_0.52.3_windows_amd64/frpc.exe /opt/tools/windows/frpc.exe 2>/dev/null || true && \
+    rm -rf /tmp/frpc_win* /tmp/frpc_windows.zip || true
 
 # Windows 工具
 RUN wget -q -O /opt/tools/windows/fscan.exe https://moeyy.cn/gh-proxy/https://github.com/shadow1ng/fscan/releases/download/v1.8.2/fscan.exe || \
     wget -q -O /opt/tools/windows/fscan.exe https://github.com/shadow1ng/fscan/releases/download/v1.8.2/fscan.exe || true
 
-RUN wget -q -O /opt/tools/potato/PrintSpoofer64.exe https://moeyy.cn/gh-proxy/https://github.com/itm4n/PrintSpoofer/releases/download/v1.0/PrintSpoofer64.exe || \
-    wget -q -O /opt/tools/potato/PrintSpoofer64.exe https://github.com/itm4n/PrintSpoofer/releases/download/v1.0/PrintSpoofer64.exe || true
+RUN wget -q --timeout=60 --tries=3 -O /opt/tools/potato/PrintSpoofer64.exe https://ghproxy.net/https://github.com/itm4n/PrintSpoofer/releases/download/v1.0/PrintSpoofer64.exe || \
+    wget -q --timeout=60 --tries=3 -O /opt/tools/potato/PrintSpoofer64.exe https://github.com/itm4n/PrintSpoofer/releases/download/v1.0/PrintSpoofer64.exe || \
+    wget -q --timeout=60 --tries=3 -O /opt/tools/potato/PrintSpoofer64.exe https://moeyy.cn/gh-proxy/https://github.com/itm4n/PrintSpoofer/releases/download/v1.0/PrintSpoofer64.exe || true
 
-RUN wget -q -O /opt/tools/potato/GodPotato.exe https://moeyy.cn/gh-proxy/https://github.com/BeichenDream/GodPotato/releases/download/V1.20/GodPotato_Net40.exe || \
-    wget -q -O /opt/tools/potato/GodPotato.exe https://github.com/BeichenDream/GodPotato/releases/download/V1.20/GodPotato_Net40.exe || true
+# GodPotato.exe - GitHub + Gitee 备份
+RUN wget -q --timeout=60 --tries=2 -O /opt/tools/potato/GodPotato.exe https://github.com/BeichenDream/GodPotato/releases/download/V1.20/GodPotato_Net40.exe || \
+    wget -q --timeout=60 --tries=2 -O /opt/tools/potato/GodPotato.exe https://gitee.com/uploads/111/685/111/GodPotato_Net40.exe || true
 
 RUN wget -q -O /opt/tools/windows/Rubeus.exe https://moeyy.cn/gh-proxy/https://github.com/GhostPack/Rubeus/releases/download/2.2.0/Rubeus.exe || \
     wget -q -O /opt/tools/windows/Rubeus.exe https://github.com/GhostPack/Rubeus/releases/download/2.2.0/Rubeus.exe || true
