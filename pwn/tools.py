@@ -180,10 +180,22 @@ class BinaryAnalyzer:
     def _find_gadgets(cls, binary_path: str) -> List[str]:
         """查找ROP gadgets"""
         gadgets = []
+
+        # 检查 ROPgadget 路径 (pipx 安装)
+        ropgadget_path = None
+        pipx_path = "/root/.local/bin/ROPgadget"
+        if os.path.exists(pipx_path):
+            ropgadget_path = pipx_path
+        else:
+            import shutil
+            ropgadget_path = shutil.which("ROPgadget")
+
+        if not ropgadget_path:
+            return gadgets
+
         try:
-            # 尝试使用ROPgadget
             result = subprocess.run(
-                ['ROPgadget', '--binary', binary_path, '--only', 'pop|ret'],
+                [ropgadget_path, '--binary', binary_path, '--only', 'pop|ret'],
                 capture_output=True, text=True, timeout=60
             )
             for line in result.stdout.split('\n'):

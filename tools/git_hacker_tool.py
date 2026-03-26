@@ -24,13 +24,18 @@ class GitHackerTool(CommandLineTool):
         self.script_path = None
         self.use_module = False
 
-        # 方式1: 检查是否通过 pip/pipx 安装
-        if shutil.which("githacker"):
+        # 方式1: 检查是否通过 pipx 安装 (推荐)
+        pipx_path = "/root/.local/bin/githacker"
+        if os.path.exists(pipx_path):
+            self.cmd_path = pipx_path
+            self.use_module = True
+            self.script_path = "installed"
+        elif shutil.which("githacker"):
             self.cmd_path = "githacker"
             self.use_module = True
             self.script_path = "installed"
         else:
-            # 方式2: 检查源码目录
+            # 方式2: 检查源码目录 (备用)
             docker_path = "/app/thirdparty/git-hacker"
             local_path = os.path.join(os.getcwd(), "thirdparty", "git-hacker")
             self.source_dir = docker_path if os.path.exists(docker_path) else local_path
@@ -38,6 +43,9 @@ class GitHackerTool(CommandLineTool):
             if os.path.exists(self.source_dir):
                 self.use_module = True
                 self.script_path = self.source_dir
+            else:
+                self.use_module = False
+                self.script_path = None
 
         self.timeout = 120
 

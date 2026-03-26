@@ -62,13 +62,14 @@ class SqlmapTool(CommandLineTool):
         # 检查是否在 Docker 容器内
         self.is_in_docker = os.path.exists("/.dockerenv")
         
-        # 优先寻找系统路径中的 sqlmap 命令
+        # 优先寻找系统路径中的 sqlmap 命令 (pipx 安装)
         self.executable = shutil.which("sqlmap")
-        
-        # 如果找不到命令，寻找脚本路径
-        docker_script = "/app/thirdparty/sqlmap/sqlmap.py"
-        local_script = os.path.join(os.getcwd(), "thirdparty", "sqlmap", "sqlmap.py")
-        self.script_path = docker_script if self.is_in_docker else local_script
+
+        # pipx 安装的 sqlmap 在 /root/.local/bin/sqlmap
+        if not self.executable:
+            pipx_path = "/root/.local/bin/sqlmap"
+            if os.path.exists(pipx_path):
+                self.executable = pipx_path
         
         # 确定最终执行命令
         if self.executable:
