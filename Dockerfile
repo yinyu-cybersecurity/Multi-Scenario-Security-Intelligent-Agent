@@ -97,8 +97,9 @@ RUN git clone --depth 1 https://gitee.com/mirrors/PayloadsAllTheThings.git /app/
 RUN git clone --depth 1 https://ghp.ci/https://github.com/Threezh1/JSFinder.git /app/thirdparty/jsfinder || true
 RUN git clone --depth 1 https://ghp.ci/https://github.com/enjoiz/XXEinjector.git /app/thirdparty/xxe-injector || true
 
-# php-filter-chain（新增）
-RUN git clone --depth 1 https://ghp.ci/https://github.com/synacktiv/php_filter_chain.git /app/thirdparty/php_filter_chain || true
+# php-filter-chain-generator（正确的仓库）
+RUN git clone --depth 1 https://ghp.ci/https://github.com/synacktiv/php_filter_chain_generator.git /app/thirdparty/php_filter_chain && \
+    chmod +x /app/thirdparty/php_filter_chain/php_filter_chain_generator.py || true
 
 # AD 工具
 RUN git clone --depth 1 https://ghp.ci/https://github.com/leechristensen/ADCollector.git /app/thirdparty/adcollector || true
@@ -153,7 +154,7 @@ RUN mkdir -p /opt/linux && \
     ln -sf /usr/local/bin/httpx /opt/linux/httpx && \
     ln -sf /usr/local/bin/subfinder /opt/linux/subfinder && \
     ln -sf /app/thirdparty/dirsearch/dirsearch.py /usr/local/bin/dirsearch && \
-    ln -sf /app/thirdparty/php_filter_chain/php_filter_chain.py /usr/local/bin/php-filter-chain || true
+    ln -sf /app/thirdparty/php_filter_chain/php_filter_chain_generator.py /usr/local/bin/php-filter-chain || true
 
 COPY requirements.txt .
 RUN python3.11 -m venv /opt/venv
