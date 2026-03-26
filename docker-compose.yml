@@ -6,7 +6,7 @@ services:
     container_name: ctf-agent
     # network_mode: host  # Windows不支持，使用端口映射
     ports:
-      - "5000:5000"   # Web UI
+      - "54565:54565" # Web UI (安全路径: /fisher_ctf_agent/)
       - "8000:8000"   # HTTP Server (工具下载服务)
       - "7000:7000"   # frps (FRP服务端)
       - "10800:10800" # SOCKS5代理

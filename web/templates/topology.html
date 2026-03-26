@@ -78,10 +78,10 @@
         <div class="header">
             <h1>CTF-Agent 拓扑图</h1>
             <div class="nav-links">
-                <a href="/" class="nav-link">控制台</a>
-                <a href="/monitor" class="nav-link">监控</a>
-                <a href="/modules" class="nav-link">模块</a>
-                <a href="/topology" class="nav-link active">拓扑</a>
+                <a href="/fisher_ctf_agent/monitor" class="nav-link">控制台</a>
+                <a href="/fisher_ctf_agent/monitor" class="nav-link">监控</a>
+                <a href="/fisher_ctf_agent/modules" class="nav-link">模块</a>
+                <a href="/fisher_ctf_agent/topology" class="nav-link active">拓扑</a>
             </div>
         </div>
 
@@ -152,10 +152,10 @@
 
                 async function fetchTasks() {
                     try {
-                        const data = await (await fetch('/api/tasks')).json();
+                        const data = await (await fetch('/fisher_ctf_agent/api/tasks')).json();
                         tasks.value = data.tasks || [];
                         for (const task of tasks.value) {
-                            try { task.nodeCount = (await (await fetch(`/api/topology/${task.id}`)).json()).stats?.total_nodes || 0; } catch (e) { task.nodeCount = 0; }
+                            try { task.nodeCount = (await (await fetch(`/fisher_ctf_agent/api/topology/${task.id}`)).json()).stats?.total_nodes || 0; } catch (e) { task.nodeCount = 0; }
                         }
                     } catch (e) {}
                 }
@@ -163,9 +163,9 @@
                 async function selectTask(taskId) {
                     selectedTaskId.value = taskId; selectedNode.value = null;
                     try {
-                        topologyData.value = await (await fetch(`/api/topology/${taskId}`)).json();
+                        topologyData.value = await (await fetch(`/fisher_ctf_agent/api/topology/${taskId}`)).json();
                         topologyStats.value = topologyData.value.stats;
-                        criticalNodes.value = (await (await fetch(`/api/topology/${taskId}/critical`)).json()).critical_nodes || [];
+                        criticalNodes.value = (await (await fetch(`/fisher_ctf_agent/api/topology/${taskId}/critical`)).json()).critical_nodes || [];
                         nextTick(() => renderGraph());
                     } catch (e) { topologyData.value = { nodes: [], edges: [] }; }
                 }

@@ -17,8 +17,9 @@ class PHPFilterChainTool(CommandLineTool):
         cmd = "python3" if os.path.exists("/.dockerenv") else sys.executable
         super().__init__(cmd)
 
-        docker_path = "/app/thirdparty/php_filter_chain_generator/php_filter_chain_generator.py"
-        local_path = os.path.join(os.getcwd(), "thirdparty", "php_filter_chain_generator", "php_filter_chain_generator.py")
+        # Dockerfile 克隆路径
+        docker_path = "/app/thirdparty/php_filter_chain/php_filter_chain.py"
+        local_path = os.path.join(os.getcwd(), "thirdparty", "php_filter_chain", "php_filter_chain.py")
         self.script_path = docker_path if os.path.exists(docker_path) else local_path
         self.timeout = 60
 

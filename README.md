@@ -26,12 +26,14 @@ CTF-Agent 是一个智能化的渗透测试代理，能够自主完成从信息�
 | Misc | misc_analyst, misc_extractor | `_llm_misc_analysis()` |
 
 #### 🔧 40+ 安全工具
-- **注入工具**: sqlmap, fenjing (SSTI)
+- **注入工具**: sqlmap, fenjing (SSTI), dalfox (XSS)
 - **漏洞扫描**: nuclei, xray, fscan, nmap, cve_scanner
-- **反序列化**: ysoserial, phpggc, pickle-pwn, marshalsec
+- **反序列化**: ysoserial, phpggc, pickle-pwn, marshalsec, JNDIExploit
 - **内网渗透**: impacket, crackmapexec, mimikatz, frp
 - **域渗透**: bloodhound, petitpotam, rubeus
-- **权限提升**: potato系列 (PrintSpoofer/SweetPotato)
+- **权限提升**: potato系列 (PrintSpoofer/GodPotato)
+- **目录扫描**: dirsearch, ffuf
+- **信息收集**: JSFinder, jwt_tool, httpx, subfinder
 
 #### ✨ 系统改进（2026-03 更新）
 - **模块化状态类型**: 场景分离的状态定义（WebCTFState, InternalNetworkState, CryptoCTFState 等）
@@ -78,8 +80,8 @@ docker-compose up -d --build
 docker logs -f ctf-agent
 
 # 访问地址
-# 本地: http://localhost:5000
-# 远程: http://服务器IP:5000
+# 本地: http://localhost:54565/fisher_ctf_agent/monitor
+# 远程: http://服务器IP:54565/fisher_ctf_agent/monitor
 ```
 
 #### 本地运行
@@ -96,6 +98,8 @@ chmod +x start_web.sh && ./start_web.sh
 
 # 或直接运行
 python web/api.py
+
+# 访问地址: http://localhost:54565/fisher_ctf_agent/monitor
 ```
 
 #### Web UI 功能

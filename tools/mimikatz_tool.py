@@ -65,10 +65,9 @@ class MimikatzTool(CommandLineTool):
         self.executable = None
 
         common_paths = [
-            "/opt/tools/x64/mimikatz.exe",  # Dockerfile解压路径
+            "/opt/tools/windows/mimikatz.exe",  # Dockerfile下载路径
+            "/opt/tools/x64/mimikatz.exe",
             "/opt/tools/mimikatz/x64/mimikatz.exe",
-            "/opt/tools/Win32/mimikatz.exe",
-            "/opt/tools/mimikatz/Win32/mimikatz.exe",
             "mimikatz.exe",
             "./mimikatz.exe",
             "./tools/mimikatz.exe",

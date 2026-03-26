@@ -89,10 +89,10 @@
         <div class="header">
             <h1>CTF-Agent 模块管理</h1>
             <div class="nav-links">
-                <a href="/" class="nav-link">控制台</a>
-                <a href="/monitor" class="nav-link">监控</a>
-                <a href="/modules" class="nav-link active">模块</a>
-                <a href="/topology" class="nav-link">拓扑</a>
+                <a href="/fisher_ctf_agent/monitor" class="nav-link">控制台</a>
+                <a href="/fisher_ctf_agent/monitor" class="nav-link">监控</a>
+                <a href="/fisher_ctf_agent/modules" class="nav-link active">模块</a>
+                <a href="/fisher_ctf_agent/topology" class="nav-link">拓扑</a>
             </div>
         </div>
 
@@ -111,6 +111,10 @@
                     <div class="stat-row"><span class="stat-label">可用模块</span><span class="stat-value success">{{ stats.available }}</span></div>
                     <div class="stat-row"><span class="stat-label">工具总数</span><span class="stat-value">{{ stats.tools }}</span></div>
                     <div class="stat-row"><span class="stat-label">节点总数</span><span class="stat-value">{{ stats.nodes }}</span></div>
+                    <div class="stat-row" style="background: #e6f7ff; padding: 8px; margin-top: 8px; border-radius: 4px;">
+                        <span class="stat-label">内存节省</span>
+                        <span class="stat-value" style="color: #1890ff;">{{ stats.memorySavings }} MB</span>
+                    </div>
                 </div>
             </div>
 
@@ -262,6 +266,8 @@
                 const config = ref({ LLM_BASE_URL: '', LLM_API_KEY: '', ANALYST_MODEL: '', LOCAL_PUBLIC_IP: '', HTTP_SERVER_PORT: 8000, FRP_SERVER_PORT: 7000 });
                 const graphNodes = ref([]);
                 const detailNode = ref(null);
+                const memorySavings = ref(0);
+                const nodeGroups = ref({});
 
                 const stats = computed(() => {
                     const mods = Object.values(modules.value);
@@ -269,38 +275,51 @@
                         modules: mods.length,
                         available: mods.filter(m => m.available).length,
                         tools: tools.value.length,
-                        nodes: mods.reduce((sum, m) => sum + (m.nodes?.length || 0), 0)
+                        nodes: mods.reduce((sum, m) => sum + (m.nodes?.length || 0), 0),
+                        memorySavings: memorySavings.value
                     };
                 });
 
                 async function fetchModules() {
                     try {
-                        const data = await (await fetch('/api/modules/status')).json();
+                        const data = await (await fetch('/fisher_ctf_agent/api/modules/status')).json();
                         modules.value = data.modules || {};
                     } catch (e) { console.error(e); }
                 }
                 async function fetchTools() {
                     try {
-                        const data = await (await fetch('/api/tools/status')).json();
+                        const data = await (await fetch('/fisher_ctf_agent/api/tools/status')).json();
                         tools.value = (data.tools || []).map(t => ({ ...t, enabled: t.available }));
                     } catch (e) { console.error(e); }
                 }
                 async function fetchConfig() {
                     try {
-                        const data = await (await fetch('/api/system/config')).json();
+                        const data = await (await fetch('/fisher_ctf_agent/api/system/config')).json();
                         Object.assign(config.value, data);
                     } catch (e) { console.error(e); }
                 }
                 async function fetchGraphNodes() {
                     try {
-                        const data = await (await fetch('/api/graph/nodes')).json();
+                        const data = await (await fetch('/fisher_ctf_agent/api/graph/nodes')).json();
                         graphNodes.value = data.nodes || [];
+                    } catch (e) { console.error(e); }
+                }
+                async function fetchNodeStatus() {
+                    try {
+                        const data = await (await fetch('/fisher_ctf_agent/api/nodes/status')).json();
+                        memorySavings.value = data.memory_savings_mb || 0;
+                    } catch (e) { console.error(e); }
+                }
+                async function fetchNodeGroups() {
+                    try {
+                        const data = await (await fetch('/fisher_ctf_agent/api/nodes/groups')).json();
+                        nodeGroups.value = data.groups || {};
                     } catch (e) { console.error(e); }
                 }
 
                 async function toggleModule(name, enabled) {
                     try {
-                        await fetch(`/api/modules/${name}/toggle`, {
+                        await fetch(`/fisher_ctf_agent/api/modules/${name}/toggle`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ enabled })
@@ -310,7 +329,7 @@
                 }
                 async function toggleTool(name, enabled) {
                     try {
-                        await fetch(`/api/tools/${name}/toggle`, {
+                        await fetch(`/fisher_ctf_agent/api/tools/${name}/toggle`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ enabled })
@@ -321,7 +340,7 @@
                 }
                 async function toggleNode(nodeId, enabled) {
                     try {
-                        const resp = await fetch(`/api/nodes/${nodeId}/toggle`, {
+                        const resp = await fetch(`/fisher_ctf_agent/api/nodes/${nodeId}/toggle`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ enabled })
@@ -330,7 +349,9 @@
                         if (data.success) {
                             const node = graphNodes.value.find(n => n.id === nodeId);
                             if (node) node.enabled = enabled;
-                            ElementPlus.ElMessage.success(enabled ? '节点已启用' : '节点已禁用');
+                            memorySavings.value = data.memory_savings_mb || 0;
+                            const msg = enabled ? '节点已启用' : `节点已禁用 (节省约 ${data.memory_savings_mb}MB 内存)`;
+                            ElementPlus.ElMessage.success(msg);
                         }
                     } catch (e) { console.error(e); }
                 }
@@ -346,7 +367,7 @@
                 }
                 async function saveConfig() {
                     try {
-                        await fetch('/api/system/config', {
+                        await fetch('/fisher_ctf_agent/api/system/config', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(config.value)
@@ -372,9 +393,11 @@
                     fetchTools();
                     fetchConfig();
                     fetchGraphNodes();
+                    fetchNodeStatus();
+                    fetchNodeGroups();
                 });
 
-                return { view, modules, tools, config, graphNodes, stats, detailNode, toggleModule, toggleTool, toggleNode, toggleAllNodes, toggleAllTools, saveConfig, showNodeDetail };
+                return { view, modules, tools, config, graphNodes, stats, detailNode, memorySavings, nodeGroups, toggleModule, toggleTool, toggleNode, toggleAllNodes, toggleAllTools, saveConfig, showNodeDetail };
             }
         });
         app.use(ElementPlus).mount('#app');

@@ -19,7 +19,7 @@ class XXEInjectorTool(CommandLineTool):
 
         # 查找 XXEinjector 脚本
         docker_paths = [
-            "/app/thirdparty/xxe-injector/XXEinjector.rb",
+            "/app/thirdparty/xxe-injector/XXEinjector.rb",  # Dockerfile 克隆路径
             "/app/thirdparty/XXEinjector/XXEinjector.rb",
             "/app/thirdparty/xxeinjector.rb",
         ]

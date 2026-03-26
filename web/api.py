@@ -5,6 +5,11 @@ Web API 服务
 - 任务持久化 (TaskPersistenceManager)
 - 自我纠错 (SelfCorrectionManager)
 - 攻击策略评估 (AttackStrategyEvaluator)
+
+安全配置:
+- 访问路径: /fisher_ctf_agent/
+- 端口: 54565
+- 无默认首页
 """
 
 import os
@@ -14,7 +19,7 @@ import time
 import threading
 import subprocess
 from datetime import datetime
-from flask import Flask, render_template, jsonify, request, Response
+from flask import Flask, Blueprint, render_template, jsonify, request, Response, abort
 from flask_cors import CORS
 import queue
 
@@ -22,20 +27,43 @@ import queue
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'app'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-# 导入工具模块以触发工具注册
+# 导入工具模块以触发工具注册（忽略错误）
 try:
     import tools
-except ImportError:
+except Exception as e:
+    print(f"[Web] Warning: Failed to load tools: {e}")
     pass
 
+# 导入节点控制模块
+try:
+    from node_control import node_control
+except ImportError:
+    node_control = None
+
+# =============================================================================
+# Flask 应用配置
+# =============================================================================
+
+# URL 前缀 - 所有路由都带此前缀
+URL_PREFIX = '/fisher_ctf_agent'
+
+# 创建 Blueprint - 统一管理所有路由
+bp = Blueprint('main', __name__, url_prefix=URL_PREFIX)
+
+# 创建 Flask 应用
 app = Flask(__name__,
             template_folder='templates',
-            static_folder='static')
+            static_folder='static',
+            static_url_path=URL_PREFIX + '/static')
+
 CORS(app)
 
 # 配置Jinja2不与Vue冲突 - 使用 [[ ]] 作为Jinja变量分隔符
 app.jinja_env.variable_start_string = '[['
 app.jinja_env.variable_end_string = ']]'
+
+# 注册 Blueprint
+app.register_blueprint(bp)
 
 # 任务存储（内存缓存）
 tasks = {}
@@ -187,7 +215,11 @@ def get_graph_structure():
 
     # 添加启用状态和分组名称
     for node in nodes:
-        node["enabled"] = node_enabled.get(node["id"], True)
+        # 使用 node_control 获取启用状态
+        if node_control:
+            node["enabled"] = node_control.is_enabled(node["id"])
+        else:
+            node["enabled"] = node_enabled.get(node["id"], True)
         node["groupName"] = groups.get(node["group"], {}).get("name", node["group"])
 
     # 按执行流程排序
@@ -449,37 +481,45 @@ def run_simulated_task(task_id, target_url):
 # API Routes
 # =============================================================================
 
+# 根路径处理 - 安全起见不提供默认首页
 @app.route('/')
+def root():
+    """根路径 - 返回 404"""
+    abort(404)
+
+
+@bp.route('/')
 def index():
-    """主页"""
-    return render_template('index.html')
+    """前缀根路径 - 重定向到监控面板"""
+    from flask import redirect, url_for
+    return redirect(url_for('.monitor'))
 
 
-@app.route('/monitor')
+@bp.route('/monitor')
 def monitor():
     """监控面板"""
     return render_template('monitor.html')
 
 
-@app.route('/modules')
+@bp.route('/modules')
 def modules():
     """模块管理"""
     return render_template('modules.html')
 
 
-@app.route('/topology')
+@bp.route('/topology')
 def topology():
     """拓扑图可视化"""
     return render_template('topology.html')
 
 
-@app.route('/api/graph')
+@bp.route('/api/graph')
 def api_graph():
     """获取图结构"""
     return jsonify(get_graph_structure())
 
 
-@app.route('/api/system/status')
+@bp.route('/api/system/status')
 def api_system_status():
     """获取系统状态"""
     try:
@@ -515,7 +555,7 @@ def api_system_status():
     })
 
 
-@app.route('/api/tools')
+@bp.route('/api/tools')
 def api_tools():
     """获取可用工具列表（分类显示）"""
     try:
@@ -634,7 +674,7 @@ def api_tools():
         return jsonify({"categories": {}, "error": str(e)})
 
 
-@app.route('/api/sessions')
+@bp.route('/api/sessions')
 def api_sessions():
     """获取活跃会话"""
     try:
@@ -654,7 +694,7 @@ def api_sessions():
         return jsonify({"sessions": [], "error": str(e)})
 
 
-@app.route('/api/task/start', methods=['POST'])
+@bp.route('/api/task/start', methods=['POST'])
 def api_task_start():
     """启动新任务"""
     data = request.json
@@ -703,7 +743,7 @@ def api_task_start():
     return jsonify({"task_id": task_id, "status": "started"})
 
 
-@app.route('/api/task/<task_id>')
+@bp.route('/api/task/<task_id>')
 def api_task_status(task_id):
     """获取任务状态"""
     if task_id not in tasks:
@@ -733,7 +773,7 @@ def api_task_status(task_id):
     })
 
 
-@app.route('/api/task/<task_id>/logs')
+@bp.route('/api/task/<task_id>/logs')
 def api_task_logs(task_id):
     """获取任务日志"""
     if task_id not in task_logs:
@@ -748,7 +788,7 @@ def api_task_logs(task_id):
     })
 
 
-@app.route('/api/task/<task_id>/cancel', methods=['POST'])
+@bp.route('/api/task/<task_id>/cancel', methods=['POST'])
 def api_task_cancel(task_id):
     """取消任务"""
     if task_id not in tasks:
@@ -760,7 +800,7 @@ def api_task_cancel(task_id):
     return jsonify({"status": "cancelled"})
 
 
-@app.route('/api/task/<task_id>/result')
+@bp.route('/api/task/<task_id>/result')
 def api_task_result(task_id):
     """获取任务详细结果"""
     if task_id not in task_results:
@@ -769,7 +809,7 @@ def api_task_result(task_id):
     return jsonify(task_results[task_id])
 
 
-@app.route('/api/tasks')
+@bp.route('/api/tasks')
 def api_tasks():
     """获取任务列表"""
     task_list = []
@@ -790,7 +830,7 @@ def api_tasks():
     return jsonify({"tasks": task_list})
 
 
-@app.route('/api/task/<task_id>/stream')
+@bp.route('/api/task/<task_id>/stream')
 def api_task_stream(task_id):
     """日志流（SSE）- 使用Queue阻塞等待"""
     # 确保队列存在
@@ -822,7 +862,7 @@ def api_task_stream(task_id):
     return Response(generate(), mimetype='text/event-stream')
 
 
-@app.route('/api/health')
+@bp.route('/api/health')
 def api_health():
     """健康检查"""
     return jsonify({"status": "ok", "timestamp": datetime.now().isoformat()})
@@ -832,7 +872,7 @@ def api_health():
 # 任务持久化 API
 # =============================================================================
 
-@app.route('/api/persistence/tasks')
+@bp.route('/api/persistence/tasks')
 def api_persistence_tasks():
     """获取持久化的任务列表"""
     if not task_persistence:
@@ -850,7 +890,7 @@ def api_persistence_tasks():
     })
 
 
-@app.route('/api/persistence/task/<task_id>')
+@bp.route('/api/persistence/task/<task_id>')
 def api_persistence_task(task_id):
     """获取持久化的任务详情"""
     if not task_persistence:
@@ -871,7 +911,7 @@ def api_persistence_task(task_id):
     })
 
 
-@app.route('/api/persistence/statistics')
+@bp.route('/api/persistence/statistics')
 def api_persistence_statistics():
     """获取任务统计信息"""
     if not task_persistence:
@@ -880,7 +920,7 @@ def api_persistence_statistics():
     return jsonify(task_persistence.get_statistics())
 
 
-@app.route('/api/persistence/task/<task_id>', methods=['DELETE'])
+@bp.route('/api/persistence/task/<task_id>', methods=['DELETE'])
 def api_persistence_delete_task(task_id):
     """删除持久化任务"""
     if not task_persistence:
@@ -894,7 +934,7 @@ def api_persistence_delete_task(task_id):
 # 自我纠错状态 API
 # =============================================================================
 
-@app.route('/api/system/recovery')
+@bp.route('/api/system/recovery')
 def api_system_recovery():
     """获取自我纠错状态"""
     if not self_correction_manager:
@@ -909,7 +949,7 @@ def api_system_recovery():
     })
 
 
-@app.route('/api/system/recovery/history')
+@bp.route('/api/system/recovery/history')
 def api_recovery_history():
     """获取错误恢复历史"""
     if not self_correction_manager:
@@ -935,7 +975,7 @@ def api_recovery_history():
 # 攻击策略评估 API
 # =============================================================================
 
-@app.route('/api/strategy/evaluate', methods=['POST'])
+@bp.route('/api/strategy/evaluate', methods=['POST'])
 def api_strategy_evaluate():
     """评估攻击策略"""
     if not strategy_evaluator:
@@ -970,7 +1010,7 @@ def api_strategy_evaluate():
     })
 
 
-@app.route('/api/strategy/analyze-path', methods=['POST'])
+@bp.route('/api/strategy/analyze-path', methods=['POST'])
 def api_strategy_analyze_path():
     """分析攻击路径"""
     if not strategy_evaluator:
@@ -986,7 +1026,7 @@ def api_strategy_analyze_path():
     return jsonify(result)
 
 
-@app.route('/api/strategy/statistics')
+@bp.route('/api/strategy/statistics')
 def api_strategy_statistics():
     """获取策略评估统计"""
     if not strategy_evaluator:
@@ -999,7 +1039,7 @@ def api_strategy_statistics():
 # LLM 状态 API
 # =============================================================================
 
-@app.route('/api/llm/status')
+@bp.route('/api/llm/status')
 def api_llm_status():
     """获取 LLM 状态"""
     try:
@@ -1014,7 +1054,7 @@ def api_llm_status():
 # 性能监控 API
 # =============================================================================
 
-@app.route('/api/performance/stats')
+@bp.route('/api/performance/stats')
 def api_performance_stats():
     """获取性能统计"""
     try:
@@ -1024,7 +1064,7 @@ def api_performance_stats():
         return jsonify({"error": "Performance monitor not available"}), 503
 
 
-@app.route('/api/performance/records')
+@bp.route('/api/performance/records')
 def api_performance_records():
     """获取最近执行记录"""
     try:
@@ -1035,7 +1075,7 @@ def api_performance_records():
         return jsonify({"error": "Performance monitor not available"}), 503
 
 
-@app.route('/api/performance/slow')
+@bp.route('/api/performance/slow')
 def api_performance_slow():
     """获取慢操作列表"""
     try:
@@ -1046,7 +1086,7 @@ def api_performance_slow():
         return jsonify({"error": "Performance monitor not available"}), 503
 
 
-@app.route('/api/performance/reset', methods=['POST'])
+@bp.route('/api/performance/reset', methods=['POST'])
 def api_performance_reset():
     """重置性能统计"""
     try:
@@ -1061,7 +1101,7 @@ def api_performance_reset():
 # 上下文压缩状态 API
 # =============================================================================
 
-@app.route('/api/compression/status')
+@bp.route('/api/compression/status')
 def api_compression_status():
     """获取压缩状态"""
     try:
@@ -1161,14 +1201,14 @@ def _update_monitor_history():
     return metrics
 
 
-@app.route('/api/system/metrics')
+@bp.route('/api/system/metrics')
 def api_system_metrics():
     """获取系统资源指标"""
     metrics = _update_monitor_history()
     return jsonify(metrics)
 
 
-@app.route('/api/system/metrics/history')
+@bp.route('/api/system/metrics/history')
 def api_system_metrics_history():
     """获取系统资源历史数据"""
     with _monitor_lock:
@@ -1197,7 +1237,7 @@ def api_system_metrics_history():
             }
         })
 
-@app.route('/api/modules')
+@bp.route('/api/modules')
 def api_modules():
     """获取所有模块状态"""
     try:
@@ -1208,7 +1248,7 @@ def api_modules():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/modules/<module_name>')
+@bp.route('/api/modules/<module_name>')
 def api_module_detail(module_name):
     """获取单个模块详情"""
     try:
@@ -1226,7 +1266,7 @@ def api_module_detail(module_name):
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/modules/<module_name>/nodes')
+@bp.route('/api/modules/<module_name>/nodes')
 def api_module_nodes(module_name):
     """获取模块中的节点列表"""
     try:
@@ -1249,7 +1289,7 @@ def api_module_nodes(module_name):
 # 拓扑图 API
 # =============================================================================
 
-@app.route('/api/topology/<task_id>')
+@bp.route('/api/topology/<task_id>')
 def api_topology(task_id):
     """获取任务的拓扑图数据"""
     if task_id not in task_results:
@@ -1286,7 +1326,7 @@ def api_topology(task_id):
     })
 
 
-@app.route('/api/topology/<task_id>/critical')
+@bp.route('/api/topology/<task_id>/critical')
 def api_topology_critical(task_id):
     """获取关键节点"""
     if task_id not in task_results:
@@ -1325,7 +1365,7 @@ DEFAULT_NODES = [
 ]
 node_enabled = {name: True for name in DEFAULT_NODES}
 
-@app.route('/api/system/config', methods=['GET'])
+@bp.route('/api/system/config', methods=['GET'])
 def api_get_config():
     """获取当前配置"""
     try:
@@ -1344,7 +1384,7 @@ def api_get_config():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/system/config', methods=['POST'])
+@bp.route('/api/system/config', methods=['POST'])
 def api_update_config():
     """更新配置（运行时）"""
     global system_status
@@ -1367,7 +1407,7 @@ def api_update_config():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/modules/<module_name>/toggle', methods=['POST'])
+@bp.route('/api/modules/<module_name>/toggle', methods=['POST'])
 def api_toggle_module(module_name):
     """切换模块启用状态"""
     global module_enabled
@@ -1384,7 +1424,7 @@ def api_toggle_module(module_name):
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/modules/status')
+@bp.route('/api/modules/status')
 def api_modules_status():
     """获取所有模块启用状态"""
     try:
@@ -1405,7 +1445,7 @@ def api_modules_status():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/tools/status')
+@bp.route('/api/tools/status')
 def api_tools_status():
     """获取所有工具启用状态"""
     try:
@@ -1424,7 +1464,7 @@ def api_tools_status():
         return jsonify({"tools": [], "error": str(e)})
 
 
-@app.route('/api/tools/<tool_name>/toggle', methods=['POST'])
+@bp.route('/api/tools/<tool_name>/toggle', methods=['POST'])
 def api_toggle_tool(tool_name):
     """切换工具启用状态"""
     global tool_enabled
@@ -1441,34 +1481,54 @@ def api_toggle_tool(tool_name):
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/nodes/<node_id>/toggle', methods=['POST'])
+@bp.route('/api/nodes/<node_id>/toggle', methods=['POST'])
 def api_toggle_node(node_id):
     """切换节点启用状态"""
     global node_enabled
     try:
         data = request.json or {}
         enabled = data.get('enabled', True)
+
+        # 更新本地状态（兼容旧代码）
         node_enabled[node_id] = enabled
+
+        # 更新 node_control（真正控制节点执行）
+        if node_control:
+            node_control.set_enabled(node_id, enabled)
+
+        # 计算内存节省
+        memory_savings = node_control.get_memory_savings() if node_control else 0
+
         return jsonify({
             "success": True,
             "node": node_id,
             "enabled": enabled,
+            "memory_savings_mb": memory_savings,
             "graph": get_graph_structure()
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/nodes/status')
+@bp.route('/api/nodes/status')
 def api_nodes_status():
     """获取所有节点启用状态"""
     try:
+        if node_control:
+            status = node_control.get_all_status()
+            memory_savings = node_control.get_memory_savings()
+            disabled = node_control.get_disabled_nodes()
+            return jsonify({
+                "nodes": status,
+                "memory_savings_mb": memory_savings,
+                "disabled_nodes": disabled
+            })
         return jsonify({"nodes": node_enabled})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/graph/nodes')
+@bp.route('/api/graph/nodes')
 def api_graph_nodes():
     """获取图节点详情"""
     try:
@@ -1490,11 +1550,66 @@ def api_graph_nodes():
         return jsonify({"error": str(e)}), 500
 
 
+@bp.route('/api/nodes/groups/toggle', methods=['POST'])
+def api_toggle_node_group():
+    """批量切换节点组启用状态"""
+    try:
+        data = request.json or {}
+        group_name = data.get('group', '')
+        enabled = data.get('enabled', True)
+
+        if not node_control:
+            return jsonify({"error": "node_control not available"}), 500
+
+        if enabled:
+            count = node_control.enable_group(group_name)
+        else:
+            count = node_control.disable_group(group_name)
+
+        memory_savings = node_control.get_memory_savings()
+
+        return jsonify({
+            "success": True,
+            "group": group_name,
+            "enabled": enabled,
+            "affected_nodes": count,
+            "memory_savings_mb": memory_savings
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/api/nodes/groups')
+def api_get_node_groups():
+    """获取节点分组信息"""
+    try:
+        if not node_control:
+            return jsonify({"error": "node_control not available"}), 500
+
+        groups = {}
+        for group_name, nodes in node_control.NODE_GROUPS.items():
+            group_status = {
+                "name": group_name,
+                "nodes": nodes,
+                "enabled_count": sum(1 for n in nodes if node_control.is_enabled(n)),
+                "total_count": len(nodes),
+                "memory_estimate_mb": sum(node_control.NODE_MEMORY_ESTIMATE.get(n, 0) for n in nodes)
+            }
+            groups[group_name] = group_status
+
+        return jsonify({
+            "groups": groups,
+            "total_memory_savings_mb": node_control.get_memory_savings()
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # =============================================================================
 # 日志查看 API
 # =============================================================================
 
-@app.route('/api/logs')
+@bp.route('/api/logs')
 def api_logs_list():
     """获取所有任务的日志列表"""
     try:
@@ -1505,7 +1620,7 @@ def api_logs_list():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/logs/<task_id>')
+@bp.route('/api/logs/<task_id>')
 def api_logs_task(task_id):
     """获取指定任务的日志信息"""
     try:
@@ -1516,7 +1631,7 @@ def api_logs_task(task_id):
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/logs/<task_id>/<node_name>')
+@bp.route('/api/logs/<task_id>/<node_name>')
 def api_logs_node(task_id, node_name):
     """获取指定任务指定节点的日志内容"""
     try:
@@ -1541,9 +1656,19 @@ def api_logs_node(task_id, node_name):
 
 
 if __name__ == '__main__':
-    print("=" * 50)
-    print("CTF-Agent Web UI")
-    print("=" * 50)
-    print(f"URL: http://localhost:5000")
-    print("=" * 50)
-    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
+    # 配置
+    HOST = '0.0.0.0'
+    PORT = 54565
+    DEBUG = False  # 生产环境关闭 debug
+
+    print("=" * 60)
+    print("CTF-Agent Web Service")
+    print("=" * 60)
+    print(f"Access URL: http://<SERVER_IP>:{PORT}{URL_PREFIX}/monitor")
+    print(f"Modules:    http://<SERVER_IP>:{PORT}{URL_PREFIX}/modules")
+    print(f"Topology:   http://<SERVER_IP>:{PORT}{URL_PREFIX}/topology")
+    print("=" * 60)
+    print("[Security] No default index page. Use full URL path.")
+    print("=" * 60)
+
+    app.run(host=HOST, port=PORT, debug=DEBUG, threaded=True)

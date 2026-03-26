@@ -213,6 +213,9 @@ from state import CTFState, VulnerabilityCandidate, AttackAction, PageFeatures, 
 # 使用模块注册机制替代重复的 try/except
 from module_registry import ModuleRegistry
 
+# 节点控制 - 支持运行时禁用节点
+from node_control import node_control, create_disabled_wrapper
+
 # 模块可用性标志（通过 ModuleRegistry 自动管理）
 SELF_CORRECTION_AVAILABLE = ModuleRegistry.is_available('self_correction')
 INTERNAL_NETWORK_AVAILABLE = ModuleRegistry.is_available('internal_network')
@@ -270,7 +273,7 @@ import json
 import yaml
 import os
 import time
-from typing import Annotated, List, Dict, Literal, Union, Any, Optional, Tuple
+from typing import Annotated, List, Dict, Literal, Union, Any, Optional, Tuple, Callable
 from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, END, START
 from langgraph.checkpoint.memory import MemorySaver
@@ -2690,49 +2693,55 @@ def verifier_node(state: CTFState) -> Dict:
 # 创建状态图
 workflow = StateGraph(CTFState) # type: ignore
 
+# 辅助函数：包装节点以支持禁用功能
+def wrap_node(name: str, func: Callable) -> Callable:
+    """包装节点函数，支持运行时禁用"""
+    return create_disabled_wrapper(name, func)
+
 # 添加所有兵种节点 [P3优化: 移除reflector]
-workflow.add_node("challenge_type_detector", challenge_type_detector_node)  # type: ignore # CTF类型检测器
-workflow.add_node("recon", recon_node)  # type: ignore # 侦察兵
-workflow.add_node("analyst", analyst_node)  # type: ignore # 分析兵
-workflow.add_node("strategy_filter", strategy_filter_node)  # type: ignore # 策略过滤器
-workflow.add_node("mode_manager", mode_manager_node)  # type: ignore # 模式决策器
-workflow.add_node("attacker", attacker_node)  # type: ignore # 攻击兵
-workflow.add_node("explorer", explorer_node)  # type: ignore # 探索兵
-workflow.add_node("innovator", innovator_node)  # type: ignore # 头脑风暴
-workflow.add_node("verifier", verifier_node)  # type: ignore # 核验兵 [P3合并]
-workflow.add_node("evolution", evolution_node)  # type: ignore # 进化闭环
+# 注意：所有节点都通过 wrap_node 包装，支持运行时禁用
+workflow.add_node("challenge_type_detector", wrap_node("challenge_type_detector", challenge_type_detector_node))  # type: ignore # CTF类型检测器
+workflow.add_node("recon", wrap_node("recon", recon_node))  # type: ignore # 侦察兵
+workflow.add_node("analyst", wrap_node("analyst", analyst_node))  # type: ignore # 分析兵
+workflow.add_node("strategy_filter", wrap_node("strategy_filter", strategy_filter_node))  # type: ignore # 策略过滤器
+workflow.add_node("mode_manager", wrap_node("mode_manager", mode_manager_node))  # type: ignore # 模式决策器
+workflow.add_node("attacker", wrap_node("attacker", attacker_node))  # type: ignore # 攻击兵
+workflow.add_node("explorer", wrap_node("explorer", explorer_node))  # type: ignore # 探索兵
+workflow.add_node("innovator", wrap_node("innovator", innovator_node))  # type: ignore # 头脑风暴
+workflow.add_node("verifier", wrap_node("verifier", verifier_node))  # type: ignore # 核验兵 [P3合并]
+workflow.add_node("evolution", wrap_node("evolution", evolution_node))  # type: ignore # 进化闭环
 
 # 内网渗透节点 (可选启用)
 if INTERNAL_NETWORK_AVAILABLE:
-    workflow.add_node("internal_recon", internal_recon_node)  # type: ignore # 内网侦察
-    workflow.add_node("lateral_move", lateral_move_node)  # type: ignore # 横向移动
-    workflow.add_node("privilege_escalation", privilege_escalation_node)  # type: ignore # 权限提升
-    workflow.add_node("credential_gather", credential_gather_node)  # type: ignore # 凭据收集
-    workflow.add_node("flag_search", flag_search_node)  # type: ignore # Flag搜索节点
-    workflow.add_node("persistence", persistence_node)  # type: ignore # 持久化节点
-    workflow.add_node("post_exploit", post_exploit_node)  # type: ignore # 后渗透节点
-    workflow.add_node("upload_tools", upload_tools_node)  # type: ignore # 工具上传节点
-    workflow.add_node("setup_tunnel", setup_tunnel_node)  # type: ignore # 隧道搭建节点
+    workflow.add_node("internal_recon", wrap_node("internal_recon", internal_recon_node))  # type: ignore # 内网侦察
+    workflow.add_node("lateral_move", wrap_node("lateral_move", lateral_move_node))  # type: ignore # 横向移动
+    workflow.add_node("privilege_escalation", wrap_node("privilege_escalation", privilege_escalation_node))  # type: ignore # 权限提升
+    workflow.add_node("credential_gather", wrap_node("credential_gather", credential_gather_node))  # type: ignore # 凭据收集
+    workflow.add_node("flag_search", wrap_node("flag_search", flag_search_node))  # type: ignore # Flag搜索节点
+    workflow.add_node("persistence", wrap_node("persistence", persistence_node))  # type: ignore # 持久化节点
+    workflow.add_node("post_exploit", wrap_node("post_exploit", post_exploit_node))  # type: ignore # 后渗透节点
+    workflow.add_node("upload_tools", wrap_node("upload_tools", upload_tools_node))  # type: ignore # 工具上传节点
+    workflow.add_node("setup_tunnel", wrap_node("setup_tunnel", setup_tunnel_node))  # type: ignore # 隧道搭建节点
 
 # Crypto节点 (可选启用)
 if CRYPTO_AVAILABLE:
-    workflow.add_node("crypto_analyst", crypto_analyst_node)  # type: ignore # 加密分析
-    workflow.add_node("crypto_solver", crypto_solver_node)  # type: ignore # 密码破解
+    workflow.add_node("crypto_analyst", wrap_node("crypto_analyst", crypto_analyst_node))  # type: ignore # 加密分析
+    workflow.add_node("crypto_solver", wrap_node("crypto_solver", crypto_solver_node))  # type: ignore # 密码破解
 
 # Pwn节点 (可选启用)
 if PWN_AVAILABLE:
-    workflow.add_node("pwn_analyst", pwn_analyst_node)  # type: ignore # Pwn分析
-    workflow.add_node("pwn_exploiter", pwn_exploiter_node)  # type: ignore # Pwn利用
+    workflow.add_node("pwn_analyst", wrap_node("pwn_analyst", pwn_analyst_node))  # type: ignore # Pwn分析
+    workflow.add_node("pwn_exploiter", wrap_node("pwn_exploiter", pwn_exploiter_node))  # type: ignore # Pwn利用
 
 # Reverse节点 (可选启用)
 if REVERSE_AVAILABLE:
-    workflow.add_node("reverse_analyst", reverse_analyst_node)  # type: ignore # 逆向分析
-    workflow.add_node("reverse_decompiler", reverse_decompiler_node)  # type: ignore # 反编译
+    workflow.add_node("reverse_analyst", wrap_node("reverse_analyst", reverse_analyst_node))  # type: ignore # 逆向分析
+    workflow.add_node("reverse_decompiler", wrap_node("reverse_decompiler", reverse_decompiler_node))  # type: ignore # 反编译
 
 # Misc节点 (可选启用)
 if MISC_AVAILABLE:
-    workflow.add_node("misc_analyst", misc_analyst_node)  # type: ignore # Misc分析
-    workflow.add_node("misc_extractor", misc_extractor_node)  # type: ignore # Misc提取
+    workflow.add_node("misc_analyst", wrap_node("misc_analyst", misc_analyst_node))  # type: ignore # Misc分析
+    workflow.add_node("misc_extractor", wrap_node("misc_extractor", misc_extractor_node))  # type: ignore # Misc提取
 
 # 0. CTF类型检测路由
 def _route_from_challenge_detector(state: CTFState) -> str:
