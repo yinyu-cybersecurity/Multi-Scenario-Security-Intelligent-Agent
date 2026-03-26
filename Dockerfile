@@ -77,8 +77,13 @@ RUN go install github.com/hahwul/dalfox/v2@latest && \
     cp /root/go/bin/dalfox /usr/local/bin/dalfox && \
     chmod +x /usr/local/bin/dalfox || true
 
-# 安装 msfvenom（使用 gem 安装，替代完整 Metasploit）
-RUN gem install msfvenom || true
+# 安装 Metasploit Framework (完整版)
+RUN curl -fsSL https://apt.metasploit.com/metasploit-framework.gpg.key | gpg --dearmor -o /usr/share/keyrings/metasploit-framework.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/metasploit-framework.gpg] https://apt.metasploit.com/ buster main" > /etc/apt/sources.list.d/metasploit-framework.list && \
+    apt-get update && \
+    apt-get install -y metasploit-framework || \
+    (curl -fsSL https://raw.githubusercontent.com/rapid7/metasploit-framework/master/msfupdate | bash) || \
+    gem install msfvenom || true
 
 # Python pip 配置
 RUN pip3 install pipx -i https://pypi.tuna.tsinghua.edu.cn/simple && \

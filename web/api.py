@@ -598,7 +598,7 @@ def api_tools():
             },
             "ad_attack": {
                 "name": "AD域攻击",
-                "tools": ["petitpotam", "rubeus", "bloodhound", "crackmapexec", "mimikatz"]
+                "tools": ["petitpotam", "rubeus", "bloodhound", "crackmapexec", "mimikatz", "getnpusers", "getuserspns", "secretsdump"]
             },
             "privilege_escalation": {
                 "name": "权限提升",
@@ -618,7 +618,7 @@ def api_tools():
             },
             "framework": {
                 "name": "框架工具",
-                "tools": ["fscan", "hydra", "msfvenom"]
+                "tools": ["fscan", "hydra", "msf"]
             },
             "deserialization": {
                 "name": "反序列化",

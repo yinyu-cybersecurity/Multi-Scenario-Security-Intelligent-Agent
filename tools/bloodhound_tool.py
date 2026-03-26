@@ -30,7 +30,20 @@ class BloodHoundTool(CommandLineTool):
 
     def __init__(self):
         # 检测 bloodhound-python 是否可用
-        self.executable = shutil.which("bloodhound-python")
+        # pipx 安装路径优先
+        pipx_paths = [
+            "/root/.local/bin/bloodhound-python",
+            "/root/.local/bin/bloodhound",
+        ]
+
+        self.executable = None
+        for path in pipx_paths:
+            if os.path.exists(path):
+                self.executable = path
+                break
+
+        if not self.executable:
+            self.executable = shutil.which("bloodhound-python") or shutil.which("bloodhound")
 
         if self.executable:
             self.cmd_path = self.executable
