@@ -102,7 +102,7 @@
         /* 监控图表样式 */
         .monitor-chart { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; padding: 12px; margin-bottom: 12px; }
         .chart-title { font-size: 12px; font-weight: 500; color: #333; margin-bottom: 8px; }
-        .chart-svg { width: 100%; height: 80px; }
+        .chart-svg { width: 100%; height: 100px; }
         .chart-line { fill: none; stroke-width: 2; }
         .chart-line.cpu { stroke: #1890ff; }
         .chart-line.memory { stroke: #52c41a; }
@@ -358,37 +358,98 @@
                     if (!el || !data || data.length < 2) return;
                     const svg = d3.select(el);
                     const w = el.clientWidth || 280;
-                    const h = 80;
+                    const h = 100;
+                    const padding = { left: 35, right: 5, top: 5, bottom: 15 };
                     svg.selectAll('*').remove();
 
-                    const xScale = d3.scaleLinear().domain([0, data.length - 1]).range([0, w]);
-                    const yScale = d3.scaleLinear().domain([0, maxY]).range([h - 10, 5]);
+                    const chartW = w - padding.left - padding.right;
+                    const chartH = h - padding.top - padding.bottom;
+
+                    // 计算实际最大值，使用数据的实际范围
+                    const dataMax = Math.max(...data, 1);
+                    const actualMaxY = Math.max(dataMax * 1.2, maxY * 0.1); // 至少显示一定范围
+
+                    const xScale = d3.scaleLinear().domain([0, data.length - 1]).range([padding.left, w - padding.right]);
+                    const yScale = d3.scaleLinear().domain([0, actualMaxY]).range([h - padding.bottom, padding.top]);
+
+                    // 绘制网格线
+                    const gridLines = [0, 25, 50, 75, 100].filter(v => v <= actualMaxY);
+                    gridLines.forEach(v => {
+                        const y = yScale(v * actualMaxY / 100);
+                        svg.append('line')
+                            .attr('x1', padding.left).attr('x2', w - padding.right)
+                            .attr('y1', y).attr('y2', y)
+                            .attr('stroke', '#e8e8e8').attr('stroke-width', 1).attr('stroke-dasharray', '2,2');
+                    });
+
+                    // Y轴刻度
+                    svg.append('text').attr('x', padding.left - 5).attr('y', padding.top + 5)
+                        .attr('text-anchor', 'end').attr('font-size', '9px').attr('fill', '#999')
+                        .text(Math.round(actualMaxY) + '%');
+                    svg.append('text').attr('x', padding.left - 5).attr('y', h - padding.bottom + 3)
+                        .attr('text-anchor', 'end').attr('font-size', '9px').attr('fill', '#999')
+                        .text('0%');
+
+                    // 渐变定义
+                    const gradient = svg.append('defs').append('linearGradient')
+                        .attr('id', 'grad-' + color.slice(1)).attr('x1', '0%').attr('y1', '0%').attr('x2', '0%').attr('y2', '100%');
+                    gradient.append('stop').attr('offset', '0%').attr('stop-color', color).attr('stop-opacity', 0.4);
+                    gradient.append('stop').attr('offset', '100%').attr('stop-color', color).attr('stop-opacity', 0.05);
 
                     const line = d3.line().x((d, i) => xScale(i)).y(d => yScale(d)).curve(d3.curveMonotoneX);
-                    const area = d3.area().x((d, i) => xScale(i)).y0(h - 10).y1(d => yScale(d)).curve(d3.curveMonotoneX);
+                    const area = d3.area().x((d, i) => xScale(i)).y0(h - padding.bottom).y1(d => yScale(d)).curve(d3.curveMonotoneX);
 
-                    svg.append('path').attr('d', area(data)).attr('fill', color).attr('opacity', 0.1);
-                    svg.append('path').attr('d', line(data)).attr('stroke', color).attr('stroke-width', 2).attr('fill', 'none');
+                    // 绘制面积
+                    svg.append('path').attr('d', area(data)).attr('fill', 'url(#grad-' + color.slice(1) + ')');
+                    // 绘制线条
+                    svg.append('path').attr('d', line(data)).attr('stroke', color).attr('stroke-width', 2.5).attr('fill', 'none');
+                    // 绘制最后一个数据点
+                    const lastVal = data[data.length - 1];
+                    svg.append('circle').attr('cx', xScale(data.length - 1)).attr('cy', yScale(lastVal))
+                        .attr('r', 4).attr('fill', color).attr('stroke', '#fff').attr('stroke-width', 2);
                 }
 
                 function renderNetworkChart(el, data) {
                     if (!el || !data || data.length < 2) return;
                     const svg = d3.select(el);
                     const w = el.clientWidth || 280;
-                    const h = 80;
+                    const h = 100;
+                    const padding = { left: 35, right: 5, top: 5, bottom: 15 };
                     svg.selectAll('*').remove();
 
-                    const maxVal = Math.max(...data.map(d => Math.max(d.sent_rate || 0, d.recv_rate || 0)), 1000);
-                    const xScale = d3.scaleLinear().domain([0, data.length - 1]).range([0, w]);
-                    const yScale = d3.scaleLinear().domain([0, maxVal]).range([h - 10, 5]);
+                    const chartW = w - padding.left - padding.right;
+                    const chartH = h - padding.top - padding.bottom;
 
                     const sentData = data.map(d => d.sent_rate || 0);
                     const recvData = data.map(d => d.recv_rate || 0);
+                    const maxVal = Math.max(...sentData, ...recvData, 1024); // 至少1KB
+
+                    const xScale = d3.scaleLinear().domain([0, data.length - 1]).range([padding.left, w - padding.right]);
+                    const yScale = d3.scaleLinear().domain([0, maxVal]).range([h - padding.bottom, padding.top]);
+
+                    // 网格线
+                    for (let i = 0; i <= 4; i++) {
+                        const y = padding.top + (chartH * i / 4);
+                        svg.append('line')
+                            .attr('x1', padding.left).attr('x2', w - padding.right)
+                            .attr('y1', y).attr('y2', y)
+                            .attr('stroke', '#e8e8e8').attr('stroke-width', 1).attr('stroke-dasharray', '2,2');
+                    }
 
                     const line = d3.line().x((d, i) => xScale(i)).y(d => yScale(d)).curve(d3.curveMonotoneX);
 
-                    svg.append('path').attr('d', line(sentData)).attr('stroke', '#faad14').attr('stroke-width', 2).attr('fill', 'none');
-                    svg.append('path').attr('d', line(recvData)).attr('stroke', '#eb2f96').attr('stroke-width', 2).attr('fill', 'none');
+                    // 发送线
+                    svg.append('path').attr('d', line(sentData)).attr('stroke', '#faad14').attr('stroke-width', 2.5).attr('fill', 'none');
+                    // 接收线
+                    svg.append('path').attr('d', line(recvData)).attr('stroke', '#eb2f96').attr('stroke-width', 2.5).attr('fill', 'none');
+
+                    // 最后数据点
+                    if (sentData.length > 0) {
+                        svg.append('circle').attr('cx', xScale(sentData.length - 1)).attr('cy', yScale(sentData[sentData.length - 1]))
+                            .attr('r', 3).attr('fill', '#faad14').attr('stroke', '#fff').attr('stroke-width', 1.5);
+                        svg.append('circle').attr('cx', xScale(recvData.length - 1)).attr('cy', yScale(recvData[recvData.length - 1]))
+                            .attr('r', 3).attr('fill', '#eb2f96').attr('stroke', '#fff').attr('stroke-width', 1.5);
+                    }
                 }
 
                 async function selectTask(id) {
