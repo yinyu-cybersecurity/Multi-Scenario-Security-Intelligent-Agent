@@ -111,6 +111,7 @@ def get_graph_structure():
         {"id": "internal_recon", "name": "内网侦察", "group": "internal", "description": "fscan扫描", "order": 130},
         {"id": "lateral_move", "name": "横向移动", "group": "internal", "description": "impacket利用", "order": 140},
         {"id": "privilege_escalation", "name": "权限提升", "group": "internal", "description": "Potato提权", "order": 150},
+        {"id": "persistence", "name": "持久化", "group": "internal", "description": "AI驱动持久化", "order": 155},
         {"id": "credential_gather", "name": "凭据收集", "group": "internal", "description": "mimikatz导出", "order": 160},
         # 其他分支
         {"id": "crypto_analyst", "name": "密码分析", "group": "crypto", "description": "加密类型识别", "order": 200},
@@ -153,7 +154,8 @@ def get_graph_structure():
         {"source": "internal_recon", "target": "credential_gather"},
         {"source": "internal_recon", "target": "lateral_move"},
         {"source": "lateral_move", "target": "privilege_escalation"},
-        {"source": "privilege_escalation", "target": "credential_gather"},
+        {"source": "privilege_escalation", "target": "persistence"},
+        {"source": "persistence", "target": "credential_gather"},
         {"source": "challenge_type_detector", "target": "crypto_analyst", "label": "crypto"},
         {"source": "crypto_analyst", "target": "crypto_solver"},
         {"source": "crypto_solver", "target": "evolution"},
@@ -184,8 +186,57 @@ def get_graph_structure():
     }
 
 
+# 线程局部存储，用于隔离不同任务的日志
+_task_context = threading.local()
+
+
+def get_current_task_id():
+    """获取当前线程的任务ID"""
+    return getattr(_task_context, 'task_id', None)
+
+
+def set_current_task_id(task_id):
+    """设置当前线程的任务ID"""
+    _task_context.task_id = task_id
+
+
+class ThreadSafeLogCapture:
+    """
+    线程安全的日志捕获器
+
+    使用线程局部存储，避免多任务并发时stdout互相覆盖
+    """
+    def __init__(self):
+        self.original_stdout = sys.stdout
+
+    def write(self, message):
+        # 写入原始stdout
+        self.original_stdout.write(message)
+
+        # 只捕获当前线程的日志
+        task_id = get_current_task_id()
+        if task_id and message.strip():
+            log_callback(task_id, message.strip())
+
+    def flush(self):
+        self.original_stdout.flush()
+
+
+# 全局日志捕获器实例（线程安全）
+_log_capture_instance = None
+
+
+def init_log_capture():
+    """初始化全局日志捕获器"""
+    global _log_capture_instance, sys
+
+    if _log_capture_instance is None:
+        _log_capture_instance = ThreadSafeLogCapture()
+        sys.stdout = _log_capture_instance
+
+
 class LogCapture:
-    """日志捕获器，重定向print输出"""
+    """日志捕获器（向后兼容）"""
     def __init__(self, task_id):
         self.task_id = task_id
         self.original_stdout = sys.stdout
@@ -243,9 +294,11 @@ def run_task(task_id, target_url):
         log_callback(task_id, f"[System] Target: {target_url}")
         log_callback(task_id, f"[System] Type: {task_description}")
 
-        log_capture = LogCapture(task_id)
-        old_stdout = sys.stdout
-        sys.stdout = log_capture
+        # 使用线程局部存储设置当前任务ID（线程安全）
+        set_current_task_id(task_id)
+
+        # 初始化全局日志捕获器（如果还没初始化）
+        init_log_capture()
 
         def node_callback(node_name, state=None):
             tasks[task_id]["current_node"] = node_name
@@ -287,7 +340,8 @@ def run_task(task_id, target_url):
             task_results[task_id] = result
 
         finally:
-            sys.stdout = old_stdout
+            # 清除当前线程的任务ID
+            set_current_task_id(None)
             if hasattr(ctf_app, '_node_callbacks') and task_id in ctf_app._node_callbacks:
                 del ctf_app._node_callbacks[task_id]
 
@@ -368,14 +422,22 @@ def api_system_status():
         from tool_framework import ToolRegistry
         stats = ToolRegistry.get_statistics()
         tools_loaded = stats.get("total_tools", 0)
-    except:
+    except ImportError as e:
+        print(f"[API] ToolRegistry not available: {e}")
+        tools_loaded = 0
+    except Exception as e:
+        print(f"[API] Failed to get tool stats: {e}")
         tools_loaded = 0
 
     try:
         from remote_executor.session_manager import get_session_manager
         sm = get_session_manager()
         active_sessions = len(sm.sessions)
-    except:
+    except ImportError as e:
+        print(f"[API] SessionManager not available: {e}")
+        active_sessions = 0
+    except Exception as e:
+        print(f"[API] Failed to get session count: {e}")
         active_sessions = 0
 
     return jsonify({
@@ -666,21 +728,32 @@ def api_tasks():
 
 @app.route('/api/task/<task_id>/stream')
 def api_task_stream(task_id):
-    """日志流（SSE）"""
-    def generate():
-        offset = 0
-        while True:
-            if task_id in task_logs:
-                logs = task_logs[task_id]
-                new_logs = logs[offset:]
-                for log in new_logs:
-                    yield f"data: {json.dumps(log)}\n\n"
-                offset = len(logs)
+    """日志流（SSE）- 使用Queue阻塞等待"""
+    # 确保队列存在
+    if task_id not in task_queues:
+        task_queues[task_id] = queue.Queue()
 
+    task_queue = task_queues[task_id]
+
+    def generate():
+        while True:
+            try:
+                # 阻塞等待，最多等待30秒
+                log_entry = task_queue.get(timeout=30)
+                yield f"data: {json.dumps(log_entry)}\n\n"
+
+                # 检查是否结束
+                if log_entry.get("type") == "end":
+                    break
+
+            except queue.Empty:
+                # 发送心跳包保持连接
+                yield ": heartbeat\n\n"
+
+                # 检查任务是否已结束
                 if tasks.get(task_id, {}).get("status") in ["completed", "error", "cancelled"]:
                     yield f"data: {json.dumps({'type': 'end'})}\n\n"
                     break
-            time.sleep(0.5)
 
     return Response(generate(), mimetype='text/event-stream')
 
@@ -1060,7 +1133,7 @@ DEFAULT_NODES = [
     'challenge_type_detector', 'recon', 'analyst', 'strategy_filter',
     'mode_manager', 'attacker', 'verifier', 'explorer', 'innovator', 'evolution',
     'post_exploit', 'upload_tools', 'setup_tunnel', 'internal_recon',
-    'lateral_move', 'privilege_escalation', 'credential_gather',
+    'lateral_move', 'privilege_escalation', 'persistence', 'credential_gather',
     'crypto_analyst', 'crypto_solver',
     'pwn_analyst', 'pwn_exploiter',
     'reverse_analyst', 'reverse_decompiler',

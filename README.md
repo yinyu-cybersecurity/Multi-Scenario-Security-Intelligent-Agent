@@ -19,7 +19,7 @@ CTF-Agent 是一个智能化的渗透测试代理，能够自主完成从信息�
 | 方向 | 节点 | AI决策函数 |
 |------|------|-----------|
 | Web | analyst, attacker, verifier | `get_analyst_prompt()`, `get_attacker_prompt()` |
-| Internal Network | internal_recon, lateral_move, privilege_escalation | `_ai_decide_scan_strategy()`, `_ai_decide_lateral_strategy()` |
+| Internal Network | internal_recon, lateral_move, privilege_escalation, persistence | `_ai_decide_scan_strategy()`, `_ai_decide_lateral_strategy()`, `_ai_decide_persistence()` |
 | Crypto | crypto_analyst, crypto_solver | `_ai_decide_decrypt_strategy()` |
 | Pwn | pwn_analyst, pwn_exploiter | `_ai_decide_exploit_strategy()` |
 | Reverse | reverse_analyst, reverse_decompiler | `_llm_reverse_analysis()` |
@@ -43,6 +43,10 @@ CTF-Agent 是一个智能化的渗透测试代理，能够自主完成从信息�
 - **统一日志系统**: 按任务/节点分离日志，控制台简洁输出
 - **性能监控面板**: 节点/LLM/工具执行耗时统计
 - **Web UI 优化**: 固定导航栏、节点拆卸、拓扑图可视化
+- **AI驱动改进**: Flag验证、漏洞链分析、智能搜索、规则过滤
+- **大上下文支持**: 支持DeepSeek 128K上下文模型处理完整HTML
+- **会话验证**: SSH/Shell会话创建后自动验证有效性
+- **线程安全日志**: 多任务并发时日志隔离，不互相覆盖
 
 ---
 
@@ -125,18 +129,23 @@ deploy/
 ├── app/                        # 核心代码
 │   ├── ctf_agent_graph.py      # 主程序入口 & 图定义
 │   ├── state.py                # 状态定义兼容层 (转发导入)
-│   ├── state_v2.py             # CTFState 状态定义 (实际定义)
+│   ├── state_v2.py             # CTFState 状态定义 & 默认值生成
 │   ├── state_types/            # 模块化状态类型
 │   │   ├── base.py             # 基础状态（通用字段）
 │   │   ├── web.py              # Web CTF 状态
 │   │   ├── internal_network.py # 内网渗透状态
 │   │   └── reducers.py         # 状态规约器
-│   ├── module_registry.py      # [新增] 模块注册机制
-│   ├── task_persistence.py     # [新增] 任务持久化
-│   ├── attack_strategy_evaluator.py  # [新增] 策略评估
-│   ├── context_compressor.py   # [新增] 上下文压缩
-│   ├── logger.py               # [新增] 统一日志系统
-│   ├── performance.py          # [新增] 性能监控
+│   ├── nodes/                  # [新增] 节点模块目录
+│   │   ├── __init__.py         # 节点模块入口
+│   │   └── helpers.py          # 节点共享工具函数
+│   ├── flag_validator.py       # [新增] AI驱动flag验证
+│   ├── compressor_node.py      # [新增] 独立上下文压缩节点
+│   ├── module_registry.py      # 模块注册机制
+│   ├── task_persistence.py     # 任务持久化
+│   ├── attack_strategy_evaluator.py  # 策略评估
+│   ├── context_compressor.py   # 上下文压缩
+│   ├── logger.py               # 统一日志系统
+│   ├── performance.py          # 性能监控
 │   ├── router.py               # 节点路由逻辑
 │   ├── llm_client.py           # LLM 客户端（并发控制）
 │   ├── self_correction.py      # 自我纠错（AI驱动恢复）
@@ -144,30 +153,31 @@ deploy/
 │   ├── tool_framework.py       # 工具框架（NetworkScanTool 基类）
 │   ├── tool_selector.py        # AI驱动工具选择
 │   ├── analyst_prompt.py       # 分析兵提示词
-│   ├── attacker_prompt.py      # 攻击兵提示词
+│   ├── attacker_prompt.py      # 攻击兵提示词（智能截断）
 │   ├── verifier_prompt.py      # 核验兵提示词
-│   ├── innovator_agent.py      # 头脑风暴节点
+│   ├── innovator_agent.py      # 头脑风暴节点（AI规则过滤）
 │   ├── evolution.py            # 进化闭环
 │   └── topology/               # 拓扑分析
 ├── tools/                      # 40+安全工具
 ├── internal_network/           # 内网渗透模块
-│   ├── nodes.py                # 内网节点实现
-│   └── post_exploit.py         # 后渗透处理
+│   ├── nodes.py                # 内网节点实现（AI驱动搜索）
+│   └── post_exploit.py         # 后渗透处理（会话验证）
 ├── crypto/                     # 密码学模块
 ├── pwn/                        # Pwn模块
 ├── reverse/                    # 逆向模块
 ├── misc/                       # Misc模块
 ├── remote_executor/            # 远程执行模块
-├── web/                        # [新增] Web UI & API
-│   ├── api.py                  # REST API 服务
+├── web/                        # Web UI & API
+│   ├── api.py                  # REST API 服务（线程安全日志）
 │   ├── templates/              # 前端模板
 │   └── static/                 # 静态资源
-├── docs/                       # [新增] 文档
-│   ├── REFACTOR_PLAN.md        # 重构计划
-│   └── IMPROVEMENT_LOG.md      # 改进日志
+├── docs/                       # 文档
+│   ├── IMPROVEMENT_PLAN_V4.md  # 改进计划
+│   ├── SECONDARY_REVIEW_REPORT.md  # 代码审查报告
+│   └── REFACTOR_PLAN.md        # 重构计划
 ├── rag_builder/                # RAG知识检索
 ├── config.yaml.example         # 配置模板
-├── refactoring_test.py         # [新增] 自动化测试脚本
+├── refactoring_test.py         # 自动化测试脚本
 ├── self_check.py               # 自检脚本
 ├── Dockerfile
 ├── docker-compose.yml
@@ -212,6 +222,9 @@ internal_network_range                    SOCKS5代理
                                     ┌─────────┼─────────┐
                                     ▼         ▼         ▼
                               [凭据收集] [横向移动] [权限提升]
+                                    │
+                                    ▼
+                              [持久化] ──→ [Flag搜索]
 ```
 
 ---

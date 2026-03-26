@@ -179,7 +179,7 @@ class LLMClient:
 
         for attempt in range(retry_count):
             try:
-                response = requests.post(url, headers=self.headers, json=payload, timeout=120)
+                response = requests.post(url, headers=self.headers, json=payload, timeout=config.LLM_TIMEOUT)
 
                 # 检查HTTP状态码
                 if response.status_code == 401:

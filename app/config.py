@@ -81,6 +81,9 @@ class Config:
     # AI决策间隔（秒）- 每隔多久问一次AI是否继续
     DECISION_INTERVAL: int = 360  # 6分钟
 
+    # 场景聚焦最大尝试次数
+    MAX_SCENE_ATTEMPTS: int = 10  # 复杂漏洞需要更多尝试
+
     # =========================================================================
     # 重试常量 - 控制重试行为
     # =========================================================================
@@ -254,6 +257,21 @@ class Config:
 
     # 头脑风暴：需要极强的发散思维
     INNOVATOR_MODEL: str = "deepseek-chat"
+
+    # =========================================================================
+    # 上下文处理配置 - 针对大上下文模型优化
+    # =========================================================================
+
+    # 是否利用大上下文模型(128k+)处理完整HTML
+    # True: 直接传完整HTML给AI提炼关键信息
+    # False: 截断HTML到指定长度
+    USE_LARGE_CONTEXT: bool = True
+
+    # HTML截断长度(当USE_LARGE_CONTEXT=False时使用)
+    HTML_TRUNCATE_LENGTH: int = 50000
+
+    # 最大HTML处理长度(防止超限，即使大上下文也有限制)
+    HTML_MAX_LENGTH: int = 100000
 
     @classmethod
     def from_yaml(cls, path: str = "config.yaml"):

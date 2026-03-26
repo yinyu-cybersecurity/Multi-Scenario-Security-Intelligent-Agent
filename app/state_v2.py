@@ -129,12 +129,78 @@ class CTFStateV2(TypedDict):
     current_internal_target: str  # 当前内网目标IP
 
     # =====================================================
+    # [W] 漏洞利用增强字段
+    # =====================================================
+    exploit_keywords: Dict[str, Any]  # 检索关键词: {cve_ids, framework, version, tags}
+    tried_payloads: Annotated[List[str], dedupe_list_reducer]  # 已尝试的payload
+    continue_attack: bool  # 是否继续攻击
+    remaining_payloads: List[Dict[str, Any]]  # 待尝试的payload列表
+
+    # =====================================================
     # [I] 内网渗透扩展字段 - 多主机Flag搜索
     # =====================================================
     found_flags: Annotated[List[str], dedupe_list_reducer]  # 所有发现的flag
     compromised_hosts: Annotated[List[str], dedupe_list_reducer]  # 已攻陷的主机IP
     current_compromise_phase: str  # 当前阶段: flag_search/lateral_move/complete
+    persistence_established: bool  # 是否已建立持久化
+    persistence_results: List[Dict[str, Any]]  # 持久化结果记录
 
 
 # 向后兼容别名
 CTFState = CTFStateV2
+
+
+def get_default_state(task_name: str, task_description: str, target_url: str) -> dict:
+    """
+    从类型注解自动生成默认状态
+
+    Args:
+        task_name: 任务名称
+        task_description: 任务描述
+        target_url: 目标URL
+
+    Returns:
+        包含所有字段默认值的字典
+    """
+    import time
+    from typing import get_origin, get_args
+
+    # 基本类型默认值映射
+    defaults = {
+        str: "",
+        int: 0,
+        float: 0.0,
+        bool: False,
+    }
+
+    state = {}
+
+    for field_name, field_type in CTFStateV2.__annotations__.items():
+        origin = get_origin(field_type)
+        if origin is Annotated:
+            inner_type = get_args(field_type)[0]
+        else:
+            inner_type = field_type
+
+        # 处理容器类型
+        if inner_type == list or (hasattr(inner_type, '__origin__') and inner_type.__origin__ == list):
+            state[field_name] = []
+        elif inner_type == dict or (hasattr(inner_type, '__origin__') and inner_type.__origin__ == dict):
+            state[field_name] = {}
+        elif inner_type in defaults:
+            state[field_name] = defaults[inner_type]
+        else:
+            # Optional或其他类型默认为None
+            state[field_name] = None
+
+    # 覆盖必需字段
+    state.update({
+        "task_name": task_name,
+        "task_description": task_description,
+        "target_url": target_url,
+        "current_url": target_url,
+        "start_time": time.time(),
+        "current_mode": "exploit",
+    })
+
+    return state

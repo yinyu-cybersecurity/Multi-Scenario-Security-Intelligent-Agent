@@ -66,6 +66,7 @@ class ModuleRegistry:
             'privilege_escalation': cls._import_node('internal_network.nodes', 'privilege_escalation_node'),
             'credential_gather': cls._import_node('internal_network.nodes', 'credential_gather_node'),
             'flag_search': cls._import_node('internal_network.nodes', 'flag_search_node'),
+            'persistence': cls._import_node('internal_network.nodes', 'persistence_node'),
         })
 
         # 后渗透模块

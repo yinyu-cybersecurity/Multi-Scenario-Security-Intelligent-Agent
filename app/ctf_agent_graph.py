@@ -1,6 +1,5 @@
 import argparse
 import re
-import asyncio
 import hashlib
 import requests
 import sys
@@ -44,18 +43,27 @@ try:
 except ImportError:
     pass  # pysqlite3 未安装，使用系统 sqlite3
 
-# [性能优化] 增加全局默认线程池，防止大量工具调用或 AI 分析阻塞
-# 降低最大并发数并添加任务队列保护
+# [性能优化] 全局线程池 - 懒加载模式
 from typing import Dict as TypingDict
-executor = concurrent.futures.ThreadPoolExecutor(max_workers=16)
-try:
-    loop = asyncio.get_event_loop()
-    loop.set_default_executor(executor)
-except RuntimeError:
-    pass
+import atexit
 
-# 全局任务追踪，用于优雅关闭
+_executor = None
 _running_tasks: TypingDict[str, concurrent.futures.Future] = {}
+
+def get_executor():
+    """获取全局线程池(懒加载)"""
+    global _executor
+    if _executor is None:
+        _executor = concurrent.futures.ThreadPoolExecutor(max_workers=16)
+        atexit.register(_shutdown_executor)
+    return _executor
+
+def _shutdown_executor():
+    """关闭线程池"""
+    global _executor
+    if _executor is not None:
+        _executor.shutdown(wait=False, cancel_futures=False)
+        _executor = None
 
 def normalize_target_url(url_str: str) -> str:
     """
@@ -225,6 +233,7 @@ if INTERNAL_NETWORK_AVAILABLE:
     privilege_escalation_node = ModuleRegistry.get_node('internal_network', 'privilege_escalation')
     credential_gather_node = ModuleRegistry.get_node('internal_network', 'credential_gather')
     flag_search_node = ModuleRegistry.get_node('internal_network', 'flag_search')
+    persistence_node = ModuleRegistry.get_node('internal_network', 'persistence')
     try:
         from internal_network.orchestrator import InternalNetworkOrchestrator
     except ImportError:
@@ -296,10 +305,6 @@ def calculate_dom_fingerprint(html_content: str) -> str:
         return ""
     return hashlib.md5(html_content.encode('utf-8', errors='ignore')).hexdigest()
 
-
-def generate_ai_hint(state: CTFState, level: int) -> str:
-    """已废弃 - 简化版不再需要自动生成AI提示"""
-    return ""
 
 
 
@@ -394,7 +399,6 @@ def challenge_type_detector_node(state: CTFState) -> Dict:
     # =========================================================================
     if not result and target_url:
         # 检查是否是纯IP地址（可能是内网目标）
-        import re
         ip_match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', target_url)
         is_pure_ip = bool(re.match(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$', target_url.strip()))
 
@@ -624,11 +628,10 @@ def recon_node(state: CTFState) -> Dict:
     # =========================================================================
     # 新增: 检测是否是纯 IP 目标，执行 fscan 扫描
     # =========================================================================
-    import re as url_re
-    ip_match = url_re.match(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$', url.split('/')[0].split('?')[0])
+    ip_match = re.match(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$', url.split('/')[0].split('?')[0])
     if not ip_match:
         # 尝试从 URL 中提取 IP
-        ip_match = url_re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', url)
+        ip_match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', url)
 
     fscan_findings = []
     if ip_match:
@@ -857,7 +860,7 @@ def recon_node(state: CTFState) -> Dict:
 
 ### 待分析源码
 ```html
-{raw_html[:8000]}
+{raw_html[:config.HTML_MAX_LENGTH] if config.USE_LARGE_CONTEXT else raw_html[:config.HTML_TRUNCATE_LENGTH]}
 ```
 
 ### 输出要求 (JSON ONLY)
@@ -1045,7 +1048,7 @@ def recon_node(state: CTFState) -> Dict:
 
     res = {
         "page_features": features,
-        "raw_html_snippet": raw_html[:8000],
+        "raw_html_snippet": raw_html[:config.HTML_MAX_LENGTH] if config.USE_LARGE_CONTEXT else raw_html[:config.HTML_TRUNCATE_LENGTH],
         "baseline_response": baseline,
         "page_history": page_history,
         "visited_urls": visited_urls,
@@ -1073,12 +1076,92 @@ def recon_node(state: CTFState) -> Dict:
     return res
 
 
+def _ai_analyze_exploit_chain(vuln_candidates: List[Dict], page_features: Dict) -> Optional[Dict]:
+    """
+    AI分析漏洞利用链
+
+    识别多步漏洞利用场景，如:
+    - SSRF → 文件读取 → RCE
+    - SQL注入 → 文件写入 → Webshell
+    - LFI → 日志注入 → RCE
+
+    Args:
+        vuln_candidates: 发现的漏洞候选列表
+        page_features: 页面特征
+
+    Returns:
+        漏洞链分析结果，或None
+    """
+    if len(vuln_candidates) < 1:
+        return None
+
+    # 检查是否有多个不同类型的漏洞
+    vuln_types = set(v.get("type", "").lower() for v in vuln_candidates)
+
+    prompt = f"""分析这些漏洞是否可以组成利用链:
+
+漏洞列表:
+{json.dumps([{"type": v.get("type"), "location": v.get("location"), "confidence": v.get("confidence")} for v in vuln_candidates], ensure_ascii=False, indent=2)}
+
+环境特征:
+{json.dumps(page_features.get("tech_stack", []) + page_features.get("input_vectors", []), ensure_ascii=False)}
+
+分析:
+1. 这些漏洞能否组合利用？
+2. 是否需要前置条件？
+3. 最终能达到什么目标？
+
+常见漏洞链示例:
+- SSRF + 内网服务 = 内网渗透
+- SQL注入 + 文件写入 = Webshell上传
+- LFI + 日志注入 = RCE
+- 反序列化 + gadget链 = RCE
+
+输出JSON:
+{{
+    "type": "single/chain",
+    "description": "漏洞链描述",
+    "steps": [
+        {{"step": 1, "vuln_type": "类型", "action": "利用动作", "expected": "预期结果"}}
+    ],
+    "final_goal": "最终目标(flag/shell等)"
+}}"""
+
+    try:
+        response = llm_client.call_chat_completion(
+            model=config.HAIKU_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            json_mode=True
+        )
+
+        if response:
+            if "```json" in response:
+                response = response.split("```json")[1].split("```")[0]
+            result = json.loads(response.strip())
+
+            # 只返回链式利用
+            if result.get("type") == "chain":
+                return result
+
+    except Exception as e:
+        log(f"   [漏洞链分析] AI分析失败: {e}")
+
+    return None
+
 
 def analyst_node(state: CTFState) -> Dict:
     """
     分析兵 - 调用大模型进行深度漏洞分析
+
+    内网模式增强:
+    - 执行并行漏扫（nuclei + xray）
+    - 输出 exploit_keywords 供攻击兵检索
     """
     log("🔍 [分析] 解析页面特征...")
+
+    # 检查是否为内网模式
+    internal_mode = state.get("internal_mode", False)
 
     # 1. 准备输入数据
     page_features = state.get("page_features", {})
@@ -1104,6 +1187,84 @@ def analyst_node(state: CTFState) -> Dict:
     critical_nodes = state.get("critical_nodes", [])
     topology_priority = state.get("topology_priority", [])
     current_url = state.get("current_url", "")
+
+    # =====================================================
+    # [内网模式增强] 并行漏扫
+    # =====================================================
+    scan_vulns = []
+    exploit_keywords = {}
+
+    if internal_mode and current_url:
+        log("   🔬 [内网模式] 执行并行漏扫...")
+
+        # 并行执行 nuclei + xray
+        scan_futures = []
+
+        # Nuclei扫描
+        def run_nuclei():
+            try:
+                result = ToolRegistry.execute_cached(
+                    "nuclei",
+                    current_url,
+                    {"target": current_url, "severity": "high,critical"}
+                )
+                if result and result.get("result", {}).get("vulnerable"):
+                    return result["result"].get("vulnerabilities", [])
+            except Exception as e:
+                log(f"   ⚠️ Nuclei扫描异常: {e}")
+            return []
+
+        # Xray扫描
+        def run_xray():
+            try:
+                result = ToolRegistry.execute_cached(
+                    "xray",
+                    current_url,
+                    {"target": current_url, "mode": "webscan"}
+                )
+                if result and result.get("result", {}).get("vulnerable"):
+                    return result["result"].get("vulnerabilities", [])
+            except Exception as e:
+                log(f"   ⚠️ Xray扫描异常: {e}")
+            return []
+
+        # 并行执行 - 使用全局线程池
+        executor = get_executor()
+        nuclei_future = executor.submit(run_nuclei)
+        xray_future = executor.submit(run_xray)
+
+        scan_futures = [(nuclei_future, "nuclei"), (xray_future, "xray")]
+
+        # 收集结果
+        for future, tool_name in scan_futures:
+            try:
+                vulns = future.result(timeout=120)
+                for v in vulns:
+                    v["source"] = tool_name
+                    scan_vulns.append(v)
+                    cve_id = v.get("cve") or v.get("cve_id") or v.get("template-id", "")
+                    if cve_id:
+                        log(f"   🎯 [{tool_name}] 发现: {cve_id}")
+            except Exception as e:
+                log(f"   ⚠️ {tool_name} 结果获取失败: {e}")
+
+        if scan_vulns:
+            log(f"   ✅ 漏扫发现 {len(scan_vulns)} 个漏洞")
+
+        # 构建检索关键词
+        try:
+            from exploit_helper import build_exploit_keywords
+            exploit_keywords = build_exploit_keywords(dict(state))
+            # 补充扫描发现的CVE
+            for v in scan_vulns:
+                cve_id = v.get("cve") or v.get("cve_id", "")
+                if cve_id and cve_id not in exploit_keywords.get("cve_ids", []):
+                    exploit_keywords.setdefault("cve_ids", []).append(cve_id)
+        except ImportError:
+            exploit_keywords = {
+                "cve_ids": [v.get("cve", "") for v in scan_vulns if v.get("cve")],
+                "tags": []
+            }
 
     # 构建拓扑提示
     topology_hint = None
@@ -1187,17 +1348,53 @@ def analyst_node(state: CTFState) -> Dict:
             
         log(f"   ✅ 发现 {len(formatted_candidates)} 个潜在漏洞点")
 
+        # [内网模式] 合并漏扫结果
+        if scan_vulns:
+            for v in scan_vulns:
+                vtype = v.get("plugin") or v.get("name") or v.get("template-id", "unknown")
+                formatted_candidates.append({
+                    "type": vtype.lower(),
+                    "location": v.get("url", current_url),
+                    "confidence": 0.8,  # 工具验证的置信度
+                    "context": {
+                        "cve_id": v.get("cve") or v.get("cve_id"),
+                        "severity": v.get("severity"),
+                        "source": v.get("source"),
+                        "curl_command": v.get("curl_command", "")
+                    },
+                    "recommended_tools": [],
+                    "url": v.get("url", current_url),
+                    "verified": True
+                })
+            log(f"   ✅ 合并漏扫结果后共 {len(formatted_candidates)} 个漏洞候选")
+
+        # [AI漏洞链分析] 识别多步漏洞利用链
+        if formatted_candidates:
+            chain_analysis = _ai_analyze_exploit_chain(formatted_candidates, page_features)
+            if chain_analysis and chain_analysis.get("type") == "chain":
+                log(f"   🔗 检测到漏洞链: {chain_analysis.get('description', '')}")
+                # 将链式利用信息添加到第一个高置信度漏洞
+                for cand in formatted_candidates:
+                    if cand.get("confidence", 0) > 0.6:
+                        cand["exploit_chain"] = chain_analysis
+                        break
+
         # 如果 formatted_candidates 为空，直接触发探索模式
         if not formatted_candidates:
             log("   ⚠️ 未识别到漏洞候选，触发探索模式")
             return {
                 "vuln_candidates": [],
                 "analyst_intel": "\n\n".join(key_intel_parts) if key_intel_parts else None,
-                "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.5
+                "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.5,
+                "exploit_keywords": exploit_keywords if exploit_keywords else {}
             }
 
         analyst_intel = "\n\n".join(key_intel_parts) if key_intel_parts else None
-        res = {"vuln_candidates": formatted_candidates, "analyst_intel": analyst_intel}
+        res = {
+            "vuln_candidates": formatted_candidates,
+            "analyst_intel": analyst_intel,
+            "exploit_keywords": exploit_keywords if exploit_keywords else {}
+        }
         log_node_data("analyst", {"prompt": prompt}, res)
         return res
 
@@ -1206,9 +1403,10 @@ def analyst_node(state: CTFState) -> Dict:
         log_node_data("analyst", {"prompt": prompt, "raw_response": response_text}, {"error": "JSON parse error"})
         # JSON解析失败也返回空，触发探索
         return {
-            "vuln_candidates": [],
+            "vuln_candidates": scan_vulns if scan_vulns else [],  # 至少返回漏扫结果
             "analyst_intel": None,
-            "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.0
+            "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.0,
+            "exploit_keywords": exploit_keywords if exploit_keywords else {}
         }
 
 
@@ -1270,7 +1468,7 @@ def mode_manager_node(state: CTFState) -> Dict:
         log(f"⏰ 剩余时间: {remaining/60:.1f}分钟")
 
     # 2. 场景聚焦判断
-    MAX_SCENE_ATTEMPTS = 5
+    MAX_SCENE_ATTEMPTS = config.MAX_SCENE_ATTEMPTS
 
     if focused_scene and not scene_exhausted:
         if scene_attack_attempts < MAX_SCENE_ATTEMPTS:
@@ -1618,80 +1816,65 @@ def attacker_node(state: CTFState) -> Dict:
         }
 
     # =====================================================
-    # [新增] 阶段1: 使用nuclei/xray进行批量漏洞验证
+    # [内网模式增强] nuclei模板检索 + 智慧决策
     # =====================================================
-    vuln_verification_results = []
-    verified_vulns = []
+    internal_mode = state.get("internal_mode", False)
 
-    # 提取需要验证的目标URL
-    target_urls = set()
-    for c in candidates[:5]:  # 最多验证前5个候选
-        c_url = c.get("url") or c.get("target") or current_url
-        if c_url:
-            target_urls.add(c_url)
-    if current_url:
-        target_urls.add(current_url)
+    if internal_mode:
+        log("   🔬 [内网模式] 检索nuclei模板...")
 
-    log(f"   🔬 开始并行漏洞验证 (nuclei/xray)...")
-
-    # 并行执行nuclei和xray扫描
-    for t_url in list(target_urls)[:3]:  # 限制目标数量
-        # Nuclei快速扫描
         try:
-            nuclei_result = ToolRegistry.execute_cached(
-                "nuclei",
-                t_url,
-                {"target": t_url, "severity": "high", "tags": "rce,sqli,xss,lfi"}
+            from exploit_helper import (
+                search_nuclei_templates,
+                smart_attack_decision
             )
-            if nuclei_result and nuclei_result.get("result", {}).get("vulnerable"):
-                vulns = nuclei_result["result"].get("vulnerabilities", [])
-                for v in vulns:
-                    verified_vulns.append({
-                        "source": "nuclei",
-                        "url": t_url,
-                        "vuln": v,
-                        "exploit_hint": v.get("curl_command", "")
-                    })
-                log(f"   ✅ Nuclei发现 {len(vulns)} 个漏洞")
-        except Exception as e:
-            log(f"   ⚠️ Nuclei扫描异常: {e}")
 
-        # Xray扫描 (如果可用)
-        try:
-            xray_result = ToolRegistry.execute_cached(
-                "xray",
-                t_url,
-                {"target": t_url, "mode": "webscan"}
-            )
-            if xray_result and xray_result.get("result", {}).get("vulnerable"):
-                vulns = xray_result["result"].get("vulnerabilities", [])
-                for v in vulns:
-                    verified_vulns.append({
-                        "source": "xray",
-                        "url": t_url,
-                        "vuln": v,
-                        "exploit_hint": v.get("request", "")[:500]
-                    })
-                log(f"   ✅ Xray发现 {len(vulns)} 个漏洞")
-        except Exception as e:
-            log(f"   ⚠️ Xray扫描异常: {e}")
+            # 获取检索关键词
+            exploit_keywords = state.get("exploit_keywords", {})
+            if not exploit_keywords:
+                exploit_keywords = {
+                    "cve_ids": [],
+                    "framework": "",
+                    "tags": [],
+                    "vuln_types": list(set(c.get("type", "") for c in candidates if c.get("type")))
+                }
 
-    # 如果工具验证发现了漏洞，将其加入候选
-    if verified_vulns:
-        log(f"   🎯 工具验证发现 {len(verified_vulns)} 个漏洞，合并到攻击计划")
-        for vv in verified_vulns:
-            # 将验证结果转换为候选格式
-            candidates.append({
-                "type": vv["vuln"].get("plugin", vv["vuln"].get("name", "verified_vuln")),
-                "url": vv["url"],
-                "confidence": 0.75,  # 工具验证的置信度（下调自0.9）
-                "source": vv["source"],
-                "exploit_hint": vv.get("exploit_hint", ""),
-                "verified": True
-            })
+            # 检索模板（用于日志展示）
+            templates = search_nuclei_templates(exploit_keywords)
+            if templates:
+                log(f"   ✅ 找到 {len(templates)} 个相关模板")
+                for t in templates[:3]:
+                    log(f"      - {t.get('name', t.get('path'))} [{t.get('severity', 'unknown')}]")
+        except ImportError as e:
+            log(f"   ⚠️ exploit_helper未安装: {e}")
+        except Exception as e:
+            log(f"   ⚠️ 模板检索失败: {e}")
+
+        # 智慧决策攻击方式
+        if candidates:
+            try:
+                from exploit_helper import smart_attack_decision
+
+                decision_context = {
+                    "vuln_type": candidates[0].get("type", "unknown"),
+                    "os_type": "unknown",
+                    "has_shell": bool(state.get("shell_session")),
+                    "target_url": current_url,
+                    "attacker_ip": config.LOCAL_PUBLIC_IP or "127.0.0.1"
+                }
+
+                attack_decision = smart_attack_decision(decision_context)
+                log(f"   🎯 智慧决策: {attack_decision.get('primary_method', 'unknown')}")
+                log(f"      理由: {attack_decision.get('reason', '')}")
+
+                # 将决策添加到第一个候选的context
+                if candidates and attack_decision:
+                    candidates[0].setdefault("context", {})["attack_decision"] = attack_decision
+            except Exception as e:
+                log(f"   ⚠️ 智慧决策失败: {e}")
 
     # =====================================================
-    # 阶段2: LLM生成手工攻击Payload
+    # LLM生成攻击Payload
     # =====================================================
 
     # 1. 扩容动作数量：实现饱和测试（高优先级目标增加动作数量）
@@ -1838,7 +2021,7 @@ def attacker_node(state: CTFState) -> Dict:
         # 攻击模式下的工具调用应该比探索模式更快
         task_timeout = 60 if tool_name in ["dirsearch", "sqlmap"] else 20
         
-        future = executor.submit(execute_single_attack, a, current_url, state.get("page_history", {}))
+        future = get_executor().submit(execute_single_attack, a, current_url, state.get("page_history", {}))
         futures_map[future] = a
 
     try:
@@ -2051,10 +2234,11 @@ def explorer_node(state: CTFState) -> Dict:
     builder = TopologyBuilder()
 
     # 2. 更新拓扑图（合并新路径）
-    state.update(builder.update_from_explorer(state, new_paths))
+    topology_updates = builder.update_from_explorer(state, new_paths)
 
     # 3. 构建NetworkX图进行分析
-    G = builder.build_from_adjacency(state.get("site_topology", {}))
+    merged_topology = {**state.get("site_topology", {}), **topology_updates.get("site_topology", {})}
+    G = builder.build_from_adjacency(merged_topology)
 
     # 4. 添加节点属性（状态码、技术栈等）
     for url, status in node_status.items():
@@ -2193,7 +2377,7 @@ def verifier_node(state: CTFState) -> Dict:
             break
         output_text = res.get("output", "")
         if isinstance(output_text, str):
-            flag_m = re.search(r"(flag\{[a-zA-Z0-9_-]+\}|ctf\{[a-zA-Z0-9_-]+\}|NSSCTF\{[a-zA-Z0-9_-]+\})", output_text, re.IGNORECASE)
+            flag_m = re.search(r"((?:flag|ctf|nssctf|hgame|dasctf|moectf|isctf|unctf|swpuctf|gwctf|ciscn|miniLCTF|actf|sctf|vnctf|xyctf|geekgame|hackergame)\{[a-zA-Z0-9_\-!@#$%^&*()+=,./?:;'\"<>\[\]{}|~` ]+\})", output_text, re.IGNORECASE)
             if flag_m:
                 pre_captured_flag = flag_m.group(0)
                 break
@@ -2419,6 +2603,46 @@ def verifier_node(state: CTFState) -> Dict:
             if payload_str:
                 failed_payloads.append(payload_str)
 
+        # =====================================================
+        # [内网模式增强] Shell存活验证 + 继续攻击决策
+        # =====================================================
+        internal_mode = state.get("internal_mode", False)
+        continue_attack = False
+        remaining_payloads = []
+
+        if internal_mode:
+            # 检查是否有活跃的shell会话
+            shell_session = state.get("shell_session")
+            active_sessions = state.get("active_sessions", [])
+
+            if shell_session:
+                log(f"   ✅ [内网] 检测到活跃Shell会话")
+                # 有shell会话，进入后渗透阶段
+                result_dict = {
+                    "failure_weighted_score": max(0, state.get("failure_weighted_score", 0) - 0.5),
+                    "execution_steps": state.get("execution_steps", 0) + 1,
+                    "node_attack_status": node_status,
+                    "vuln_candidates": candidates,
+                    "shell_session": shell_session
+                }
+                return result_dict
+
+            # 检查是否还有未尝试的payload
+            exploit_keywords = state.get("exploit_keywords", {})
+            if exploit_keywords and len(failed_payloads) < 3:
+                # 还有尝试空间，标记继续攻击
+                continue_attack = True
+                log(f"   🔄 [内网] 标记继续攻击，尝试其他payload")
+
+                # 从候选中提取可能的payload
+                for cand in candidates[:3]:
+                    if cand.get("context", {}).get("curl_command"):
+                        remaining_payloads.append({
+                            "type": cand.get("type"),
+                            "payload": cand["context"]["curl_command"],
+                            "source": "verified_vuln"
+                        })
+
         if node_decision == "abandon" and current_url and current_url in node_status:
             log(f"   🛑 AI决策: 放弃节点 {current_url}")
             log(f"   💡 原因: {failure_analysis[:100] if failure_analysis else 'N/A'}")
@@ -2437,7 +2661,9 @@ def verifier_node(state: CTFState) -> Dict:
             "node_attack_status": node_status,
             "vuln_candidates": candidates,
             "latest_tactical_guidance": tactical_guidance,
-            "scene_attack_attempts": scene_attack_attempts
+            "scene_attack_attempts": scene_attack_attempts,
+            "continue_attack": continue_attack,
+            "remaining_payloads": remaining_payloads
         }
         if failed_payloads:
             result_dict["failed_payloads"] = failed_payloads
@@ -2482,6 +2708,7 @@ if INTERNAL_NETWORK_AVAILABLE:
     workflow.add_node("privilege_escalation", privilege_escalation_node)  # type: ignore # 权限提升
     workflow.add_node("credential_gather", credential_gather_node)  # type: ignore # 凭据收集
     workflow.add_node("flag_search", flag_search_node)  # type: ignore # Flag搜索节点
+    workflow.add_node("persistence", persistence_node)  # type: ignore # 持久化节点
     workflow.add_node("post_exploit", post_exploit_node)  # type: ignore # 后渗透节点
     workflow.add_node("upload_tools", upload_tools_node)  # type: ignore # 工具上传节点
     workflow.add_node("setup_tunnel", setup_tunnel_node)  # type: ignore # 隧道搭建节点
@@ -2617,6 +2844,7 @@ workflow.add_edge("attacker", "verifier")  # 攻击后必须验证
 _verifier_routes = {
     "evolution": "evolution",
     "mode_manager": "mode_manager",  # 直接回到决策
+    "attacker": "attacker",  # [内网模式] 继续攻击
 }
 
 # 添加后渗透路由（如果内网模块可用）
@@ -2630,82 +2858,31 @@ workflow.add_conditional_edges(
     _verifier_routes
 )
 
-workflow.add_conditional_edges(
-    "evolution",
-    lambda state: route_evolution(state, "evolution"),
-    {
-        END: END
-    }
-)
-
 # 6. 进化结束
 workflow.add_edge("evolution", END)
 
 # 7. 内网渗透路由 (Internal Network Routing)
 if INTERNAL_NETWORK_AVAILABLE:
-    # 内网侦察后路由
-    workflow.add_conditional_edges(
-        "internal_recon",
-        lambda state: route_internal_mode(state, "internal_recon"),
-        {
-            "internal_recon": "internal_recon",
-            "credential_gather": "credential_gather",
-            "lateral_move": "lateral_move",
-            "privilege_escalation": "privilege_escalation",
-            "flag_search": "flag_search",
-            "upload_tools": "upload_tools",
-            "setup_tunnel": "setup_tunnel",
-            "mode_manager": "mode_manager"
-        }
-    )
+    # 内网节点的统一路由映射（所有内网节点共享）
+    _internal_route_map = {
+        "internal_recon": "internal_recon",
+        "credential_gather": "credential_gather",
+        "lateral_move": "lateral_move",
+        "privilege_escalation": "privilege_escalation",
+        "flag_search": "flag_search",
+        "upload_tools": "upload_tools",
+        "setup_tunnel": "setup_tunnel",
+        "mode_manager": "mode_manager"
+    }
 
-    # 凭据收集后路由
-    workflow.add_conditional_edges(
-        "credential_gather",
-        lambda state: route_internal_mode(state, "credential_gather"),
-        {
-            "internal_recon": "internal_recon",
-            "credential_gather": "credential_gather",
-            "lateral_move": "lateral_move",
-            "privilege_escalation": "privilege_escalation",
-            "flag_search": "flag_search",
-            "upload_tools": "upload_tools",
-            "setup_tunnel": "setup_tunnel",
-            "mode_manager": "mode_manager"
-        }
-    )
-
-    # 横向移动后路由
-    workflow.add_conditional_edges(
-        "lateral_move",
-        lambda state: route_internal_mode(state, "lateral_move"),
-        {
-            "internal_recon": "internal_recon",
-            "credential_gather": "credential_gather",
-            "lateral_move": "lateral_move",
-            "privilege_escalation": "privilege_escalation",
-            "flag_search": "flag_search",
-            "upload_tools": "upload_tools",
-            "setup_tunnel": "setup_tunnel",
-            "mode_manager": "mode_manager"
-        }
-    )
-
-    # 权限提升后路由
-    workflow.add_conditional_edges(
-        "privilege_escalation",
-        lambda state: route_internal_mode(state, "privilege_escalation"),
-        {
-            "internal_recon": "internal_recon",
-            "credential_gather": "credential_gather",
-            "lateral_move": "lateral_move",
-            "privilege_escalation": "privilege_escalation",
-            "flag_search": "flag_search",
-            "upload_tools": "upload_tools",
-            "setup_tunnel": "setup_tunnel",
-            "mode_manager": "mode_manager"
-        }
-    )
+    # 内网侦察/凭据收集/横向移动/权限提升/Flag搜索 共用同一路由映射
+    for _node_name in ["internal_recon", "credential_gather", "lateral_move",
+                       "privilege_escalation", "flag_search"]:
+        workflow.add_conditional_edges(
+            _node_name,
+            lambda state, _n=_node_name: route_internal_mode(state, _n),
+            _internal_route_map
+        )
 
     # 后渗透节点路由
     workflow.add_conditional_edges(
@@ -2724,6 +2901,7 @@ if INTERNAL_NETWORK_AVAILABLE:
         "upload_tools",
         lambda state: route_post_exploit(state, "upload_tools"),
         {
+            "upload_tools": "upload_tools",
             "setup_tunnel": "setup_tunnel",
             "internal_recon": "internal_recon",
             "mode_manager": "mode_manager"
@@ -2736,22 +2914,6 @@ if INTERNAL_NETWORK_AVAILABLE:
         lambda state: route_post_exploit(state, "setup_tunnel"),
         {
             "internal_recon": "internal_recon",
-            "mode_manager": "mode_manager"
-        }
-    )
-
-    # Flag搜索后路由
-    workflow.add_conditional_edges(
-        "flag_search",
-        lambda state: route_internal_mode(state, "flag_search"),
-        {
-            "internal_recon": "internal_recon",
-            "credential_gather": "credential_gather",
-            "lateral_move": "lateral_move",
-            "privilege_escalation": "privilege_escalation",
-            "flag_search": "flag_search",
-            "upload_tools": "upload_tools",
-            "setup_tunnel": "setup_tunnel",
             "mode_manager": "mode_manager"
         }
     )
@@ -3144,6 +3306,10 @@ def main():
 
 def run_single_task(task_name: str, task_description: str, target_url: str) -> dict:
     """运行单个CTF任务"""
+    # 重置路由守卫，避免上一个任务的状态影响
+    from router import reset_route_guard
+    reset_route_guard()
+
     # 初始化状态
     initial_state: CTFState = {
         # 基础上下文

@@ -121,10 +121,15 @@ def innovator_node(state: CTFState) -> Dict:
         result = json.loads(response_text)
         temp_rules = result.get("temp_rules", [])
         analysis = result.get("analysis", "")
-        
+
         print(f"✅ [Innovator] 思考结论: {analysis[:100]}...")
         print(f"✅ [Innovator] 生成了 {len(temp_rules)} 条临时规则")
-        
+
+        # AI过滤低质量规则
+        if temp_rules and len(temp_rules) > 0:
+            temp_rules = _ai_filter_rules(temp_rules, features)
+            print(f"   过滤后保留 {len(temp_rules)} 条有效规则")
+
         # 将 RAG 上下文简要保存，供后续追溯
         rag_context = [doc['metadata'].get('filename', 'Unknown WP') for doc in rag_results]
         
@@ -136,3 +141,62 @@ def innovator_node(state: CTFState) -> Dict:
     except json.JSONDecodeError:
         print(f"❌ [Innovator] JSON 解析失败: {response_text[:100]}...")
         return {}
+
+
+def _ai_filter_rules(rules: List[Dict], features: Dict) -> List[Dict]:
+    """
+    AI过滤低质量规则
+
+    过滤掉:
+    1. 与当前环境不相关的规则
+    2. 过于模糊的规则
+    3. 置信度过低的规则
+
+    Args:
+        rules: 待过滤的规则列表
+        features: 当前页面特征
+
+    Returns:
+        过滤后的规则列表
+    """
+    if not rules or len(rules) <= 1:
+        return rules
+
+    prompt = f"""评估这些攻击规则的质量，过滤掉无效规则。
+
+规则列表:
+{json.dumps(rules, ensure_ascii=False, indent=2)}
+
+当前环境:
+- 技术栈: {features.get('tech_stack', [])}
+- 输入向量: {features.get('input_vectors', [])}
+
+过滤标准:
+1. 与当前环境完全不相关的规则
+2. 过于模糊，没有具体技术细节的规则
+3. 置信度低于0.5且没有明确理由的规则
+
+输出JSON:
+{{
+    "filtered_rules": [保留的规则列表],
+    "removed": [被移除的规则及原因]
+}}"""
+
+    try:
+        response = llm_client.call_chat_completion(
+            model=config.HAIKU_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
+
+        if response:
+            if "```json" in response:
+                response = response.split("```json")[1].split("```")[0]
+            result = json.loads(response.strip())
+            return result.get("filtered_rules", rules)
+
+    except Exception as e:
+        print(f"   [Innovator] AI过滤失败: {e}")
+
+    return rules

@@ -16,6 +16,7 @@
 import json
 import time
 import os
+import ipaddress
 from typing import Dict, List, Any, Optional
 from llm_client import llm_client
 from config import config
@@ -42,6 +43,7 @@ try:
         FileTransferHandler,
         CredentialDumper,
         IntelligentPathSelector,
+        PersistenceHandler,
         OperationStatus
     )
     ADVANCED_OPS_AVAILABLE = True
@@ -383,12 +385,24 @@ def _parse_fscan_output(output: str) -> List[Dict]:
     hosts = {}
     import re
 
+    def is_valid_ip(ip_str: str) -> bool:
+        """验证IP地址有效性"""
+        try:
+            ipaddress.ip_address(ip_str)
+            return True
+        except ValueError:
+            return False
+
     # fscan输出格式: IP:Port open
     for line in output.split('\n'):
         match = re.search(r'(\d+\.\d+\.\d+\.\d+):(\d+)', line)
         if match:
             ip = match.group(1)
             port = int(match.group(2))
+
+            # 验证IP有效性
+            if not is_valid_ip(ip):
+                continue
 
             if ip not in hosts:
                 hosts[ip] = {
@@ -1794,126 +1808,111 @@ def flag_search_node(state: Dict) -> Dict:
 
 def _search_flags_on_host(session, os_type: str, host: str) -> List[str]:
     """
-    在单台主机上搜索Flag
+    AI驱动的Flag搜索
 
-    搜索位置:
-    Windows:
-        - C:\\Users\\Administrator\\Desktop\\
-        - C:\\Users\\Administrator\\Documents\\
-        - C:\\Users\\Administrator\\
-        - C:\\flags\\
-        - C:\\
-
-    Linux:
-        - /home/admin/
-        - /home/*/Desktop/
-        - /root/
-        - /tmp/
-        - /opt/
+    让AI分析环境后决定搜索策略，而非硬编码路径
     """
     import re
+    from flag_extractor import extract_flags_from_text
 
     flags = []
 
-    # 定义搜索路径
-    if os_type == "windows":
-        search_paths = [
-            "C:\\Users\\Administrator\\Desktop\\",
-            "C:\\Users\\Administrator\\Documents\\",
-            "C:\\Users\\Administrator\\",
-            "C:\\flags\\",
-            "C:\\",
+    # Step 1: AI收集环境信息
+    env_probe_cmds = {
+        "windows": [
+            ("whoami", "当前用户"),
+            ("dir C:\\", "C盘根目录"),
+            ("echo %USERPROFILE%", "用户目录"),
+            ("set", "环境变量"),
+        ],
+        "linux": [
+            ("whoami", "当前用户"),
+            ("ls -la /", "根目录"),
+            ("env", "环境变量"),
+            ("find /tmp -type f 2>/dev/null | head -20", "临时文件"),
         ]
-        # 列出文件命令
-        list_cmd = "dir /b \"{path}\""
-        # 搜索flag文件命令
-        search_cmd = "type \"{path}{file}\""
-    else:
-        search_paths = [
-            "/home/admin/",
-            "/home/*/Desktop/",
-            "/root/",
-            "/tmp/",
-            "/opt/",
-        ]
-        list_cmd = "ls -la {path} 2>/dev/null"
-        search_cmd = "cat {path}{file} 2>/dev/null"
+    }
 
-    # Flag正则模式
-    flag_patterns = [
-        r'flag\{[^\}]+\}',
-        r'FLAG\{[^\}]+\}',
-        r'ctf\{[^\}]+\}',
-        r'CTF\{[^\}]+\}',
-        r'key\{[^\}]+\}',
-        r'KEY\{[^\}]+\}',
-        r'f[l1]ag\{[^\}]+\}',  # 变形flag
-    ]
-
-    for path in search_paths:
+    env_info = {}
+    for cmd, purpose in env_probe_cmds.get(os_type, env_probe_cmds["linux"]):
         try:
-            # 列出目录内容
-            cmd = list_cmd.format(path=path)
-            result = execute_on_session(session, cmd, timeout=30)
+            result = execute_on_session(session, cmd, timeout=10)
+            if result.success:
+                env_info[purpose] = result.output[:500]
+        except:
+            pass
 
-            if not result.success or not result.output:
-                continue
+    # Step 2: AI决定搜索策略
+    prompt = f"""分析目标环境，生成flag搜索策略。
 
-            # 分析目录内容，寻找可疑文件
-            suspicious_files = _identify_suspicious_files(result.output, os_type)
+目标主机: {host}
+系统类型: {os_type}
 
-            for filename in suspicious_files:
-                try:
-                    # 读取文件内容
-                    cat_cmd = search_cmd.format(path=path, file=filename)
-                    file_result = execute_on_session(session, cat_cmd, timeout=30)
+环境信息:
+{json.dumps(env_info, ensure_ascii=False, indent=2)}
 
-                    if file_result.success and file_result.output:
-                        # 在内容中搜索flag
-                        for pattern in flag_patterns:
-                            matches = re.findall(pattern, file_result.output, re.IGNORECASE)
-                            flags.extend(matches)
+生成搜索命令。考虑:
+1. 常见CTF flag位置 (/flag, C:\\flag.txt, 桌面, 用户目录)
+2. 特殊命名的文件 (flag.txt, flag, key.txt)
+3. 环境变量中的flag
+4. 隐藏文件
+5. 近期修改的文件
 
-                except Exception:
-                    continue
+输出JSON:
+{{
+    "search_commands": [
+        {{"cmd": "具体命令", "purpose": "搜索目的", "priority": 1-5}}
+    ],
+    "expected_locations": ["预期flag可能的位置"]
+}}"""
 
-            # 直接在目录列表中搜索flag
-            for pattern in flag_patterns:
-                matches = re.findall(pattern, result.output, re.IGNORECASE)
-                flags.extend(matches)
-
-        except Exception as e:
-            print(f"[FlagSearch] 搜索 {path} 失败: {e}")
-            continue
-
-    # 额外: 执行常见flag查找命令
     try:
+        response = llm_client.call_chat_completion(
+            model=config.HAIKU_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            json_mode=True
+        )
+
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+
+        strategy = json.loads(response.strip())
+        search_commands = sorted(strategy.get("search_commands", []),
+                                key=lambda x: x.get("priority", 5))
+
+    except Exception as e:
+        logger.warning(f"AI搜索策略生成失败: {e}")
+        # 降级到基础搜索
         if os_type == "windows":
-            # Windows: 使用findstr搜索
-            extra_cmds = [
-                'findstr /s /i "flag" C:\\*.txt',
-                'findstr /s /i "flag" C:\\Users\\*.txt',
+            search_commands = [
+                {"cmd": "type C:\\flag.txt", "purpose": "根目录flag文件", "priority": 1},
+                {"cmd": "type C:\\flags\\flag.txt", "purpose": "flags目录", "priority": 2},
             ]
         else:
-            # Linux: 使用grep递归搜索
-            extra_cmds = [
-                'grep -r "flag{" /home/ 2>/dev/null | head -20',
-                'grep -r "flag{" /root/ 2>/dev/null | head -20',
-                'grep -r "flag{" /tmp/ 2>/dev/null | head -20',
+            search_commands = [
+                {"cmd": "cat /flag 2>/dev/null", "purpose": "根目录flag", "priority": 1},
+                {"cmd": "cat /flag.txt 2>/dev/null", "purpose": "flag.txt", "priority": 2},
             ]
 
-        for cmd in extra_cmds:
-            try:
-                result = execute_on_session(session, cmd, timeout=60)
-                if result.success and result.output:
-                    for pattern in flag_patterns:
-                        matches = re.findall(pattern, result.output, re.IGNORECASE)
-                        flags.extend(matches)
-            except Exception:
-                continue
+    # Step 3: 执行搜索
+    for search_action in search_commands[:10]:  # 最多执行10个搜索命令
+        cmd = search_action.get("cmd", "")
+        if not cmd:
+            continue
 
-    except Exception:
-        pass
+        try:
+            result = execute_on_session(session, cmd, timeout=30)
+            if result.success and result.output:
+                # 提取flag
+                found = extract_flags_from_text(result.output)
+                if found:
+                    flags.extend(found)
+                    logger.info(f"在 {host} 发现flag: {found[0][:30]}...")
+                    break  # 找到flag就停止
+        except Exception as e:
+            logger.debug(f"搜索命令失败: {cmd} - {e}")
+            continue
 
     return list(set(flags))
 
@@ -2013,3 +2012,46 @@ def get_next_internal_target(state: Dict) -> str:
             return ip
 
     return ""  # 所有主机已攻陷
+
+
+def persistence_node(state: Dict) -> Dict:
+    """
+    AI驱动的持久化节点
+
+    在攻陷主机后建立持久化访问，确保会话不会丢失
+    设计原则: 简洁、AI驱动、无硬编码规则
+    """
+    if not ADVANCED_OPS_AVAILABLE:
+        logger.warning("Advanced operations not available, skipping persistence")
+        return {"persistence_established": False}
+
+    active_sessions = state.get("active_sessions") or []
+
+    if not active_sessions:
+        return {"persistence_established": False}
+
+    updates = {
+        "persistence_results": [],
+        "persistence_established": False
+    }
+
+    # 为每个活跃会话建立持久化
+    for session in active_sessions[-2:]:  # 最多处理最近2个会话
+        host = session.get("host", "unknown")
+
+        # 调用AI驱动的持久化处理器
+        result = PersistenceHandler.establish_persistence(session)
+
+        persistence_record = {
+            "host": host,
+            "success": result.status == OperationStatus.SUCCESS,
+            "method": result.data.get("method") if result.data else None,
+            "message": result.message
+        }
+        updates["persistence_results"].append(persistence_record)
+
+        if persistence_record["success"]:
+            updates["persistence_established"] = True
+            logger.info(f"[Persistence] {host}: {result.message}")
+
+    return updates

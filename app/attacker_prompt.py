@@ -3,6 +3,37 @@ from typing import List, Dict
 import json
 
 
+def smart_truncate_output(output: str, max_length: int = 300) -> str:
+    """
+    智能截断输出，保留关键信息
+
+    优先保留:
+    1. 错误信息
+    2. flag相关内容
+    3. 前部和后部内容
+    """
+    if not output or len(output) <= max_length:
+        return output
+
+    output_lower = output.lower()
+
+    # 检查是否包含错误
+    if "error" in output_lower or "fail" in output_lower:
+        # 保留错误部分
+        return "... " + output[-max_length+20:]
+
+    # 检查是否包含flag
+    if "flag" in output_lower:
+        flag_pos = output_lower.find("flag")
+        start = max(0, flag_pos - 50)
+        end = min(len(output), flag_pos + max_length - 50)
+        return "... " + output[start:end] + " ..."
+
+    # 默认保留前部和后部
+    half = max_length // 2
+    return output[:half] + " ... " + output[-half:]
+
+
 def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
                         attack_history: List[Dict] = None,
                         task_info: Dict = None,
@@ -22,8 +53,8 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
         for h in attack_history[-5:]:
             tool = h.get("tool", "?")
             status = h.get("status", "?")
-            output = str(h.get("output", ""))[:100]
-            lines.append(f"- {tool}: status={status}, output={output}...")
+            output = smart_truncate_output(str(h.get("output", "")), max_length=300)
+            lines.append(f"- {tool}: status={status}, output={output}")
         history_desc = "\n".join(lines)
 
     # 题目背景

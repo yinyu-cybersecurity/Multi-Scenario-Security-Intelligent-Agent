@@ -18,7 +18,7 @@ class RouteGuard:
     def __init__(self):
         self.path_history: List[Tuple[str, str]] = []  # 记录走过的路径 (当前节点, 下一节点)
         self.last_transition_time: float = time.time()
-        self.loop_count: Dict[str, int] = {}  # 记录每个节点的访问次数
+        self.loop_count: Dict[str, int] = {}  # 记录每个节点的累计访问次数
 
     def check_dead_loop(self, current_node: str, next_node: str) -> bool:
         """
@@ -26,7 +26,7 @@ class RouteGuard:
 
         检测模式：
         1. A -> B -> A -> B 的来回循环
-        2. 同一节点连续访问超过5次（上调自3次）
+        2. 同一节点总计访问超过10次（非连续）
         3. 10步内出现重复路径模式
 
         Args:
@@ -44,14 +44,14 @@ class RouteGuard:
         if len(self.path_history) > 30:
             self.path_history = self.path_history[-30:]
 
-        # 记录节点访问次数
+        # 记录节点累计访问次数
         self.loop_count[next_node] = self.loop_count.get(next_node, 0) + 1
 
         # ---------- 死循环检测规则 ----------
 
-        # 规则1: 同一节点连续访问超过10次（大幅上调，避免误判）
+        # 规则1: 同一节点总计访问超过10次
         if self.loop_count.get(next_node, 0) > 10:
-            logger.warning(f"节点 {next_node} 连续访问超过10次")
+            logger.warning(f"节点 {next_node} 总计访问超过10次")
             return True
 
         # 规则2: 检测 A->B->A 来回循环 (需要6次以上才触发)
@@ -96,6 +96,12 @@ class RouteGuard:
 _route_guard = RouteGuard()
 
 
+def reset_route_guard():
+    """重置路由守卫（新任务开始时调用）"""
+    global _route_guard
+    _route_guard = RouteGuard()
+
+
 def route_mode(state: CTFState, current_node: str) -> str:
     """
     模式路由 - 根据current_mode决定下一节点
@@ -115,31 +121,6 @@ def route_mode(state: CTFState, current_node: str) -> str:
         目标节点名称: 'attacker'/'explorer'/'innovator'/END
     """
     next_node = state.get("current_mode", "exploit")
-
-    # 上下文压缩检查 - 防止状态无限增长
-    try:
-        from context_compressor import get_compressor, get_chain_recorder
-
-        # 获取攻击链摘要
-        chain_recorder = get_chain_recorder()
-        chain_summary_text = chain_recorder.get_chain_summary()
-
-        # 检查状态大小
-        state_size = len(str(state))
-        if state_size > 50000:  # 状态超过50KB时压缩
-            logger.info(f"状态过大 ({state_size} bytes)，执行压缩...")
-            compressor = get_compressor()
-            compressed = compressor.compress(dict(state))
-            # 更新状态（保留关键字段）
-            if compressed:
-                # 只压缩列表类型的字段
-                for key in ["attack_results", "page_history", "visited_urls"]:
-                    if key in compressed and len(str(state.get(key, ""))) > 5000:
-                        state[key] = compressed.get(key, state.get(key, []))
-                logger.debug("压缩完成")
-    except Exception as e:
-        # 压缩失败不影响路由
-        logger.debug(f"压缩检查跳过: {e}")
 
     # [核心修复] 检查当前 URL 是否已经过侦察
     current_url = state.get("current_url")
@@ -184,15 +165,16 @@ def route_verify(state: CTFState, current_node: str) -> str:
     优先级：
         1. 获取shell -> post_exploit（后渗透处理）
         2. 找到flag -> 继续内网渗透（不再结束）
-        3. 失败分过高 -> mode_manager (自动进入创新模式)
-        4. 正常情况 -> mode_manager
+        3. continue_attack -> attacker（继续攻击）
+        4. 失败分过高 -> mode_manager (自动进入创新模式)
+        5. 正常情况 -> mode_manager
 
     Args:
         state: 当前状态
         current_node: 当前节点名
 
     Returns:
-        "evolution" / "post_exploit" / "mode_manager"
+        "evolution" / "post_exploit" / "attacker" / "mode_manager"
     """
     # 1. 检查是否获取了shell且需要后渗透处理
     shell_session = state.get("shell_session")
@@ -216,14 +198,12 @@ def route_verify(state: CTFState, current_node: str) -> str:
             logger.info(f"内网渗透模式下找到{len(found_flags)}个flag，继续攻陷其他主机")
             return "mode_manager"
 
-    # 3. 如果步数太多但失败分不高，强制加一个失败分触发探索
-    # 仅对Web CTF模式生效，内网渗透不受此限制
-    if not state.get("internal_mode", False):
-        steps = state.get("execution_steps", 0)
-        score = state.get("failure_weighted_score", 0)
-        if steps > config.MAX_TOTAL_ROUNDS * 0.7 and score < config.FAILURE_SCORE_FOR_EXPLORE:
-            logger.debug(f"步数 {steps} 已较多但失败分低，强制加0.5分触发探索")
-            state["failure_weighted_score"] = score + 0.5
+    # 3. [内网模式增强] 检查是否需要继续攻击
+    if state.get("internal_mode") and state.get("continue_attack"):
+        remaining = state.get("remaining_payloads", [])
+        if remaining:
+            logger.info(f"内网模式：继续攻击，剩余 {len(remaining)} 个payload")
+            return "attacker"
 
     # 4. 正常回到mode_manager
     return "mode_manager"
@@ -265,6 +245,7 @@ def route_internal_mode(state: CTFState, current_node: str) -> str:
     4. credential_gather: 凭据收集
     5. lateral_move: 横向移动
     6. privilege_escalation: 权限提升
+    7. persistence: 持久化访问
 
     Args:
         state: 当前状态
@@ -288,11 +269,12 @@ def route_internal_mode(state: CTFState, current_node: str) -> str:
         "pivot_host": state.get("pivot_host", ""),
         "shell_session": bool(state.get("shell_session")),
         "proxy_info": bool(state.get("proxy_info")),
+        "persistence_established": state.get("persistence_established", False),
     }
 
     # 死循环检测
     if _route_guard.check_dead_loop(current_node, "internal_recon"):
-        print(f"[InternalRoute] 检测到潜在死循环，重置计数")
+        logger.warning(f"[InternalRoute] 检测到潜在死循环，重置计数")
         _route_guard.reset_loop_count("internal_recon")
 
     # AI决策路由
@@ -312,36 +294,41 @@ def _ai_route_internal_decision(context: Dict, state: CTFState) -> str:
     # 规则优先 (快速响应常见情况)
     # 规则1: 如果还没有侦察过，先侦察
     if context["internal_hosts_count"] == 0:
-        print(f"[InternalRoute] 侦察阶段")
+        logger.info(f"[InternalRoute] 侦察阶段")
         return "internal_recon"
 
     # 规则2: 如果有shell但没有上传工具
     if context["shell_session"] and context["upload_status"] not in ["completed", "commands_generated"]:
-        print(f"[InternalRoute] 工具上传阶段")
+        logger.info(f"[InternalRoute] 工具上传阶段")
         return "upload_tools"
 
     # 规则3: 如果工具已上传但隧道未搭建
     if context["upload_status"] == "completed" and context["tunnel_status"] not in ["configured"]:
-        print(f"[InternalRoute] 隧道搭建阶段")
+        logger.info(f"[InternalRoute] 隧道搭建阶段")
         return "setup_tunnel"
 
     # 规则4: 根据当前阶段决定下一步
     if current_phase == "flag_search":
-        print(f"[InternalRoute] Flag搜索阶段")
+        logger.info(f"[InternalRoute] Flag搜索阶段")
         return "flag_search"
 
     if current_phase == "complete":
-        print(f"[InternalRoute] 内网渗透完成")
+        logger.info(f"[InternalRoute] 内网渗透完成")
         return "mode_manager"
 
-    # 规则5: 如果有活跃会话但还没搜索flag，先搜索flag
+    # 规则5: 如果有活跃会话但还没建立持久化
     active_sessions = state.get("active_sessions") or []
+    if active_sessions and not context["persistence_established"]:
+        logger.info(f"[InternalRoute] 有活跃会话，先建立持久化")
+        return "persistence"
+
+    # 规则6: 如果有活跃会话但还没搜索flag
     compromised_hosts = state.get("compromised_hosts") or []
     found_flags = state.get("found_flags") or []
 
     if active_sessions and len(found_flags) == 0:
         # 刚获取shell，先搜索flag
-        print(f"[InternalRoute] 有活跃会话，先搜索Flag")
+        logger.info(f"[InternalRoute] 有活跃会话，先搜索Flag")
         return "flag_search"
 
     # 规则6: 检查是否所有主机都已攻陷
@@ -353,7 +340,7 @@ def _ai_route_internal_decision(context: Dict, state: CTFState) -> str:
                           if isinstance(h, dict) and h.get("ip") and h.get("ip") not in all_compromised)
 
     if unexplored_count > 0 and context["credentials_count"] > 0:
-        print(f"[InternalRoute] 还有{unexplored_count}台主机未攻陷，继续横向移动")
+        logger.info(f"[InternalRoute] 还有{unexplored_count}台主机未攻陷，继续横向移动")
         return "lateral_move"
 
     # 复杂情况交给AI决策
@@ -376,6 +363,7 @@ def _ai_route_internal_decision(context: Dict, state: CTFState) -> str:
 - credential_gather: 收集凭据
 - lateral_move: 横向移动到其他主机
 - privilege_escalation: 提升当前会话权限
+- persistence: 建立持久化访问，确保会话不丢失
 - flag_search: 在已攻陷主机上搜索Flag
 
 ## 目标
@@ -407,7 +395,7 @@ def _ai_route_internal_decision(context: Dict, state: CTFState) -> str:
 
         result = json.loads(response.strip())
         next_node = result.get("next_node", "flag_search")
-        print(f"[InternalRoute] AI决策: {next_node} - {result.get('reason', '')}")
+        logger.info(f"[InternalRoute] AI决策: {next_node} - {result.get('reason', '')}")
 
         # 验证节点名称
         valid_nodes = ["internal_recon", "credential_gather", "lateral_move", "privilege_escalation", "upload_tools", "setup_tunnel", "flag_search"]
@@ -415,7 +403,7 @@ def _ai_route_internal_decision(context: Dict, state: CTFState) -> str:
             return next_node
 
     except Exception as e:
-        print(f"[InternalRoute] AI决策失败: {e}")
+        logger.info(f"[InternalRoute] AI决策失败: {e}")
 
     # 降级: 基于规则的决策
     if context["credentials_count"] < 2 and context["current_target"]:
@@ -450,7 +438,7 @@ def route_internal_to_web(state: CTFState) -> str:
     # 检查当前阶段
     current_phase = state.get("current_compromise_phase", "")
     if current_phase == "complete":
-        print(f"[InternalRoute] 内网渗透已完成")
+        logger.info(f"[InternalRoute] 内网渗透已完成")
         return "web"
 
     # 检查是否所有主机都已攻陷
@@ -465,7 +453,7 @@ def route_internal_to_web(state: CTFState) -> str:
                   if isinstance(h, dict) and h.get("ip") and h.get("ip") not in all_compromised]
 
     if not unexplored and internal_hosts:
-        print(f"[InternalRoute] 所有主机已攻陷，内网渗透完成")
+        logger.info(f"[InternalRoute] 所有主机已攻陷，内网渗透完成")
         return "web"
 
     # 内网渗透只按时间超时结束，不受步数限制
@@ -550,21 +538,21 @@ def route_post_exploit(state: CTFState, current_node: str) -> str:
     if post_exploit_status == "ready_for_internal" and internal_range:
         # 步骤1: 上传工具
         if upload_status not in ["completed", "commands_generated"]:
-            print(f"[PostExploitRoute] 发现内网，准备上传工具")
+            logger.info(f"[PostExploitRoute] 发现内网，准备上传工具")
             return "upload_tools"
 
         # 步骤2: 搭建隧道
         if tunnel_status != "configured":
-            print(f"[PostExploitRoute] 工具就绪，准备搭建隧道")
+            logger.info(f"[PostExploitRoute] 工具就绪，准备搭建隧道")
             return "setup_tunnel"
 
         # 步骤3: 开始内网侦察
-        print(f"[PostExploitRoute] 隧道就绪，进入内网侦察")
+        logger.info(f"[PostExploitRoute] 隧道就绪，进入内网侦察")
         return "internal_recon"
 
     # 如果只是Web shell，继续Web攻击流程
     if post_exploit_status == "web_only":
-        print(f"📌 [PostExploitRoute] 无内网环境，继续Web攻击")
+        logger.info(f"📌 [PostExploitRoute] 无内网环境，继续Web攻击")
         return "mode_manager"
 
     # 如果无结果或失败，回到决策
