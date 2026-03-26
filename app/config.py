@@ -41,14 +41,16 @@ class Config:
     MAX_ATTACK_RESULTS: int = 20
 
     # 最大工具调用记录（tool_calls 列表上限）
-    MAX_TOOL_CALLS: int = 100
+    # 主要用于调试，50条足够回溯
+    MAX_TOOL_CALLS: int = 50
 
     # 最大失败payload记录（failed_payloads 列表上限）
-    # 避免重复执行已失败的payload
-    MAX_FAILED_PAYLOADS: int = 50
+    # 避免重复执行已失败的payload，30条足够
+    MAX_FAILED_PAYLOADS: int = 30
 
     # 最大页面历史记录（page_history 字典键数上限）
-    MAX_PAGE_HISTORY: int = 30
+    # 保留最近20个页面详情足够分析
+    MAX_PAGE_HISTORY: int = 20
 
     # 最大已知凭据数（credentials 列表上限）
     MAX_CREDENTIALS: int = 30

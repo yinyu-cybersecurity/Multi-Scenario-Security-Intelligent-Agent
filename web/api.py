@@ -43,6 +43,65 @@ task_logs = {}
 task_queues = {}
 task_states = {}
 task_results = {}  # 存储任务详细结果
+task_completion_times = {}  # 记录任务完成时间
+
+# 内存清理配置
+MAX_MEMORY_TASKS = 20  # 内存中最多保留20个任务的详细数据
+CLEANUP_INTERVAL = 300  # 每5分钟检查一次
+
+def cleanup_old_tasks():
+    """清理内存中的旧任务数据"""
+    global tasks, task_logs, task_queues, task_states, task_results, task_completion_times
+
+    if len(tasks) <= MAX_MEMORY_TASKS:
+        return
+
+    # 按完成时间排序，保留最近的任务
+    completed_tasks = [
+        (tid, task_completion_times.get(tid, 0))
+        for tid in tasks.keys()
+        if tasks.get(tid, {}).get("status") in ["completed", "error", "cancelled"]
+    ]
+    completed_tasks.sort(key=lambda x: x[1])
+
+    # 清理最旧的任务
+    to_remove = completed_tasks[:len(tasks) - MAX_MEMORY_TASKS]
+    for tid, _ in to_remove:
+        task_logs.pop(tid, None)
+        task_queues.pop(tid, None)
+        task_states.pop(tid, None)
+        task_results.pop(tid, None)
+        task_completion_times.pop(tid, None)
+        tasks.pop(tid, None)
+        if task_persistence:
+            try:
+                task_persistence.delete_task(tid)
+            except:
+                pass
+
+    if to_remove:
+        print(f"[Cleanup] 已清理 {len(to_remove)} 个旧任务，当前保留 {len(tasks)} 个")
+
+# 定时清理
+import threading
+_cleanup_timer = None
+
+def start_cleanup_timer():
+    """启动定时清理"""
+    global _cleanup_timer
+    def cleanup_loop():
+        while True:
+            time.sleep(CLEANUP_INTERVAL)
+            try:
+                cleanup_old_tasks()
+            except Exception as e:
+                print(f"[Cleanup] 清理出错: {e}")
+
+    _cleanup_timer = threading.Thread(target=cleanup_loop, daemon=True)
+    _cleanup_timer.start()
+
+# 启动时自动开始清理
+start_cleanup_timer()
 
 # 初始化任务持久化管理器
 task_persistence = None
@@ -341,6 +400,7 @@ def run_task(task_id, target_url):
 
             tasks[task_id]["progress"] = 100
             task_results[task_id] = result
+            task_completion_times[task_id] = time.time()  # 记录完成时间
 
         finally:
             # 清除当前线程的任务ID
@@ -358,6 +418,7 @@ def run_task(task_id, target_url):
         log_callback(task_id, traceback.format_exc())
         tasks[task_id]["status"] = "error"
         tasks[task_id]["error"] = str(e)
+        task_completion_times[task_id] = time.time()  # 记录完成时间
 
 
 def run_simulated_task(task_id, target_url):

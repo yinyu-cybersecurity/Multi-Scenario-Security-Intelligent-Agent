@@ -54,7 +54,8 @@ def get_executor():
     """获取全局线程池(懒加载)"""
     global _executor
     if _executor is None:
-        _executor = concurrent.futures.ThreadPoolExecutor(max_workers=16)
+        # 线程数根据并发需求设定，8个足够处理并行扫描和攻击
+        _executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
         atexit.register(_shutdown_executor)
     return _executor
 
