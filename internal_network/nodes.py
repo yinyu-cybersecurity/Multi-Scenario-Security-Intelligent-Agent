@@ -148,13 +148,17 @@ def internal_recon_node(state: Dict) -> Dict:
                 # AI选择下一个目标
                 first_target = _ai_select_next_target(hosts, state)
 
+                # AI决策：是否用发现的凭据建立SSH连接
+                ssh_updates = _ai_try_connect_with_credentials(state)
+
                 return {
                     "internal_hosts": hosts,
                     "internal_mode": True,
                     "current_internal_target": first_target,
                     "analyst_intel": analysis,
                     "scan_strategy": scan_strategy,
-                    "execution_steps": state.get("execution_steps", 0) + 1
+                    "execution_steps": state.get("execution_steps", 0) + 1,
+                    **ssh_updates  # 合并SSH连接结果
                 }
 
         # 无结果
@@ -380,46 +384,161 @@ def _scan_local(network_range: str, strategy: Dict) -> Dict:
 
 def _parse_fscan_output(output: str) -> List[Dict]:
     """
-    解析fscan输出 - AI辅助解析
+    AI解析fscan输出
+
+    让AI分析输出，提取:
+    1. 开放端口
+    2. 暴力破解成功的凭据
     """
-    hosts = {}
-    import re
+    if not output or len(output) < 10:
+        return []
 
-    def is_valid_ip(ip_str: str) -> bool:
-        """验证IP地址有效性"""
-        try:
-            ipaddress.ip_address(ip_str)
-            return True
-        except ValueError:
-            return False
+    prompt = f"""分析fscan扫描输出，提取关键信息。
 
-    # fscan输出格式: IP:Port open
-    for line in output.split('\n'):
-        match = re.search(r'(\d+\.\d+\.\d+\.\d+):(\d+)', line)
-        if match:
-            ip = match.group(1)
-            port = int(match.group(2))
+## 输出内容
+{output}
 
-            # 验证IP有效性
-            if not is_valid_ip(ip):
+## 要求
+提取以下信息:
+1. 发现的开放端口 (IP:端口)
+2. 暴力破解成功的凭据 (如果有)
+
+## 输出格式 (JSON)
+{{
+    "hosts": [
+        {{"ip": "IP地址", "ports": [端口号列表]}}
+    ],
+    "credentials": [
+        {{"service": "ssh/smb/mysql等", "ip": "IP", "port": 端口, "username": "用户名", "password": "密码"}}
+    ]
+}}
+
+只输出JSON，不要解释。"""
+
+    try:
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
+
+        result = json.loads(response.strip())
+
+        # 存储凭据供后续使用
+        global _discovered_credentials
+        _discovered_credentials = result.get("credentials", [])
+
+        # 转换为主机格式
+        hosts = []
+        for h in result.get("hosts", []):
+            ip = h.get("ip", "")
+            if not ip:
                 continue
-
-            if ip not in hosts:
-                hosts[ip] = {
+            try:
+                ipaddress.ip_address(ip)  # 验证IP
+                hosts.append({
                     "ip": ip,
                     "hostname": "",
                     "os": "",
-                    "ports": []
-                }
+                    "ports": [{"port": p, "protocol": "tcp", "service": "", "version": ""} for p in h.get("ports", [])]
+                })
+            except ValueError:
+                continue
 
-            hosts[ip]["ports"].append({
-                "port": port,
-                "protocol": "tcp",
-                "service": "",
-                "version": ""
-            })
+        return hosts
 
-    return list(hosts.values())
+    except Exception as e:
+        logger.warning(f"AI解析fscan输出失败: {e}")
+        # 降级：简单正则提取IP:端口
+        hosts = {}
+        for line in output.split('\n'):
+            match = re.search(r'(\d+\.\d+\.\d+\.\d+):(\d+)', line)
+            if match:
+                ip, port = match.group(1), int(match.group(2))
+                if ip not in hosts:
+                    hosts[ip] = {"ip": ip, "hostname": "", "os": "", "ports": []}
+                hosts[ip]["ports"].append({"port": port, "protocol": "tcp", "service": "", "version": ""})
+        return list(hosts.values())
+
+
+# 存储AI提取的凭据
+_discovered_credentials = []
+
+
+def _ai_try_connect_with_credentials(state: Dict) -> Dict:
+    """
+    AI决策是否用发现的凭据建立连接
+    """
+    credentials = _discovered_credentials
+    if not credentials:
+        return {}
+
+    prompt = f"""分析发现的凭据，决定连接策略。
+
+## 凭据列表
+{json.dumps(credentials, ensure_ascii=False, indent=2)}
+
+## 已有会话
+{json.dumps([s.get("host") for s in state.get("active_sessions", [])], ensure_ascii=False)}
+
+## 要求
+1. 选择最有价值的凭据尝试连接
+2. 优先SSH (可交互)
+3. 避免重复连接
+
+## 输出格式 (JSON)
+{{
+    "should_connect": true/false,
+    "reason": "理由",
+    "selected": {{"service": "", "ip": "", "port": 22, "username": "", "password": ""}}
+}}"""
+
+    try:
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
+        decision = json.loads(response.strip())
+
+        if not decision.get("should_connect"):
+            return {}
+
+        selected = decision.get("selected", {})
+        if selected.get("service") != "ssh":
+            return {}
+
+        # 尝试SSH连接
+        ip = selected.get("ip")
+        port = selected.get("port", 22)
+        username = selected.get("username")
+        password = selected.get("password")
+
+        if not all([ip, username, password]):
+            return {}
+
+        logger.info(f"[AI决策] 尝试SSH连接: {username}@{ip}:{port}")
+
+        from remote_executor.session_manager import get_session_manager
+        sm = get_session_manager()
+        session = sm.create_ssh_session(host=ip, username=username, password=password, port=port)
+
+        if session:
+            logger.info(f"[SSH] ✅ 连接成功: {username}@{ip}:{port}")
+            return {
+                "credentials": state.get("credentials", []) + [{
+                    "username": username, "password": password, "host": ip, "port": port, "service": "ssh"
+                }],
+                "active_sessions": state.get("active_sessions", []) + [session.to_dict()],
+                "shell_session": session.to_dict() if not state.get("shell_session") else state.get("shell_session")
+            }
+
+    except Exception as e:
+        logger.warning(f"AI连接决策失败: {e}")
+
+    return {}
 
 
 def _ai_select_next_target(hosts: List[Dict], state: Dict) -> str:
@@ -1868,7 +1987,7 @@ def _search_flags_on_host(session, os_type: str, host: str) -> List[str]:
 
     try:
         response = llm_client.call_chat_completion(
-            model=config.HAIKU_MODEL,
+            model=config.ANALYST_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
             json_mode=True
