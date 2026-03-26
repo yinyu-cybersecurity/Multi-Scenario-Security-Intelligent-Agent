@@ -1010,8 +1010,128 @@ def api_compression_status():
 
 
 # =============================================================================
-# 模块管理 API
+# 系统资源监控 API
 # =============================================================================
+
+# 系统监控历史数据存储
+_system_monitor_history = {
+    "cpu": [],
+    "memory": [],
+    "network": [],
+    "timestamps": [],
+    "max_points": 60  # 保留最近60个数据点
+}
+_monitor_lock = threading.Lock()
+
+def _collect_system_metrics():
+    """收集系统指标"""
+    try:
+        import psutil
+
+        # CPU使用率
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+
+        # 内存使用
+        memory = psutil.virtual_memory()
+        memory_percent = memory.percent
+        memory_used = memory.used
+        memory_total = memory.total
+
+        # 网络流量
+        net = psutil.net_io_counters()
+        bytes_sent = net.bytes_sent
+        bytes_recv = net.bytes_recv
+
+        # 磁盘使用
+        disk = psutil.disk_usage('/')
+        disk_percent = disk.percent
+        disk_used = disk.used
+        disk_total = disk.total
+
+        return {
+            "cpu_percent": cpu_percent,
+            "memory": {
+                "percent": memory_percent,
+                "used": memory_used,
+                "total": memory_total
+            },
+            "network": {
+                "bytes_sent": bytes_sent,
+                "bytes_recv": bytes_recv
+            },
+            "disk": {
+                "percent": disk_percent,
+                "used": disk_used,
+                "total": disk_total
+            }
+        }
+    except ImportError:
+        # psutil不可用，返回模拟数据
+        return {
+            "cpu_percent": 0,
+            "memory": {"percent": 0, "used": 0, "total": 0},
+            "network": {"bytes_sent": 0, "bytes_recv": 0},
+            "disk": {"percent": 0, "used": 0, "total": 0}
+        }
+
+def _update_monitor_history():
+    """更新监控历史"""
+    metrics = _collect_system_metrics()
+    timestamp = time.time()
+
+    with _monitor_lock:
+        _system_monitor_history["cpu"].append(metrics["cpu_percent"])
+        _system_monitor_history["memory"].append(metrics["memory"]["percent"])
+        _system_monitor_history["network"].append({
+            "sent": metrics["network"]["bytes_sent"],
+            "recv": metrics["network"]["bytes_recv"]
+        })
+        _system_monitor_history["timestamps"].append(timestamp)
+
+        # 限制数据点数量
+        max_pts = _system_monitor_history["max_points"]
+        for key in ["cpu", "memory", "network", "timestamps"]:
+            if len(_system_monitor_history[key]) > max_pts:
+                _system_monitor_history[key] = _system_monitor_history[key][-max_pts:]
+
+    return metrics
+
+
+@app.route('/api/system/metrics')
+def api_system_metrics():
+    """获取系统资源指标"""
+    metrics = _update_monitor_history()
+    return jsonify(metrics)
+
+
+@app.route('/api/system/metrics/history')
+def api_system_metrics_history():
+    """获取系统资源历史数据"""
+    with _monitor_lock:
+        # 计算网络流量变化率
+        network_data = _system_monitor_history["network"]
+        timestamps = _system_monitor_history["timestamps"]
+
+        # 计算每秒传输速率
+        net_rates = []
+        for i in range(1, len(network_data)):
+            if i > 0:
+                time_diff = timestamps[i] - timestamps[i-1]
+                if time_diff > 0:
+                    sent_rate = (network_data[i]["sent"] - network_data[i-1]["sent"]) / time_diff
+                    recv_rate = (network_data[i]["recv"] - network_data[i-1]["recv"]) / time_diff
+                    net_rates.append({"sent_rate": sent_rate, "recv_rate": recv_rate})
+
+        return jsonify({
+            "cpu": _system_monitor_history["cpu"],
+            "memory": _system_monitor_history["memory"],
+            "network_rates": net_rates,
+            "timestamps": timestamps,
+            "current": {
+                "cpu": _system_monitor_history["cpu"][-1] if _system_monitor_history["cpu"] else 0,
+                "memory": _system_monitor_history["memory"][-1] if _system_monitor_history["memory"] else 0
+            }
+        })
 
 @app.route('/api/modules')
 def api_modules():

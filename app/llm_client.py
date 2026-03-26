@@ -54,6 +54,11 @@ class LLMRateLimiter:
         self._semaphore = threading.Semaphore(max_concurrent)
         self._active_count = 0
         self._lock = threading.Lock()
+        # Token使用统计
+        self._total_tokens = 0
+        self._prompt_tokens = 0
+        self._completion_tokens = 0
+        self._request_count = 0
 
     def acquire(self, timeout: float = 30.0) -> bool:
         """获取执行槽位"""
@@ -69,13 +74,25 @@ class LLMRateLimiter:
             self._active_count -= 1
         self._semaphore.release()
 
+    def record_usage(self, prompt_tokens: int, completion_tokens: int):
+        """记录token使用量"""
+        with self._lock:
+            self._total_tokens += prompt_tokens + completion_tokens
+            self._prompt_tokens += prompt_tokens
+            self._completion_tokens += completion_tokens
+            self._request_count += 1
+
     def get_status(self) -> Dict:
         """获取当前状态"""
         with self._lock:
             return {
                 "active_requests": self._active_count,
                 "max_concurrent": self.max_concurrent,
-                "available_slots": self.max_concurrent - self._active_count
+                "available_slots": self.max_concurrent - self._active_count,
+                "total_tokens": self._total_tokens,
+                "prompt_tokens": self._prompt_tokens,
+                "completion_tokens": self._completion_tokens,
+                "request_count": self._request_count
             }
 
 
@@ -207,6 +224,15 @@ class LLMClient:
                 response.raise_for_status()
 
                 result = response.json()
+
+                # 记录token使用量
+                if "usage" in result:
+                    usage = result["usage"]
+                    _rate_limiter.record_usage(
+                        usage.get("prompt_tokens", 0),
+                        usage.get("completion_tokens", 0)
+                    )
+
                 if "choices" in result and len(result["choices"]) > 0:
                     content = result["choices"][0]["message"]["content"]
                     return LLMResult(content, LLMErrorType.SUCCESS, "", attempt)

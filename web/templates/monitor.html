@@ -98,6 +98,22 @@
         .tool-status.unavailable { color: #999; }
 
         .empty-text { color: #999; font-size: 13px; text-align: center; padding: 20px; }
+
+        /* 监控图表样式 */
+        .monitor-chart { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; padding: 12px; margin-bottom: 12px; }
+        .chart-title { font-size: 12px; font-weight: 500; color: #333; margin-bottom: 8px; }
+        .chart-svg { width: 100%; height: 80px; }
+        .chart-line { fill: none; stroke-width: 2; }
+        .chart-line.cpu { stroke: #1890ff; }
+        .chart-line.memory { stroke: #52c41a; }
+        .chart-line.sent { stroke: #faad14; }
+        .chart-line.recv { stroke: #eb2f96; }
+        .chart-area { opacity: 0.1; }
+        .chart-axis { stroke: #e8e8e8; stroke-width: 1; }
+        .metrics-row { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; }
+        .metric-item { display: flex; align-items: center; gap: 4px; }
+        .metric-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .metric-value { font-weight: 500; }
     </style>
 </head>
 <body>
@@ -205,15 +221,41 @@
                         <div v-if="!currentTask" class="empty-text">选择任务查看结果</div>
                     </div>
                     <div v-show="tab === 'monitor'">
-                        <div class="panel-title">LLM性能</div>
+                        <div class="panel-title">LLM使用统计</div>
                         <div class="info-card">
-                            <div class="info-row"><span class="info-label">今日请求</span><span class="info-value">{{ llmStatus.requests_today || 0 }}</span></div>
-                            <div class="info-row"><span class="info-label">限额使用</span><span class="info-value">{{ llmStatus.rate_limit_percent || 0 }}%</span></div>
+                            <div class="info-row"><span class="info-label">请求次数</span><span class="info-value">{{ llmStatus.request_count || 0 }}</span></div>
+                            <div class="info-row"><span class="info-label">总Token消耗</span><span class="info-value">{{ formatTokens(llmStatus.total_tokens) }}</span></div>
+                            <div class="info-row"><span class="info-label">输入Token</span><span class="info-value">{{ formatTokens(llmStatus.prompt_tokens) }}</span></div>
+                            <div class="info-row"><span class="info-label">输出Token</span><span class="info-value">{{ formatTokens(llmStatus.completion_tokens) }}</span></div>
+                            <div class="info-row"><span class="info-label">当前并发</span><span class="info-value">{{ llmStatus.active_requests || 0 }} / {{ llmStatus.max_concurrent || 5 }}</span></div>
                         </div>
-                        <div class="panel-title">上下文压缩</div>
+                        <div class="panel-title">系统资源</div>
+                        <div class="monitor-chart">
+                            <div class="chart-title">CPU 使用率</div>
+                            <svg ref="cpuChart" class="chart-svg"></svg>
+                            <div class="metrics-row">
+                                <div class="metric-item"><span class="metric-dot" style="background:#1890ff;"></span><span>当前: </span><span class="metric-value">{{ systemMetrics.cpu_percent || 0 }}%</span></div>
+                            </div>
+                        </div>
+                        <div class="monitor-chart">
+                            <div class="chart-title">内存使用</div>
+                            <svg ref="memoryChart" class="chart-svg"></svg>
+                            <div class="metrics-row">
+                                <div class="metric-item"><span class="metric-dot" style="background:#52c41a;"></span><span>{{ systemMetrics.memory?.percent || 0 }}% ({{ formatBytes(systemMetrics.memory?.used) }} / {{ formatBytes(systemMetrics.memory?.total) }})</span></div>
+                            </div>
+                        </div>
+                        <div class="monitor-chart">
+                            <div class="chart-title">网络流量</div>
+                            <svg ref="networkChart" class="chart-svg"></svg>
+                            <div class="metrics-row">
+                                <div class="metric-item"><span class="metric-dot" style="background:#faad14;"></span><span>发送: </span><span class="metric-value">{{ formatBytes(systemMetrics.network?.bytes_sent) }}</span></div>
+                                <div class="metric-item"><span class="metric-dot" style="background:#eb2f96;"></span><span>接收: </span><span class="metric-value">{{ formatBytes(systemMetrics.network?.bytes_recv) }}</span></div>
+                            </div>
+                        </div>
+                        <div class="panel-title">磁盘使用</div>
                         <div class="info-card">
-                            <div class="info-row"><span class="info-label">压缩次数</span><span class="info-value">{{ compressionStats.total_compressions || 0 }}</span></div>
-                            <div class="info-row"><span class="info-label">节省令牌</span><span class="info-value">{{ compressionStats.tokens_saved || 0 }}</span></div>
+                            <div class="info-row"><span class="info-label">使用率</span><span class="info-value">{{ systemMetrics.disk?.percent || 0 }}%</span></div>
+                            <div class="info-row"><span class="info-label">已用/总计</span><span class="info-value">{{ formatBytes(systemMetrics.disk?.used) }} / {{ formatBytes(systemMetrics.disk?.total) }}</span></div>
                         </div>
                     </div>
                     <div v-show="tab === 'tools'">
@@ -254,14 +296,34 @@
                 const compressionStats = ref({});
                 const recoveryStats = ref({});
                 const strategyStats = ref({});
+                const systemMetrics = ref({});
+                const metricsHistory = ref({ cpu: [], memory: [], network_rates: [] });
                 const tooltipNode = ref(null);
                 const tooltipX = ref(0);
                 const tooltipY = ref(0);
+                const cpuChart = ref(null);
+                const memoryChart = ref(null);
+                const networkChart = ref(null);
                 let currentZoom = null;
 
                 const taskList = computed(() => Object.values(tasks.value).sort((a, b) => b.created_at.localeCompare(a.created_at)));
                 const currentTask = computed(() => tasks.value[currentTaskId.value]);
                 const statusText = (s) => ({ running: '运行中', completed: '已完成', error: '失败', cancelled: '已取消' }[s] || s);
+
+                // 格式化函数
+                const formatBytes = (bytes) => {
+                    if (!bytes) return '0 B';
+                    const k = 1024;
+                    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+                };
+                const formatTokens = (tokens) => {
+                    if (!tokens) return '0';
+                    if (tokens >= 1000000) return (tokens / 1000000).toFixed(1) + 'M';
+                    if (tokens >= 1000) return (tokens / 1000).toFixed(1) + 'K';
+                    return tokens.toString();
+                };
 
                 async function fetchGraph() { try { graphData.value = await (await fetch('/api/graph')).json(); renderGraph(); } catch (e) {} }
                 async function fetchTasks() { try { const d = await (await fetch('/api/tasks')).json(); const m = {}; (d.tasks || []).forEach(t => m[t.id] = t); tasks.value = m; } catch (e) {} }
@@ -277,6 +339,57 @@
                 async function fetchCompressionStats() { try { compressionStats.value = await (await fetch('/api/compression/status')).json(); } catch (e) {} }
                 async function fetchRecoveryStats() { try { const d = await (await fetch('/api/system/recovery')).json(); recoveryStats.value = d.recovery_stats || {}; } catch (e) {} }
                 async function fetchStrategyStats() { try { strategyStats.value = await (await fetch('/api/strategy/statistics')).json(); } catch (e) {} }
+                async function fetchSystemMetrics() {
+                    try {
+                        systemMetrics.value = await (await fetch('/api/system/metrics')).json();
+                        const history = await (await fetch('/api/system/metrics/history')).json();
+                        metricsHistory.value = history;
+                        renderCharts();
+                    } catch (e) {}
+                }
+
+                function renderCharts() {
+                    renderLineChart(cpuChart.value, metricsHistory.value.cpu, '#1890ff', 100);
+                    renderLineChart(memoryChart.value, metricsHistory.value.memory, '#52c41a', 100);
+                    renderNetworkChart(networkChart.value, metricsHistory.value.network_rates);
+                }
+
+                function renderLineChart(el, data, color, maxY) {
+                    if (!el || !data || data.length < 2) return;
+                    const svg = d3.select(el);
+                    const w = el.clientWidth || 280;
+                    const h = 80;
+                    svg.selectAll('*').remove();
+
+                    const xScale = d3.scaleLinear().domain([0, data.length - 1]).range([0, w]);
+                    const yScale = d3.scaleLinear().domain([0, maxY]).range([h - 10, 5]);
+
+                    const line = d3.line().x((d, i) => xScale(i)).y(d => yScale(d)).curve(d3.curveMonotoneX);
+                    const area = d3.area().x((d, i) => xScale(i)).y0(h - 10).y1(d => yScale(d)).curve(d3.curveMonotoneX);
+
+                    svg.append('path').attr('d', area(data)).attr('fill', color).attr('opacity', 0.1);
+                    svg.append('path').attr('d', line(data)).attr('stroke', color).attr('stroke-width', 2).attr('fill', 'none');
+                }
+
+                function renderNetworkChart(el, data) {
+                    if (!el || !data || data.length < 2) return;
+                    const svg = d3.select(el);
+                    const w = el.clientWidth || 280;
+                    const h = 80;
+                    svg.selectAll('*').remove();
+
+                    const maxVal = Math.max(...data.map(d => Math.max(d.sent_rate || 0, d.recv_rate || 0)), 1000);
+                    const xScale = d3.scaleLinear().domain([0, data.length - 1]).range([0, w]);
+                    const yScale = d3.scaleLinear().domain([0, maxVal]).range([h - 10, 5]);
+
+                    const sentData = data.map(d => d.sent_rate || 0);
+                    const recvData = data.map(d => d.recv_rate || 0);
+
+                    const line = d3.line().x((d, i) => xScale(i)).y(d => yScale(d)).curve(d3.curveMonotoneX);
+
+                    svg.append('path').attr('d', line(sentData)).attr('stroke', '#faad14').attr('stroke-width', 2).attr('fill', 'none');
+                    svg.append('path').attr('d', line(recvData)).attr('stroke', '#eb2f96').attr('stroke-width', 2).attr('fill', 'none');
+                }
 
                 async function selectTask(id) {
                     currentTaskId.value = id; logs.value = []; taskResult.value = {};
@@ -409,8 +522,25 @@
                     });
                 }
 
-                onMounted(() => { refreshAll(); setInterval(() => { fetchSystemStatus(); fetchLLMStatus(); fetchRecoveryStats(); }, 5000); window.addEventListener('resize', renderGraph); });
-                return { tasks, taskList, currentTaskId, currentTask, targetUrl, logs, starting, graphData, tab, taskResult, systemStatus, toolCategories, toolStats, llmStatus, compressionStats, recoveryStats, strategyStats, tooltipNode, tooltipX, tooltipY, selectTask, startTask, refreshAll, statusText, zoomIn, zoomOut, zoomReset };
+                onMounted(() => {
+                    refreshAll();
+                    setInterval(() => {
+                        fetchSystemStatus();
+                        fetchLLMStatus();
+                        fetchRecoveryStats();
+                        fetchSystemMetrics();
+                    }, 3000);
+                    window.addEventListener('resize', () => { renderGraph(); renderCharts(); });
+                });
+                return {
+                    tasks, taskList, currentTaskId, currentTask, targetUrl, logs, starting, graphData, tab, taskResult,
+                    systemStatus, toolCategories, toolStats, llmStatus, compressionStats, recoveryStats, strategyStats,
+                    systemMetrics, metricsHistory,
+                    tooltipNode, tooltipX, tooltipY,
+                    cpuChart, memoryChart, networkChart,
+                    selectTask, startTask, refreshAll, statusText, zoomIn, zoomOut, zoomReset,
+                    formatBytes, formatTokens
+                };
             }
         });
         app.use(ElementPlus).mount('#app');
