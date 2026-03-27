@@ -35,8 +35,12 @@ RUN go install github.com/hahwul/dalfox/v2@latest && \
     cp /root/go/bin/dalfox /usr/local/bin/dalfox && \
     chmod +x /usr/local/bin/dalfox || true
 
-# 安装完整 Metasploit Framework
-RUN apt-get update && apt-get install -y metasploit-framework || true
+# 安装完整 Metasploit Framework (多种安装方式尝试)
+RUN apt-get update && (apt-get install -y metasploit-framework || \
+    (curl -fsSL https://apt.metasploit.com/metasploit-framework.gpg.key | apt-key add - && \
+     echo "deb https://apt.metasploit.com/ buster main" > /etc/apt/sources.list.d/metasploit.list && \
+     apt-get update && apt-get install -y metasploit-framework) || \
+    echo "Warning: Metasploit installation failed, msf tool will be unavailable") || true
 
 # Python pip 配置
 RUN pip3 install pipx -i https://pypi.tuna.tsinghua.edu.cn/simple && \

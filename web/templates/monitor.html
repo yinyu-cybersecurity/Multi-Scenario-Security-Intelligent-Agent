@@ -137,10 +137,8 @@
                 <div class="sidebar-section">
                     <div class="section-title">系统状态</div>
                     <div class="stats-grid">
-                        <div class="stat-item"><div class="stat-value" :class="llmStatus.rate_limit_percent > 80 ? 'warning' : 'success'">{{ llmStatus.rate_limit_percent || 0 }}%</div><div class="stat-label">LLM限额</div></div>
                         <div class="stat-item"><div class="stat-value success">{{ compressionStats.tokens_saved || 0 }}</div><div class="stat-label">节省令牌</div></div>
                         <div class="stat-item"><div class="stat-value">{{ recoveryStats.total_recoveries || 0 }}</div><div class="stat-label">错误恢复</div></div>
-                        <div class="stat-item"><div class="stat-value" :class="strategyStats.avg_success_rate > 0.5 ? 'success' : 'warning'">{{ ((strategyStats.avg_success_rate || 0) * 100).toFixed(0) }}%</div><div class="stat-label">成功率</div></div>
                     </div>
                 </div>
                 <div class="sidebar-section">
@@ -294,7 +292,6 @@
                 const llmStatus = ref({});
                 const compressionStats = ref({});
                 const recoveryStats = ref({});
-                const strategyStats = ref({});
                 const systemMetrics = ref({});
                 const metricsHistory = ref({ cpu: [], memory: [], network_rates: [] });
                 const tooltipNode = ref(null);
@@ -337,7 +334,6 @@
                 async function fetchLLMStatus() { try { llmStatus.value = await (await fetch('/fisher_ctf_agent/api/llm/status')).json(); } catch (e) {} }
                 async function fetchCompressionStats() { try { compressionStats.value = await (await fetch('/fisher_ctf_agent/api/compression/status')).json(); } catch (e) {} }
                 async function fetchRecoveryStats() { try { const d = await (await fetch('/fisher_ctf_agent/api/system/recovery')).json(); recoveryStats.value = d.recovery_stats || {}; } catch (e) {} }
-                async function fetchStrategyStats() { try { strategyStats.value = await (await fetch('/fisher_ctf_agent/api/strategy/statistics')).json(); } catch (e) {} }
                 async function fetchSystemMetrics() {
                     try {
                         systemMetrics.value = await (await fetch('/fisher_ctf_agent/api/system/metrics')).json();
@@ -473,7 +469,7 @@
                     if (tasks.value[currentTaskId.value]?.status === 'running') pollTimer = setTimeout(pollTaskStatus, 2000);
                 }
 
-                function refreshAll() { fetchGraph(); fetchTasks(); fetchSystemStatus(); fetchTools(); fetchLLMStatus(); fetchCompressionStats(); fetchRecoveryStats(); fetchStrategyStats(); }
+                function refreshAll() { fetchGraph(); fetchTasks(); fetchSystemStatus(); fetchTools(); fetchLLMStatus(); fetchCompressionStats(); fetchRecoveryStats(); }
 
                 function zoomIn() { if (currentZoom) currentZoom.scaleBy(d3.select('#graph-svg'), 1.3); }
                 function zoomOut() { if (currentZoom) currentZoom.scaleBy(d3.select('#graph-svg'), 0.7); }
@@ -594,7 +590,7 @@
                 });
                 return {
                     tasks, taskList, currentTaskId, currentTask, targetUrl, logs, starting, graphData, tab, taskResult,
-                    systemStatus, toolCategories, toolStats, llmStatus, compressionStats, recoveryStats, strategyStats,
+                    systemStatus, toolCategories, toolStats, llmStatus, compressionStats, recoveryStats,
                     systemMetrics, metricsHistory,
                     tooltipNode, tooltipX, tooltipY,
                     cpuChart, memoryChart, networkChart,

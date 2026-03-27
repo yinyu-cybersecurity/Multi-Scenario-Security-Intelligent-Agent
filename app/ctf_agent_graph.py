@@ -1065,7 +1065,17 @@ def recon_node(state: CTFState) -> Dict:
         "focused_scene": focused_scene,
         "scene_attack_attempts": scene_attack_attempts,
         "scene_exhausted": scene_exhausted,
-        "vuln_candidates": all_vuln_candidates  # 合并所有漏洞候选
+        "vuln_candidates": all_vuln_candidates,  # 合并所有漏洞候选
+        # 拓扑初始化 - 添加入口URL
+        "site_topology": {http_url: dirsearch_paths[:20]} if dirsearch_paths else {},
+        "node_metadata": {
+            http_url: {
+                "status": baseline.get("status_code", 200),
+                "title": recon_data.get("title", ""),
+                "tech_stack": features.get("tech_stack", []),
+                "last_seen": time.time()
+            }
+        }
     }
 
     # [关键修复] 如果发现了漏洞，直接添加攻击动作

@@ -6,6 +6,7 @@ LLM 客户端模块
 - LLMResult: 调用结果数据类
 - LLMErrorType: 错误类型枚举
 - 并发控制与智能重试
+- Token统计持久化
 """
 import json
 import requests
@@ -16,6 +17,14 @@ from dataclasses import dataclass
 from enum import Enum
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from config import config
+
+# 导入Token统计持久化模块
+try:
+    from memory.token_stats import get_token_stats_manager
+    TOKEN_PERSISTENCE_AVAILABLE = True
+except ImportError:
+    TOKEN_PERSISTENCE_AVAILABLE = False
+    print("[LLM] Token持久化模块不可用，使用内存存储")
 
 
 class LLMErrorType(Enum):
@@ -75,17 +84,25 @@ class LLMRateLimiter:
         self._semaphore.release()
 
     def record_usage(self, prompt_tokens: int, completion_tokens: int):
-        """记录token使用量"""
+        """记录token使用量（同步持久化）"""
         with self._lock:
             self._total_tokens += prompt_tokens + completion_tokens
             self._prompt_tokens += prompt_tokens
             self._completion_tokens += completion_tokens
             self._request_count += 1
 
+        # 持久化存储
+        if TOKEN_PERSISTENCE_AVAILABLE:
+            try:
+                stats_manager = get_token_stats_manager()
+                stats_manager.record_usage(prompt_tokens, completion_tokens)
+            except Exception as e:
+                print(f"[LLM] Token持久化失败: {e}")
+
     def get_status(self) -> Dict:
         """获取当前状态"""
         with self._lock:
-            return {
+            status = {
                 "active_requests": self._active_count,
                 "max_concurrent": self.max_concurrent,
                 "available_slots": self.max_concurrent - self._active_count,
@@ -95,9 +112,36 @@ class LLMRateLimiter:
                 "request_count": self._request_count
             }
 
+        # 添加今日统计
+        if TOKEN_PERSISTENCE_AVAILABLE:
+            try:
+                stats_manager = get_token_stats_manager()
+                persistent_stats = stats_manager.get_stats()
+                status["persistent_total_tokens"] = persistent_stats["total_tokens"]
+                status["today_tokens"] = persistent_stats["today"]["total_tokens"]
+                status["today_requests"] = persistent_stats["today"]["request_count"]
+            except Exception as e:
+                print(f"[LLM] 获取持久化统计失败: {e}")
+
+        return status
+
 
 # 全局限流器
 _rate_limiter = LLMRateLimiter(max_concurrent=5)
+
+# 启动时加载历史Token数据
+if TOKEN_PERSISTENCE_AVAILABLE:
+    try:
+        stats_manager = get_token_stats_manager()
+        stats = stats_manager.get_stats()
+        # 恢复累计值
+        _rate_limiter._total_tokens = stats["total_tokens"]
+        _rate_limiter._prompt_tokens = stats["prompt_tokens"]
+        _rate_limiter._completion_tokens = stats["completion_tokens"]
+        _rate_limiter._request_count = stats["request_count"]
+        print(f"[LLM] 已恢复历史Token统计: {stats['total_tokens']} tokens, {stats['request_count']} requests")
+    except Exception as e:
+        print(f"[LLM] 加载历史Token统计失败: {e}")
 
 
 class LLMClient:

