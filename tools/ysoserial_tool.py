@@ -15,8 +15,10 @@ class YsoserialTool(CommandLineTool):
 
     def __init__(self):
         super().__init__("java")
-        self.jar_path = "/app/thirdparty/ysoserial.jar"
-        self.local_jar = os.path.join(os.getcwd(), "thirdparty", "ysoserial.jar")
+        # 路径检查 - 优先 Docker 路径，然后本地路径
+        docker_jar = "/app/thirdparty/ysoserial.jar"
+        local_jar = os.path.join(os.getcwd(), "thirdparty", "ysoserial", "ysoserial-all.jar") if os.getcwd() else ""
+        self.jar_path = docker_jar if os.path.exists(docker_jar) else local_jar
         self.timeout = 60
 
     def name(self) -> str:
@@ -35,7 +37,7 @@ class YsoserialTool(CommandLineTool):
         # 检查 Java 和 ysoserial.jar
         import shutil
         java_exists = shutil.which("java") is not None
-        jar_exists = os.path.exists(self.jar_path) or os.path.exists(self.local_jar)
+        jar_exists = self.jar_path is not None and os.path.exists(self.jar_path)
         return java_exists and jar_exists
 
     def expected_params(self) -> Dict[str, Dict[str, Any]]:
@@ -66,7 +68,9 @@ class YsoserialTool(CommandLineTool):
             raise ValueError("必须提供 gadget 和 command 参数")
 
         # 确定 jar 路径
-        jar_path = self.jar_path if os.path.exists(self.jar_path) else self.local_jar
+        jar_path = self.jar_path
+        if not jar_path or not os.path.exists(jar_path):
+            return {"success": False, "error": "ysoserial.jar 不存在", "vulnerable": False}
 
         cmd = [
             "java", "-jar", jar_path,

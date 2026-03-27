@@ -35,7 +35,7 @@ class PhpggcTool(CommandLineTool):
     def check_available(self) -> bool:
         import shutil
         php_exists = shutil.which("php") is not None
-        script_exists = os.path.exists(self.script_path)
+        script_exists = self.script_path is not None and os.path.exists(self.script_path)
         return php_exists and script_exists
 
     def expected_params(self) -> Dict[str, Dict[str, Any]]:

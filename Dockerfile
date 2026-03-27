@@ -102,6 +102,7 @@ COPY thirdparty/PetitPotam /app/thirdparty/PetitPotam
 COPY thirdparty/Ghostcat /app/thirdparty/ajpshooter
 COPY thirdparty/marshalsec /app/thirdparty/marshalsec
 COPY thirdparty/fscan /app/thirdparty/fscan
+COPY thirdparty/ysoserial/ysoserial-all.jar /app/thirdparty/ysoserial.jar
 
 # marshalsec 编译
 RUN cd /app/thirdparty/marshalsec && mvn package -DskipTests 2>/dev/null && cp target/marshalsec-*.jar /app/thirdparty/marshalsec.jar || true
@@ -119,10 +120,7 @@ RUN git clone --depth 1 https://gitee.com/RichardoMrMu/SecLists.git /app/thirdpa
 # PayloadsAllTheThings
 RUN git clone --depth 1 https://gitee.com/RichardoMrMu/PayloadsAllTheThings.git /app/thirdparty/PayloadsAllTheThings || true
 
-# 下载 jar 文件
-RUN wget -q -O /app/thirdparty/ysoserial.jar https://moeyy.cn/gh-proxy/https://github.com/frohoff/ysoserial/releases/download/v0.0.6/ysoserial-all.jar || \
-    wget -q -O /app/thirdparty/ysoserial.jar https://github.com/frohoff/ysoserial/releases/download/v0.0.6/ysoserial-all.jar || true
-
+# 下载 JNDIExploit.jar
 RUN wget -q -O /app/thirdparty/JNDIExploit.jar https://moeyy.cn/gh-proxy/https://github.com/exploitblizzard/JNDIExploit/releases/download/v1.0/JNDIExploit.jar || \
     wget -q -O /app/thirdparty/JNDIExploit.jar https://github.com/exploitblizzard/JNDIExploit/releases/download/v1.0/JNDIExploit.jar || true
 
