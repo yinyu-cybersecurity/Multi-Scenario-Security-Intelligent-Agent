@@ -3,7 +3,7 @@
 
 from state import CTFState
 from config import config
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 import time
 import json
 from langgraph.graph import END
@@ -11,6 +11,177 @@ from llm_client import llm_client
 from logger import get_logger
 
 logger = get_logger(__name__)
+
+# 拓扑分析器实例（延迟导入避免循环依赖）
+_topology_analyzer = None
+
+
+def _get_topology_analyzer(state: CTFState):
+    """获取拓扑分析器实例"""
+    global _topology_analyzer
+
+    try:
+        from topology.analyzer import TopologyAnalyzer
+        import networkx as nx
+
+        topology = state.get("site_topology")
+        if topology:
+            if isinstance(topology, dict):
+                # 邻接表格式
+                G = nx.DiGraph()
+                for src, targets in topology.items():
+                    G.add_node(src)
+                    for tgt in targets:
+                        G.add_node(tgt)
+                        G.add_edge(src, tgt)
+            else:
+                G = topology
+
+            _topology_analyzer = TopologyAnalyzer(G)
+            return _topology_analyzer
+    except Exception as e:
+        logger.warning(f"拓扑分析器初始化失败: {e}")
+
+    return None
+
+
+def _ai_verify_completion(state: CTFState, flag_count: int, host_count: int) -> Dict:
+    """
+    AI验证任务完成度
+
+    用于防止过早结束任务
+
+    Args:
+        state: 当前状态
+        flag_count: 已发现flag数量
+        host_count: 已攻陷主机数量
+
+    Returns:
+        {
+            "should_continue": bool,
+            "min_expected_flags": int,
+            "reason": str
+        }
+    """
+    internal_hosts = state.get("internal_hosts") or []
+    active_sessions = state.get("active_sessions") or []
+
+    prompt = f"""
+分析内网渗透任务完成度。
+
+## 当前状态
+- 发现主机: {len(internal_hosts)} 台
+- 已攻陷主机: {host_count} 台
+- 发现Flag: {flag_count} 个
+- 活跃会话: {len(active_sessions)} 个
+
+## 分析要求
+1. 评估Flag数量是否合理（CTF通常每台主机或关键服务器可能有flag）
+2. 判断是否还有遗漏的高价值目标
+3. 决定是否应该继续搜索
+
+## 输出格式 (JSON)
+{{
+    "should_continue": true/false,
+    "min_expected_flags": 最少预期flag数量,
+    "confidence": 置信度0-1,
+    "reason": "判断理由"
+}}
+"""
+
+    try:
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
+
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+
+        return json.loads(response.strip())
+    except Exception as e:
+        logger.warning(f"AI完成验证失败: {e}")
+        # 降级：没flag就继续
+        return {
+            "should_continue": flag_count == 0,
+            "min_expected_flags": 1,
+            "confidence": 0.5,
+            "reason": "降级默认：无flag则继续"
+        }
+
+
+def _ai_estimate_expected_flags(state: CTFState) -> Dict:
+    """
+    AI预估预期Flag数量
+
+    基于内网环境规模估算
+
+    Args:
+        state: 当前状态
+
+    Returns:
+        {
+            "min_expected": int,
+            "max_expected": int,
+            "confidence": float
+        }
+    """
+    hosts = state.get("internal_hosts") or []
+
+    # 基于场景估算
+    has_dc = False
+    has_db = False
+    for h in hosts:
+        if not isinstance(h, dict):
+            continue
+        ports = [p.get("port") for p in h.get("ports", []) if isinstance(p, dict)]
+        if any(p in [88, 389] for p in ports):
+            has_dc = True
+        if any(p in [1433, 3306, 5432] for p in ports):
+            has_db = True
+
+    prompt = f"""
+估算内网环境预期的Flag数量。
+
+## 环境
+- 主机数量: {len(hosts)}
+- 有域控: {has_dc}
+- 有数据库: {has_db}
+
+## 输出格式 (JSON)
+{{
+    "min_expected": 最少flag数量,
+    "max_expected": 最多flag数量,
+    "confidence": 置信度0-1,
+    "reasoning": "估算依据"
+}}
+"""
+
+    try:
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
+
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+
+        return json.loads(response.strip())
+    except:
+        # 降级：每3台主机预期1个flag
+        min_expected = max(1, len(hosts) // 3) if hosts else 1
+        return {
+            "min_expected": min_expected,
+            "max_expected": len(hosts),
+            "confidence": 0.5
+        }
+
+# 拓扑分析器实例（延迟导入避免循环依赖）
+_topology_analyzer = None
 
 class RouteGuard:
     """路由守卫 - 防止死循环和异常跳转"""
@@ -422,8 +593,17 @@ def route_internal_to_web(state: CTFState) -> str:
     """
     内网到Web模式的切换判断
 
-    新目标: 攻陷所有内网主机，在每台主机上搜索Flag
-    结束条件: 50分钟超时 或 所有主机已攻陷
+    改进：集成AI完成验证，防止过早结束
+
+    结束条件:
+    1. 内网模式已关闭
+    2. 当前阶段标记为complete
+    3. AI验证任务完成（所有主机攻陷且Flag数量合理）
+
+    新增验证逻辑：
+    - 检查Flag数量是否合理
+    - AI判断是否还有高价值目标
+    - 拓扑分析是否完成
 
     Args:
         state: 当前状态
@@ -441,9 +621,10 @@ def route_internal_to_web(state: CTFState) -> str:
         logger.info(f"[InternalRoute] 内网渗透已完成")
         return "web"
 
-    # 检查是否所有主机都已攻陷
+    # 收集状态信息
     internal_hosts = state.get("internal_hosts") or []
     compromised_hosts = state.get("compromised_hosts") or []
+    found_flags = state.get("found_flags") or []
     active_sessions = state.get("active_sessions") or []
 
     session_hosts = [s.get("host") for s in active_sessions if s.get("host")]
@@ -452,9 +633,43 @@ def route_internal_to_web(state: CTFState) -> str:
     unexplored = [h for h in internal_hosts
                   if isinstance(h, dict) and h.get("ip") and h.get("ip") not in all_compromised]
 
+    # 改进1：不因所有主机"攻陷"就结束，需要AI验证
     if not unexplored and internal_hosts:
-        logger.info(f"[InternalRoute] 所有主机已攻陷，内网渗透完成")
+        # AI验证是否真的完成
+        try:
+            completion = _ai_verify_completion(state, len(found_flags), len(all_compromised))
+
+            if completion.get("should_continue"):
+                logger.info(f"[InternalRoute] AI判断需要继续: {completion.get('reason')}")
+                # 检查是否有降权的节点可以回退
+                analyzer = _get_topology_analyzer(state)
+                if analyzer:
+                    backtrack = analyzer.get_backtrack_candidates()
+                    if backtrack:
+                        logger.info(f"[InternalRoute] 发现 {len(backtrack)} 个可回退节点")
+                        return "internal"
+                return "internal"
+
+            # 验证Flag数量
+            expected = _ai_estimate_expected_flags(state)
+            if len(found_flags) < expected.get("min_expected", 1):
+                logger.info(f"[InternalRoute] Flag数量不足: {len(found_flags)}/{expected.get('min_expected')}")
+                return "internal"
+
+        except Exception as e:
+            logger.warning(f"[InternalRoute] AI验证异常: {e}")
+            # 异常时保守策略：继续搜索
+            if len(found_flags) == 0:
+                return "internal"
+
+        logger.info(f"[InternalRoute] 所有主机已攻陷，AI验证通过")
         return "web"
+
+    # 改进2：Flag数量异常检测
+    if len(found_flags) == 0 and len(all_compromised) > 0:
+        # 已经攻陷主机但没找到flag，继续搜索
+        logger.info(f"[InternalRoute] 已攻陷{len(all_compromised)}台主机但未发现Flag，继续搜索")
+        return "internal"
 
     # 内网渗透只按时间超时结束，不受步数限制
     # 移除了 MAX_TOTAL_ROUNDS 检查，因为内网渗透有自己的 INTERNAL_TASK_TIMEOUT

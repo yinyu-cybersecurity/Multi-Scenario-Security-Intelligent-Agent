@@ -1827,6 +1827,8 @@ def flag_search_node(state: Dict) -> Dict:
     """
     [Flag搜索节点] 在已攻陷主机的管理员文件夹中搜索Flag
 
+    改进：增加多Flag环境检测和AI完成验证
+
     输入:
         - active_sessions: 活跃会话
         - compromised_hosts: 已攻陷主机列表
@@ -1840,12 +1842,14 @@ def flag_search_node(state: Dict) -> Dict:
         1. 遍历所有已攻陷主机
         2. 在管理员文件夹中搜索flag
         3. 收集所有发现的flag
-        4. 标记主机已完成flag搜索
+        4. AI验证是否完成（多Flag检测）
+        5. 标记主机已完成flag搜索
     """
     active_sessions = state.get("active_sessions") or []
     shell_session = state.get("shell_session", {})
     compromised_hosts = state.get("compromised_hosts") or []
     found_flags = state.get("found_flags") or []
+    internal_hosts = state.get("internal_hosts") or []
 
     if not active_sessions and not shell_session:
         return {
@@ -1905,17 +1909,32 @@ def flag_search_node(state: Dict) -> Dict:
         for flag in new_flags:
             print(f"   🚩 {flag}")
 
-    # 决定下一步
+    # ========== 改进：AI完成验证 ==========
     all_compromised = compromised_hosts + newly_compromised
-    internal_hosts = state.get("internal_hosts") or []
-    unexplored = [h.get("ip") for h in internal_hosts if isinstance(h, dict) and h.get("ip") not in all_compromised]
+    total_flags = found_flags + new_flags
+    unexplored = [h.get("ip") for h in internal_hosts
+                  if isinstance(h, dict) and h.get("ip") not in all_compromised]
 
-    if unexplored:
+    # 改进：不再简单地根据unexplored判断
+    if not unexplored:
+        # 验证是否真的完成
+        completion = _ai_verify_flag_completion(state, total_flags, all_compromised)
+
+        if completion.get("should_continue"):
+            # AI判断还需要继续搜索
+            next_phase = "flag_search"  # 继续在已攻陷主机深度搜索
+            print(f"[FlagSearch] AI判断需要继续搜索: {completion.get('reason')}")
+
+            # 执行深度搜索建议的操作
+            suggested = completion.get("suggested_actions", [])
+            if suggested:
+                print(f"[FlagSearch] 建议操作: {suggested[:3]}")
+        else:
+            next_phase = "complete"
+            print(f"[FlagSearch] AI验证完成，内网渗透结束")
+    else:
         next_phase = "lateral_move"
         print(f"[FlagSearch] 还有 {len(unexplored)} 台主机未攻陷，继续横向移动")
-    else:
-        next_phase = "complete"
-        print(f"[FlagSearch] 所有内网主机已攻陷，内网渗透完成")
 
     return {
         "found_flags": new_flags,
@@ -1923,6 +1942,68 @@ def flag_search_node(state: Dict) -> Dict:
         "current_compromise_phase": next_phase,
         "execution_steps": state.get("execution_steps", 0) + 1
     }
+
+
+def _ai_verify_flag_completion(state: Dict, found_flags: List, compromised: List) -> Dict:
+    """
+    AI验证Flag搜索完成度
+
+    用于多Flag环境检测
+
+    Args:
+        state: 当前状态
+        found_flags: 已发现的flag列表
+        compromised: 已攻陷主机列表
+
+    Returns:
+        {
+            "should_continue": bool,
+            "reason": str,
+            "suggested_actions": List[str]
+        }
+    """
+    prompt = f"""
+验证Flag搜索是否完成。
+
+## 状态
+- 已攻陷主机: {len(compromised)} 台
+- 已发现Flag: {len(found_flags)} 个
+- 已搜索的目录: 已覆盖管理员文件夹
+
+## 分析
+1. Flag数量是否与预期相符（CTF可能每台关键服务器有flag）
+2. 是否有遗漏的可能位置（域控、数据库、备份服务器）
+3. 是否应该进行深度搜索（注册表、历史命令、数据库）
+
+## 输出格式 (JSON)
+{{
+    "should_continue": true/false,
+    "reason": "理由",
+    "suggested_actions": ["建议的下一步行动"],
+    "expected_flag_count": 预期flag数量范围
+}}
+"""
+
+    try:
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            json_mode=True
+        )
+
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+
+        return json.loads(response.strip())
+    except Exception as e:
+        logger.warning(f"AI验证失败: {e}")
+        # 降级：没flag就继续
+        return {
+            "should_continue": len(found_flags) == 0,
+            "reason": "降级默认：无flag则继续",
+            "suggested_actions": []
+        }
 
 
 def _search_flags_on_host(session, os_type: str, host: str) -> List[str]:

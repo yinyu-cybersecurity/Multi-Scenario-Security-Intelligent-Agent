@@ -1360,6 +1360,28 @@ def api_topology_critical(task_id):
     return jsonify({"critical_nodes": critical_nodes})
 
 
+@bp.route('/api/topology/<task_id>/statuses')
+def api_topology_statuses(task_id):
+    """获取节点状态信息"""
+    if task_id not in task_results:
+        return jsonify({"error": "Task not found"}), 404
+
+    result = task_results.get(task_id, {})
+    node_statuses = result.get("node_statuses", {})
+
+    return jsonify({
+        "statuses": node_statuses,
+        "stats": {
+            "total": len(node_statuses),
+            "success": sum(1 for s in node_statuses.values() if s.get("status") == "success"),
+            "failed": sum(1 for s in node_statuses.values() if s.get("status") == "failed"),
+            "deprioritized": sum(1 for s in node_statuses.values() if s.get("status") == "deprioritized"),
+            "pending": sum(1 for s in node_statuses.values() if s.get("status") == "pending"),
+            "visited": sum(1 for s in node_statuses.values() if s.get("status") == "visited")
+        }
+    })
+
+
 # =============================================================================
 # 系统控制 API
 # =============================================================================

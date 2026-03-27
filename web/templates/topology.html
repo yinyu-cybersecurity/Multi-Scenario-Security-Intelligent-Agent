@@ -57,10 +57,21 @@
 
         .zoom-hint { position: absolute; bottom: 12px; left: 12px; background: #fff; padding: 6px 12px; border-radius: 4px; font-size: 11px; color: #999; }
 
-        .node-detail { position: absolute; bottom: 12px; left: 12px; background: #fff; padding: 12px; border-radius: 4px; border: 1px solid #e8e8e8; max-width: 300px; display: none; }
+        .node-detail { position: absolute; bottom: 12px; left: 12px; background: #fff; padding: 16px; border-radius: 4px; border: 1px solid #e8e8e8; max-width: 400px; max-height: 300px; overflow-y: auto; display: none; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
         .node-detail.visible { display: block; }
-        .node-detail h4 { color: #1890ff; margin-bottom: 8px; font-size: 13px; word-break: break-all; }
-        .node-detail p { color: #666; font-size: 12px; line-height: 1.6; }
+        .node-detail h4 { color: #1890ff; margin-bottom: 12px; font-size: 14px; word-break: break-all; border-bottom: 1px solid #e8e8e8; padding-bottom: 8px; }
+        .node-detail .detail-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 12px; border-bottom: 1px dashed #f0f0f0; }
+        .node-detail .detail-label { color: #666; }
+        .node-detail .detail-value { color: #333; font-weight: 500; text-align: right; max-width: 250px; word-break: break-all; }
+        .node-detail .status-badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+        .node-detail .status-success { background: #f6ffed; color: #52c41a; }
+        .node-detail .status-failed { background: #fff2f0; color: #ff4d4f; }
+        .node-detail .status-deprioritized { background: #fffbe6; color: #faad14; }
+        .node-detail .status-pending { background: #f0f0f0; color: #666; }
+        .node-detail .status-visited { background: #e6f7ff; color: #1890ff; }
+        .node-detail .metadata-section { margin-top: 12px; padding-top: 8px; border-top: 1px solid #e8e8e8; }
+        .node-detail .metadata-title { font-size: 12px; color: #666; margin-bottom: 8px; }
+        .node-detail .metadata-item { font-size: 11px; color: #333; background: #fafafa; padding: 4px 8px; border-radius: 3px; margin-bottom: 4px; }
         .close-btn { position: absolute; top: 6px; right: 8px; background: none; border: none; color: #999; cursor: pointer; font-size: 16px; }
         .close-btn:hover { color: #333; }
 
@@ -109,8 +120,10 @@
                     <div class="legend-title">节点类型</div>
                     <div class="legend-item"><div class="legend-dot" style="background:#1890ff;"></div><span>普通页面</span></div>
                     <div class="legend-item"><div class="legend-dot" style="background:#ff4d4f;"></div><span>关键节点</span></div>
-                    <div class="legend-item"><div class="legend-dot" style="background:#52c41a;"></div><span>选中节点</span></div>
+                    <div class="legend-item"><div class="legend-dot" style="background:#52c41a;"></div><span>攻击成功</span></div>
                     <div class="legend-item"><div class="legend-dot" style="background:#faad14;"></div><span>入口点</span></div>
+                    <div class="legend-item"><div class="legend-dot" style="background:#d9d9d9;"></div><span>已降权</span></div>
+                    <div class="legend-item"><div class="legend-dot" style="background:#722ed1;"></div><span>疑似攻击点</span></div>
                 </div>
                 <div class="controls">
                     <button class="ctrl-btn" @click="zoomIn">放大</button>
@@ -122,7 +135,40 @@
                 <div class="node-detail" :class="{ visible: selectedNode }">
                     <button class="close-btn" @click="selectedNode = null">×</button>
                     <h4 v-if="selectedNode">{{ selectedNode.id }}</h4>
-                    <p v-if="selectedNode">连接数: {{ selectedNode.connections }}<br>类型: {{ selectedNode.isCritical ? '关键节点' : '普通节点' }}</p>
+                    <template v-if="selectedNode">
+                        <div class="detail-row">
+                            <span class="detail-label">状态</span>
+                            <span class="detail-value">
+                                <span :class="'status-badge status-' + selectedNode.status">{{ getStatusText(selectedNode.status) }}</span>
+                            </span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">尝试次数</span>
+                            <span class="detail-value">{{ selectedNode.attempts || 0 }}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">优先级</span>
+                            <span class="detail-value">{{ (selectedNode.priority || 0.5).toFixed(2) }}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">连接数</span>
+                            <span class="detail-value">{{ selectedNode.connections || 0 }}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">类型</span>
+                            <span class="detail-value">{{ selectedNode.isCritical ? '关键节点' : '普通节点' }}</span>
+                        </div>
+                        <div class="detail-row" v-if="selectedNode.last_result">
+                            <span class="detail-label">最后结果</span>
+                            <span class="detail-value">{{ selectedNode.last_result }}</span>
+                        </div>
+                        <div class="metadata-section" v-if="selectedNode.metadata && Object.keys(selectedNode.metadata).length > 0">
+                            <div class="metadata-title">元数据</div>
+                            <div class="metadata-item" v-for="(value, key) in selectedNode.metadata" :key="key">
+                                <strong>{{ key }}:</strong> {{ formatMetadata(value) }}
+                            </div>
+                        </div>
+                    </template>
                 </div>
                 <div class="critical-list" v-if="criticalNodes.length > 0">
                     <div class="critical-title">关键节点 ({{ criticalNodes.length }})</div>
@@ -144,6 +190,7 @@
                 const criticalNodes = ref([]);
                 const selectedNode = ref(null);
                 const physicsEnabled = ref(true);
+                const nodeStatuses = ref({});  // 节点状态数据
                 let simulation = null, svg, g, zoom;
 
                 const tasksWithTopology = computed(() => tasks.value.filter(t => t.status === 'completed' || t.status === 'running'));
@@ -165,8 +212,40 @@
                         topologyData.value = await (await fetch(`/fisher_ctf_agent/api/topology/${taskId}`)).json();
                         topologyStats.value = topologyData.value.stats;
                         criticalNodes.value = (await (await fetch(`/fisher_ctf_agent/api/topology/${taskId}/critical`)).json()).critical_nodes || [];
+                        // 获取节点状态
+                        try {
+                            const statusData = await (await fetch(`/fisher_ctf_agent/api/topology/${taskId}/statuses`)).json();
+                            nodeStatuses.value = statusData.statuses || {};
+                        } catch (e) { nodeStatuses.value = {}; }
                         nextTick(() => renderGraph());
                     } catch (e) { topologyData.value = { nodes: [], edges: [] }; }
+                }
+
+                function getStatusText(status) {
+                    const statusMap = {
+                        'pending': '待访问',
+                        'visited': '已访问',
+                        'success': '攻击成功',
+                        'failed': '攻击失败',
+                        'deprioritized': '已降权'
+                    };
+                    return statusMap[status] || status || '未知';
+                }
+
+                function formatMetadata(value) {
+                    if (typeof value === 'object') return JSON.stringify(value);
+                    return String(value);
+                }
+
+                function getNodeColor(node) {
+                    const status = nodeStatuses.value[node.id];
+                    if (status === 'success') return '#52c41a';
+                    if (status === 'failed') return '#ff7875';
+                    if (status === 'deprioritized') return '#d9d9d9';
+                    if (status === 'visited') return '#69c0ff';
+                    if (node.isCritical) return '#ff4d4f';
+                    if (node.id === topologyData.value.nodes[0]?.id) return '#faad14';
+                    return '#1890ff';
                 }
 
                 function renderGraph() {
@@ -182,18 +261,34 @@
 
                     const connCount = {};
                     topologyData.value.edges.forEach(e => { connCount[e.source] = (connCount[e.source] || 0) + 1; connCount[e.target] = (connCount[e.target] || 0) + 1; });
-                    const nodes = topologyData.value.nodes.map(n => ({ ...n, isCritical: criticalNodes.value.includes(n.id), connections: connCount[n.id] || 0 }));
+
+                    // 合并节点状态信息
+                    const nodes = topologyData.value.nodes.map(n => ({
+                        ...n,
+                        isCritical: criticalNodes.value.includes(n.id),
+                        connections: connCount[n.id] || 0,
+                        status: nodeStatuses.value[n.id]?.status || 'pending',
+                        attempts: nodeStatuses.value[n.id]?.attempts || 0,
+                        priority: nodeStatuses.value[n.id]?.priority || 0.5,
+                        last_result: nodeStatuses.value[n.id]?.last_result || '',
+                        metadata: nodeStatuses.value[n.id]?.metadata || {}
+                    }));
                     const edges = topologyData.value.edges.map((e, i) => ({ ...e, id: i }));
 
                     simulation = d3.forceSimulation(nodes).force('link', d3.forceLink(edges).id(d => d.id).distance(80)).force('charge', d3.forceManyBody().strength(-200)).force('center', d3.forceCenter(w / 2, h / 2)).force('collision', d3.forceCollide().radius(30));
 
                     const link = g.append('g').selectAll('line').data(edges).enter().append('line').attr('class', 'link');
-                    const node = g.append('g').selectAll('g').data(nodes).enter().append('g').attr('class', d => 'node' + (d.isCritical ? ' critical' : '')).attr('id', d => 'node-' + d.id.replace(/[^a-zA-Z0-9]/g, '_'))
-                        .on('click', (e, d) => { selectedNode.value = d; d3.selectAll('.node').classed('selected', false); d3.select(e.currentTarget).classed('selected', true); })
+                    const node = g.append('g').selectAll('g').data(nodes).enter().append('g').attr('class', d => 'node' + (d.isCritical ? ' critical' : '') + (d.status === 'deprioritized' ? ' deprioritized' : '')).attr('id', d => 'node-' + d.id.replace(/[^a-zA-Z0-9]/g, '_'))
+                        .on('click', (e, d) => {
+                            selectedNode.value = d;
+                            d3.selectAll('.node').classed('selected', false);
+                            d3.select(e.currentTarget).classed('selected', true);
+                        })
                         .call(d3.drag().on('start', e => { if (!e.active && physicsEnabled.value) simulation.alphaTarget(0.3).restart(); e.subject.fx = e.x; e.subject.fy = e.y; })
                             .on('drag', e => { e.subject.fx = e.x; e.subject.fy = e.y; }).on('end', e => { if (!e.active && physicsEnabled.value) simulation.alphaTarget(0); e.subject.fx = null; e.subject.fy = null; }));
 
-                    node.append('circle').attr('r', d => Math.max(12, 8 + d.connections * 1.5)).attr('fill', d => d.isCritical ? '#ff4d4f' : d.id === topologyData.value.nodes[0]?.id ? '#faad14' : '#1890ff').attr('stroke', '#fff');
+                    // 使用动态颜色
+                    node.append('circle').attr('r', d => Math.max(12, 8 + d.connections * 1.5)).attr('fill', d => getNodeColor(d)).attr('stroke', '#fff');
                     node.append('text').attr('dy', 4).attr('text-anchor', 'middle').text(d => d.name ? d.name.substring(0, 6) : 'N');
                     simulation.on('tick', () => { link.attr('x1', d => d.source.x).attr('y1', d => d.source.y).attr('x2', d => d.target.x).attr('y2', d => d.target.y); node.attr('transform', d => `translate(${d.x},${d.y})`); });
                     if (!physicsEnabled.value) simulation.stop();
@@ -212,7 +307,7 @@
                 function togglePhysics() { physicsEnabled.value = !physicsEnabled.value; if (simulation) physicsEnabled.value ? simulation.alpha(1).restart() : simulation.stop(); }
 
                 onMounted(() => { fetchTasks(); window.addEventListener('resize', () => { if (selectedTaskId.value) renderGraph(); }); });
-                return { tasks, tasksWithTopology, selectedTaskId, topologyData, topologyStats, criticalNodes, selectedNode, physicsEnabled, avgConnections, selectTask, highlightNode, zoomIn, zoomOut, resetView, togglePhysics };
+                return { tasks, tasksWithTopology, selectedTaskId, topologyData, topologyStats, criticalNodes, selectedNode, physicsEnabled, avgConnections, selectTask, highlightNode, zoomIn, zoomOut, resetView, togglePhysics, getStatusText, formatMetadata };
             }
         });
         app.use(ElementPlus).mount('#app');

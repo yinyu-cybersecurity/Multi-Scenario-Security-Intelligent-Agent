@@ -2,12 +2,18 @@
 
 
 import networkx as nx
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Optional
 from datetime import datetime
 
 
 class TopologyPruner:
-    """剪枝引擎 - 自动删除无效节点，防止死循环"""
+    """剪枝引擎 - 智能降权与节点管理
+
+    改进：
+    - 不直接删除节点，而是降权保留
+    - 支持回退机制
+    - 区分不同场景的降权策略
+    """
 
     def __init__(self, config: Dict = None):
         self.config = config or {
@@ -15,26 +21,79 @@ class TopologyPruner:
             "dead_status_codes": [403, 404, 500],  # 死状态码
             "max_node_age": 3600,  # 节点最大存活时间（秒）
             "max_visit_count": 10,  # 最大访问次数
+            "max_attempts": 3,  # 最大尝试次数（超过后才真正删除）
         }
+        # 降权节点存储（用于回退）
+        self.deprioritized_nodes: Dict[str, Dict] = {}
+        # 已删除节点存储（用于恢复）
+        self.removed_nodes: Dict[str, Dict] = {}
 
-    def prune_by_status(self, graph: nx.DiGraph, node_status: Dict[str, int]) -> nx.DiGraph:
+    def prune_by_status(self, graph: nx.DiGraph, node_status: Dict[str, int],
+                        analyzer: Optional['TopologyAnalyzer'] = None) -> nx.DiGraph:
         """
-        根据状态码剪枝：删除403/404节点及其子树
+        根据状态码剪枝：降权而非直接删除
+
+        改进：
+        - 对于403/404/500状态码，先降权标记
+        - 只有尝试次数超过阈值才真正删除
+        - 保留疑似攻击点的节点（如200但有攻击失败）
+
+        Args:
+            graph: 原图
+            node_status: 节点状态码映射
+            analyzer: 拓扑分析器实例（可选，用于同步状态）
+
+        Returns:
+            剪枝后的图
         """
         G = graph.copy()
-        dead_nodes = []
 
         for node, status in node_status.items():
             if status in self.config["dead_status_codes"]:
-                dead_nodes.append(node)
+                # 记录到降权列表
+                self.deprioritized_nodes[node] = {
+                    "status": status,
+                    "reason": f"HTTP {status}",
+                    "timestamp": datetime.now().isoformat(),
+                    "can_backtrack": True
+                }
 
-        for node in dead_nodes:
-            if node in G:
-                # 获取所有子节点（包括间接子节点）
-                descendants = list(nx.descendants(G, node))
-                # 删除节点及其所有子节点
-                G.remove_nodes_from([node] + descendants)
-                print(f"[Pruner] 剪枝节点 {node} (status={status}) 及其 {len(descendants)} 个子节点")
+                # 同步到分析器
+                if analyzer:
+                    analyzer.mark_node_deprioritized(node, f"HTTP {status}")
+
+                # 检查尝试次数，决定是否真正删除
+                attempts = analyzer.node_attempts.get(node, 0) if analyzer else 0
+                if attempts >= self.config["max_attempts"]:
+                    # 超过最大尝试次数，从图中移除
+                    if node in G:
+                        try:
+                            descendants = list(nx.descendants(G, node))
+                            G.remove_nodes_from([node] + descendants)
+                            self.removed_nodes[node] = {
+                                "status": status,
+                                "descendants": descendants,
+                                "timestamp": datetime.now().isoformat()
+                            }
+                            print(f"[Pruner] 删除节点 {node} (status={status}, attempts={attempts}) 及其 {len(descendants)} 个子节点")
+                        except nx.NetworkXError:
+                            pass
+                else:
+                    # 降权但保留
+                    print(f"[Pruner] 降权节点 {node} (status={status}, attempts={attempts})")
+            else:
+                # 状态码正常（如200），但有攻击失败的情况
+                # 检查分析器中是否有攻击失败的记录
+                if analyzer and analyzer.node_status.get(node) == "deprioritized":
+                    # 节点可访问但攻击失败 -> 降权保留
+                    if node not in self.deprioritized_nodes:
+                        self.deprioritized_nodes[node] = {
+                            "status": status,
+                            "reason": "attack_failed_but_accessible",
+                            "timestamp": datetime.now().isoformat(),
+                            "can_backtrack": True,
+                            "has_attack_point": True  # 标记有疑似攻击点
+                        }
 
         return G
 
@@ -96,15 +155,20 @@ class TopologyPruner:
 
         return G
 
-    def prune_all(self, graph: nx.DiGraph, metadata: Dict) -> nx.DiGraph:
+    def prune_all(self, graph: nx.DiGraph, metadata: Dict,
+                  analyzer: Optional['TopologyAnalyzer'] = None) -> nx.DiGraph:
         """
-        综合剪枝：应用所有规则
+        综合剪枝：应用所有规则（智能模式）
+
+        改进：
+        - 整合分析器状态进行智能剪枝
+        - 优先降权而非删除
         """
         G = graph.copy()
 
-        # 1. 按状态码剪枝
+        # 1. 按状态码剪枝（降权）
         if "node_status" in metadata:
-            G = self.prune_by_status(G, metadata["node_status"])
+            G = self.prune_by_status(G, metadata["node_status"], analyzer)
 
         # 2. 按深度剪枝
         if "root" in metadata:
@@ -118,3 +182,76 @@ class TopologyPruner:
         G = self.prune_dead_ends(G)
 
         return G
+
+    # =========================================================================
+    # 回退机制
+    # =========================================================================
+
+    def get_deprioritized_nodes(self) -> Dict[str, Dict]:
+        """获取被降权的节点（用于回退）"""
+        return self.deprioritized_nodes
+
+    def get_backtrack_candidates(self, analyzer: Optional['TopologyAnalyzer'] = None) -> List[str]:
+        """
+        获取可回退的候选节点
+
+        筛选条件：
+        - 有疑似攻击点的节点（优先）
+        - 尝试次数少于阈值的节点
+        """
+        candidates = []
+
+        for node, info in self.deprioritized_nodes.items():
+            if info.get("can_backtrack", False):
+                # 检查尝试次数
+                attempts = analyzer.node_attempts.get(node, 0) if analyzer else 0
+                if attempts < self.config["max_attempts"]:
+                    candidates.append(node)
+
+        # 优先返回有攻击点的节点
+        has_attack_point = [n for n in candidates
+                           if self.deprioritized_nodes[n].get("has_attack_point")]
+        no_attack_point = [n for n in candidates
+                          if not self.deprioritized_nodes[n].get("has_attack_point")]
+
+        return has_attack_point + no_attack_point
+
+    def restore_node(self, node: str, graph: nx.DiGraph,
+                     analyzer: Optional['TopologyAnalyzer'] = None) -> bool:
+        """
+        回退：将降权节点恢复为可探测状态
+
+        Args:
+            node: 节点URL
+            graph: 当前图（可能需要从备份恢复）
+            analyzer: 拓扑分析器实例
+
+        Returns:
+            是否成功恢复
+        """
+        if node in self.deprioritized_nodes:
+            info = self.deprioritized_nodes[node]
+            del self.deprioritized_nodes[node]
+
+            # 同步分析器状态
+            if analyzer:
+                analyzer.node_status[node] = "pending"
+                analyzer.node_priority[node] = 0.5  # 恢复默认优先级
+
+            print(f"[Pruner] 回退节点 {node}，原因: {info.get('reason', 'unknown')}")
+            return True
+
+        return False
+
+    def get_removed_nodes(self) -> Dict[str, Dict]:
+        """获取已删除的节点"""
+        return self.removed_nodes
+
+    def get_stats(self) -> Dict:
+        """获取剪枝统计信息"""
+        return {
+            "deprioritized_count": len(self.deprioritized_nodes),
+            "removed_count": len(self.removed_nodes),
+            "backtrack_available": sum(1 for n in self.deprioritized_nodes.values()
+                                       if n.get("can_backtrack", False))
+        }

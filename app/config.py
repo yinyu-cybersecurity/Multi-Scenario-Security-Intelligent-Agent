@@ -138,6 +138,31 @@ class Config:
     CHARS_PER_TOKEN: float = 2.5
 
     # =========================================================================
+    # 任务完成验证配置 - 防止过早结束
+    # =========================================================================
+
+    # 是否启用AI完成验证
+    AI_COMPLETION_VERIFICATION: bool = True
+
+    # 最少Flag数量阈值（少于此值不结束）
+    MIN_FLAGS_THRESHOLD: int = 1
+
+    # 完成验证置信度阈值
+    COMPLETION_CONFIDENCE_THRESHOLD: float = 0.7
+
+    # 是否允许多Flag环境检测
+    MULTI_FLAG_DETECTION: bool = True
+
+    # 高价值节点未访问时不结束
+    REQUIRE_HIGH_VALUE_VISITED: bool = True
+
+    # 回退机制最大尝试次数
+    BACKTRACK_MAX_ATTEMPTS: int = 3
+
+    # 节点降权后保留时间（秒）
+    DEPRIORITIZED_NODE_TTL: int = 600  # 10分钟
+
+    # =========================================================================
     # 失败权重 - 用于计算 failure_weighted_score
     # =========================================================================
 

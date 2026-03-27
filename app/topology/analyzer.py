@@ -2,7 +2,9 @@
 
 import networkx as nx
 from typing import List, Optional, Dict, Set, Tuple
+from datetime import datetime
 import heapq
+import json
 
 
 class TopologyAnalyzer:
@@ -10,6 +12,21 @@ class TopologyAnalyzer:
 
     def __init__(self, graph: nx.DiGraph):
         self.graph = graph
+        # =========================================================================
+        # 节点状态跟踪 - 用于回退机制
+        # =========================================================================
+        # 节点状态: "pending"|"success"|"failed"|"deprioritized"|"visited"
+        self.node_status: Dict[str, str] = {}
+        # 节点尝试次数
+        self.node_attempts: Dict[str, int] = {}
+        # 节点最后执行结果
+        self.node_last_result: Dict[str, str] = {}
+        # 节点最后更新时间
+        self.node_last_updated: Dict[str, datetime] = {}
+        # 节点优先级分数
+        self.node_priority: Dict[str, float] = {}
+        # 节点元数据（攻击点、漏洞信息等）
+        self.node_metadata: Dict[str, Dict] = {}
 
     # =========================================================================
     # 路径分析
@@ -276,3 +293,250 @@ class TopologyAnalyzer:
             "hubs": len(self.find_hubs()),
             "authorities": len(self.find_authority_nodes())
         }
+
+    # =========================================================================
+    # 节点状态管理 - 用于回退机制
+    # =========================================================================
+
+    def mark_node_success(self, node: str, metadata: Dict = None):
+        """
+        标记节点攻击成功
+
+        Args:
+            node: 节点URL
+            metadata: 成功相关的元数据（如flag、凭据等）
+        """
+        self.node_status[node] = "success"
+        self.node_last_updated[node] = datetime.now()
+        if metadata:
+            self.node_metadata[node] = metadata
+        # 成功节点提高优先级（用于发现相关节点）
+        self.node_priority[node] = self.node_priority.get(node, 0.5) * 1.5
+
+    def mark_node_failed(self, node: str, reason: str = "", can_retry: bool = True):
+        """
+        标记节点攻击失败
+
+        Args:
+            node: 节点URL
+            reason: 失败原因
+            can_retry: 是否可以重试（如果可以，则降权而非标记失败）
+        """
+        attempts = self.node_attempts.get(node, 0) + 1
+        self.node_attempts[node] = attempts
+
+        # 如果节点可访问但有疑似攻击点，即使攻击失败也降权保留
+        # 这是用户要求的降权逻辑：CTF Web节点可访问且有疑似攻击点 -> 降权
+        if can_retry and attempts < 3:
+            self.node_status[node] = "deprioritized"
+            self.node_priority[node] = max(0.1, self.node_priority.get(node, 0.5) * 0.5)
+        else:
+            self.node_status[node] = "failed"
+            self.node_priority[node] = 0.0
+
+        self.node_last_result[node] = reason
+        self.node_last_updated[node] = datetime.now()
+
+    def mark_node_deprioritized(self, node: str, reason: str = ""):
+        """
+        标记节点降权（暂不删除，保留回退可能）
+
+        适用场景：
+        - CTF Web: 节点可访问且有疑似攻击点，但攻击失败
+        - 内网: 所有主机都当成有疑似攻击点，攻击失败后降权
+
+        Args:
+            node: 节点URL
+            reason: 降权原因
+        """
+        self.node_status[node] = "deprioritized"
+        self.node_last_result[node] = reason
+        self.node_last_updated[node] = datetime.now()
+        # 降权但保留一定优先级，用于回退
+        self.node_priority[node] = max(0.1, self.node_priority.get(node, 0.5) * 0.3)
+        self.node_attempts[node] = self.node_attempts.get(node, 0) + 1
+
+    def mark_node_visited(self, node: str, metadata: Dict = None):
+        """
+        标记节点已访问（但未攻击）
+
+        Args:
+            node: 节点URL
+            metadata: 节点元数据（技术栈、表单等）
+        """
+        if node not in self.node_status:
+            self.node_status[node] = "visited"
+        self.node_last_updated[node] = datetime.now()
+        if metadata:
+            if node in self.node_metadata:
+                self.node_metadata[node].update(metadata)
+            else:
+                self.node_metadata[node] = metadata
+
+    def get_backtrack_candidates(self) -> List[Tuple[str, float]]:
+        """
+        获取可回退的候选节点（降权但可能有价值的节点）
+
+        Returns:
+            [(node, priority), ...] 按优先级排序
+        """
+        candidates = []
+        for node, status in self.node_status.items():
+            if status == "deprioritized":
+                attempts = self.node_attempts.get(node, 0)
+                if attempts < 3:  # 尝试次数少于3次的可以回退
+                    priority = self.node_priority.get(node, 0.1)
+                    candidates.append((node, priority))
+
+        # 按优先级排序
+        return sorted(candidates, key=lambda x: -x[1])
+
+    def get_priority_queue(self, visited: List[str]) -> List[Tuple[str, float]]:
+        """
+        获取优先级队列（整合现有方法）
+
+        优先级排序:
+        1. 未访问的高价值节点（优先级最高）
+        2. 可回退的降权节点（较低优先级）
+        3. 已访问但未成功/失败的节点
+
+        Args:
+            visited: 已访问节点列表
+
+        Returns:
+            [(node, score), ...] 按优先级排序
+        """
+        visited_set = set(visited)
+        candidates = []
+
+        # 1. 未访问的高价值节点
+        for node, score in self.prioritize_attack_targets(visited, top_k=20):
+            status = self.node_status.get(node)
+            if status not in ["success", "failed"]:
+                # 根据节点状态调整优先级
+                if status == "deprioritized":
+                    score *= 0.5  # 降权节点降低优先级
+                candidates.append((node, score))
+
+        # 2. 可回退的降权节点
+        for node, priority in self.get_backtrack_candidates():
+            if node not in visited_set:
+                candidates.append((node, priority * 0.8))  # 回退节点更低优先级
+
+        # 去重并排序
+        seen = set()
+        unique_candidates = []
+        for node, score in candidates:
+            if node not in seen:
+                seen.add(node)
+                unique_candidates.append((node, score))
+
+        return sorted(unique_candidates, key=lambda x: -x[1])
+
+    def evaluate_completion(self, found_flags: int, visited: List[str]) -> Dict:
+        """
+        评估任务完成度
+
+        Args:
+            found_flags: 已发现的flag数量
+            visited: 已访问节点列表
+
+        Returns:
+            {
+                "should_continue": bool,
+                "confidence": float,
+                "remaining_high_value": int,
+                "unvisited_critical": List[str],
+                "backtrack_available": int,
+                "reasoning": str
+            }
+        """
+        high_value = self.find_unvisited_high_value_nodes(visited)
+        critical = self.find_critical_nodes()
+        unvisited_critical = [n for n in critical if n not in visited]
+        backtrack_candidates = self.get_backtrack_candidates()
+
+        # 计算完成度置信度
+        total_nodes = self.graph.number_of_nodes()
+        visited_ratio = len(visited) / max(1, total_nodes)
+
+        # 决策是否继续
+        should_continue = (
+            len(high_value) > 0 or  # 还有高价值节点
+            len(unvisited_critical) > 0 or  # 还有关键节点未访问
+            (found_flags == 0 and len(backtrack_candidates) > 0)  # 没找到flag但有回退候选
+        )
+
+        # 置信度计算
+        if found_flags > 0:
+            confidence = 0.6 + (visited_ratio * 0.4)  # 有flag时，置信度与访问率相关
+        else:
+            confidence = 0.3  # 没flag时置信度低
+
+        return {
+            "should_continue": should_continue,
+            "confidence": confidence,
+            "remaining_high_value": len(high_value),
+            "unvisited_critical": unvisited_critical,
+            "backtrack_available": len(backtrack_candidates),
+            "visited_ratio": visited_ratio,
+            "reasoning": f"剩余高价值节点: {len(high_value)}, 未访问关键节点: {len(unvisited_critical)}, 可回退节点: {len(backtrack_candidates)}"
+        }
+
+    def get_node_detail(self, node: str) -> Dict:
+        """
+        获取节点详细信息（用于前端展示）
+
+        Args:
+            node: 节点URL
+
+        Returns:
+            节点详细信息字典
+        """
+        return {
+            "url": node,
+            "status": self.node_status.get(node, "pending"),
+            "attempts": self.node_attempts.get(node, 0),
+            "last_result": self.node_last_result.get(node, ""),
+            "last_updated": self.node_last_updated.get(node),
+            "priority": self.node_priority.get(node, 0.5),
+            "metadata": self.node_metadata.get(node, {}),
+            "connections": {
+                "in": list(self.graph.predecessors(node)) if node in self.graph else [],
+                "out": list(self.graph.successors(node)) if node in self.graph else []
+            }
+        }
+
+    def get_all_node_statuses(self) -> Dict[str, Dict]:
+        """
+        获取所有节点状态（用于前端展示）
+
+        Returns:
+            {node: {status, attempts, priority, ...}, ...}
+        """
+        result = {}
+        for node in self.graph.nodes():
+            result[node] = self.get_node_detail(node)
+        return result
+
+    def to_dict(self) -> Dict:
+        """
+        序列化为字典（用于持久化）
+        """
+        return {
+            "node_status": self.node_status,
+            "node_attempts": self.node_attempts,
+            "node_last_result": self.node_last_result,
+            "node_priority": self.node_priority,
+            "node_metadata": self.node_metadata
+        }
+
+    def from_dict(self, data: Dict):
+        """
+        从字典恢复状态
+        """
+        self.node_status = data.get("node_status", {})
+        self.node_attempts = data.get("node_attempts", {})
+        self.node_last_result = data.get("node_last_result", {})
+        self.node_priority = data.get("node_priority", {})
+        self.node_metadata = data.get("node_metadata", {})
