@@ -39,12 +39,16 @@ RUN go install github.com/hahwul/dalfox/v2@latest && \
     cp /root/go/bin/dalfox /usr/local/bin/dalfox && \
     chmod +x /usr/local/bin/dalfox || true
 
-# 安装完整 Metasploit Framework (多种安装方式尝试)
-RUN apt-get update && (apt-get install -y metasploit-framework || \
-    (curl -fsSL https://apt.metasploit.com/metasploit-framework.gpg.key | apt-key add - && \
-     echo "deb https://apt.metasploit.com/ buster main" > /etc/apt/sources.list.d/metasploit.list && \
+# 安装 Metasploit Framework (使用官方安装脚本)
+RUN apt-get update && apt-get install -y gnupg2 && \
+    (curl https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb > /tmp/msfinstall && \
+     chmod 755 /tmp/msfinstall && \
+     /tmp/msfinstall) || \
+    (echo "Trying apt method..." && \
+     curl -fsSL https://apt.metasploit.com/metasploit-framework.gpg.key | gpg --dearmor -o /usr/share/keyrings/metasploit.gpg && \
+     echo "deb [signed-by=/usr/share/keyrings/metasploit.gpg] https://apt.metasploit.com buster main" > /etc/apt/sources.list.d/metasploit.list && \
      apt-get update && apt-get install -y metasploit-framework) || \
-    echo "Warning: Metasploit installation failed, msf tool will be unavailable") || true
+    echo "Warning: Metasploit installation failed, msf tool will be unavailable" || true
 
 # Python pip 配置
 RUN pip3 install pipx -i https://pypi.tuna.tsinghua.edu.cn/simple && \
