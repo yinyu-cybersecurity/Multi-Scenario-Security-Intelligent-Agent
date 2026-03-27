@@ -12,6 +12,7 @@ CTF场景优化:
 - 快速数据采集
 - 自动化分析
 """
+import os
 import re
 import sys
 import json
@@ -26,7 +27,16 @@ from config import config
 class BloodHoundTool(CommandLineTool):
     """
     BloodHound AD域分析工具封装
+
+    重要：此工具需要域凭据才能执行
+    - 需要：domain, dc, username
+    - 需要：password 或 hash (至少一个)
     """
+
+    # 前置条件声明
+    REQUIRES_CREDENTIALS = True
+    REQUIRES_SHELL_SESSION = False
+    TOOL_CATEGORY = "internal"  # 内网渗透工具
 
     def __init__(self):
         # 检测 bloodhound-python 是否可用

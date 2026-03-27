@@ -40,11 +40,21 @@ class MimikatzTool(CommandLineTool):
     """
     Mimikatz Windows凭据提取工具封装
 
+    重要：此工具需要Windows shell会话才能执行
+    - 需要：Windows环境 + 管理员权限
+    - 执行方式：本地Windows环境 或 远程shell会话
+
     CTF场景特点:
     - 自动解析凭据输出
     - 支持多种命令模式
     - 兼容不同执行环境
     """
+
+    # 前置条件声明
+    REQUIRES_CREDENTIALS = False  # 不需要预先有凭据，但它提取凭据
+    REQUIRES_SHELL_SESSION = True  # 需要shell会话（Windows）
+    TOOL_CATEGORY = "attacker"  # 攻击工具
+    REQUIRES_OS = "windows"  # 需要Windows环境
 
     # 常用命令模板
     COMMANDS = {

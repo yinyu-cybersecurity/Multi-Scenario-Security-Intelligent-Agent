@@ -560,7 +560,7 @@ def api_tools():
     try:
         from tool_framework import ToolRegistry
 
-        # 定义工具分类 - 与实际注册的64个工具完全匹配
+        # 定义工具分类 - 与实际注册的工具完全匹配
         categories = {
             "impacket": {
                 "name": "Impacket工具集",
@@ -589,7 +589,7 @@ def api_tools():
                 "name": "Web攻击",
                 "tools": [
                     "sqlmap", "ffuf", "dirsearch", "nuclei", "xray", "nmap",
-                    "dalfox", "oa-exploiter"
+                    "dalfox", "oa-exploiter", "httpx", "subfinder"
                 ]
             },
             "java_deserialize": {

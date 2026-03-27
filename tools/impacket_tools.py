@@ -29,7 +29,22 @@ from tool_framework import CommandLineTool
 # ==================== 基类 ====================
 
 class ImpacketTool(CommandLineTool):
-    """Impacket 工具基类"""
+    """
+    Impacket 工具基类
+
+    重要：大多数Impacket工具需要凭据才能执行
+    - 需要：username + (password 或 hash)
+    - 部分工具需要域信息
+
+    子类应覆盖以下属性:
+    - REQUIRES_CREDENTIALS: 是否需要凭据（默认True）
+    - REQUIRES_DOMAIN: 是否需要域名（默认False）
+    """
+
+    # 基类前置条件声明（子类可覆盖）
+    REQUIRES_CREDENTIALS = True
+    REQUIRES_SHELL_SESSION = False
+    TOOL_CATEGORY = "internal"  # 内网渗透工具
 
     # 常见安装路径
     COMMON_PATHS = [

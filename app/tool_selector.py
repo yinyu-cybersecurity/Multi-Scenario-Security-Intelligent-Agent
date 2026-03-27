@@ -41,6 +41,11 @@ class ToolSelector:
     """智能工具选择器"""
 
     # 漏洞类型到工具的映射 (按优先级排序)
+    # 重要: 工具分为三类
+    # - RECON_TOOLS: 侦察兵节点调用，自动化扫描无需决策
+    # - ATTACKER_TOOLS: 攻击兵节点调用，需要目标参数执行攻击
+    # - INTERNAL_TOOLS: 内网节点调用，需要凭据/shell会话
+
     TOOL_MAPPING = {
         VulnCategory.SQL_INJECTION: [
             ("sqlmap", 10, "最成熟的SQL注入自动化工具"),
@@ -97,6 +102,51 @@ class ToolSelector:
             ("jwt-tool", 10, "JWT专用工具"),
         ],
     }
+
+    # 侦察兵节点调用的工具 - 自动化扫描，无需复杂决策
+    RECON_TOOLS = [
+        "fscan",       # 内网综合扫描
+        "nmap",        # 端口扫描
+        "dirsearch",   # 目录扫描
+        "nuclei",      # CVE模板扫描
+        "xray",        # 漏洞扫描
+        "httpx",       # HTTP探测
+        "subfinder",   # 子域名发现
+        "ffuf",        # 模糊测试
+    ]
+
+    # 攻击兵节点调用的工具 - 执行实际攻击
+    ATTACKER_TOOLS = [
+        "sqlmap", "msf", "impacket", "crackmapexec",
+        "ysoserial", "phpggc", "marshalsec", "jndi-exploit",
+        "jwt-tool", "flask-unsign", "fenjing", "dalfox",
+        "xxe-injector", "hydra", "git-hacker", "ssrf-scanner",
+        "cloud-scanner", "oa-exploiter", "db-attacks", "privesc",
+        "ajp-shooter", "php-filter-chain", "pickle-pwn",
+        "potato", "mimikatz", "rubeus",
+    ]
+
+    # 内网渗透工具 - 需要凭据或shell会话
+    INTERNAL_TOOLS = [
+        "bloodhound",   # 域分析（需要域凭据）
+        "secretsdump",  # 凭据导出（需要管理员权限）
+        "psexec",       # 远程执行（需要凭据）
+        "wmiexec",      # WMI执行（需要凭据）
+        "smbexec",      # SMB执行（需要凭据）
+        "atexec",       # 计划任务（需要凭据）
+        "dcomexec",     # DCOM执行（需要凭据）
+        "getnpusers",   # AS-REP Roasting（需要域信息）
+        "getuserspns",  # Kerberoasting（需要域凭据）
+        "ticketer",     # 票据伪造（需要krbtgt哈希）
+        "goldenpac",    # 黄金票据（需要krbtgt哈希）
+        "ntlmrelayx",   # NTLM中继
+        "dacledit",     # ACL编辑
+        "getadusers",   # 域用户枚举
+        "raisechild",   # 子域提权
+        "smbclient",    # SMB客户端
+        "lookupsid",    # SID枚举
+        "mssqlclient",  # MSSQL客户端
+    ]
 
     # 技术栈到漏洞类型的映射
     TECH_TO_VULN = {
@@ -570,6 +620,188 @@ def aggregate_scan_results(results: Dict[str, Dict]) -> Dict:
         "failed_tools": failed_tools,
         "vulnerable": len(all_vulns) > 0
     }
+
+
+# ============================================================================
+# 工具前置条件检查
+# ============================================================================
+
+# 需要凭据的工具（用户名/密码或哈希）
+TOOLS_REQUIRING_CREDENTIALS = {
+    "bloodhound": ["domain", "username", "password_or_hash"],
+    "secretsdump": ["username", "password_or_hash"],
+    "psexec": ["username", "password_or_hash"],
+    "wmiexec": ["username", "password_or_hash"],
+    "smbexec": ["username", "password_or_hash"],
+    "atexec": ["username", "password_or_hash"],
+    "dcomexec": ["username", "password_or_hash"],
+    "getnpusers": ["domain"],
+    "getuserspns": ["domain", "username", "password"],
+    "crackmapexec": ["username", "password_or_hash"],  # 可选但通常需要
+    "smbclient": ["username", "password"],
+    "mssqlclient": ["username", "password"],
+}
+
+# 需要shell会话的工具（必须在已有shell的环境中执行）
+TOOLS_REQUIRING_SHELL_SESSION = {
+    "mimikatz": "Windows内存凭据提取，需要Windows shell或已有会话",
+    "rubeus": "Kerberos攻击工具，需要在Windows域环境执行",
+    "potato": "Windows提权工具，需要Windows shell",
+    "printspoofer": "Windows提权工具，需要Windows shell",
+    "godpotato": "Windows提权工具，需要Windows shell",
+}
+
+# 需要特定条件的工具
+TOOLS_REQUIRING_CONDITIONS = {
+    "bloodhound": "需要域环境和有效的域凭据",
+    "mimikatz": "需要Windows环境和管理员权限",
+    "rubeus": "需要Windows域环境",
+    "ntlmrelayx": "需要能够监听和中继流量",
+    "ticketer": "需要krbtgt哈希",
+    "goldenpac": "需要krbtgt哈希",
+}
+
+
+def check_tool_prerequisites(tool_name: str, state: Dict) -> Dict:
+    """
+    检查工具执行的前置条件
+
+    Args:
+        tool_name: 工具名称
+        state: 当前状态，包含凭据、会话等信息
+            - credentials: {"username": "", "password": "", "hash": "", "domain": ""}
+            - shell_sessions: {"session_id": {"os": "windows/linux", ...}}
+            - internal_access: bool (是否已进入内网)
+
+    Returns:
+        {
+            "can_execute": bool,
+            "missing": List[str],  # 缺失的前置条件
+            "hint": str,  # 提示信息
+            "tool_category": str  # recon/attacker/internal
+        }
+    """
+    missing = []
+    hints = []
+
+    # 确定工具类别
+    if tool_name.lower() in [t.lower() for t in RECON_TOOLS]:
+        tool_category = "recon"
+    elif tool_name.lower() in [t.lower() for t in INTERNAL_TOOLS]:
+        tool_category = "internal"
+    else:
+        tool_category = "attacker"
+
+    # 检查是否需要凭据
+    if tool_name.lower() in TOOLS_REQUIRING_CREDENTIALS:
+        required_fields = TOOLS_REQUIRING_CREDENTIALS[tool_name.lower()]
+        credentials = state.get("credentials", {})
+
+        for field in required_fields:
+            if field == "password_or_hash":
+                if not credentials.get("password") and not credentials.get("hash"):
+                    missing.append("password或hash")
+                    hints.append(f"{tool_name}需要密码或NTLM哈希")
+            elif field == "domain":
+                if not credentials.get("domain"):
+                    missing.append("domain")
+                    hints.append(f"{tool_name}需要域名信息")
+            elif not credentials.get(field):
+                missing.append(field)
+                hints.append(f"{tool_name}需要{field}")
+
+    # 检查是否需要shell会话
+    if tool_name.lower() in TOOLS_REQUIRING_SHELL_SESSION:
+        shell_sessions = state.get("shell_sessions", {})
+        if not shell_sessions:
+            missing.append("shell_session")
+            hints.append(TOOLS_REQUIRING_SHELL_SESSION[tool_name.lower()])
+        else:
+            # 检查是否有合适类型的会话
+            tool_requires = TOOLS_REQUIRING_SHELL_SESSION[tool_name.lower()]
+            valid_session = False
+            for session_id, session_info in shell_sessions.items():
+                if "Windows" in tool_requires and session_info.get("os", "").lower() == "windows":
+                    valid_session = True
+                    break
+                elif "Windows" not in tool_requires:
+                    valid_session = True
+                    break
+
+            if not valid_session and "Windows" in tool_requires:
+                missing.append("windows_shell_session")
+                hints.append(f"{tool_name}需要在Windows环境的shell会话")
+
+    # 检查特殊条件
+    if tool_name.lower() in TOOLS_REQUIRING_CONDITIONS:
+        # 这些是提示性信息，不阻止执行但提醒用户
+        pass
+
+    can_execute = len(missing) == 0
+
+    return {
+        "can_execute": can_execute,
+        "missing": missing,
+        "hint": "; ".join(hints) if hints else "",
+        "tool_category": tool_category,
+        "requires_credentials": tool_name.lower() in TOOLS_REQUIRING_CREDENTIALS,
+        "requires_session": tool_name.lower() in TOOLS_REQUIRING_SHELL_SESSION,
+    }
+
+
+def get_tools_by_category(category: str) -> List[str]:
+    """
+    按类别获取工具列表
+
+    Args:
+        category: "recon", "attacker", "internal"
+
+    Returns:
+        该类别的工具列表
+    """
+    if category == "recon":
+        return RECON_TOOLS.copy()
+    elif category == "internal":
+        return INTERNAL_TOOLS.copy()
+    elif category == "attacker":
+        return ATTACKER_TOOLS.copy()
+    return []
+
+
+def filter_tools_by_prerequisites(tools: List[str], state: Dict) -> Dict[str, Dict]:
+    """
+    批量检查多个工具的前置条件
+
+    Args:
+        tools: 工具名称列表
+        state: 当前状态
+
+    Returns:
+        {tool_name: check_result}
+    """
+    results = {}
+    for tool in tools:
+        results[tool] = check_tool_prerequisites(tool, state)
+    return results
+
+
+def get_executable_tools(tools: List[str], state: Dict) -> List[str]:
+    """
+    从工具列表中筛选出可以执行的工具
+
+    Args:
+        tools: 工具名称列表
+        state: 当前状态
+
+    Returns:
+        可以执行的工具列表
+    """
+    executable = []
+    for tool in tools:
+        check = check_tool_prerequisites(tool, state)
+        if check["can_execute"]:
+            executable.append(tool)
+    return executable
 
 
 # ============================================================================

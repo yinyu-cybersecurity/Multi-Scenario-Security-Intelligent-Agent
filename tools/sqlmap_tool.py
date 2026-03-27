@@ -97,8 +97,13 @@ class SqlmapTool(CommandLineTool):
         # 如果命令存在，直接可用
         if self.executable and os.access(self.executable, os.X_OK):
             return True
-        # 否则检查脚本是否存在
-        return os.path.exists(self.script_path)
+        # 检查pipx安装路径
+        pipx_sqlmap = "/root/.local/bin/sqlmap"
+        if os.path.exists(pipx_sqlmap):
+            return True
+        # 检查系统PATH
+        import shutil
+        return shutil.which("sqlmap") is not None
 
     def expected_params(self) -> Dict[str, Dict[str, Any]]:
         return {

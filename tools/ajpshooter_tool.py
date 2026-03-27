@@ -35,7 +35,7 @@ class AJPShooterTool(CommandLineTool):
         return "Tomcat AJP漏洞利用工具。针对CVE-2020-1938，可读取Web目录文件。适合：Tomcat服务器且开放AJP端口(8009)。"
 
     def check_available(self) -> bool:
-        return os.path.exists(self.script_path)
+        return self.script_path is not None and os.path.exists(self.script_path)
 
     def expected_params(self) -> Dict[str, Dict[str, Any]]:
         return {

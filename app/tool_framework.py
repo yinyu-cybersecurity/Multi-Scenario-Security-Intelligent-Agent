@@ -91,7 +91,18 @@ class CTFTool(ABC):
     """
     所有安全工具的抽象基类。
     任何要接入系统的工具，都必须继承这个类（或其子类）并实现以下所有方法。
+
+    前置条件属性（子类可覆盖）:
+    - REQUIRES_CREDENTIALS: 是否需要凭据（默认False）
+    - REQUIRES_SHELL_SESSION: 是否需要shell会话（默认False）
+    - TOOL_CATEGORY: 工具类别 recon/attacker/internal（默认attacker）
     """
+
+    # 默认前置条件（子类可覆盖）
+    REQUIRES_CREDENTIALS: bool = False
+    REQUIRES_SHELL_SESSION: bool = False
+    TOOL_CATEGORY: str = "attacker"  # recon, attacker, internal
+
     @abstractmethod
     def name(self) -> str:
         """工具名称，如 'sqlmap', 'fenjing'"""
@@ -139,6 +150,72 @@ class CTFTool(ABC):
         }
         """
         pass
+
+    def get_prerequisites(self) -> Dict[str, Any]:
+        """
+        获取工具的前置条件
+
+        Returns:
+            {
+                "requires_credentials": bool,
+                "requires_session": bool,
+                "tool_category": str,
+                "description": str  # 前置条件描述
+            }
+        """
+        desc_parts = []
+        if self.REQUIRES_CREDENTIALS:
+            desc_parts.append("需要凭据")
+        if self.REQUIRES_SHELL_SESSION:
+            desc_parts.append("需要shell会话")
+
+        return {
+            "requires_credentials": self.REQUIRES_CREDENTIALS,
+            "requires_session": self.REQUIRES_SHELL_SESSION,
+            "tool_category": self.TOOL_CATEGORY,
+            "description": "、".join(desc_parts) if desc_parts else "无特殊前置条件"
+        }
+
+    def check_prerequisites_met(self, state: Dict) -> Dict:
+        """
+        检查当前状态是否满足工具的前置条件
+
+        Args:
+            state: 当前状态，包含:
+                - credentials: 凭据列表
+                - shell_sessions: shell会话字典
+
+        Returns:
+            {
+                "met": bool,  # 前置条件是否满足
+                "missing": List[str],  # 缺失的条件
+                "hint": str  # 提示信息
+            }
+        """
+        missing = []
+
+        # 检查凭据
+        if self.REQUIRES_CREDENTIALS:
+            credentials = state.get("credentials", [])
+            if not credentials:
+                missing.append("credentials")
+
+        # 检查shell会话
+        if self.REQUIRES_SHELL_SESSION:
+            shell_sessions = state.get("shell_sessions", {})
+            if not shell_sessions:
+                missing.append("shell_session")
+
+        met = len(missing) == 0
+        hint = ""
+        if not met:
+            hint = f"工具 {self.name()} 需要: {', '.join(missing)}"
+
+        return {
+            "met": met,
+            "missing": missing,
+            "hint": hint
+        }
 
 # ==========================================
 # 2. 命令行工具中间层
@@ -713,7 +790,64 @@ class ToolRegistry:
 
         return "\n".join(info_lines)
 
-        return "\n".join(info_lines)
+    @classmethod
+    def check_tool_prerequisites(cls, tool_name: str, state: Dict) -> Dict:
+        """
+        检查工具的前置条件是否满足
+
+        Args:
+            tool_name: 工具名称
+            state: 当前状态，包含:
+                - credentials: 凭据列表
+                - shell_sessions: shell会话字典
+
+        Returns:
+            {
+                "can_execute": bool,
+                "missing": List[str],
+                "hint": str,
+                "prerequisites": Dict  # 工具的前置条件信息
+            }
+        """
+        tool = cls.get_tool_by_name(tool_name)
+        if not tool:
+            return {
+                "can_execute": False,
+                "missing": ["tool_not_registered"],
+                "hint": f"工具 '{tool_name}' 未注册",
+                "prerequisites": {}
+            }
+
+        check_result = tool.check_prerequisites_met(state)
+        return {
+            "can_execute": check_result["met"],
+            "missing": check_result["missing"],
+            "hint": check_result["hint"],
+            "prerequisites": tool.get_prerequisites()
+        }
+
+    @classmethod
+    def get_tools_by_category(cls, category: str) -> List['CTFTool']:
+        """
+        按类别获取工具列表
+
+        Args:
+            category: "recon", "attacker", "internal"
+
+        Returns:
+            该类别的工具列表
+        """
+        return [t for t in cls.get_all_tools() if t.TOOL_CATEGORY == category]
+
+    @classmethod
+    def get_tools_requiring_credentials(cls) -> List[str]:
+        """获取需要凭据的工具名称列表"""
+        return [t.name() for t in cls.get_all_tools() if t.REQUIRES_CREDENTIALS]
+
+    @classmethod
+    def get_tools_requiring_session(cls) -> List[str]:
+        """获取需要shell会话的工具名称列表"""
+        return [t.name() for t in cls.get_all_tools() if t.REQUIRES_SHELL_SESSION]
 
     @classmethod
     def execute_cached(cls, tool_name: str, target: str, params: Dict) -> Dict:

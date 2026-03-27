@@ -46,7 +46,7 @@ class XXEInjectorTool(CommandLineTool):
         return ["XXE", "XML External Entity", "Billion Laughs", "XXE SSRF", "XXE RCE"]
 
     def check_available(self) -> bool:
-        return os.path.exists(self.script_path)
+        return self.script_path is not None and os.path.exists(self.script_path)
 
     def expected_params(self) -> Dict[str, Dict[str, Any]]:
         return {

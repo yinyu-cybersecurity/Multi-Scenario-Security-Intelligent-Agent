@@ -31,11 +31,23 @@ class CrackMapExecTool(CommandLineTool):
     """
     CrackMapExec 内网渗透工具封装
 
+    重要：此工具通常需要凭据才能发挥最大作用
+    - 凭据测试：需要 username + password/hash
+    - 枚举模式：可以无凭据执行基础枚举
+
     CTF场景特点:
     - 快速凭据测试
     - 自动化枚举
     - 支持多种协议
     """
+
+    # 前置条件声明
+    REQUIRES_CREDENTIALS = False  # 可以无凭据执行基础枚举
+    REQUIRES_SHELL_SESSION = False
+    TOOL_CATEGORY = "internal"  # 内网渗透工具
+
+    # 凭据可增强功能
+    CREDENTIAL_ENHANCED = True
 
     def __init__(self):
         # 检测 crackmapexec 是否可用

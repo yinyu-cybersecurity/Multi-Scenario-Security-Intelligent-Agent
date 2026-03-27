@@ -25,7 +25,17 @@ from tool_framework import CommandLineTool
 class RubeusTool(CommandLineTool):
     """
     Rubeus Kerberos攻击工具封装
+
+    重要：此工具需要Windows域环境shell会话才能执行
+    - 需要：Windows域环境
+    - 执行方式：本地Windows域环境 或 远程shell会话
     """
+
+    # 前置条件声明
+    REQUIRES_CREDENTIALS = False  # 某些操作需要凭据，但不是全部
+    REQUIRES_SHELL_SESSION = True  # 需要Windows shell会话
+    TOOL_CATEGORY = "attacker"  # 攻击工具
+    REQUIRES_OS = "windows"  # 需要Windows环境
 
     # 常用命令
     COMMANDS = {
