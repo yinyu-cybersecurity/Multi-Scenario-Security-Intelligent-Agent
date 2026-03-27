@@ -39,9 +39,9 @@ RUN go install github.com/hahwul/dalfox/v2@latest && \
     cp /root/go/bin/dalfox /usr/local/bin/dalfox && \
     chmod +x /usr/local/bin/dalfox || true
 
-# 安装 Metasploit Framework (使用官方安装脚本)
+# 安装 Metasploit Framework (使用国内镜像加速)
 RUN apt-get update && apt-get install -y gnupg2 && \
-    (curl https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb > /tmp/msfinstall && \
+    (curl --connect-timeout 30 --max-time 300 -fsSL https://ghproxy.net/https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb > /tmp/msfinstall && \
      chmod 755 /tmp/msfinstall && \
      /tmp/msfinstall) || \
     (echo "Trying apt method..." && \
