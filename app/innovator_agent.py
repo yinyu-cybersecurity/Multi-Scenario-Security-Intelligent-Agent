@@ -184,7 +184,7 @@ def _ai_filter_rules(rules: List[Dict], features: Dict) -> List[Dict]:
 
     try:
         response = llm_client.call_chat_completion(
-            model=config.HAIKU_MODEL,
+            model=config.ANALYST_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             json_mode=True

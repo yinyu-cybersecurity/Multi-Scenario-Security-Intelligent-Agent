@@ -28,16 +28,38 @@ class WriteupRetriever:
 
         print("[RAG] Initializing retriever...")
 
+        # 初始化状态
+        self._client = None
+        self._collection = None
+        self._model = None
+
+        # 执行初始化
+        self._init_components()
+
+    def _init_components(self):
+        """初始化或重新初始化组件"""
         # 1. 连接ChromaDB
-        self.client = chromadb.PersistentClient(path=str(CHROMA_DIR))
-        self.collection = self.client.get_or_create_collection("ctf_writeups")
+        self._client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+        self._collection = self._client.get_or_create_collection("ctf_writeups")
 
         # 2. 加载embedding模型
-        self.model = SentenceTransformer(EMBEDDING_MODEL)
+        self._model = SentenceTransformer(EMBEDDING_MODEL)
 
         # 3. 统计信息
-        self.count = self.collection.count()
+        self.count = self._collection.count()
         print(f"[RAG] Retriever ready, knowledge base contains {self.count} records")
+
+    def _ensure_client_alive(self):
+        """确保客户端可用，如果已关闭则重新初始化"""
+        try:
+            # 尝试一个简单操作来检测客户端是否存活
+            _ = self._collection.count()
+        except Exception as e:
+            if "closed" in str(e).lower() or "client" in str(e).lower():
+                print("[RAG] Client was closed, re-initializing...")
+                self._init_components()
+            else:
+                raise
 
     def search_by_text(self, query: str, top_k: int = TOP_K_RESULTS) -> List[Dict]:
         """
@@ -56,11 +78,14 @@ class WriteupRetriever:
                 }
             ]
         """
+        # 确保客户端可用
+        self._ensure_client_alive()
+
         # 1. 计算查询向量
-        query_embedding = self.model.encode(query).tolist()
+        query_embedding = self._model.encode(query).tolist()
 
         # 2. 检索
-        results = self.collection.query(
+        results = self._collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k,
             include=["documents", "metadatas", "distances"]
@@ -134,10 +159,13 @@ class WriteupRetriever:
         """
         根据tags检索（精确匹配）
         """
+        # 确保客户端可用
+        self._ensure_client_alive()
+
         # 先通过metadata过滤
         where_clause = {"$or": [{"tags": {"$contains": tag}} for tag in tags]}
 
-        results = self.collection.query(
+        results = self._collection.query(
             query_texts=[" "],  # 空查询，只过滤
             n_results=top_k,
             where=where_clause

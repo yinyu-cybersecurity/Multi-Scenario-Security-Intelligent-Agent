@@ -22,24 +22,6 @@ ENV GOPATH=/root/go
 ENV PATH=/usr/local/go/bin:$PATH:/root/go/bin
 ENV GOPROXY=https://goproxy.cn,direct
 
-# 下载 ffuf
-RUN wget -q -O /tmp/ffuf.tar.gz https://moeyy.cn/gh-proxy/https://github.com/projectdiscovery/ffuf/releases/download/v2.1.0/ffuf_2.1.0_linux_amd64.tar.gz && \
-    tar -xzf /tmp/ffuf.tar.gz -C /usr/local/bin && \
-    chmod +x /usr/local/bin/ffuf && \
-    rm -f /tmp/ffuf.tar.gz || true
-
-# 下载 httpx
-RUN wget -q -O /tmp/httpx.zip https://moeyy.cn/gh-proxy/https://github.com/projectdiscovery/httpx/releases/download/v1.6.0/httpx_1.6.0_linux_amd64.zip && \
-    unzip -o /tmp/httpx.zip -d /usr/local/bin && \
-    chmod +x /usr/local/bin/httpx && \
-    rm -f /tmp/httpx.zip || true
-
-# 下载 subfinder
-RUN wget -q -O /tmp/subfinder.tar.gz https://moeyy.cn/gh-proxy/https://github.com/projectdiscovery/subfinder/releases/download/v2.6.5/subfinder_2.6.5_linux_amd64.tar.gz && \
-    tar -xzf /tmp/subfinder.tar.gz -C /usr/local/bin && \
-    chmod +x /usr/local/bin/subfinder && \
-    rm -f /tmp/subfinder.tar.gz || true
-
 # 下载 httprobe
 RUN wget -q -O /usr/local/bin/httprobe https://moeyy.cn/gh-proxy/https://github.com/tomnomnom/httprobe/releases/download/v0.2/httprobe-linux-amd64 && \
     chmod +x /usr/local/bin/httprobe || true
@@ -85,12 +67,19 @@ WORKDIR /app
 RUN mkdir -p /app/thirdparty /app/data/tool_outputs /app/data/tool_raw_logs /app/data/sessions /app/data/tunnels /app/.memory /app/log /opt/tools/potato /opt/tools/ad /opt/tools/linux /opt/tools/windows /opt/frp
 
 # ============ 从本地 thirdparty 复制工具 ============
-# 复制二进制工具
+# 复制二进制工具到 /usr/local/bin
 COPY thirdparty/nuclei/nuclei /usr/local/bin/nuclei
 COPY thirdparty/xray/xray_linux_amd64 /usr/local/bin/xray
-RUN chmod +x /usr/local/bin/nuclei /usr/local/bin/xray
+COPY thirdparty/httpx/httpx /usr/local/bin/httpx
+COPY thirdparty/ffuf/ffuf /usr/local/bin/ffuf
+COPY thirdparty/subfinder/subfinder /usr/local/bin/subfinder
+COPY thirdparty/fscan_linux/fscan /usr/local/bin/fscan
+RUN chmod +x /usr/local/bin/nuclei /usr/local/bin/xray /usr/local/bin/httpx /usr/local/bin/ffuf /usr/local/bin/subfinder /usr/local/bin/fscan
 
-# 复制 Git 仓库工具
+# 复制 frp
+COPY thirdparty/frp/frp_0.52.3_linux_amd64 /opt/frp
+
+# 复制 Git 仓库工具到 /app/thirdparty
 COPY thirdparty/SSRFmap /app/thirdparty/SSRFmap
 COPY thirdparty/Gopherus /app/thirdparty/Gopherus
 COPY thirdparty/phpggc /app/thirdparty/phpggc
@@ -101,14 +90,11 @@ COPY thirdparty/php_filter_chain_generator /app/thirdparty/php_filter_chain
 COPY thirdparty/PetitPotam /app/thirdparty/PetitPotam
 COPY thirdparty/Ghostcat /app/thirdparty/ajpshooter
 COPY thirdparty/marshalsec /app/thirdparty/marshalsec
-COPY thirdparty/fscan /app/thirdparty/fscan
+COPY thirdparty/fscan_windows /opt/tools/windows/fscan
 COPY thirdparty/ysoserial/ysoserial-all.jar /app/thirdparty/ysoserial.jar
 
 # marshalsec 编译
 RUN cd /app/thirdparty/marshalsec && mvn package -DskipTests 2>/dev/null && cp target/marshalsec-*.jar /app/thirdparty/marshalsec.jar || true
-
-# fscan 编译
-RUN cd /app/thirdparty/fscan && go build -o /usr/local/bin/fscan . || true
 
 # ============ 保留的 git clone 工具（其他工具）============
 # dirsearch
@@ -124,14 +110,7 @@ RUN git clone --depth 1 https://gitee.com/RichardoMrMu/PayloadsAllTheThings.git 
 RUN wget -q -O /app/thirdparty/JNDIExploit.jar https://moeyy.cn/gh-proxy/https://github.com/exploitblizzard/JNDIExploit/releases/download/v1.0/JNDIExploit.jar || \
     wget -q -O /app/thirdparty/JNDIExploit.jar https://github.com/exploitblizzard/JNDIExploit/releases/download/v1.0/JNDIExploit.jar || true
 
-# frp
-RUN wget -q https://moeyy.cn/gh-proxy/https://github.com/fatedier/frp/releases/download/v0.52.3/frp_0.52.3_linux_amd64.tar.gz && \
-    tar -xzf frp_0.52.3_linux_amd64.tar.gz -C /opt/frp --strip-components=1 && \
-    rm -f frp_0.52.3_linux_amd64.tar.gz || true
-
 # Windows 工具
-RUN wget -q -O /opt/tools/windows/fscan.exe https://moeyy.cn/gh-proxy/https://github.com/shadow1ng/fscan/releases/download/v1.8.2/fscan.exe || \
-    wget -q -O /opt/tools/windows/fscan.exe https://github.com/shadow1ng/fscan/releases/download/v1.8.2/fscan.exe || true
 
 RUN wget -q --timeout=60 --tries=3 -O /opt/tools/potato/PrintSpoofer64.exe https://ghproxy.net/https://github.com/itm4n/PrintSpoofer/releases/download/v1.0/PrintSpoofer64.exe || \
     wget -q --timeout=60 --tries=3 -O /opt/tools/potato/PrintSpoofer64.exe https://github.com/itm4n/PrintSpoofer/releases/download/v1.0/PrintSpoofer64.exe || \

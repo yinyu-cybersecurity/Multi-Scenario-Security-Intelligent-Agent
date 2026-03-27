@@ -93,7 +93,7 @@ Flag: {flag}
 只输出JSON: {{"valid": true/false, "reason": "简短理由"}}"""
 
         response = llm_client.call_chat_completion(
-            model=config.HAIKU_MODEL,
+            model=config.ANALYST_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             json_mode=True

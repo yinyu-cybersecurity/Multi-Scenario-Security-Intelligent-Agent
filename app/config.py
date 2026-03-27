@@ -100,32 +100,32 @@ class Config:
     LLM_MAX_CONCURRENT: int = 5
 
     # =========================================================================
-    # 决策阈值 - 控制模式切换
+    # 决策阈值 - 控制模式切换（根据时间限制调整）
     # =========================================================================
 
-    # 失败分达到此值进入探索模式
-    FAILURE_SCORE_FOR_EXPLORE: float = 5.0
+    # 失败分达到此值进入探索模式（调高以匹配更长任务时间）
+    FAILURE_SCORE_FOR_EXPLORE: float = 8.0
 
     # 失败分达到此值进入创新模式
-    FAILURE_SCORE_FOR_INNOVATE: float = 10.0
+    FAILURE_SCORE_FOR_INNOVATE: float = 15.0
 
     # 失败分达到此值放弃任务
-    FAILURE_SCORE_ABANDON: float = 15.0
+    FAILURE_SCORE_ABANDON: float = 25.0
 
     # 规则引擎连续多少次没匹配到漏洞，强制进入创新模式
-    RULE_MISS_FOR_INNOVATE: int = 5
+    RULE_MISS_FOR_INNOVATE: int = 8
 
     # 在探索模式至少尝试多少轮后，才允许进入创新模式
-    EXPLORE_ROUNDS_FOR_INNOVATE: int = 5
+    EXPLORE_ROUNDS_FOR_INNOVATE: int = 8
 
     # 节点最大循环次数（防止死循环）
-    MAX_LOOP_COUNT: int = 10
+    MAX_LOOP_COUNT: int = 15
 
-    # 最大总运行轮次（防止无限烧Token）
-    MAX_TOTAL_ROUNDS: int = 60
+    # 最大总运行轮次（防止无限烧Token，匹配30-50分钟任务时长）
+    MAX_TOTAL_ROUNDS: int = 100
 
     # 步数达到此值自动进入创新模式
-    MAX_STEPS_BEFORE_INNOVATE: int = 50
+    MAX_STEPS_BEFORE_INNOVATE: int = 80
 
     # =========================================================================
     # Token 限制 - 控制上下文大小

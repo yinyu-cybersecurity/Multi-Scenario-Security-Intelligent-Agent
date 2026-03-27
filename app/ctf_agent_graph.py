@@ -1133,7 +1133,7 @@ def _ai_analyze_exploit_chain(vuln_candidates: List[Dict], page_features: Dict) 
 
     try:
         response = llm_client.call_chat_completion(
-            model=config.HAIKU_MODEL,
+            model=config.ANALYST_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
             json_mode=True
