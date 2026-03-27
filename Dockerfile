@@ -122,23 +122,11 @@ RUN git clone --depth 1 https://gitee.com/RichardoMrMu/SecLists.git /app/thirdpa
 # PayloadsAllTheThings
 RUN git clone --depth 1 https://gitee.com/RichardoMrMu/PayloadsAllTheThings.git /app/thirdparty/PayloadsAllTheThings || true
 
-# 下载 JNDIExploit.jar
-RUN wget -q -O /app/thirdparty/JNDIExploit.jar https://moeyy.cn/gh-proxy/https://github.com/exploitblizzard/JNDIExploit/releases/download/v1.0/JNDIExploit.jar || \
-    wget -q -O /app/thirdparty/JNDIExploit.jar https://github.com/exploitblizzard/JNDIExploit/releases/download/v1.0/JNDIExploit.jar || true
+# ============ 从本地 thirdparty 复制工具 (Rubeus, JNDIExploit) ============
+COPY thirdparty/rubeus/Rubeus.exe /opt/tools/windows/Rubeus.exe
+COPY thirdparty/jndiexploit/JNDIExploit-1.3-SNAPSHOT.jar /app/thirdparty/JNDIExploit.jar
 
-# Windows 工具
-
-RUN wget -q --timeout=60 --tries=3 -O /opt/tools/potato/PrintSpoofer64.exe https://ghproxy.net/https://github.com/itm4n/PrintSpoofer/releases/download/v1.0/PrintSpoofer64.exe || \
-    wget -q --timeout=60 --tries=3 -O /opt/tools/potato/PrintSpoofer64.exe https://github.com/itm4n/PrintSpoofer/releases/download/v1.0/PrintSpoofer64.exe || \
-    wget -q --timeout=60 --tries=3 -O /opt/tools/potato/PrintSpoofer64.exe https://moeyy.cn/gh-proxy/https://github.com/itm4n/PrintSpoofer/releases/download/v1.0/PrintSpoofer64.exe || true
-
-RUN wget -q --timeout=60 --tries=2 -O /opt/tools/potato/GodPotato.exe https://github.com/BeichenDream/GodPotato/releases/download/V1.20/GodPotato_Net40.exe || \
-    wget -q --timeout=60 --tries=2 -O /opt/tools/potato/GodPotato.exe https://gitee.com/uploads/111/685/111/GodPotato_Net40.exe || true
-
-RUN wget -q -O /opt/tools/windows/Rubeus.exe https://moeyy.cn/gh-proxy/https://github.com/GhostPack/Rubeus/releases/download/2.2.0/Rubeus.exe || \
-    wget -q -O /opt/tools/windows/Rubeus.exe https://github.com/GhostPack/Rubeus/releases/download/2.2.0/Rubeus.exe || true
-
-# mimikatz（Windows）- 多镜像源尝试
+# Windows 工具 (Potato系列)
 RUN mkdir -p /opt/tools/windows && \
     (wget -q -O /tmp/mimikatz.zip https://moeyy.cn/gh-proxy/https://github.com/gentilkiwi/mimikatz/releases/download/2.2.0-20220919/mimikatz_trunk.zip || \
      wget -q -O /tmp/mimikatz.zip https://github.com/gentilkiwi/mimikatz/releases/download/2.2.0-20220919/mimikatz_trunk.zip || \
