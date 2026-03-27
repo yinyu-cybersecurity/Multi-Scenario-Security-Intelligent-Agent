@@ -187,8 +187,10 @@ class LLMClient:
         增强功能:
         - 并发控制
         - 智能重试（根据错误类型调整策略）
+        - 性能监控
         """
         start_time = time.time()
+        tokens_used = 0
 
         # 并发控制
         if not self.rate_limiter.acquire(timeout=60):
@@ -205,6 +207,20 @@ class LLMClient:
                 model, messages, temperature, max_tokens, json_mode, retry_count
             )
             result.duration = time.time() - start_time
+
+            # 记录到性能监控
+            try:
+                from performance import performance_monitor
+                # 从结果中提取token使用量
+                performance_monitor.record_llm_call(
+                    model,
+                    result.duration * 1000,  # 转换为毫秒
+                    tokens=0,  # token统计由rate_limiter处理
+                    success=result.success
+                )
+            except ImportError:
+                pass
+
             return result
         finally:
             self.rate_limiter.release()

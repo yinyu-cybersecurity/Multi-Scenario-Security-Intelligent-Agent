@@ -1119,6 +1119,59 @@ def api_performance_reset():
         return jsonify({"error": "Performance monitor not available"}), 503
 
 
+@bp.route('/api/performance/summary')
+def api_performance_summary():
+    """获取性能摘要（供监控面板使用）"""
+    try:
+        from performance import performance_monitor
+        stats = performance_monitor.get_full_stats()
+
+        # 计算摘要
+        node_count = sum(v.get("count", 0) for v in stats.get("nodes", {}).values())
+        tool_count = sum(v.get("total_executions", 0) for v in stats.get("tools", {}).values())
+        llm_count = sum(v.get("count", 0) for v in stats.get("llm", {}).values())
+
+        # 计算平均耗时
+        total_ms = 0
+        total_ops = 0
+        for v in stats.get("nodes", {}).values():
+            total_ms += v.get("total_ms", 0)
+            total_ops += v.get("count", 0)
+        for v in stats.get("tools", {}).values():
+            total_ms += v.get("total_duration", 0) * 1000
+            total_ops += v.get("total_executions", 0)
+
+        avg_duration = total_ms / max(total_ops, 1)
+
+        # 获取慢操作数
+        slow_ops = performance_monitor.get_slow_operations(5000)
+
+        return jsonify({
+            "total_operations": node_count + tool_count + llm_count,
+            "node_count": node_count,
+            "tool_count": tool_count,
+            "llm_count": llm_count,
+            "avg_duration_ms": round(avg_duration, 2),
+            "slow_ops_count": len(slow_ops),
+            "uptime_seconds": stats.get("uptime_seconds", 0)
+        })
+    except ImportError:
+        return jsonify({"error": "Performance monitor not available"}), 503
+
+
+@bp.route('/api/performance/history')
+def api_performance_history():
+    """获取性能历史趋势数据"""
+    try:
+        from memory.performance_persistence import get_performance_persistence
+        persistence = get_performance_persistence()
+        days = request.args.get('days', 7, type=int)
+        history = persistence.get_history(days)
+        return jsonify(history)
+    except ImportError:
+        return jsonify({"error": "Performance persistence not available"}), 503
+
+
 # =============================================================================
 # 上下文压缩状态 API
 # =============================================================================

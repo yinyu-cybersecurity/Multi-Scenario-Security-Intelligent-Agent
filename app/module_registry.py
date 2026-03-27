@@ -100,11 +100,32 @@ class ModuleRegistry:
             'misc_extractor': cls._import_node('misc.nodes', 'misc_extractor_node'),
         })
 
+        # Cloud Security 模块
+        cls.register('cloud_security', lambda: {
+            'cloud_recon': cls._import_node('cloud_security.nodes', 'cloud_recon_node'),
+            'cloud_enum': cls._import_node('cloud_security.nodes', 'cloud_enum_node'),
+            'cloud_exploit': cls._import_node('cloud_security.nodes', 'cloud_exploit_node'),
+            'cloud_escalate': cls._import_node('cloud_security.nodes', 'cloud_escalate_node'),
+        })
+
+        # AI Security 模块
+        cls.register('ai_security', lambda: {
+            'ai_detect': cls._import_node('ai_security.nodes', 'ai_detect_node'),
+            'ai_probe': cls._import_node('ai_security.nodes', 'ai_probe_node'),
+            'ai_exploit': cls._import_node('ai_security.nodes', 'ai_exploit_node'),
+            'ai_exfiltrate': cls._import_node('ai_security.nodes', 'ai_exfiltrate_node'),
+        })
+
         # 性能监控模块 (在app目录下)
         cls.register('performance', lambda: {
             'performance_monitor': cls._import_attr('performance', 'performance_monitor'),
             'get_system_status': cls._import_attr('performance', 'get_system_status'),
             'ParallelExecutor': cls._import_attr('performance', 'ParallelExecutor'),
+        })
+
+        # 性能持久化模块 (在memory目录下)
+        cls.register('performance_persistence', lambda: {
+            'get_performance_persistence': cls._import_attr('memory.performance_persistence', 'get_performance_persistence'),
         })
 
         # 自我纠错模块 (在app目录下)

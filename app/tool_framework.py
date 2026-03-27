@@ -1029,6 +1029,16 @@ class ToolRegistry:
         duration = time.time() - start_time
         result["duration"] = duration
 
+        # 记录到性能监控
+        try:
+            from performance import performance_monitor
+            performance_monitor.record_execution(
+                tool_name, duration, result.get("success", False),
+                cached=False, timeout=result.get("timeout", False)
+            )
+        except ImportError:
+            pass
+
         # 4. 写缓存（只缓存成功的结果）
         if result.get("success"):
             cls._cache[cache_key] = {"result": result, "timestamp": time.time()}

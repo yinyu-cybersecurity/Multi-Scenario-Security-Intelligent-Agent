@@ -240,6 +240,8 @@ def create_disabled_wrapper(node_name: str, node_func: Callable) -> Callable:
     """
     创建禁用检查包装器（用于无法使用装饰器的场景）
 
+    集成性能监控，自动跟踪节点执行时间
+
     Args:
         node_name: 节点名称
         node_func: 原始节点函数
@@ -264,7 +266,14 @@ def create_disabled_wrapper(node_name: str, node_func: Callable) -> Callable:
                 }]
             }
 
-        return node_func(state)
+        # 使用性能监控跟踪节点执行
+        try:
+            from performance import performance_monitor
+            with performance_monitor.track_node(node_name):
+                return node_func(state)
+        except ImportError:
+            # 性能监控不可用时直接执行
+            return node_func(state)
 
     return wrapper
 

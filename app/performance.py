@@ -9,6 +9,7 @@
 - 并行工具执行
 - 内存使用监控
 - 实时性能数据
+- 持久化存储（降采样策略）
 """
 
 import time
@@ -21,6 +22,13 @@ from datetime import datetime
 from contextlib import contextmanager
 import psutil
 import os
+
+# 尝试导入持久化模块
+try:
+    from memory.performance_persistence import get_performance_persistence
+    PERSISTENCE_AVAILABLE = True
+except ImportError:
+    PERSISTENCE_AVAILABLE = False
 
 
 @dataclass
@@ -73,10 +81,22 @@ class PerformanceMonitor:
 
     监控工具执行性能，提供统计信息
     支持：节点、LLM调用、工具执行
+
+    内存安全:
+    - MAX_RECORDS: 最多保留500条原始记录
+    - 自动清理旧记录
+
+    持久化:
+    - 统计数据自动保存
+    - 服务重启后恢复历史数据
     """
 
     _instance = None
     _lock = threading.Lock()
+
+    # 内存限制
+    MAX_RECORDS = 500  # 最多保留500条原始记录
+    SAVE_INTERVAL = 30  # 每30秒保存一次统计数据
 
     def __new__(cls):
         if cls._instance is None:
@@ -88,13 +108,83 @@ class PerformanceMonitor:
                     cls._instance._records: List[ExecutionRecord] = []
                     cls._instance._node_stats = defaultdict(lambda: {"count": 0, "total_ms": 0, "max_ms": 0, "errors": 0})
                     cls._instance._llm_stats = defaultdict(lambda: {"count": 0, "total_ms": 0, "max_ms": 0, "errors": 0, "tokens": 0})
+                    cls._instance._last_save_time = time.time()
+                    # 加载历史数据
+                    cls._instance._load_persistence()
         return cls._instance
+
+    def _load_persistence(self):
+        """从持久化存储加载历史数据"""
+        if not PERSISTENCE_AVAILABLE:
+            return
+
+        try:
+            persistence = get_performance_persistence()
+            data = persistence.load()
+            if data:
+                # 恢复节点统计
+                for name, stats in data.get("nodes", {}).items():
+                    self._node_stats[name] = stats.copy()
+                # 恢复LLM统计
+                for name, stats in data.get("llm", {}).items():
+                    self._llm_stats[name] = stats.copy()
+                # 恢复工具统计
+                for name, stats in data.get("tools", {}).items():
+                    self._metrics[name] = PerformanceMetrics(
+                        total_executions=stats.get("total_executions", 0),
+                        successful_executions=stats.get("successful_executions", 0),
+                        failed_executions=stats.get("failed_executions", 0),
+                        total_duration=stats.get("total_duration", 0),
+                        avg_duration=stats.get("avg_duration", 0),
+                        max_duration=stats.get("max_duration", 0),
+                        min_duration=stats.get("min_duration", float('inf')),
+                        cache_hits=stats.get("cache_hits", 0),
+                        cache_misses=stats.get("cache_misses", 0),
+                        timeout_count=stats.get("timeout_count", 0)
+                    )
+                print(f"[Performance] 已加载历史数据: {len(self._node_stats)} 节点, {len(self._llm_stats)} LLM, {len(self._metrics)} 工具")
+        except Exception as e:
+            print(f"[Performance] 加载历史数据失败: {e}")
+
+    def _save_persistence(self):
+        """保存统计数据到持久化存储"""
+        if not PERSISTENCE_AVAILABLE:
+            return
+
+        # 节流：避免频繁保存
+        if time.time() - self._last_save_time < self.SAVE_INTERVAL:
+            return
+
+        try:
+            persistence = get_performance_persistence()
+            persistence.save({
+                "nodes": dict(self._node_stats),
+                "llm": dict(self._llm_stats),
+                "tools": {k: v.__dict__ for k, v in self._metrics.items()},
+                "uptime_seconds": time.time() - self._start_time
+            })
+            self._last_save_time = time.time()
+        except Exception as e:
+            print(f"[Performance] 保存数据失败: {e}")
+
+    def _trim_records(self):
+        """清理旧记录，保持内存安全"""
+        if len(self._records) > self.MAX_RECORDS:
+            self._records = self._records[-self.MAX_RECORDS:]
 
     def record_execution(self, tool_name: str, duration: float,
                         success: bool, cached: bool = False, timeout: bool = False):
         """记录工具执行"""
         with self._lock:
             self._metrics[tool_name].update(duration, success, cached, timeout)
+            # 添加记录
+            self._records.append(ExecutionRecord(
+                name=tool_name, category="tool", start_time=time.time(),
+                end_time=time.time(), duration_ms=duration * 1000, success=success
+            ))
+            self._trim_records()
+            # 保存到持久化
+            self._save_persistence()
 
     @contextmanager
     def track_node(self, node_name: str):
@@ -115,12 +205,14 @@ class PerformanceMonitor:
                     name=node_name, category="node", start_time=start,
                     end_time=time.time(), duration_ms=duration_ms, success=success, error=error
                 ))
+                self._trim_records()
                 stats = self._node_stats[node_name]
                 stats["count"] += 1
                 stats["total_ms"] += duration_ms
                 stats["max_ms"] = max(stats["max_ms"], duration_ms)
                 if not success:
                     stats["errors"] += 1
+                self._save_persistence()
 
     @contextmanager
     def track_llm(self, model: str, tokens: int = 0):
@@ -141,6 +233,7 @@ class PerformanceMonitor:
                     name=model, category="llm", start_time=start,
                     end_time=time.time(), duration_ms=duration_ms, success=success, error=error
                 ))
+                self._trim_records()
                 stats = self._llm_stats[model]
                 stats["count"] += 1
                 stats["total_ms"] += duration_ms
@@ -148,10 +241,16 @@ class PerformanceMonitor:
                 stats["tokens"] += tokens
                 if not success:
                     stats["errors"] += 1
+                self._save_persistence()
 
     def record_llm_call(self, model: str, duration_ms: float, tokens: int = 0, success: bool = True):
         """记录LLM调用（手动方式）"""
         with self._lock:
+            self._records.append(ExecutionRecord(
+                name=model, category="llm", start_time=time.time(),
+                end_time=time.time(), duration_ms=duration_ms, success=success
+            ))
+            self._trim_records()
             stats = self._llm_stats[model]
             stats["count"] += 1
             stats["total_ms"] += duration_ms
@@ -159,6 +258,7 @@ class PerformanceMonitor:
             stats["tokens"] += tokens
             if not success:
                 stats["errors"] += 1
+            self._save_persistence()
 
     def get_metrics(self, tool_name: str = None) -> Dict:
         """获取性能指标"""
@@ -258,6 +358,14 @@ class PerformanceMonitor:
             self._node_stats.clear()
             self._llm_stats.clear()
             self._start_time = time.time()
+            self._last_save_time = time.time()
+            # 清除持久化数据
+            if PERSISTENCE_AVAILABLE:
+                try:
+                    persistence = get_performance_persistence()
+                    persistence.clear()
+                except Exception as e:
+                    print(f"[Performance] 清除持久化数据失败: {e}")
 
 
 class ParallelExecutor:
