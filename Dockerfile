@@ -22,54 +22,36 @@ ENV GOPATH=/root/go
 ENV PATH=/usr/local/go/bin:$PATH:/root/go/bin
 ENV GOPROXY=https://goproxy.cn,direct
 
-# 下载 nuclei - 多源备份
-RUN wget -q --timeout=60 -O /tmp/nuclei.zip https://github.com/projectdiscovery/nuclei/releases/download/v3.3.0/nuclei_3.3.0_linux_amd64.zip || \
-    wget -q --timeout=60 -O /tmp/nuclei.zip https://mirror.ghproxy.com/https://github.com/projectdiscovery/nuclei/releases/download/v3.3.0/nuclei_3.3.0_linux_amd64.zip || \
-    wget -q --timeout=60 -O /tmp/nuclei.zip https://ghproxy.net/https://github.com/projectdiscovery/nuclei/releases/download/v3.3.0/nuclei_3.3.0_linux_amd64.zip || true && \
-    (unzip -o /tmp/nuclei.zip -d /tmp/nuclei_extract && \
-    mv /tmp/nuclei_extract/nuclei /usr/local/bin/nuclei 2>/dev/null || \
-    mv /tmp/nuclei_extract/nuclei_linux_amd64 /usr/local/bin/nuclei 2>/dev/null || true && \
-    chmod +x /usr/local/bin/nuclei) || true && \
-    rm -rf /tmp/nuclei* || true
+# 下载 nuclei（使用 moeyy.cn 文件加速）
+RUN wget -q -O /tmp/nuclei.zip https://moeyy.cn/gh-proxy/https://github.com/projectdiscovery/nuclei/releases/download/v3.3.0/nuclei_3.3.0_linux_amd64.zip && \
+    unzip -o /tmp/nuclei.zip -d /usr/local/bin && \
+    chmod +x /usr/local/bin/nuclei && \
+    rm -f /tmp/nuclei.zip || true
 
-# 下载 ffuf - 多源备份
-RUN wget -q --timeout=60 -O /tmp/ffuf.tar.gz https://github.com/projectdiscovery/ffuf/releases/download/v2.1.0/ffuf_2.1.0_linux_amd64.tar.gz || \
-    wget -q --timeout=60 -O /tmp/ffuf.tar.gz https://mirror.ghproxy.com/https://github.com/projectdiscovery/ffuf/releases/download/v2.1.0/ffuf_2.1.0_linux_amd64.tar.gz || \
-    wget -q --timeout=60 -O /tmp/ffuf.tar.gz https://ghproxy.net/https://github.com/projectdiscovery/ffuf/releases/download/v2.1.0/ffuf_2.1.0_linux_amd64.tar.gz || true && \
-    (mkdir -p /tmp/ffuf_extract && tar -xzf /tmp/ffuf.tar.gz -C /tmp/ffuf_extract && \
-    mv /tmp/ffuf_extract/ffuf /usr/local/bin/ffuf 2>/dev/null || \
-    mv /tmp/ffuf_extract/ffuf_linux_amd64 /usr/local/bin/ffuf 2>/dev/null || true && \
-    chmod +x /usr/local/bin/ffuf) || true && \
-    rm -rf /tmp/ffuf* || true
+# 下载 ffuf
+RUN wget -q -O /tmp/ffuf.tar.gz https://moeyy.cn/gh-proxy/https://github.com/projectdiscovery/ffuf/releases/download/v2.1.0/ffuf_2.1.0_linux_amd64.tar.gz && \
+    tar -xzf /tmp/ffuf.tar.gz -C /usr/local/bin && \
+    chmod +x /usr/local/bin/ffuf && \
+    rm -f /tmp/ffuf.tar.gz || true
 
-# 下载 httpx - 多源备份
-RUN wget -q --timeout=60 -O /tmp/httpx.zip https://github.com/projectdiscovery/httpx/releases/download/v1.6.0/httpx_1.6.0_linux_amd64.zip || \
-    wget -q --timeout=60 -O /tmp/httpx.zip https://mirror.ghproxy.com/https://github.com/projectdiscovery/httpx/releases/download/v1.6.0/httpx_1.6.0_linux_amd64.zip || \
-    wget -q --timeout=60 -O /tmp/httpx.zip https://ghproxy.net/https://github.com/projectdiscovery/httpx/releases/download/v1.6.0/httpx_1.6.0_linux_amd64.zip || true && \
-    (unzip -o /tmp/httpx.zip -d /tmp/httpx_extract && \
-    mv /tmp/httpx_extract/httpx /usr/local/bin/httpx 2>/dev/null || \
-    mv /tmp/httpx_extract/httpx_linux_amd64 /usr/local/bin/httpx 2>/dev/null || true && \
-    chmod +x /usr/local/bin/httpx) || true && \
-    rm -rf /tmp/httpx* || true
+# 下载 httpx
+RUN wget -q -O /tmp/httpx.zip https://moeyy.cn/gh-proxy/https://github.com/projectdiscovery/httpx/releases/download/v1.6.0/httpx_1.6.0_linux_amd64.zip && \
+    unzip -o /tmp/httpx.zip -d /usr/local/bin && \
+    chmod +x /usr/local/bin/httpx && \
+    rm -f /tmp/httpx.zip || true
 
-# 下载 subfinder - 多源备份
-RUN wget -q --timeout=60 -O /tmp/subfinder.tar.gz https://github.com/projectdiscovery/subfinder/releases/download/v2.6.5/subfinder_2.6.5_linux_amd64.tar.gz || \
-    wget -q --timeout=60 -O /tmp/subfinder.tar.gz https://mirror.ghproxy.com/https://github.com/projectdiscovery/subfinder/releases/download/v2.6.5/subfinder_2.6.5_linux_amd64.tar.gz || \
-    wget -q --timeout=60 -O /tmp/subfinder.tar.gz https://ghproxy.net/https://github.com/projectdiscovery/subfinder/releases/download/v2.6.5/subfinder_2.6.5_linux_amd64.tar.gz || true && \
-    (mkdir -p /tmp/subfinder_extract && tar -xzf /tmp/subfinder.tar.gz -C /tmp/subfinder_extract && \
-    mv /tmp/subfinder_extract/subfinder /usr/local/bin/subfinder 2>/dev/null || \
-    mv /tmp/subfinder_extract/subfinder_linux_amd64 /usr/local/bin/subfinder 2>/dev/null || true && \
-    chmod +x /usr/local/bin/subfinder) || true && \
-    rm -rf /tmp/subfinder* || true
+# 下载 subfinder
+RUN wget -q -O /tmp/subfinder.tar.gz https://moeyy.cn/gh-proxy/https://github.com/projectdiscovery/subfinder/releases/download/v2.6.5/subfinder_2.6.5_linux_amd64.tar.gz && \
+    tar -xzf /tmp/subfinder.tar.gz -C /usr/local/bin && \
+    chmod +x /usr/local/bin/subfinder && \
+    rm -f /tmp/subfinder.tar.gz || true
 
-# 下载 httprobe - 多源备份
-RUN wget -q --timeout=60 -O /usr/local/bin/httprobe https://github.com/tomnomnom/httprobe/releases/download/v0.2/httprobe-linux-amd64 || \
-    wget -q --timeout=60 -O /usr/local/bin/httprobe https://mirror.ghproxy.com/https://github.com/tomnomnom/httprobe/releases/download/v0.2/httprobe-linux-amd64 || true && \
+# 下载 httprobe
+RUN wget -q -O /usr/local/bin/httprobe https://moeyy.cn/gh-proxy/https://github.com/tomnomnom/httprobe/releases/download/v0.2/httprobe-linux-amd64 && \
     chmod +x /usr/local/bin/httprobe || true
 
-# 下载 qsreplace - 多源备份
-RUN wget -q --timeout=60 -O /usr/local/bin/qsreplace https://github.com/tomnomnom/qsreplace/releases/download/v0.0.2/qsreplace-linux-amd64 || \
-    wget -q --timeout=60 -O /usr/local/bin/qsreplace https://mirror.ghproxy.com/https://github.com/tomnomnom/qsreplace/releases/download/v0.0.2/qsreplace-linux-amd64 || true && \
+# 下载 qsreplace
+RUN wget -q -O /usr/local/bin/qsreplace https://moeyy.cn/gh-proxy/https://github.com/tomnomnom/qsreplace/releases/download/v0.0.2/qsreplace-linux-amd64 && \
     chmod +x /usr/local/bin/qsreplace || true
 
 # 安装 Dalfox (XSS 扫描工具)
@@ -77,13 +59,8 @@ RUN go install github.com/hahwul/dalfox/v2@latest && \
     cp /root/go/bin/dalfox /usr/local/bin/dalfox && \
     chmod +x /usr/local/bin/dalfox || true
 
-# 安装 Metasploit Framework (完整版)
-RUN curl -fsSL https://apt.metasploit.com/metasploit-framework.gpg.key | gpg --dearmor -o /usr/share/keyrings/metasploit-framework.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/metasploit-framework.gpg] https://apt.metasploit.com/ buster main" > /etc/apt/sources.list.d/metasploit-framework.list && \
-    apt-get update && \
-    apt-get install -y metasploit-framework || \
-    (curl -fsSL https://raw.githubusercontent.com/rapid7/metasploit-framework/master/msfupdate | bash) || \
-    gem install msfvenom || true
+# 安装完整 Metasploit Framework
+RUN apt-get update && apt-get install -y metasploit-framework || true
 
 # Python pip 配置
 RUN pip3 install pipx -i https://pypi.tuna.tsinghua.edu.cn/simple && \
@@ -129,8 +106,9 @@ RUN git clone --depth 1 https://gitee.com/RichardoMrMu/PayloadsAllTheThings.git 
 RUN git clone --depth 1 https://github.com/swisskyrepo/SSRFmap.git /app/thirdparty/SSRFmap || \
     git clone --depth 1 https://moeyy.cn/gh-proxy/https://github.com/swisskyrepo/SSRFmap.git /app/thirdparty/SSRFmap || true
 
-# Gopherus
+# Gopherus - GitHub 官方源 + 代理回退
 RUN git clone --depth 1 https://github.com/tarunkant/Gopherus.git /app/thirdparty/Gopherus || \
+    git clone --depth 1 https://ghproxy.net/https://github.com/tarunkant/Gopherus.git /app/thirdparty/Gopherus || \
     git clone --depth 1 https://moeyy.cn/gh-proxy/https://github.com/tarunkant/Gopherus.git /app/thirdparty/Gopherus || true
 
 # phpggc
@@ -186,21 +164,10 @@ RUN wget -q -O /app/thirdparty/ysoserial.jar https://moeyy.cn/gh-proxy/https://g
 RUN wget -q -O /app/thirdparty/JNDIExploit.jar https://moeyy.cn/gh-proxy/https://github.com/exploitblizzard/JNDIExploit/releases/download/v1.0/JNDIExploit.jar || \
     wget -q -O /app/thirdparty/JNDIExploit.jar https://github.com/exploitblizzard/JNDIExploit/releases/download/v1.0/JNDIExploit.jar || true
 
-# frp (Linux) - 多源备份
-RUN wget -q --timeout=60 -O /tmp/frp.tar.gz https://github.com/fatedier/frp/releases/download/v0.52.3/frp_0.52.3_linux_amd64.tar.gz || \
-    wget -q --timeout=60 -O /tmp/frp.tar.gz https://mirror.ghproxy.com/https://github.com/fatedier/frp/releases/download/v0.52.3/frp_0.52.3_linux_amd64.tar.gz || \
-    wget -q --timeout=60 -O /tmp/frp.tar.gz https://ghproxy.net/https://github.com/fatedier/frp/releases/download/v0.52.3/frp_0.52.3_linux_amd64.tar.gz || true && \
-    (tar -xzf /tmp/frp.tar.gz -C /opt/frp --strip-components=1) || true && \
-    rm -f /tmp/frp.tar.gz || true
-
-# frpc (Windows) - 内网渗透必需，多源备份
-RUN wget -q --timeout=60 -O /tmp/frpc_windows.zip https://github.com/fatedier/frp/releases/download/v0.52.3/frp_0.52.3_windows_amd64.zip || \
-    wget -q --timeout=60 -O /tmp/frpc_windows.zip https://mirror.ghproxy.com/https://github.com/fatedier/frp/releases/download/v0.52.3/frp_0.52.3_windows_amd64.zip || \
-    wget -q --timeout=60 -O /tmp/frpc_windows.zip https://ghproxy.net/https://github.com/fatedier/frp/releases/download/v0.52.3/frp_0.52.3_windows_amd64.zip || true && \
-    (unzip -o /tmp/frpc_windows.zip -d /tmp/frpc_win && \
-    mv /tmp/frpc_win/frpc.exe /opt/tools/windows/frpc.exe 2>/dev/null || \
-    mv /tmp/frpc_win/frp_0.52.3_windows_amd64/frpc.exe /opt/tools/windows/frpc.exe 2>/dev/null || true) || true && \
-    rm -rf /tmp/frpc_win* /tmp/frpc_windows.zip || true
+# frp
+RUN wget -q https://moeyy.cn/gh-proxy/https://github.com/fatedier/frp/releases/download/v0.52.3/frp_0.52.3_linux_amd64.tar.gz && \
+    tar -xzf frp_0.52.3_linux_amd64.tar.gz -C /opt/frp --strip-components=1 && \
+    rm -f frp_0.52.3_linux_amd64.tar.gz || true
 
 # Windows 工具
 RUN wget -q -O /opt/tools/windows/fscan.exe https://moeyy.cn/gh-proxy/https://github.com/shadow1ng/fscan/releases/download/v1.8.2/fscan.exe || \
@@ -224,13 +191,11 @@ RUN wget -q -O /tmp/mimikatz.zip https://moeyy.cn/gh-proxy/https://github.com/ge
     rm -rf /tmp/mimikatz.zip /opt/tools/windows/mimikatz_temp && \
     chmod +x /opt/tools/windows/mimikatz.exe || true
 
-# xray - 多源备份
-RUN wget -q --timeout=60 -O /tmp/xray.zip https://github.com/chaitin/xray/releases/download/1.9.11/xray_linux_amd64.zip || \
-    wget -q --timeout=60 -O /tmp/xray.zip https://mirror.ghproxy.com/https://github.com/chaitin/xray/releases/download/1.9.11/xray_linux_amd64.zip || \
-    wget -q --timeout=60 -O /tmp/xray.zip https://ghproxy.net/https://github.com/chaitin/xray/releases/download/1.9.11/xray_linux_amd64.zip || true && \
-    (unzip -o /tmp/xray.zip -d /tmp/xray && \
+# xray
+RUN wget -q -O /tmp/xray.zip https://moeyy.cn/gh-proxy/https://github.com/chaitin/xray/releases/download/1.9.11/xray_linux_amd64.zip && \
+    unzip -o /tmp/xray.zip -d /tmp/xray && \
     mv /tmp/xray/xray_linux_amd64 /usr/local/bin/xray && \
-    chmod +x /usr/local/bin/xray) || true && \
+    chmod +x /usr/local/bin/xray && \
     rm -rf /tmp/xray* || true
 
 # 清理临时文件
