@@ -22,12 +22,6 @@ ENV GOPATH=/root/go
 ENV PATH=/usr/local/go/bin:$PATH:/root/go/bin
 ENV GOPROXY=https://goproxy.cn,direct
 
-# 下载 nuclei（使用 moeyy.cn 文件加速）
-RUN wget -q -O /tmp/nuclei.zip https://moeyy.cn/gh-proxy/https://github.com/projectdiscovery/nuclei/releases/download/v3.3.0/nuclei_3.3.0_linux_amd64.zip && \
-    unzip -o /tmp/nuclei.zip -d /usr/local/bin && \
-    chmod +x /usr/local/bin/nuclei && \
-    rm -f /tmp/nuclei.zip || true
-
 # 下载 ffuf
 RUN wget -q -O /tmp/ffuf.tar.gz https://moeyy.cn/gh-proxy/https://github.com/projectdiscovery/ffuf/releases/download/v2.1.0/ffuf_2.1.0_linux_amd64.tar.gz && \
     tar -xzf /tmp/ffuf.tar.gz -C /usr/local/bin && \
@@ -90,66 +84,24 @@ WORKDIR /app
 
 RUN mkdir -p /app/thirdparty /app/data/tool_outputs /app/data/tool_raw_logs /app/data/sessions /app/data/tunnels /app/.memory /app/log /opt/tools/potato /opt/tools/ad /opt/tools/linux /opt/tools/windows /opt/frp
 
-# 克隆 GitHub 仓库（使用官方源 + 唯一稳定代理 moeyy.cn/gh-proxy）
-# 注意：SecLists 和 PayloadsAllTheThings 的 Gitee 镜像已失效，改用官方源
+# ============ 从本地 thirdparty 复制工具 ============
+# 复制二进制工具
+COPY thirdparty/nuclei/nuclei /usr/local/bin/nuclei
+COPY thirdparty/xray/xray_linux_amd64 /usr/local/bin/xray
+RUN chmod +x /usr/local/bin/nuclei /usr/local/bin/xray
 
-# 使用 Gitee 上仍然可用的镜像（dirsearch 仍在）
-RUN git clone --depth 1 https://gitee.com/mirrors/dirsearch.git /app/thirdparty/dirsearch || true
-
-# SecLists - 使用 Gitee 镜像（极速）
-RUN git clone --depth 1 https://gitee.com/RichardoMrMu/SecLists.git /app/thirdparty/SecLists || true
-
-# PayloadsAllTheThings - 使用 Gitee 镜像（极速）
-RUN git clone --depth 1 https://gitee.com/RichardoMrMu/PayloadsAllTheThings.git /app/thirdparty/PayloadsAllTheThings || true
-
-# SSRFmap
-RUN git clone --depth 1 https://github.com/swisskyrepo/SSRFmap.git /app/thirdparty/SSRFmap || \
-    git clone --depth 1 https://moeyy.cn/gh-proxy/https://github.com/swisskyrepo/SSRFmap.git /app/thirdparty/SSRFmap || true
-
-# Gopherus - GitHub 官方源 + 代理回退
-RUN git clone --depth 1 https://github.com/tarunkant/Gopherus.git /app/thirdparty/Gopherus || \
-    git clone --depth 1 https://ghproxy.net/https://github.com/tarunkant/Gopherus.git /app/thirdparty/Gopherus || \
-    git clone --depth 1 https://moeyy.cn/gh-proxy/https://github.com/tarunkant/Gopherus.git /app/thirdparty/Gopherus || true
-
-# phpggc
-RUN git clone --depth 1 https://github.com/ambionics/phpggc.git /app/thirdparty/phpggc || \
-    git clone --depth 1 https://moeyy.cn/gh-proxy/https://github.com/ambionics/phpggc.git /app/thirdparty/phpggc || true
-
-# jwt_tool
-RUN git clone --depth 1 https://github.com/ticarpi/jwt_tool.git /app/thirdparty/jwt_tool || \
-    git clone --depth 1 https://moeyy.cn/gh-proxy/https://github.com/ticarpi/jwt_tool.git /app/thirdparty/jwt_tool || true
-
-# JSFinder
-RUN git clone --depth 1 https://github.com/Threezh1/JSFinder.git /app/thirdparty/jsfinder || \
-    git clone --depth 1 https://moeyy.cn/gh-proxy/https://github.com/Threezh1/JSFinder.git /app/thirdparty/jsfinder || true
-
-# XXEinjector
-RUN git clone --depth 1 https://github.com/enjoiz/XXEinjector.git /app/thirdparty/xxe-injector || \
-    git clone --depth 1 https://moeyy.cn/gh-proxy/https://github.com/enjoiz/XXEinjector.git /app/thirdparty/xxe-injector || true
-
-# php_filter_chain_generator
-RUN git clone --depth 1 https://github.com/synacktiv/php_filter_chain_generator.git /app/thirdparty/php_filter_chain || \
-    git clone --depth 1 https://moeyy.cn/gh-proxy/https://github.com/synacktiv/php_filter_chain_generator.git /app/thirdparty/php_filter_chain || true
-
-# ADCollector
-RUN git clone --depth 1 https://github.com/leechristensen/ADCollector.git /app/thirdparty/adcollector || \
-    git clone --depth 1 https://moeyy.cn/gh-proxy/https://github.com/leechristensen/ADCollector.git /app/thirdparty/adcollector || true
-
-# PetitPotam
-RUN git clone --depth 1 https://github.com/topotam/PetitPotam.git /app/thirdparty/PetitPotam || \
-    git clone --depth 1 https://moeyy.cn/gh-proxy/https://github.com/topotam/PetitPotam.git /app/thirdparty/PetitPotam || true
-
-# Ghostcat (AJP Shooter)
-RUN git clone --depth 1 https://github.com/00theway/Ghostcat-CNVD-2020-10487.git /app/thirdparty/ajpshooter || \
-    git clone --depth 1 https://moeyy.cn/gh-proxy/https://github.com/00theway/Ghostcat-CNVD-2020-10487.git /app/thirdparty/ajpshooter || true
-
-# marshalsec
-RUN git clone --depth 1 https://github.com/mbechler/marshalsec.git /app/thirdparty/marshalsec || \
-    git clone --depth 1 https://moeyy.cn/gh-proxy/https://github.com/mbechler/marshalsec.git /app/thirdparty/marshalsec || true
-
-# fscan
-RUN git clone --depth 1 https://github.com/shadow1ng/fscan.git /app/thirdparty/fscan || \
-    git clone --depth 1 https://moeyy.cn/gh-proxy/https://github.com/shadow1ng/fscan.git /app/thirdparty/fscan || true
+# 复制 Git 仓库工具
+COPY thirdparty/SSRFmap /app/thirdparty/SSRFmap
+COPY thirdparty/Gopherus /app/thirdparty/Gopherus
+COPY thirdparty/phpggc /app/thirdparty/phpggc
+COPY thirdparty/jwt_tool /app/thirdparty/jwt_tool
+COPY thirdparty/JSFinder /app/thirdparty/jsfinder
+COPY thirdparty/XXEinjector /app/thirdparty/xxe-injector
+COPY thirdparty/php_filter_chain_generator /app/thirdparty/php_filter_chain
+COPY thirdparty/PetitPotam /app/thirdparty/PetitPotam
+COPY thirdparty/Ghostcat /app/thirdparty/ajpshooter
+COPY thirdparty/marshalsec /app/thirdparty/marshalsec
+COPY thirdparty/fscan /app/thirdparty/fscan
 
 # marshalsec 编译
 RUN cd /app/thirdparty/marshalsec && mvn package -DskipTests 2>/dev/null && cp target/marshalsec-*.jar /app/thirdparty/marshalsec.jar || true
@@ -157,7 +109,17 @@ RUN cd /app/thirdparty/marshalsec && mvn package -DskipTests 2>/dev/null && cp t
 # fscan 编译
 RUN cd /app/thirdparty/fscan && go build -o /usr/local/bin/fscan . || true
 
-# 下载 jar 文件（使用 moeyy.cn 文件加速）
+# ============ 保留的 git clone 工具（其他工具）============
+# dirsearch
+RUN git clone --depth 1 https://gitee.com/mirrors/dirsearch.git /app/thirdparty/dirsearch || true
+
+# SecLists
+RUN git clone --depth 1 https://gitee.com/RichardoMrMu/SecLists.git /app/thirdparty/SecLists || true
+
+# PayloadsAllTheThings
+RUN git clone --depth 1 https://gitee.com/RichardoMrMu/PayloadsAllTheThings.git /app/thirdparty/PayloadsAllTheThings || true
+
+# 下载 jar 文件
 RUN wget -q -O /app/thirdparty/ysoserial.jar https://moeyy.cn/gh-proxy/https://github.com/frohoff/ysoserial/releases/download/v0.0.6/ysoserial-all.jar || \
     wget -q -O /app/thirdparty/ysoserial.jar https://github.com/frohoff/ysoserial/releases/download/v0.0.6/ysoserial-all.jar || true
 
@@ -177,7 +139,6 @@ RUN wget -q --timeout=60 --tries=3 -O /opt/tools/potato/PrintSpoofer64.exe https
     wget -q --timeout=60 --tries=3 -O /opt/tools/potato/PrintSpoofer64.exe https://github.com/itm4n/PrintSpoofer/releases/download/v1.0/PrintSpoofer64.exe || \
     wget -q --timeout=60 --tries=3 -O /opt/tools/potato/PrintSpoofer64.exe https://moeyy.cn/gh-proxy/https://github.com/itm4n/PrintSpoofer/releases/download/v1.0/PrintSpoofer64.exe || true
 
-# GodPotato.exe - GitHub + Gitee 备份
 RUN wget -q --timeout=60 --tries=2 -O /opt/tools/potato/GodPotato.exe https://github.com/BeichenDream/GodPotato/releases/download/V1.20/GodPotato_Net40.exe || \
     wget -q --timeout=60 --tries=2 -O /opt/tools/potato/GodPotato.exe https://gitee.com/uploads/111/685/111/GodPotato_Net40.exe || true
 
@@ -190,13 +151,6 @@ RUN wget -q -O /tmp/mimikatz.zip https://moeyy.cn/gh-proxy/https://github.com/ge
     mv /opt/tools/windows/mimikatz_temp/x64/mimikatz.exe /opt/tools/windows/mimikatz.exe && \
     rm -rf /tmp/mimikatz.zip /opt/tools/windows/mimikatz_temp && \
     chmod +x /opt/tools/windows/mimikatz.exe || true
-
-# xray
-RUN wget -q -O /tmp/xray.zip https://moeyy.cn/gh-proxy/https://github.com/chaitin/xray/releases/download/1.9.11/xray_linux_amd64.zip && \
-    unzip -o /tmp/xray.zip -d /tmp/xray && \
-    mv /tmp/xray/xray_linux_amd64 /usr/local/bin/xray && \
-    chmod +x /usr/local/bin/xray && \
-    rm -rf /tmp/xray* || true
 
 # 清理临时文件
 RUN rm -rf /tmp/* /var/tmp/* && \

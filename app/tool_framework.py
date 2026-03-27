@@ -660,6 +660,7 @@ class ToolRegistry:
     _instance = None
     _tools: Dict[str, List['CTFTool']] = {}
     _cache: Dict[str, Dict] = {}
+    _enabled_tools: Dict[str, bool] = {}  # 工具启用状态
 
     # 缓存配置
     CACHE_MAX_SIZE = 1000  # 最大缓存条目数
@@ -849,6 +850,70 @@ class ToolRegistry:
         """获取需要shell会话的工具名称列表"""
         return [t.name() for t in cls.get_all_tools() if t.REQUIRES_SHELL_SESSION]
 
+    # ==================== 工具启用/禁用管理 ====================
+
+    @classmethod
+    def is_tool_enabled(cls, tool_name: str) -> bool:
+        """检查工具是否启用"""
+        return cls._enabled_tools.get(tool_name, True)
+
+    @classmethod
+    def set_tool_enabled(cls, tool_name: str, enabled: bool) -> bool:
+        """
+        设置工具启用状态
+
+        Args:
+            tool_name: 工具名称
+            enabled: 是否启用
+
+        Returns:
+            是否设置成功
+        """
+        if cls.get_tool_by_name(tool_name):
+            cls._enabled_tools[tool_name] = enabled
+            return True
+        return False
+
+    @classmethod
+    def toggle_tool(cls, tool_name: str) -> Optional[bool]:
+        """
+        切换工具启用状态
+
+        Returns:
+            新的启用状态，如果工具不存在返回None
+        """
+        if cls.get_tool_by_name(tool_name):
+            current = cls._enabled_tools.get(tool_name, True)
+            cls._enabled_tools[tool_name] = not current
+            return not current
+        return None
+
+    @classmethod
+    def get_all_tool_status(cls) -> Dict[str, bool]:
+        """获取所有工具的启用状态"""
+        status = {}
+        for tool in cls.get_all_tools():
+            name = tool.name()
+            status[name] = cls._enabled_tools.get(name, True)
+        return status
+
+    @classmethod
+    def enable_all_tools(cls):
+        """启用所有工具"""
+        for tool in cls.get_all_tools():
+            cls._enabled_tools[tool.name()] = True
+
+    @classmethod
+    def disable_all_tools(cls):
+        """禁用所有工具"""
+        for tool in cls.get_all_tools():
+            cls._enabled_tools[tool.name()] = False
+
+    @classmethod
+    def get_disabled_tools(cls) -> List[str]:
+        """获取所有被禁用的工具列表"""
+        return [name for name, enabled in cls._enabled_tools.items() if not enabled]
+
     @classmethod
     def execute_cached(cls, tool_name: str, target: str, params: Dict) -> Dict:
         """
@@ -857,13 +922,24 @@ class ToolRegistry:
         增强功能:
         - 统一结果格式
         - 错误恢复机制入口
+        - 工具启用状态检查
         """
+        # 0. 检查工具是否被禁用
+        if not cls.is_tool_enabled(tool_name):
+            print(f"[ToolRegistry] Tool '{tool_name}' is disabled, skipping execution")
+            return ensure_result_format({
+                "success": False,
+                "error": f"Tool '{tool_name}' is disabled",
+                "cached": False,
+                "disabled": True
+            })
+
         cache_key = f"{tool_name}:{target}:{json.dumps(params, sort_keys=True)}"
 
-        # 0. 清理过期缓存（每次调用时检查）
+        # 1. 清理过期缓存（每次调用时检查）
         cls._cleanup_cache()
 
-        # 1. 查缓存
+        # 2. 查缓存
         if cache_key in cls._cache:
             cached_entry = cls._cache[cache_key]
             # 检查缓存是否过期

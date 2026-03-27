@@ -25,15 +25,24 @@ CTF-Agent 是一个智能化的渗透测试代理，能够自主完成从信息�
 | Reverse | reverse_analyst, reverse_decompiler | `_llm_reverse_analysis()` |
 | Misc | misc_analyst, misc_extractor | `_llm_misc_analysis()` |
 
-#### 🔧 40+ 安全工具
-- **注入工具**: sqlmap, fenjing (SSTI), dalfox (XSS)
+#### 🔧 69 模块化安全工具
 - **漏洞扫描**: nuclei, xray, fscan, nmap, cve_scanner
+- **注入工具**: sqlmap, fenjing (SSTI), dalfox (XSS)
 - **反序列化**: ysoserial, phpggc, pickle-pwn, marshalsec, JNDIExploit
 - **内网渗透**: impacket, crackmapexec, mimikatz, frp
 - **域渗透**: bloodhound, petitpotam, rubeus
 - **权限提升**: potato系列 (PrintSpoofer/GodPotato)
+- **SSRF利用**: SSRFmap, Gopherus, ssrf-scanner
 - **目录扫描**: dirsearch, ffuf
 - **信息收集**: JSFinder, jwt_tool, httpx, subfinder
+- **其他**: OA漏洞利用、云安全扫描、容器逃逸检测等
+
+#### 📦 工具分类（按节点）
+| 类别 | 节点 | 工具示例 |
+|------|------|---------|
+| **recon** | 侦察兵 | nuclei, xray, httpx, subfinder, nmap |
+| **attacker** | 攻击兵 | sqlmap, ssrfmap, gopherus, fenjing, ysoserial |
+| **internal** | 内网节点 | fscan, petitpotam, mimikatz, crackmapexec |
 
 #### ✨ 系统改进（2026-03 更新）
 - **模块化状态类型**: 场景分离的状态定义（WebCTFState, InternalNetworkState, CryptoCTFState 等）
@@ -162,7 +171,21 @@ deploy/
 │   ├── innovator_agent.py      # 头脑风暴节点（AI规则过滤）
 │   ├── evolution.py            # 进化闭环
 │   └── topology/               # 拓扑分析
-├── tools/                      # 40+安全工具
+├── tools/                      # 69个安全工具
+├── thirdparty/                 # 第三方工具源码（本地化部署）
+│   ├── nuclei/                 # 漏洞扫描二进制
+│   ├── xray/                   # 漏洞扫描二进制
+│   ├── SSRFmap/                # SSRF利用工具
+│   ├── Gopherus/               # Gopher Payload生成
+│   ├── phpggc/                 # PHP反序列化链
+│   ├── jwt_tool/               # JWT利用工具
+│   ├── JSFinder/               # JS文件发现
+│   ├── XXEinjector/            # XXE注入工具
+│   ├── php_filter_chain_generator/ # PHP Filter链生成
+│   ├── PetitPotam/             # AD认证强制攻击
+│   ├── Ghostcat/               # AJP利用工具
+│   ├── marshalsec/             # Java反序列化
+│   └── fscan/                  # 内网扫描工具
 ├── internal_network/           # 内网渗透模块
 │   ├── nodes.py                # 内网节点实现（AI驱动搜索）
 │   └── post_exploit.py         # 后渗透处理（会话验证）

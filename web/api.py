@@ -1478,7 +1478,7 @@ def api_tools_status():
             tools.append({
                 "name": tool_name,
                 "available": tool.check_available() if hasattr(tool, 'check_available') else True,
-                "enabled": tool_enabled.get(tool_name, True),
+                "enabled": ToolRegistry.is_tool_enabled(tool_name),
                 "description": tool.description() if hasattr(tool, 'description') else ""
             })
         return jsonify({"tools": tools, "total": len(tools)})
@@ -1489,13 +1489,13 @@ def api_tools_status():
 @bp.route('/api/tools/<tool_name>/toggle', methods=['POST'])
 def api_toggle_tool(tool_name):
     """切换工具启用状态"""
-    global tool_enabled
     try:
+        from tool_framework import ToolRegistry
         data = request.json or {}
         enabled = data.get('enabled', True)
-        tool_enabled[tool_name] = enabled
+        success = ToolRegistry.set_tool_enabled(tool_name, enabled)
         return jsonify({
-            "success": True,
+            "success": success,
             "tool": tool_name,
             "enabled": enabled
         })
