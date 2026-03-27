@@ -143,6 +143,10 @@ class MSFRPCClient:
             print(f"[MSFRPC] 连接失败: {e}")
         return False
 
+    def login(self) -> bool:
+        """登录别名，兼容旧代码"""
+        return self.connect()
+
     def _call(self, method: str, args: list) -> Optional[Dict]:
         """调用 RPC 方法"""
         if not MSGPACK_AVAILABLE:
@@ -206,6 +210,22 @@ class MSFRPCClient:
         """检查会话是否存活"""
         sessions = self.list_sessions()
         return str(session_id) in sessions
+
+    def module_execute(self, module_type: str, module_name: str, options: Dict) -> Dict:
+        """执行模块 (auxiliary/exploit/post等)"""
+        return self.call("module.execute", [module_type, module_name, options])
+
+    def job_list(self) -> Dict:
+        """列出所有任务"""
+        return self.call("job.list") or {}
+
+    def job_info(self, job_id: int) -> Dict:
+        """获取任务详情"""
+        return self.call("job.info", [str(job_id)])
+
+    def job_stop(self, job_id: int) -> Dict:
+        """停止任务"""
+        return self.call("job.stop", [str(job_id)])
 
 
 # 全局 MSF RPC 客户端实例
