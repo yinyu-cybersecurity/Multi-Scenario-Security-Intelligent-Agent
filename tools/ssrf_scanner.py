@@ -385,6 +385,7 @@ class SSRFScanner(CTFTool):
 
 
 # 注册工具
-def register(registry):
+def register():
     """注册工具到ToolRegistry"""
-    registry.register(SSRFScanner())
+    from tool_framework import ToolRegistry
+    ToolRegistry.register(SSRFScanner())
