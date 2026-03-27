@@ -5,6 +5,7 @@ import os
 import json
 import re
 import shutil
+import subprocess
 from typing import Dict, Any
 from tool_framework import CommandLineTool
 
@@ -22,29 +23,34 @@ class GitHackerTool(CommandLineTool):
 
         # 智能路径探测 - 多种方式尝试
         self.script_path = None
+        self.use_pipx = False
         self.use_module = False
         self.available = False
+        self._install_attempted = False
 
         # 方式1: 检查 pipx 安装路径 (多种可能的可执行文件名)
         pipx_paths = [
             "/root/.local/bin/git-hacker",  # 带连字符
             "/root/.local/bin/githacker",   # 不带连字符
+            "/opt/venv/bin/git-hacker",     # venv路径
+            "/opt/venv/bin/githacker",
         ]
         for path in pipx_paths:
             if os.path.exists(path):
                 self.cmd_path = path
-                self.use_module = True
-                self.script_path = "installed"
+                self.use_pipx = True
+                self.script_path = path
                 self.available = True
                 break
 
         # 方式2: 检查系统 PATH
         if not self.available:
             for name in ["git-hacker", "githacker"]:
-                if shutil.which(name):
-                    self.cmd_path = name
-                    self.use_module = True
-                    self.script_path = "installed"
+                path = shutil.which(name)
+                if path:
+                    self.cmd_path = path
+                    self.use_pipx = True
+                    self.script_path = path
                     self.available = True
                     break
 
@@ -63,7 +69,38 @@ class GitHackerTool(CommandLineTool):
                     self.script_path = self.source_dir
                     self.available = True
 
+        # 方式4: 尝试pip安装（运行时安装）
+        if not self.available:
+            self._try_install()
+
         self.timeout = 120
+
+    def _try_install(self):
+        """尝试运行时安装git-hacker"""
+        if self._install_attempted:
+            return
+        self._install_attempted = True
+
+        try:
+            print("[git-hacker] 尝试运行时安装...")
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "git-hacker", "-q"],
+                capture_output=True,
+                timeout=60
+            )
+            if result.returncode == 0:
+                # 再次检查
+                for name in ["git-hacker", "githacker"]:
+                    path = shutil.which(name)
+                    if path:
+                        self.cmd_path = path
+                        self.use_pipx = True
+                        self.script_path = path
+                        self.available = True
+                        print(f"[git-hacker] 安装成功: {path}")
+                        break
+        except Exception as e:
+            print(f"[git-hacker] 安装失败: {e}")
 
     def name(self) -> str:
         return "git-hacker"

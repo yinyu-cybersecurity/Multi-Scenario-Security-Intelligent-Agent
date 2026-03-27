@@ -76,8 +76,9 @@ class MimikatzTool(CommandLineTool):
 
         common_paths = [
             "/opt/tools/windows/mimikatz.exe",  # Dockerfile下载路径
+            "/opt/tools/windows/mimikatz/x64/mimikatz.exe",
             "/opt/tools/x64/mimikatz.exe",
-            "/opt/tools/mimikatz/x64/mimikatz.exe",
+            "/opt/tools/mimikatz.exe",
             "mimikatz.exe",
             "./mimikatz.exe",
             "./tools/mimikatz.exe",
@@ -110,12 +111,21 @@ class MimikatzTool(CommandLineTool):
             "Silver Ticket"
         ]
 
+    def capability_statement(self) -> str:
+        return "Windows凭据提取工具。需要Windows环境和管理员权限。支持：内存凭据提取、DCSync攻击、Kerberos票据操作。适合：内网渗透后提权、域控攻击。"
+
     def check_available(self) -> bool:
         """检查 mimikatz 是否可用"""
         if self.executable and os.path.exists(self.executable):
             return True
         # Windows环境检查
-        return shutil.which("mimikatz.exe") is not None
+        if shutil.which("mimikatz.exe") is not None:
+            return True
+        # Linux下检查文件是否存在
+        if os.path.exists("/opt/tools/windows/mimikatz.exe"):
+            self.executable = "/opt/tools/windows/mimikatz.exe"
+            return True
+        return False
 
     def expected_params(self) -> Dict[str, Dict[str, Any]]:
         return {

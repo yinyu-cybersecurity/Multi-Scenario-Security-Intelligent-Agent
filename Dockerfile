@@ -8,10 +8,14 @@ RUN sed -i 's@archive.ubuntu.com@mirrors.aliyun.com@g' /etc/apt/sources.list && 
     apt-get update && \
     apt-get install -y --no-install-recommends \
         python3.11 python3.11-venv python3-pip python3.10-venv \
-        git curl wget unzip nmap openjdk-17-jdk maven ruby php-cli \
+        git curl wget unzip nmap openjdk-17-jdk openjdk-8-jdk maven ruby php-cli \
         libssl-dev libssh-dev libimage-exiftool-perl binwalk foremost \
         libmagic1 proxychains4 hydra && \
     rm -rf /var/lib/apt/lists/*
+
+# 设置Java 8为默认（marshalsec需要Java 8）
+ENV JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+ENV PATH=$JAVA_HOME/bin:$PATH
 
 # 下载 Go（国内镜像）
 RUN wget -q https://mirrors.aliyun.com/golang/go1.22.0.linux-amd64.tar.gz && \
@@ -97,8 +101,12 @@ COPY thirdparty/marshalsec /app/thirdparty/marshalsec
 COPY thirdparty/fscan_windows /opt/tools/windows/fscan
 COPY thirdparty/ysoserial/ysoserial-all.jar /app/thirdparty/ysoserial.jar
 
-# marshalsec 编译
-RUN cd /app/thirdparty/marshalsec && mvn package -DskipTests 2>/dev/null && cp target/marshalsec-*.jar /app/thirdparty/marshalsec.jar || true
+# marshalsec 编译 (Java反序列化工具)
+RUN cd /app/thirdparty/marshalsec && \
+    (mvn clean package -DskipTests 2>/dev/null && \
+     cp target/marshalsec-*-all.jar /app/thirdparty/marshalsec.jar && \
+     echo "marshalsec compiled successfully") || \
+    echo "Warning: marshalsec compilation failed, will use ysoserial as fallback"
 
 # ============ 保留的 git clone 工具（其他工具）============
 # dirsearch
@@ -126,12 +134,16 @@ RUN wget -q --timeout=60 --tries=2 -O /opt/tools/potato/GodPotato.exe https://gi
 RUN wget -q -O /opt/tools/windows/Rubeus.exe https://moeyy.cn/gh-proxy/https://github.com/GhostPack/Rubeus/releases/download/2.2.0/Rubeus.exe || \
     wget -q -O /opt/tools/windows/Rubeus.exe https://github.com/GhostPack/Rubeus/releases/download/2.2.0/Rubeus.exe || true
 
-# mimikatz（Windows）
-RUN wget -q -O /tmp/mimikatz.zip https://moeyy.cn/gh-proxy/https://github.com/gentilkiwi/mimikatz/releases/download/2.2.0-20220919/mimikatz_trunk.zip && \
-    unzip -o /tmp/mimikatz.zip -d /opt/tools/windows/mimikatz_temp/ && \
-    mv /opt/tools/windows/mimikatz_temp/x64/mimikatz.exe /opt/tools/windows/mimikatz.exe && \
-    rm -rf /tmp/mimikatz.zip /opt/tools/windows/mimikatz_temp && \
-    chmod +x /opt/tools/windows/mimikatz.exe || true
+# mimikatz（Windows）- 多镜像源尝试
+RUN mkdir -p /opt/tools/windows && \
+    (wget -q -O /tmp/mimikatz.zip https://moeyy.cn/gh-proxy/https://github.com/gentilkiwi/mimikatz/releases/download/2.2.0-20220919/mimikatz_trunk.zip || \
+     wget -q -O /tmp/mimikatz.zip https://github.com/gentilkiwi/mimikatz/releases/download/2.2.0-20220919/mimikatz_trunk.zip || \
+     wget -q -O /tmp/mimikatz.zip https://ghproxy.net/https://github.com/gentilkiwi/mimikatz/releases/download/2.2.0-20220919/mimikatz_trunk.zip) && \
+    (unzip -o /tmp/mimikatz.zip -d /opt/tools/windows/mimikatz_temp/ && \
+     mv /opt/tools/windows/mimikatz_temp/x64/mimikatz.exe /opt/tools/windows/mimikatz.exe && \
+     chmod +x /opt/tools/windows/mimikatz.exe || \
+     echo "Warning: mimikatz extraction failed") && \
+    rm -rf /tmp/mimikatz.zip /opt/tools/windows/mimikatz_temp 2>/dev/null || true
 
 # 清理临时文件
 RUN rm -rf /tmp/* /var/tmp/* && \
