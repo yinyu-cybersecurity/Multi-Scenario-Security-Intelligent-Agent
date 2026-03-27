@@ -915,7 +915,8 @@ class ToolRegistry:
         return [name for name, enabled in cls._enabled_tools.items() if not enabled]
 
     @classmethod
-    def execute_cached(cls, tool_name: str, target: str, params: Dict) -> Dict:
+    def execute_cached(cls, tool_name: str, target: str, params: Dict,
+                       state: Dict = None) -> Dict:
         """
         供主图编排调用：执行工具并管理缓存，防止重复发包
 
@@ -923,6 +924,7 @@ class ToolRegistry:
         - 统一结果格式
         - 错误恢复机制入口
         - 工具启用状态检查
+        - 自动会话注入 (新增)
         """
         # 0. 检查工具是否被禁用
         if not cls.is_tool_enabled(tool_name):
@@ -950,7 +952,7 @@ class ToolRegistry:
                 # 缓存过期，删除
                 del cls._cache[cache_key]
 
-        # 2. 找工具
+        # 3. 找工具
         target_tool: Optional['CTFTool'] = None
         for tlist in cls._tools.values():
             for t in tlist:
@@ -972,7 +974,10 @@ class ToolRegistry:
                 "cached": False
             })
 
-        # 3. 跑工具
+        # 4. 自动会话注入 (新增)
+        params = cls._inject_session_if_needed(target_tool, params, state)
+
+        # 5. 跑工具
         print(f"[ToolRegistry] Executing: {tool_name} -> {target}")
         start_time = time.time()
         try:
@@ -1059,3 +1064,135 @@ class ToolRegistry:
         """清空所有缓存"""
         cls._cache.clear()
         print("[ToolRegistry] Cache cleared")
+
+    # ==================== 会话自动注入 ====================
+
+    @classmethod
+    def _inject_session_if_needed(cls, tool: 'CTFTool', params: Dict,
+                                   state: Dict = None) -> Dict:
+        """
+        为需要会话的工具自动注入会话信息
+
+        Args:
+            tool: 工具实例
+            params: 原始参数
+            state: 当前状态 (包含 shell_session, active_sessions 等)
+
+        Returns:
+            注入会话后的参数
+        """
+        # 如果工具不需要会话，直接返回
+        if not getattr(tool, 'REQUIRES_SHELL_SESSION', False):
+            return params
+
+        # 如果已经传入了 session 参数，不需要注入
+        if params.get('session') or params.get('shell_session') or params.get('session_id'):
+            return params
+
+        # 没有 state，无法注入
+        if not state:
+            print(f"[ToolRegistry] Warning: Tool '{tool.name()}' requires session but no state provided")
+            return params
+
+        # 尝试获取可用会话
+        session_info = cls._get_available_session(state, tool)
+        if session_info:
+            params = params.copy()  # 不修改原始参数
+            params['session'] = session_info.get('session_id') or session_info.get('id')
+            params['shell_session'] = session_info
+            print(f"[ToolRegistry] Auto-injected session {params['session']} for tool '{tool.name()}'")
+
+        return params
+
+    @classmethod
+    def _get_available_session(cls, state: Dict, tool: 'CTFTool') -> Optional[Dict]:
+        """
+        从状态中获取可用的会话
+
+        优先级:
+        1. state["shell_session"] - 当前主会话
+        2. state["active_sessions"] - 活跃会话列表中最新
+
+        Args:
+            state: 当前状态
+            tool: 工具实例 (用于匹配 OS 类型等)
+
+        Returns:
+            会话信息字典或 None
+        """
+        # 1. 检查 shell_session
+        shell_session = state.get('shell_session')
+        if shell_session and isinstance(shell_session, dict):
+            if shell_session.get('session_id') or shell_session.get('id'):
+                return shell_session
+
+        # 2. 检查 active_sessions
+        active_sessions = state.get('active_sessions', [])
+        if active_sessions:
+            # 获取最新的活跃会话
+            # 优先选择管理员权限的会话
+            admin_sessions = [s for s in active_sessions if s.get('is_admin')]
+            if admin_sessions:
+                return admin_sessions[0]
+            return active_sessions[0]
+
+        # 3. 尝试从 session_manager 获取
+        try:
+            from remote_executor.session_manager import get_session_manager
+
+            # 根据工具要求过滤
+            require_admin = getattr(tool, 'REQUIRES_ADMIN', False)
+            require_os = getattr(tool, 'REQUIRES_OS', None)
+
+            session_manager = get_session_manager()
+            sessions = session_manager.get_active_sessions(
+                os_type=require_os,
+                require_admin=require_admin
+            )
+
+            if sessions:
+                best = sessions[0]
+                return {
+                    'id': best.id,
+                    'session_id': best.id,
+                    'type': best.session_type.value,
+                    'target': best.target,
+                    'os_type': best.os_type,
+                    'is_admin': best.is_admin
+                }
+
+        except Exception as e:
+            print(f"[ToolRegistry] Failed to get session from manager: {e}")
+
+        return None
+
+    @classmethod
+    def get_available_sessions_info(cls, state: Dict = None) -> str:
+        """
+        获取可用会话信息供 AI 决策
+
+        Returns:
+            格式化的会话信息字符串
+        """
+        try:
+            from remote_executor.session_manager import get_session_manager
+            session_manager = get_session_manager()
+            return session_manager.get_session_info_for_ai()
+        except Exception:
+            pass
+
+        # 备选：从 state 获取
+        if state:
+            sessions = []
+            shell_session = state.get('shell_session')
+            if shell_session:
+                sessions.append(f"主会话: {shell_session.get('type', 'unknown')} -> {shell_session.get('target', 'unknown')}")
+
+            active_sessions = state.get('active_sessions', [])
+            for s in active_sessions[:3]:
+                sessions.append(f"会话: {s.get('type', 'unknown')} -> {s.get('target', 'unknown')}")
+
+            if sessions:
+                return "当前会话:\n" + "\n".join(f"  - {s}" for s in sessions)
+
+        return "当前无活跃会话"

@@ -13,6 +13,8 @@ Shell会话管理器
 - 统一的会话接口
 - 支持会话持久化
 - 自动重连机制
+- MSF RPC 集成
+- 会话存活检查
 """
 import os
 import json
@@ -21,10 +23,18 @@ import uuid
 import socket
 import subprocess
 import requests
+import threading
 from enum import Enum
 from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass, field, asdict
 from threading import Lock
+
+# MSF RPC 集成
+try:
+    import msgpack
+    MSGPACK_AVAILABLE = True
+except ImportError:
+    MSGPACK_AVAILABLE = False
 
 
 class ShellType(Enum):
@@ -35,6 +45,14 @@ class ShellType(Enum):
     IMPACKET = "impacket"
     METERPRETER = "meterpreter"
     CS_BEACON = "cs_beacon"
+
+
+class SessionStatus(Enum):
+    """会话状态"""
+    ACTIVE = "active"           # 活跃
+    IDLE = "idle"               # 空闲
+    DISCONNECTED = "disconnected"  # 已断开
+    UNKNOWN = "unknown"         # 未知
 
 
 @dataclass
@@ -53,6 +71,7 @@ class ShellSession:
         is_system: 是否有SYSTEM/ROOT权限
         internal_ips: 发现的内网IP
         metadata: 额外元数据
+        status: 会话状态
     """
     id: str
     session_type: ShellType
@@ -64,6 +83,7 @@ class ShellSession:
     is_system: bool = False
     internal_ips: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    status: str = "active"
 
     # 连接信息 (根据类型不同)
     url: str = ""  # webshell URL
@@ -84,6 +104,119 @@ class ShellSession:
         """从字典创建"""
         data['session_type'] = ShellType(data['session_type'])
         return cls(**data)
+
+
+# ============================================================
+# MSF RPC 客户端 - 与 Metasploit RPC 服务通信
+# ============================================================
+
+class MSFRPCClient:
+    """
+    Metasploit RPC 客户端
+
+    通过 msgpack 协议与 msfrpcd 通信
+    """
+
+    DEFAULT_HOST = "127.0.0.1"
+    DEFAULT_PORT = 55553
+    DEFAULT_PASSWORD = "msfpassword"
+
+    def __init__(self, host: str = None, port: int = None, password: str = None):
+        self.host = host or self.DEFAULT_HOST
+        self.port = port or self.DEFAULT_PORT
+        self.password = password or self.DEFAULT_PASSWORD
+        self.token = None
+        self.url = f"http://{self.host}:{self.port}/api/"
+
+    def connect(self) -> bool:
+        """连接并获取Token"""
+        if not MSGPACK_AVAILABLE:
+            print("[MSFRPC] msgpack 未安装，无法使用 RPC")
+            return False
+
+        try:
+            response = self._call("auth.login", ["msf", self.password])
+            if response and 'token' in response:
+                self.token = response['token']
+                return True
+        except Exception as e:
+            print(f"[MSFRPC] 连接失败: {e}")
+        return False
+
+    def _call(self, method: str, args: list) -> Optional[Dict]:
+        """调用 RPC 方法"""
+        if not MSGPACK_AVAILABLE:
+            return None
+
+        try:
+            data = msgpack.packb([method] + args)
+            headers = {"Content-Type": "binary/message-pack"}
+
+            resp = requests.post(self.url, data=data, headers=headers,
+                               timeout=30, verify=False)
+            if resp.status_code == 200:
+                return msgpack.unpackb(resp.content, raw=False)
+        except Exception as e:
+            print(f"[MSFRPC] 调用错误: {e}")
+        return None
+
+    def call(self, method: str, args: list = None) -> Optional[Dict]:
+        """带 Token 调用 RPC 方法"""
+        if not self.token:
+            if not self.connect():
+                return None
+        args = args or []
+        return self._call(method, [self.token] + args)
+
+    # ==================== 核心 API ====================
+
+    def get_version(self) -> Dict:
+        """获取 MSF 版本"""
+        return self.call("core.version")
+
+    def list_sessions(self) -> Dict:
+        """列出所有会话"""
+        return self.call("session.list") or {}
+
+    def session_info(self, session_id: int) -> Dict:
+        """获取会话详情"""
+        return self.call("session.info", [str(session_id)])
+
+    def session_execute(self, session_id: int, command: str) -> Dict:
+        """在 Meterpreter 会话中执行命令"""
+        return self.call("session.meterpreter_write", [str(session_id), command])
+
+    def session_read(self, session_id: int) -> Dict:
+        """读取 Meterpreter 会话输出"""
+        return self.call("session.meterpreter_read", [str(session_id)])
+
+    def session_shell_write(self, session_id: int, command: str) -> Dict:
+        """在 Shell 会话中写入命令"""
+        return self.call("session.shell_write", [str(session_id), command + "\n"])
+
+    def session_shell_read(self, session_id: int) -> Dict:
+        """读取 Shell 会话输出"""
+        return self.call("session.shell_read", [str(session_id)])
+
+    def session_kill(self, session_id: int) -> Dict:
+        """终止会话"""
+        return self.call("session.stop", [str(session_id)])
+
+    def check_session_alive(self, session_id: int) -> bool:
+        """检查会话是否存活"""
+        sessions = self.list_sessions()
+        return str(session_id) in sessions
+
+
+# 全局 MSF RPC 客户端实例
+_msf_rpc_client: Optional[MSFRPCClient] = None
+
+def get_msf_rpc_client(host: str = None, port: int = None, password: str = None) -> MSFRPCClient:
+    """获取 MSF RPC 客户端实例"""
+    global _msf_rpc_client
+    if _msf_rpc_client is None:
+        _msf_rpc_client = MSFRPCClient(host, port, password)
+    return _msf_rpc_client
 
 
 class ShellSessionManager:
@@ -509,24 +642,41 @@ class ShellSessionManager:
         return {"success": False, "output": "", "error": "SSH执行失败"}
 
     def _execute_meterpreter(self, session: ShellSession, command: str) -> Dict:
-        """通过Meterpreter执行命令"""
+        """通过 Meterpreter 执行命令 (使用 MSF RPC)"""
         try:
-            from tools.metasploit_manager import get_msf_manager
-            msf = get_msf_manager()
+            msf = get_msf_rpc_client()
 
-            # 尝试连接
-            if not msf.token:
-                msf.connect()
+            # 尝试连接 RPC
+            if not msf.token and not msf.connect():
+                return {"success": False, "output": "", "error": "无法连接 MSF RPC 服务"}
 
-            if not msf.token:
-                return {"success": False, "output": "", "error": "无法连接MSF"}
+            # 检查会话是否存活
+            if not msf.check_session_alive(int(session.id)):
+                session.status = "disconnected"
+                self._save_sessions()
+                return {"success": False, "output": "", "error": "Meterpreter 会话已断开"}
 
             # 执行命令
-            result = msf.execute(int(session.id), command)
-            return result
+            write_result = msf.session_execute(int(session.id), command)
+            if not write_result:
+                return {"success": False, "output": "", "error": "命令写入失败"}
 
-        except ImportError:
-            return {"success": False, "output": "", "error": "MSF模块未安装"}
+            # 等待并读取输出
+            import time
+            time.sleep(1)
+            read_result = msf.session_read(int(session.id))
+
+            output = ""
+            if read_result and 'data' in read_result:
+                output = read_result['data']
+
+            # 更新活跃时间
+            session.last_active = time.time()
+            session.status = "active"
+            self._save_sessions()
+
+            return {"success": True, "output": output, "error": ""}
+
         except Exception as e:
             return {"success": False, "output": "", "error": str(e)}
 
@@ -692,6 +842,200 @@ class ShellSessionManager:
 
         except Exception:
             return ""
+
+    # ==================== 会话健康检查 ====================
+
+    def check_session_health(self, session_id: str) -> Dict[str, Any]:
+        """
+        检查会话健康状态
+
+        Returns:
+            {
+                "alive": bool,
+                "status": str,
+                "last_active": float,
+                "can_reconnect": bool
+            }
+        """
+        session = self.sessions.get(session_id)
+        if not session:
+            return {"alive": False, "status": "not_found", "can_reconnect": False}
+
+        try:
+            if session.session_type == ShellType.METERPRETER:
+                return self._check_meterpreter_health(session)
+            elif session.session_type == ShellType.SSH:
+                return self._check_ssh_health(session)
+            elif session.session_type == ShellType.WEBSHELL:
+                return self._check_webshell_health(session)
+            else:
+                # 其他类型，检查最后活跃时间
+                idle_time = time.time() - session.last_active
+                if idle_time > 300:  # 5分钟无活动
+                    return {"alive": False, "status": "idle_timeout", "can_reconnect": False}
+                return {"alive": True, "status": "active", "can_reconnect": False}
+
+        except Exception as e:
+            return {"alive": False, "status": f"error: {e}", "can_reconnect": False}
+
+    def _check_meterpreter_health(self, session: ShellSession) -> Dict[str, Any]:
+        """检查 Meterpreter 会话健康"""
+        try:
+            msf = get_msf_rpc_client()
+
+            # 尝试连接
+            if not msf.token and not msf.connect():
+                return {"alive": False, "status": "rpc_disconnected", "can_reconnect": True}
+
+            # 检查会话是否在 MSF 中
+            if msf.check_session_alive(int(session.id)):
+                # 更新活跃时间
+                session.last_active = time.time()
+                session.status = "active"
+                self._save_sessions()
+                return {"alive": True, "status": "active", "can_reconnect": False}
+            else:
+                session.status = "disconnected"
+                self._save_sessions()
+                return {"alive": False, "status": "session_dead", "can_reconnect": False}
+
+        except Exception as e:
+            return {"alive": False, "status": f"check_error: {e}", "can_reconnect": True}
+
+    def _check_ssh_health(self, session: ShellSession) -> Dict[str, Any]:
+        """检查 SSH 会话健康"""
+        try:
+            # 尝试执行简单命令
+            result = self._execute_ssh_command(
+                session.host, session.username, session.password,
+                session.private_key, session.port, "echo alive"
+            )
+            if result and "alive" in result:
+                session.last_active = time.time()
+                session.status = "active"
+                self._save_sessions()
+                return {"alive": True, "status": "active", "can_reconnect": True}
+            else:
+                return {"alive": False, "status": "ssh_failed", "can_reconnect": True}
+        except Exception as e:
+            return {"alive": False, "status": f"ssh_error: {e}", "can_reconnect": True}
+
+    def _check_webshell_health(self, session: ShellSession) -> Dict[str, Any]:
+        """检查 WebShell 会话健康"""
+        try:
+            result = self._execute_generic_webshell(session, "echo alive", 5)
+            if result.get("success") and "alive" in result.get("output", ""):
+                session.last_active = time.time()
+                session.status = "active"
+                self._save_sessions()
+                return {"alive": True, "status": "active", "can_reconnect": False}
+            else:
+                return {"alive": False, "status": "webshell_failed", "can_reconnect": False}
+        except Exception as e:
+            return {"alive": False, "status": f"webshell_error: {e}", "can_reconnect": False}
+
+    def check_all_sessions(self) -> Dict[str, Dict[str, Any]]:
+        """
+        检查所有会话的健康状态
+
+        Returns:
+            {session_id: health_info}
+        """
+        results = {}
+        for session_id in list(self.sessions.keys()):
+            results[session_id] = self.check_session_health(session_id)
+        return results
+
+    def cleanup_dead_sessions(self) -> List[str]:
+        """
+        清理已断开的会话
+
+        Returns:
+            已清理的会话ID列表
+        """
+        removed = []
+        for session_id, health in self.check_all_sessions().items():
+            if not health.get("alive") and not health.get("can_reconnect"):
+                self.remove_session(session_id)
+                removed.append(session_id)
+                print(f"[SessionManager] 清理已断开会话: {session_id}")
+
+        return removed
+
+    # ==================== 会话查询接口 ====================
+
+    def get_active_sessions(self, os_type: str = None,
+                            session_type: ShellType = None,
+                            require_admin: bool = False) -> List[ShellSession]:
+        """
+        获取符合条件的活跃会话
+
+        Args:
+            os_type: 操作系统类型过滤 (windows/linux)
+            session_type: 会话类型过滤
+            require_admin: 是否要求管理员权限
+
+        Returns:
+            符合条件的会话列表
+        """
+        result = []
+        for session in self.sessions.values():
+            # 检查状态
+            if session.status == "disconnected":
+                continue
+
+            # 过滤条件
+            if os_type and session.os_type != os_type:
+                continue
+            if session_type and session.session_type != session_type:
+                continue
+            if require_admin and not session.is_admin:
+                continue
+
+            result.append(session)
+
+        # 按最后活跃时间排序
+        result.sort(key=lambda s: s.last_active, reverse=True)
+        return result
+
+    def get_best_session(self, os_type: str = None,
+                         require_admin: bool = False) -> Optional[ShellSession]:
+        """
+        获取最佳可用会话
+
+        优先级:
+        1. 管理员权限
+        2. 最近活跃
+
+        Args:
+            os_type: 操作系统类型
+            require_admin: 是否要求管理员权限
+
+        Returns:
+            最佳会话或 None
+        """
+        sessions = self.get_active_sessions(os_type=os_type, require_admin=require_admin)
+        return sessions[0] if sessions else None
+
+    def get_session_info_for_ai(self) -> str:
+        """
+        获取会话信息供 AI 决策
+
+        Returns:
+            格式化的会话信息字符串
+        """
+        sessions = self.get_active_sessions()
+        if not sessions:
+            return "当前无活跃会话"
+
+        lines = ["当前活跃会话:"]
+        for i, s in enumerate(sessions, 1):
+            admin_mark = " [管理员]" if s.is_admin else ""
+            lines.append(
+                f"  {i}. [{s.session_type.value}] {s.target} ({s.os_type}){admin_mark} - ID: {s.id}"
+            )
+
+        return "\n".join(lines)
 
 
 # 全局会话管理器实例

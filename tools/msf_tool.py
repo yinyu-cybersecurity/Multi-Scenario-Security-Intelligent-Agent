@@ -1063,6 +1063,103 @@ run -j
         """在会话中执行命令"""
         return self._session_exec({"session": session_id, "command": command})
 
+    def register_session_to_manager(self, session_id: int) -> Dict:
+        """
+        将 MSF 会话注册到 session_manager
+
+        这样其他工具可以通过 session_manager 访问该会话
+
+        Args:
+            session_id: MSF 会话 ID
+
+        Returns:
+            注册结果
+        """
+        try:
+            from remote_executor.session_manager import (
+                get_session_manager, ShellSession, ShellType
+            )
+
+            client = self.get_rpc_client()
+            if not client:
+                return {"success": False, "error": "RPC服务不可用"}
+
+            # 获取会话详情
+            sessions = client.list_sessions() or {}
+            msf_session = sessions.get(str(session_id))
+
+            if not msf_session:
+                return {"success": False, "error": f"会话 {session_id} 不存在"}
+
+            # 判断操作系统
+            platform = msf_session.get("platform", "")
+            os_type = "windows" if "win" in platform.lower() else "linux"
+
+            # 创建 ShellSession
+            shell_session = ShellSession(
+                id=str(session_id),
+                session_type=ShellType.METERPRETER,
+                target=msf_session.get("session_host", ""),
+                os_type=os_type,
+                host=msf_session.get("session_host", ""),
+                metadata={
+                    "rpc_host": self.RPC_HOST,
+                    "rpc_port": self.RPC_PORT,
+                    "via_exploit": msf_session.get("via_exploit", ""),
+                    "via_payload": msf_session.get("via_payload", ""),
+                    "workspace": msf_session.get("workspace", "")
+                }
+            )
+
+            # 注册到 session_manager
+            session_manager = get_session_manager()
+            session_manager.sessions[shell_session.id] = shell_session
+            session_manager._save_sessions()
+
+            return {
+                "success": True,
+                "session_id": str(session_id),
+                "target": shell_session.target,
+                "os_type": os_type,
+                "registered": True
+            }
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def sync_all_sessions_to_manager(self) -> Dict:
+        """
+        同步所有 MSF 会话到 session_manager
+
+        Returns:
+            同步结果
+        """
+        try:
+            client = self.get_rpc_client()
+            if not client:
+                return {"success": False, "error": "RPC服务不可用"}
+
+            sessions = client.list_sessions() or {}
+            registered = []
+            failed = []
+
+            for sid in sessions.keys():
+                result = self.register_session_to_manager(int(sid))
+                if result.get("success"):
+                    registered.append(sid)
+                else:
+                    failed.append({"id": sid, "error": result.get("error")})
+
+            return {
+                "success": True,
+                "registered": registered,
+                "failed": failed,
+                "total": len(sessions)
+            }
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
 
 def register():
     from tool_framework import ToolRegistry
