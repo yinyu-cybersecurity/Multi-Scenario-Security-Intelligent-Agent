@@ -970,54 +970,10 @@ def recon_node(state: CTFState) -> Dict:
             fw_version = fw.get("version", "")
             analyst_intel_parts.append(f"[框架识别] {fw_name}" + (f"/{fw_version}" if fw_version else ""))
 
-            # 自动触发并行漏洞扫描 (nuclei + xray + fscan)
-            if fw_name in ["Tomcat", "Spring", "WebLogic", "Shiro", "ThinkPHP"]:
-                log(f"   🔬 自动触发 {fw_name} 并行CVE扫描...")
-
-                # 导入并行扫描函数
-                from tool_selector import run_parallel_vuln_scan, aggregate_scan_results
-
-                # 根据框架选择扫描工具组合
-                scan_tools = ["nuclei", "xray", "fscan"] if fw_name == "Tomcat" else ["nuclei", "xray"]
-
-                # 并行执行扫描
-                scan_results = run_parallel_vuln_scan(http_url, scan_tools, {
-                    "nuclei": {"tags": fw_name.lower(), "severity": "high"},
-                    "xray": {"mode": "webscan"},
-                    "fscan": {"mode": "web"}
-                })
-
-                # 聚合结果
-                agg_result = aggregate_scan_results(scan_results)
-
-                if agg_result["total_vulns"] > 0:
-                    analyst_intel_parts.append(f"[并行扫描发现] {agg_result['total_vulns']} 个漏洞! (工具: {', '.join(agg_result['successful_tools'])})")
-                    for v in agg_result["vulnerabilities"][:5]:
-                        vuln_hints.append(f"{v.get('cve_id', v.get('plugin', v.get('name', '?')))}: {v.get('severity', '?')} [by {v.get('detected_by', '?')}]")
-
-                    # [核心修复] 将扫描发现的漏洞转换为 vuln_candidates 格式
-                    for vuln in agg_result["vulnerabilities"]:
-                        vuln_candidate = {
-                            "type": vuln.get("plugin", vuln.get("type", "cve")),
-                            "location": vuln.get("url", vuln.get("matched_at", http_url)),
-                            "confidence": 0.9 if vuln.get("severity") in ["critical", "high"] else 0.75,
-                            "reason": f"由 {vuln.get('detected_by', '?')} 检测到: {vuln.get('name', vuln.get('description', ''))[:200]}",
-                            "recommended_tools": ["requests"],  # 手工验证
-                            "context": {
-                                "cve_id": vuln.get("cve_id", ""),
-                                "severity": vuln.get("severity", ""),
-                                "template_id": vuln.get("template_id", ""),
-                                "source": vuln.get("detected_by", "")
-                            },
-                            "url": http_url
-                        }
-                        parallel_scan_vuln_candidates.append(vuln_candidate)
-
-                # 同时保留单个工具的详细结果
-                nuclei_result = scan_results.get("nuclei", {})
-                if nuclei_result.get("result", {}).get("vulnerabilities"):
-                    vulns = nuclei_result["result"]["vulnerabilities"]
-                    analyst_intel_parts.append(f"[nuclei详情] {len(vulns)} 个CVE漏洞")
+            # [已移除] 自动触发并行CVE扫描的硬编码逻辑
+            # 改为通过知识库检索获取扫描策略
+            # if fw_name in ["Tomcat", "Spring", "WebLogic", "Shiro", "ThinkPHP"]:
+            #     ... 原硬编码扫描逻辑已删除 ...
 
     if framework and framework not in [fw.get("name") for fw in detected_frameworks]:
         analyst_intel_parts.append(f"[框架识别] {framework}")
@@ -1260,51 +1216,34 @@ def analyst_node(state: CTFState) -> Dict:
     current_url = state.get("current_url", "")
 
     # =====================================================
-    # [内网模式增强] 并行漏扫
+    # [内网模式增强] 简化漏扫（移除硬编码函数）
     # =====================================================
     scan_vulns = []
     exploit_keywords = {}
 
     if internal_mode and current_url:
-        log("   🔬 [内网模式] 执行并行漏扫...")
+        log("   🔬 [内网模式] 执行简化漏扫...")
 
-        # 并行执行 nuclei + xray
+        # 使用统一的扫描工具列表
+        scan_tools = ["nuclei", "xray"]
+        executor = get_executor()
         scan_futures = []
 
-        # Nuclei扫描
-        def run_nuclei():
-            try:
-                result = ToolRegistry.execute_cached(
-                    "nuclei",
-                    current_url,
-                    {"target": current_url, "severity": "high,critical"}
-                )
-                if result and result.get("result", {}).get("vulnerable"):
-                    return result["result"].get("vulnerabilities", [])
-            except Exception as e:
-                log(f"   ⚠️ Nuclei扫描异常: {e}")
-            return []
-
-        # Xray扫描
-        def run_xray():
-            try:
-                result = ToolRegistry.execute_cached(
-                    "xray",
-                    current_url,
-                    {"target": current_url, "mode": "webscan"}
-                )
-                if result and result.get("result", {}).get("vulnerable"):
-                    return result["result"].get("vulnerabilities", [])
-            except Exception as e:
-                log(f"   ⚠️ Xray扫描异常: {e}")
-            return []
-
-        # 并行执行 - 使用全局线程池
-        executor = get_executor()
-        nuclei_future = executor.submit(run_nuclei)
-        xray_future = executor.submit(run_xray)
-
-        scan_futures = [(nuclei_future, "nuclei"), (xray_future, "xray")]
+        for tool_name in scan_tools:
+            def run_scan(tool):
+                try:
+                    params = {"target": current_url}
+                    if tool == "nuclei":
+                        params["severity"] = "high,critical"
+                    elif tool == "xray":
+                        params["mode"] = "webscan"
+                    result = ToolRegistry.execute_cached(tool, current_url, params)
+                    if result and result.get("result", {}).get("vulnerable"):
+                        return result["result"].get("vulnerabilities", [])
+                except Exception as e:
+                    log(f"   ⚠️ {tool}扫描异常: {e}")
+                return []
+            scan_futures.append((executor.submit(run_scan, tool_name), tool_name))
 
         # 收集结果
         for future, tool_name in scan_futures:
@@ -1459,6 +1398,24 @@ def analyst_node(state: CTFState) -> Dict:
                 "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.5,
                 "exploit_keywords": exploit_keywords if exploit_keywords else {}
             }
+
+        # [知识库检索] 识别漏洞后检索payloads
+        if formatted_candidates:
+            try:
+                from rag_builder.retriever import retrieve_relevant_knowledge
+                for vuln in formatted_candidates[:3]:
+                    vuln_type = vuln.get("type", "")
+                    if vuln_type:
+                        results = retrieve_relevant_knowledge(
+                            query=f"{vuln_type} payload exploit",
+                            sources=["payloads"],
+                            top_k=3
+                        )
+                        if results:
+                            vuln["payload_references"] = [r.get("content", "")[:500] for r in results]
+                            log(f"   📚 为 [{vuln_type}] 检索到 {len(results)} 个payload参考")
+            except Exception as e:
+                pass  # 静默失败
 
         analyst_intel = "\n\n".join(key_intel_parts) if key_intel_parts else None
         res = {
@@ -1944,6 +1901,37 @@ def attacker_node(state: CTFState) -> Dict:
             except Exception as e:
                 log(f"   ⚠️ 智慧决策失败: {e}")
 
+    # [知识库检索] 攻击前检索nuclei模板和payloads
+    try:
+        from rag_builder.retriever import retrieve_relevant_knowledge
+        for vuln in candidates[:3]:
+            cve_id = vuln.get("context", {}).get("cve_id", "") or vuln.get("cve_id", "")
+            vuln_type = vuln.get("type", "")
+
+            # 有CVE编号检索nuclei模板
+            if cve_id:
+                nuclei_results = retrieve_relevant_knowledge(
+                    query=f"CVE {cve_id}",
+                    sources=["nuclei"],
+                    top_k=2
+                )
+                if nuclei_results:
+                    vuln["nuclei_templates"] = nuclei_results
+                    log(f"   📚 为 [{cve_id}] 检索到 {len(nuclei_results)} 个nuclei模板")
+
+            # 检索payloads
+            if vuln_type:
+                payload_results = retrieve_relevant_knowledge(
+                    query=f"{vuln_type} bypass payload",
+                    sources=["payloads"],
+                    top_k=3
+                )
+                if payload_results:
+                    vuln["payload_references"] = payload_results
+                    log(f"   📚 为 [{vuln_type}] 检索到 {len(payload_results)} 个payload参考")
+    except Exception:
+        pass  # 静默失败
+
     # =====================================================
     # LLM生成攻击Payload
     # =====================================================
@@ -2087,10 +2075,11 @@ def attacker_node(state: CTFState) -> Dict:
     futures_map = {}
     
     for a in attack_actions:
-        # 为不同工具设置不同的内部超时
+        # 使用统一的工具超时值（移除硬编码）
+        # 慢速工具使用更长超时，其他使用默认值
         tool_name = a.get("tool", "unknown")
-        # 攻击模式下的工具调用应该比探索模式更快
-        task_timeout = 60 if tool_name in ["dirsearch", "sqlmap"] else 20
+        slow_tools = ["dirsearch", "sqlmap", "nuclei", "fscan"]
+        task_timeout = getattr(config, 'TOOL_TIMEOUT_LONG', 60) if tool_name in slow_tools else getattr(config, 'TOOL_TIMEOUT_DEFAULT', 30)
         
         future = get_executor().submit(execute_single_attack, a, current_url, state.get("page_history", {}))
         futures_map[future] = a
@@ -2393,6 +2382,7 @@ def verifier_node(state: CTFState) -> Dict:
 
     current_url = state.get("current_url")
     node_status = state.get("node_attack_status", {})
+    updates = {}  # 用于收集更新数据
 
     # [P3合并] 超时检查 (原reflector功能)
     if current_url and current_url in node_status:
@@ -2431,6 +2421,36 @@ def verifier_node(state: CTFState) -> Dict:
         node_status[current_url]["last_status_codes"].extend(new_codes)
         node_status[current_url]["last_status_codes"] = node_status[current_url]["last_status_codes"][-10:]
         node_status[current_url]["attempt_count"] = node_status[current_url].get("attempt_count", 0) + 1
+
+        # [知识库检索] 连续失败3次后检索writeups获取思路
+        attempt_count = node_status[current_url].get("attempt_count", 0)
+        if attempt_count >= 3:
+            try:
+                from rag_builder.retriever import retrieve_relevant_knowledge
+
+                known_facts = state.get("known_facts", "")
+                vuln_types = [v.get("type", "") for v in state.get("vuln_candidates", [])]
+
+                writeup_results = retrieve_relevant_knowledge(
+                    query=f"CTF {known_facts} {' '.join(vuln_types)}",
+                    sources=["writeups"],
+                    top_k=3
+                )
+
+                resource_results = retrieve_relevant_knowledge(
+                    query=f"{' '.join(vuln_types)} technique bypass",
+                    sources=["security_resources"],
+                    top_k=2
+                )
+
+                if writeup_results or resource_results:
+                    log(f"   📚 卡住后检索到 {len(writeup_results)} 个writeup, {len(resource_results)} 个资源")
+                    updates["retrieval_context"] = {
+                        "similar_writeups": writeup_results,
+                        "technique_docs": resource_results
+                    }
+            except Exception:
+                pass  # 静默失败
 
     if not recent_results:
         log("   ⚠️ 无结果可核验")

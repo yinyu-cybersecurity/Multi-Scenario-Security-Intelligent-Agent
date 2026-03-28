@@ -43,69 +43,6 @@ class ToolRecommendation:
 class ToolSelector:
     """智能工具选择器"""
 
-    # 漏洞类型到工具的映射 (按优先级排序)
-    # 重要: 工具分为三类
-    # - RECON_TOOLS: 侦察兵节点调用，自动化扫描无需决策
-    # - ATTACKER_TOOLS: 攻击兵节点调用，需要目标参数执行攻击
-    # - INTERNAL_TOOLS: 内网节点调用，需要凭据/shell会话
-
-    TOOL_MAPPING = {
-        VulnCategory.SQL_INJECTION: [
-            ("sqlmap", 10, "最成熟的SQL注入自动化工具"),
-            ("requests", 7, "手动构造注入Payload"),
-            ("python-exec", 5, "自定义注入脚本"),
-        ],
-        VulnCategory.SSTI: [
-            ("fenjing", 10, "专门针对Jinja2 SSTI的工具"),
-            ("requests", 8, "手动构造模板注入Payload"),
-            ("python-exec", 6, "自定义模板注入脚本"),
-        ],
-        VulnCategory.XSS: [
-            ("dalfox", 10, "XSS自动化扫描工具"),
-            ("requests", 7, "手动构造XSS Payload"),
-        ],
-        VulnCategory.XXE: [
-            ("xxe-injector", 10, "XXE专用利用工具"),
-            ("nuclei", 8, "包含XXE检测模板"),
-            ("requests", 6, "手动构造XXE Payload"),
-        ],
-        VulnCategory.SSRF: [
-            ("ssrf-scanner", 10, "SSRF专用扫描工具"),
-            ("cloud-scanner", 9, "云元数据获取"),
-            ("requests", 7, "手动构造SSRF请求"),
-        ],
-        VulnCategory.LFI: [
-            ("php-filter-chain", 9, "PHP LFI利用"),
-            ("ffuf", 8, "路径模糊测试"),
-            ("dirsearch", 7, "目录扫描发现敏感文件"),
-            ("requests", 6, "手动构造LFI Payload"),
-        ],
-        VulnCategory.FILE_UPLOAD: [
-            ("file-creator", 9, "生成恶意上传文件"),
-            ("requests", 8, "手动构造上传请求"),
-        ],
-        VulnCategory.DESERIALIZATION: [
-            ("ysoserial", 10, "Java反序列化利用"),
-            ("phpggc", 10, "PHP反序列化利用"),
-            ("pickle-pwn", 10, "Python反序列化利用"),
-            ("marshalsec", 9, "Java JNDI注入"),
-            ("phar-gen", 8, "Phar文件生成"),
-        ],
-        VulnCategory.RCE: [
-            ("nuclei", 10, "CVE模板扫描"),
-            ("jndi-exploit", 9, "JNDI注入RCE"),
-            ("python-exec", 7, "自定义RCE脚本"),
-        ],
-        VulnCategory.AUTH_BYPASS: [
-            ("jwt-tool", 10, "JWT攻击"),
-            ("flask-unsign", 10, "Flask Session伪造"),
-            ("requests", 7, "手动构造认证绕过"),
-        ],
-        VulnCategory.JWT: [
-            ("jwt-tool", 10, "JWT专用工具"),
-        ],
-    }
-
     # 侦察兵节点调用的工具 - 自动化扫描，无需复杂决策
     RECON_TOOLS = [
         "fscan",       # 内网综合扫描
@@ -151,26 +88,6 @@ class ToolSelector:
         "mssqlclient",  # MSSQL客户端
     ]
 
-    # 技术栈到漏洞类型的映射
-    TECH_TO_VULN = {
-        "php": [VulnCategory.LFI, VulnCategory.DESERIALIZATION],
-        "java": [VulnCategory.DESERIALIZATION, VulnCategory.XXE],
-        "python": [VulnCategory.SSTI, VulnCategory.DESERIALIZATION],
-        "nodejs": [VulnCategory.SSTI, VulnCategory.XXE],
-        "asp": [VulnCategory.SQL_INJECTION, VulnCategory.LFI],
-        "jsp": [VulnCategory.SQL_INJECTION, VulnCategory.DESERIALIZATION],
-    }
-
-    # 数据库类型到攻击方式的映射
-    DB_TO_ATTACK = {
-        "mysql": ["sqlmap", "db-attacks"],
-        "mssql": ["sqlmap", "db-attacks"],
-        "postgresql": ["sqlmap", "db-attacks"],
-        "oracle": ["sqlmap", "db-attacks"],
-        "redis": ["db-attacks", "ssrf-scanner"],
-        "mongodb": ["db-attacks", "nosql-map"],
-    }
-
     def __init__(self):
         # 简单的历史记录（不用于训练，仅用于当前会话优化）
         self.successful_tools = {}
@@ -179,116 +96,16 @@ class ToolSelector:
 
     def get_recommended_tools(self, vuln_type: str, context: str = "") -> List[str]:
         """
-        简化的工具推荐接口 - AI驱动增强版
+        简化的工具推荐接口 - 返回可用工具列表
 
         Args:
             vuln_type: 漏洞类型（如 "sql注入", "SSTI", "反序列化"）
             context: 上下文信息（如 "MySQL", "Jinja2", "Java"）
 
         Returns:
-            推荐工具名称列表
+            可用工具名称列表
         """
-        # 标准化漏洞类型
-        vuln_type_lower = vuln_type.lower()
-
-        # 漏洞类型到工具的直接映射
-        direct_mapping = {
-            # Web漏洞
-            "sql注入": ["sqlmap", "db-attacks", "requests"],
-            "sql": ["sqlmap", "db-attacks", "requests"],
-            "sqli": ["sqlmap", "db-attacks", "requests"],
-            "ssti": ["fenjing", "requests", "python-exec"],
-            "模板注入": ["fenjing", "requests", "python-exec"],
-            "xss": ["dalfox", "requests"],
-            "xxe": ["xxe-injector", "nuclei", "requests"],
-            "ssrf": ["ssrf-scanner", "cloud-scanner", "requests"],
-            "lfi": ["php-filter-chain", "ffuf", "dirsearch", "requests"],
-            "rfi": ["requests", "python-exec"],
-            "文件上传": ["file-creator", "requests"],
-
-            # 反序列化
-            "反序列化": ["ysoserial", "phpggc", "pickle-pwn", "marshalsec"],
-            "java反序列化": ["ysoserial", "marshalsec", "jndi-exploit"],
-            "php反序列化": ["phpggc", "phar-gen"],
-
-            # CVE - 并行扫描
-            "cve": ["nuclei", "xray", "fscan"],  # 多工具并行
-            "log4j": ["jndi-exploit", "nuclei", "xray"],
-            "log4shell": ["jndi-exploit", "nuclei", "xray"],
-            "spring": ["nuclei", "xray", "cve-scanner"],
-            "shiro": ["nuclei", "ysoserial", "xray"],
-            "weblogic": ["nuclei", "ysoserial", "marshalsec", "xray"],
-            "fastjson": ["jndi-exploit", "nuclei", "xray"],
-            "tomcat": ["ajp-shooter", "nuclei", "xray", "fscan"],  # 并行扫描
-            "ghostcat": ["ajp-shooter", "nuclei"],
-
-            # 综合漏洞扫描
-            "漏洞扫描": ["nuclei", "xray", "fscan"],
-            "安全评估": ["nuclei", "xray"],
-            "渗透测试": ["nuclei", "xray", "fscan"],
-
-            # 云服务
-            "云元数据": ["cloud-scanner", "ssrf-scanner"],
-            "aws": ["cloud-scanner", "ssrf-scanner"],
-            "azure": ["cloud-scanner", "ssrf-scanner"],
-            "gcp": ["cloud-scanner", "ssrf-scanner"],
-
-            # AI安全
-            "prompt注入": ["ai-attacker", "requests"],
-            "ai攻击": ["ai-attacker", "requests"],
-            "越狱": ["ai-attacker", "requests"],
-
-            # OA系统
-            "oa漏洞": ["oa-exploiter", "nuclei", "requests"],
-            "泛微": ["oa-exploiter", "nuclei"],
-            "致远": ["oa-exploiter", "nuclei"],
-            "通达": ["oa-exploiter", "nuclei"],
-            "蓝凌": ["oa-exploiter", "nuclei"],
-
-            # 内网渗透
-            "端口扫描": ["nmap", "masscan"],
-            "smb枚举": ["crackmapexec", "impacket", "nmap"],
-            "横向移动": ["impacket", "crackmapexec"],
-            "psexec": ["impacket", "crackmapexec"],
-            "wmi": ["impacket", "crackmapexec"],
-            "代理": ["frp-manager"],
-            "socks5": ["frp-manager"],
-
-            # 域渗透
-            "kerberos": ["impacket", "bloodhound"],
-            "as-rep roasting": ["impacket", "crackmapexec"],
-            "kerberoasting": ["impacket", "crackmapexec"],
-            "dcsync": ["impacket", "crackmapexec"],
-            "域渗透": ["impacket", "bloodhound", "crackmapexec"],
-            "票据": ["impacket", "mimikatz"],
-
-            # 认证绕过
-            "jwt": ["jwt-tool", "requests"],
-            "认证绕过": ["jwt-tool", "flask-unsign", "requests"],
-        }
-
-        # 查找匹配的工具
-        for key, tools in direct_mapping.items():
-            if key in vuln_type_lower:
-                return tools
-
-        # 根据上下文进一步筛选
-        if context:
-            context_lower = context.lower()
-            if "mysql" in context_lower or "mssql" in context_lower or "postgres" in context_lower:
-                if "sql" in vuln_type_lower:
-                    return ["sqlmap", "db-attacks"]
-            if "jinja2" in context_lower or "flask" in context_lower:
-                if "ssti" in vuln_type_lower or "模板" in vuln_type:
-                    return ["fenjing", "requests"]
-            if "java" in context_lower:
-                if "反序列化" in vuln_type:
-                    return ["ysoserial", "marshalsec", "jndi-exploit"]
-            if "php" in context_lower:
-                if "反序列化" in vuln_type:
-                    return ["phpggc", "phar-gen"]
-
-        # 默认返回通用工具
+        # 默认返回通用工具列表
         return ["requests", "python-exec", "nuclei"]
 
     def classify_vuln(self, vuln_info: Dict) -> VulnCategory:
@@ -322,7 +139,7 @@ class ToolSelector:
 
     def select_tools(self, vuln_info: Dict, context: Dict = None) -> List[ToolRecommendation]:
         """
-        智能选择工具
+        选择可用工具列表
 
         Args:
             vuln_info: 漏洞信息 {"type": "sql", "location": "...", ...}
@@ -334,53 +151,26 @@ class ToolSelector:
         category = self.classify_vuln(vuln_info)
         recommendations = []
 
-        # 获取基础工具列表
-        base_tools = self.TOOL_MAPPING.get(category, [])
+        # 获取可用工具列表（按类别）
+        available_tools = []
+        if category != VulnCategory.UNKNOWN:
+            # 根据历史记录筛选可用工具
+            for tool in self.successful_tools:
+                if self.failed_tools.get(tool, 0) < 3:  # 失败次数少于3次
+                    available_tools.append(tool)
 
-        # 根据上下文调整优先级
-        if context:
-            tech_stack = context.get("tech_stack", [])
-            db_type = context.get("db_type", "")
+        # 如果没有历史记录，返回通用工具
+        if not available_tools:
+            available_tools = ["requests", "python-exec", "nuclei"]
 
-            # 根据技术栈调整
-            for tech in tech_stack:
-                if tech.lower() in self.TECH_TO_VULN:
-                    if category in self.TECH_TO_VULN[tech.lower()]:
-                        # 相关技术栈，提高优先级
-                        for tool, priority, reason in base_tools:
-                            if tool == "requests":
-                                priority += 2  # 手动构造更可控
-
-            # 根据数据库类型调整
-            if db_type and category == VulnCategory.SQL_INJECTION:
-                db_tools = self.DB_TO_ATTACK.get(db_type.lower(), [])
-                for tool, priority, reason in base_tools:
-                    if tool in db_tools:
-                        priority += 1
-
-        # 根据历史记录调整
-        for tool, priority, reason in base_tools:
-            # 如果之前成功过，提高优先级
-            if tool in self.successful_tools:
-                priority += 2
-
-            # 如果之前失败过，降低优先级
-            if tool in self.failed_tools:
-                priority -= 2
-                # 如果失败次数过多，跳过
-                if self.failed_tools[tool] >= 3:
-                    continue
-
+        for tool in available_tools:
             recommendations.append(ToolRecommendation(
                 tool_name=tool,
-                priority=min(10, max(1, priority)),
-                reason=reason,
+                priority=5,  # 统一优先级
+                reason="可用工具",
                 params_suggestion=self._get_param_suggestions(tool, vuln_info, context),
-                alternative_tools=[t[0] for t in base_tools if t[0] != tool][:2]
+                alternative_tools=[]
             ))
-
-        # 按优先级排序
-        recommendations.sort(key=lambda x: x.priority, reverse=True)
 
         return recommendations
 
@@ -490,48 +280,25 @@ def get_tool_selector() -> ToolSelector:
 # 并行漏洞扫描工具组合
 # ============================================================================
 
-# 漏洞扫描工具组（按场景分类，用于并行调用）
-VULN_SCANNER_GROUPS = {
-    # 综合CVE扫描 - 三个工具并行
-    "cve_full": ["nuclei", "xray", "fscan"],
-
-    # 快速扫描 - 两个工具
-    "cve_quick": ["nuclei", "fscan"],
-
-    # Java/中间件漏洞
-    "java_middleware": ["nuclei", "xray"],
-
-    # Tomcat专项
-    "tomcat": ["nuclei", "xray", "fscan", "ajp-shooter"],
-
-    # OA系统
-    "oa": ["nuclei", "xray", "oa-exploiter"],
-
-    # 内网资产发现
-    "internal_scan": ["fscan", "nmap"],
-
-    # Web应用深度扫描
-    "web_deep": ["nuclei", "xray"],
-}
-
 
 def get_parallel_scanners(scene: str = "cve_full") -> List[str]:
     """
     获取并行扫描工具组合
 
     Args:
-        scene: 场景名称，如 "cve_full", "tomcat", "web_deep"
+        scene: 场景名称（保留参数兼容性）
 
     Returns:
         可用的扫描工具列表
     """
     from tool_framework import ToolRegistry
 
-    tools = VULN_SCANNER_GROUPS.get(scene, VULN_SCANNER_GROUPS["cve_full"])
+    # 默认扫描工具
+    default_tools = ["nuclei", "xray", "fscan"]
 
     # 过滤出实际可用的工具
     available_tools = []
-    for tool_name in tools:
+    for tool_name in default_tools:
         # 检查工具是否注册且可用
         for vuln_type, tool_list in ToolRegistry._tools.items():
             for tool in tool_list:

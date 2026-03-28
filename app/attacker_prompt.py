@@ -3,7 +3,7 @@ from typing import List, Dict
 import json
 
 
-def smart_truncate_output(output: str, max_length: int = 300) -> str:
+def smart_truncate_output(output: str, max_length: int = 800) -> str:
     """
     智能截断输出，保留关键信息
 
@@ -11,11 +11,24 @@ def smart_truncate_output(output: str, max_length: int = 300) -> str:
     1. 错误信息
     2. flag相关内容
     3. 前部和后部内容
+
+    特殊处理:
+    - 代码内容(<?php或<%): 扩大3倍
+    - 路径/参数内容(path=或url=): 扩大2倍
     """
     if not output or len(output) <= max_length:
         return output
 
     output_lower = output.lower()
+
+    # 根据内容类型调整长度
+    if "<?php" in output_lower or "<%" in output_lower:
+        max_length = max_length * 3
+    elif "path=" in output_lower or "url=" in output_lower:
+        max_length = max_length * 2
+
+    if len(output) <= max_length:
+        return output
 
     # 检查是否包含错误
     if "error" in output_lower or "fail" in output_lower:
@@ -175,11 +188,6 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
 ## 攻击目标
 {json.dumps(vuln_candidates, ensure_ascii=False, indent=2)}
 
-**关键：优先使用每个候选点的recommended_tools！** 不要随意换工具。
-- 如果recommended_tools=["sqlmap"]，就用sqlmap
-- 如果recommended_tools=["requests"]，就用requests直接访问
-- 只有推荐工具失败时，才考虑替代方案
-
 ## 历史攻击
 {history_desc}
 {failed_desc}
@@ -223,4 +231,37 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
 {{"attack_actions": [{{"tool": "requests", "params": {{"method": "POST", "url": "..."}}, "reasoning": "原因"}}]}}
 
 **重要**: attack_actions 不能为空，必须根据漏洞候选生成攻击动作。
+
+## 场景推理框架
+
+在生成攻击动作前，请判断当前属于哪种场景：
+
+### 1. 代码审计场景
+特征：响应中包含源码、敏感函数调用、过滤逻辑
+策略：理解代码逻辑→精确构造payload
+工具倾向：requests, python-exec
+
+### 2. CVE利用场景
+特征：已知框架版本、已知CVE编号
+策略：匹配利用模板→执行攻击
+工具倾向：nuclei, ysoserial等
+
+### 3. 逻辑绕过场景
+特征：存在验证逻辑、参数过滤、白名单限制
+策略：分析限制→构造绕过
+工具倾向：requests, python-exec
+
+### 4. 黑盒测试场景
+特征：无源码、需要枚举发现
+策略：扩大攻击面→验证利用
+工具倾向：dirsearch, ffuf, sqlmap
+
+## 工具选择原则
+
+1. **最小成本**：低成本低成本工具优先
+   - requests (1秒) < python-exec (1秒) < ffuf (数十秒) < dirsearch (数分钟)
+
+2. **精确优于批量**：有明确目标时，直接精确测试
+
+3. **验证优于假设**：每次攻击后验证，根据结果调整
 """

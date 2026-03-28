@@ -2,7 +2,14 @@
 import os
 import importlib
 import inspect
-from tool_framework import CTFTool, ToolRegistry
+import sys
+
+# 确保父目录在路径中
+_parent_dir = os.path.dirname(os.path.dirname(__file__))
+if _parent_dir not in sys.path:
+    sys.path.insert(0, _parent_dir)
+
+from app.tool_framework import CTFTool, ToolRegistry
 
 
 def load_all_tools(registry: ToolRegistry):

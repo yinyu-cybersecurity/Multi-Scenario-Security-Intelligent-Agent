@@ -115,6 +115,54 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
 ## 可用工具
 {tools_info if tools_info else "见工具列表"}
 
+## 场景识别
+
+分析漏洞前，请先判断当前属于哪种场景：
+
+### 代码审计场景
+识别特征：
+- 响应中包含PHP/Java/Python源码
+- 存在敏感函数调用(include, eval, system, exec等)
+- 有过滤逻辑需要绕过
+
+场景特点：需要人工理解代码逻辑，而非批量扫描
+工具选择倾向：requests, python-exec
+
+### CVE利用场景
+识别特征：
+- 已知框架版本(如Tomcat 7.0.x, Spring 4.x)
+- 已知CVE编号
+- 标准化的漏洞模式
+
+场景特点：有现成的利用模板可用
+工具选择倾向：nuclei, xray, ysoserial
+
+### 逻辑绕过场景
+识别特征：
+- 存在Cookie/Session验证逻辑
+- 存在参数过滤或WAF
+- 存在白名单限制
+
+场景特点：需要精确构造绕过payload
+工具选择倾向：requests, python-exec
+
+### 黑盒测试场景
+识别特征：
+- 无源码暴露
+- 无明显漏洞特征
+- 需要枚举发现攻击面
+
+场景特点：需要扩大攻击面
+工具选择倾向：dirsearch, ffuf, sqlmap
+
+## 场景→策略映射
+
+根据识别的场景，在漏洞候选中添加recommended_tools时请遵循：
+- 代码审计场景：优先推荐requests、python-exec
+- CVE利用场景：推荐对应框架的扫描和利用工具
+- 逻辑绕过场景：优先推荐精确构造工具
+- 黑盒测试场景：推荐枚举和扫描工具
+
 ## 决策要求
 
 1. **场景联想**: 根据检测到的框架/版本，联想该环境可能存在的所有漏洞类型
