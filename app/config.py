@@ -253,6 +253,47 @@ class Config:
     FRP_SOCKS5_PORT: int = 10800
 
     # =========================================================================
+    # 工具配置
+    # =========================================================================
+
+    # 工具超时配置（秒）
+    # 根据工具执行特点分级别设置超时时间
+    TOOL_TIMEOUTS: dict = field(default_factory=lambda: {
+        "default": 60,      # 默认超时
+        "fast": 30,          # 快速工具（如简单请求）
+        "normal": 60,        # 常规工具
+        "slow": 180,         # 慢速工具（如扫描器）
+        "very_slow": 300,    # 极慢工具（如深度扫描）
+    })
+
+    # 慢速工具列表（执行时间超过2分钟）
+    # 这些工具会被自动分配更长的超时时间
+    SLOW_TOOLS: List[str] = field(default_factory=lambda: [
+        "dirsearch", "sqlmap", "nuclei", "fscan",
+        "crackmapexec", "nmap", "hydra", "msf"
+    ])
+
+    # 扫描扩展名默认配置
+    # 用于目录扫描、文件爆破等场景
+    DEFAULT_SCAN_EXTENSIONS: str = "php,html,js,asp,aspx,jsp,txt,bak,old"
+
+    # 并行扫描默认工具
+    # 默认启用的自动化扫描工具组合
+    DEFAULT_SCAN_TOOLS: List[str] = field(default_factory=lambda: ["nuclei", "xray"])
+
+    # 基础手工工具
+    # 手工测试和调试时常用的基础工具集
+    BASIC_TOOLS: List[str] = field(default_factory=lambda: ["requests", "python-exec"])
+
+    # 工具路径配置（支持环境变量覆盖）
+    # Docker部署时可通过环境变量自定义路径
+    TOOL_PATHS: dict = field(default_factory=lambda: {
+        "thirdparty_base": os.environ.get("THIRDPARTY_BASE", "/app/thirdparty"),
+        "wordlists": os.environ.get("WORDLISTS_PATH", "/app/data/security_resources/SecLists-master"),
+        "data_dir": os.environ.get("DATA_DIR", "/app/data"),
+    })
+
+    # =========================================================================
     # LLM 配置
     # =========================================================================
 
@@ -372,3 +413,34 @@ if _validation_errors:
     for err in _validation_errors:
         print(f"  - {err}")
     print("=" * 50)
+
+
+# =============================================================================
+# 工具配置辅助函数
+# =============================================================================
+
+def get_tool_timeout(tool_name: str) -> int:
+    """根据工具名称获取超时时间
+
+    Args:
+        tool_name: 工具名称
+
+    Returns:
+        超时时间（秒）
+    """
+    if tool_name in config.SLOW_TOOLS:
+        return config.TOOL_TIMEOUTS["slow"]
+    return config.TOOL_TIMEOUTS["default"]
+
+
+def get_tool_path(tool_name: str) -> str:
+    """获取工具路径
+
+    Args:
+        tool_name: 工具名称
+
+    Returns:
+        工具的完整路径
+    """
+    base = config.TOOL_PATHS["thirdparty_base"]
+    return os.path.join(base, tool_name)

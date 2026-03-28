@@ -596,7 +596,6 @@ def _llm_detect_challenge_type(task_name: str, task_desc: str,
 6. **Internal**: Internal network penetration (AD, lateral movement)
 7. **Cloud**: Cloud security (AWS/Azure/GCP, Lambda, IAM, S3)
 8. **AI**: AI security (LLM, prompt injection, jailbreak, model extraction)
-6. **Internal**: Internal network penetration (AD, lateral movement)
 
 ## Output Format (JSON)
 {{
@@ -742,7 +741,7 @@ def recon_node(state: CTFState) -> Dict:
         log(f"   📂 [dirsearch] 目录扫描: {scan_url}")
         try:
             dirsearch_result = ToolRegistry.execute_cached("dirsearch", scan_url, {
-                "extensions": "php,html,js,txt,bak,sql,zip,tar,gz",
+                "extensions": config.DEFAULT_SCAN_EXTENSIONS,
                 "exclude_status": "404,403,400",
                 "threads": 20,
                 "timeout": 60
@@ -1224,8 +1223,8 @@ def analyst_node(state: CTFState) -> Dict:
     if internal_mode and current_url:
         log("   🔬 [内网模式] 执行简化漏扫...")
 
-        # 使用统一的扫描工具列表
-        scan_tools = ["nuclei", "xray"]
+        # 从配置获取扫描工具列表（移除硬编码）
+        scan_tools = config.DEFAULT_SCAN_TOOLS
         executor = get_executor()
         scan_futures = []
 
@@ -2075,11 +2074,9 @@ def attacker_node(state: CTFState) -> Dict:
     futures_map = {}
     
     for a in attack_actions:
-        # 使用统一的工具超时值（移除硬编码）
-        # 慢速工具使用更长超时，其他使用默认值
+        # 从配置获取慢速工具列表和超时值（移除硬编码）
         tool_name = a.get("tool", "unknown")
-        slow_tools = ["dirsearch", "sqlmap", "nuclei", "fscan"]
-        task_timeout = getattr(config, 'TOOL_TIMEOUT_LONG', 60) if tool_name in slow_tools else getattr(config, 'TOOL_TIMEOUT_DEFAULT', 30)
+        task_timeout = config.TOOL_TIMEOUTS.get("slow", 180) if tool_name in config.SLOW_TOOLS else config.TOOL_TIMEOUTS.get("default", 60)
         
         future = get_executor().submit(execute_single_attack, a, current_url, state.get("page_history", {}))
         futures_map[future] = a
@@ -2231,8 +2228,8 @@ def explorer_node(state: CTFState) -> Dict:
         log(f"   扫描: {scan_target}")
         # 调用 dirsearch
         try:
-            # 默认扫描常见的 php,html,js
-            result = ToolRegistry.execute_cached("dirsearch", scan_target, {"extensions": "php,html,js"})
+            # 从配置获取默认扫描扩展名（移除硬编码）
+            result = ToolRegistry.execute_cached("dirsearch", scan_target, {"extensions": config.DEFAULT_SCAN_EXTENSIONS})
 
             # 检查是否缓存命中
             if result.get("cached", False):

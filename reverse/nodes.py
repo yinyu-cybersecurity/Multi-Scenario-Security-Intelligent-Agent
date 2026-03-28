@@ -44,6 +44,23 @@ def reverse_analyst_node(state: Dict) -> Dict:
     """
     logger.info("[ReverseAnalyst] Starting reverse analysis...")
 
+    # 知识库检索：获取相关逆向工程技术参考
+    knowledge_context = ""
+    try:
+        from rag_builder.retriever import retrieve_relevant_knowledge
+
+        retrieval_result = retrieve_relevant_knowledge(
+            query="reverse engineering flag extraction CTF",
+            sources=["writeups", "security_resources"],
+            top_k=3
+        )
+
+        if retrieval_result:
+            knowledge_context = "\n".join([r.get("content", "")[:500] for r in retrieval_result])
+            logger.info(f"[ReverseAnalyst] Retrieved {len(retrieval_result)} knowledge references")
+    except Exception:
+        pass  # 静默失败，不影响主流程
+
     binary_path = state.get("binary_path", "")
 
     if not binary_path:
@@ -134,6 +151,23 @@ def reverse_decompiler_node(state: Dict) -> Dict:
     binary_path = reverse_info.get("binary_path", "")
     target_func = state.get("target_function", "main")
 
+    # 知识库检索：获取相关逆向工程技术参考
+    knowledge_context = ""
+    try:
+        from rag_builder.retriever import retrieve_relevant_knowledge
+
+        retrieval_result = retrieve_relevant_knowledge(
+            query="reverse engineering algorithm analysis CTF",
+            sources=["writeups", "security_resources"],
+            top_k=3
+        )
+
+        if retrieval_result:
+            knowledge_context = "\n".join([r.get("content", "")[:500] for r in retrieval_result])
+            logger.info(f"[ReverseDeompiler] Retrieved {len(retrieval_result)} knowledge references")
+    except Exception:
+        pass  # 静默失败，不影响主流程
+
     try:
         # 反编译
         decompiled = Decompiler.decompile(binary_path, target_func)
@@ -150,8 +184,8 @@ def reverse_decompiler_node(state: Dict) -> Dict:
         # 查找常量
         constants = PatternMatcher.find_constant_values(disasm)
 
-        # LLM深度分析
-        llm_findings = _llm_reverse_analysis(decompiled, analysis, patterns, state)
+        # LLM深度分析（注入知识库上下文）
+        llm_findings = _llm_reverse_analysis(decompiled, analysis, patterns, state, knowledge_context)
 
         # 识别算法
         algorithm = PatternMatcher.identify_algorithm(analysis)
@@ -178,12 +212,20 @@ def reverse_decompiler_node(state: Dict) -> Dict:
 
 
 def _llm_reverse_analysis(decompiled: str, analysis: Dict,
-                         patterns: List, state: Dict) -> str:
+                         patterns: List, state: Dict, knowledge_context: str = "") -> str:
     """使用LLM进行深度逆向分析"""
+
+    # 构建知识库参考部分
+    knowledge_section = ""
+    if knowledge_context:
+        knowledge_section = f"""
+## Related Reverse Engineering Knowledge References
+{knowledge_context[:1000]}
+"""
 
     prompt = f"""
 Analyze this decompiled code for CTF reverse engineering.
-
+{knowledge_section}
 ## Decompiled Code
 ```
 {decompiled[:1500]}

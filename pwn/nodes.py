@@ -47,6 +47,23 @@ def pwn_analyst_node(state: Dict) -> Dict:
     """
     logger.info("[PwnAnalyst] Starting binary analysis...")
 
+    # 知识库检索：获取相关二进制利用技术参考
+    knowledge_context = ""
+    try:
+        from rag_builder.retriever import retrieve_relevant_knowledge
+
+        retrieval_result = retrieve_relevant_knowledge(
+            query="binary exploit ROP buffer_overflow CTF",
+            sources=["writeups", "payloads"],
+            top_k=3
+        )
+
+        if retrieval_result:
+            knowledge_context = "\n".join([r.get("content", "")[:500] for r in retrieval_result])
+            logger.info(f"[PwnAnalyst] Retrieved {len(retrieval_result)} knowledge references")
+    except Exception:
+        pass  # 静默失败，不影响主流程
+
     # 获取二进制路径
     binary_path = state.get("binary_path", "")
 
@@ -103,8 +120,8 @@ def pwn_analyst_node(state: Dict) -> Dict:
             "exploit_method": v.exploit_method
         } for v in vulnerabilities]
 
-        # LLM深度分析
-        llm_analysis = _llm_pwn_analysis(binary_info_dict, vulns_list, state)
+        # LLM深度分析（注入知识库上下文）
+        llm_analysis = _llm_pwn_analysis(binary_info_dict, vulns_list, state, knowledge_context)
 
         logger.info(f"[PwnAnalyst] Analysis complete: {binary_info.arch}, {len(vulns_list)} vulnerabilities found")
 
@@ -450,12 +467,20 @@ p.interactive()
 
 
 def _llm_pwn_analysis(binary_info: Dict, vulnerabilities: List[Dict],
-                      state: Dict) -> str:
+                      state: Dict, knowledge_context: str = "") -> str:
     """使用LLM进行深度Pwn分析"""
+
+    # 构建知识库参考部分
+    knowledge_section = ""
+    if knowledge_context:
+        knowledge_section = f"""
+## Related Exploit Knowledge References
+{knowledge_context[:1000]}
+"""
 
     prompt = f"""
 Analyze this binary for exploitation opportunities.
-
+{knowledge_section}
 ## Binary Information
 - Architecture: {binary_info.get('arch', 'unknown')}
 - Bits: {binary_info.get('bits', 'unknown')}

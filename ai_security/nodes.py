@@ -57,6 +57,23 @@ def ai_detect_node(state: Dict) -> Dict:
     target = state.get("current_url") or state.get("target", "")
     logger.info(f"[AIDetect] 目标: {target}")
 
+    # 知识库检索：获取相关AI攻击技术参考
+    knowledge_context = ""
+    try:
+        from rag_builder.retriever import retrieve_relevant_knowledge
+
+        retrieval_result = retrieve_relevant_knowledge(
+            query="prompt injection AI jailbreak CTF",
+            sources=["writeups", "security_resources"],
+            top_k=3
+        )
+
+        if retrieval_result:
+            knowledge_context = "\n".join([r.get("content", "")[:500] for r in retrieval_result])
+            logger.info(f"[AIDetect] Retrieved {len(retrieval_result)} knowledge references")
+    except Exception:
+        pass  # 静默失败，不影响主流程
+
     updates = {
         "execution_steps": state.get("execution_steps", 0) + 1
     }
@@ -64,9 +81,9 @@ def ai_detect_node(state: Dict) -> Dict:
     # 规则快速检测
     ai_type = _detect_ai_type(target)
 
-    # AI补充分析
+    # AI补充分析（注入知识库上下文）
     if not ai_type:
-        ai_type = _ai_analyze_target(target, state)
+        ai_type = _ai_analyze_target(target, state, knowledge_context)
 
     updates.update({
         "target_endpoint": target,
@@ -288,10 +305,19 @@ def _detect_protections(target: str) -> List[str]:
     return protections
 
 
-def _ai_analyze_target(target: str, state: Dict) -> str:
+def _ai_analyze_target(target: str, state: Dict, knowledge_context: str = "") -> str:
     """AI分析目标服务类型"""
-    prompt = f"""你是一个AI安全专家，专门识别和分析AI服务类型。
 
+    # 构建知识库参考部分
+    knowledge_section = ""
+    if knowledge_context:
+        knowledge_section = f"""
+## Related AI Security Knowledge References
+{knowledge_context[:1000]}
+"""
+
+    prompt = f"""你是一个AI安全专家，专门识别和分析AI服务类型。
+{knowledge_section}
 ## 任务
 分析目标是否为AI服务，并确定其类型。
 

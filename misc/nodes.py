@@ -47,6 +47,23 @@ def misc_analyst_node(state: Dict) -> Dict:
     """
     logger.info("[MiscAnalyst] Starting file analysis...")
 
+    # 知识库检索：获取相关隐写/取证技术参考
+    knowledge_context = ""
+    try:
+        from rag_builder.retriever import retrieve_relevant_knowledge
+
+        retrieval_result = retrieve_relevant_knowledge(
+            query="steganography forensics pcap CTF",
+            sources=["writeups", "security_resources"],
+            top_k=3
+        )
+
+        if retrieval_result:
+            knowledge_context = "\n".join([r.get("content", "")[:500] for r in retrieval_result])
+            logger.info(f"[MiscAnalyst] Retrieved {len(retrieval_result)} knowledge references")
+    except Exception:
+        pass  # 静默失败，不影响主流程
+
     # 获取文件路径
     file_path = state.get("file_path", "") or state.get("misc_file", "")
 
@@ -105,8 +122,8 @@ def misc_analyst_node(state: Dict) -> Dict:
         # 查找嵌入文件
         embedded = ForensicsAnalyzer.find_embedded_files(file_path)
 
-        # LLM分析
-        llm_insight = _llm_misc_analysis(file_info, steg_results, embedded, state)
+        # LLM分析（注入知识库上下文）
+        llm_insight = _llm_misc_analysis(file_info, steg_results, embedded, state, knowledge_context)
 
         logger.info(f"[MiscAnalyst] Analysis complete: {file_info.file_type.value}")
 
@@ -256,12 +273,20 @@ def _find_flags(text: str) -> List[str]:
 
 
 def _llm_misc_analysis(file_info: Any, steg_results: Dict,
-                       embedded: List, state: Dict) -> str:
+                       embedded: List, state: Dict, knowledge_context: str = "") -> str:
     """使用LLM进行Misc分析"""
+
+    # 构建知识库参考部分
+    knowledge_section = ""
+    if knowledge_context:
+        knowledge_section = f"""
+## Related Misc/Stego Knowledge References
+{knowledge_context[:1000]}
+"""
 
     prompt = f"""
 Analyze this file for CTF miscellaneous challenges.
-
+{knowledge_section}
 ## File Information
 - Type: {file_info.file_type.value if hasattr(file_info, 'file_type') else 'unknown'}
 - Size: {file_info.size if hasattr(file_info, 'size') else 'unknown'}

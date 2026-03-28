@@ -43,6 +43,23 @@ def crypto_analyst_node(state: Dict) -> Dict:
     """
     logger.info("Starting crypto analysis...")
 
+    # 知识库检索：获取相关加密攻击技术参考
+    knowledge_context = ""
+    try:
+        from rag_builder.retriever import retrieve_relevant_knowledge
+
+        retrieval_result = retrieve_relevant_knowledge(
+            query="crypto attack cipher CTF",
+            sources=["writeups", "security_resources"],
+            top_k=3
+        )
+
+        if retrieval_result:
+            knowledge_context = "\n".join([r.get("content", "")[:500] for r in retrieval_result])
+            logger.info(f"[CryptoAnalyst] Retrieved {len(retrieval_result)} knowledge references")
+    except Exception:
+        pass  # 静默失败，不影响主流程
+
     # 收集待分析的密文
     ciphertexts = []
 
@@ -97,9 +114,9 @@ def crypto_analyst_node(state: Dict) -> Dict:
                 "possible_types": identified[:3]  # 取前3个可能类型
             })
 
-    # 使用LLM进行深度分析
+    # 使用LLM进行深度分析（注入知识库上下文）
     if analysis_results:
-        llm_analysis = _llm_crypto_analysis(analysis_results, state)
+        llm_analysis = _llm_crypto_analysis(analysis_results, state, knowledge_context)
     else:
         llm_analysis = "No encryption patterns identified"
 
@@ -316,12 +333,20 @@ def _looks_like_ciphertext(text: str) -> bool:
     return False
 
 
-def _llm_crypto_analysis(analysis_results: List[Dict], state: Dict) -> str:
+def _llm_crypto_analysis(analysis_results: List[Dict], state: Dict, knowledge_context: str = "") -> str:
     """使用LLM进行深度加密分析"""
+
+    # 构建知识库参考部分
+    knowledge_section = ""
+    if knowledge_context:
+        knowledge_section = f"""
+## Related Knowledge References
+{knowledge_context[:1000]}
+"""
 
     prompt = f"""
 Analyze the following ciphertext patterns and provide decryption suggestions.
-
+{knowledge_section}
 ## Identified Ciphertexts
 {json.dumps(analysis_results, indent=2)}
 

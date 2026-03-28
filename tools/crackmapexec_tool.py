@@ -23,8 +23,6 @@ import shutil
 import subprocess
 from typing import Dict, Any, Optional, List
 from tool_framework import CommandLineTool
-from llm_client import llm_client
-from config import config
 
 
 class CrackMapExecTool(CommandLineTool):

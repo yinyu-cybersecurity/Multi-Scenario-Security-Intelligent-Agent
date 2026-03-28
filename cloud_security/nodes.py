@@ -50,6 +50,23 @@ def cloud_recon_node(state: Dict) -> Dict:
     target = state.get("current_url") or state.get("target", "")
     logger.info(f"[CloudRecon] 目标: {target}")
 
+    # 知识库检索：获取相关云安全攻击技术参考
+    knowledge_context = ""
+    try:
+        from rag_builder.retriever import retrieve_relevant_knowledge
+
+        retrieval_result = retrieve_relevant_knowledge(
+            query="cloud S3 metadata SSRF CTF",
+            sources=["writeups", "security_resources"],
+            top_k=3
+        )
+
+        if retrieval_result:
+            knowledge_context = "\n".join([r.get("content", "")[:500] for r in retrieval_result])
+            logger.info(f"[CloudRecon] Retrieved {len(retrieval_result)} knowledge references")
+    except Exception:
+        pass  # 静默失败，不影响主流程
+
     updates = {
         "execution_steps": state.get("execution_steps", 0) + 1
     }
@@ -83,7 +100,8 @@ def cloud_recon_node(state: Dict) -> Dict:
                 "cloud_provider": provider,
                 "metadata_leaked": metadata,
                 "detected_services": result.get("resources", []),
-                "cloud_phase": "enum" if metadata or result.get("resources") else "complete"
+                "cloud_phase": "enum" if metadata or result.get("resources") else "complete",
+                "cloud_knowledge_context": knowledge_context  # 保存知识库上下文到state
             })
             return updates
 
@@ -99,6 +117,7 @@ def cloud_recon_node(state: Dict) -> Dict:
         "cloud_provider": provider,
         "metadata_leaked": metadata,
         "cloud_phase": "enum" if provider else "complete",
+        "cloud_knowledge_context": knowledge_context,  # 保存知识库上下文到state
         "failure_weighted_score": state.get("failure_weighted_score", 0) + (0 if provider else 0.5)
     })
     return updates
@@ -108,6 +127,9 @@ def cloud_enum_node(state: Dict) -> Dict:
     """[云枚举] 枚举云资源"""
     provider = state.get("cloud_provider", "")
     target = state.get("current_url") or state.get("target", "")
+
+    # 从state获取知识库上下文
+    knowledge_context = state.get("cloud_knowledge_context", "")
 
     updates = {
         "execution_steps": state.get("execution_steps", 0) + 1
@@ -119,8 +141,8 @@ def cloud_enum_node(state: Dict) -> Dict:
 
     logger.info(f"[CloudEnum] 枚举 {provider}")
 
-    # AI决策枚举策略
-    enum_strategy = _ai_decide_enum_strategy(provider, state)
+    # AI决策枚举策略（注入知识库上下文）
+    enum_strategy = _ai_decide_enum_strategy(provider, state, knowledge_context)
 
     # 执行枚举
     if CLOUD_SCANNER_AVAILABLE:
@@ -260,10 +282,19 @@ def _probe_metadata(provider: str) -> Dict:
     return metadata
 
 
-def _ai_decide_enum_strategy(provider: str, state: Dict) -> Dict:
+def _ai_decide_enum_strategy(provider: str, state: Dict, knowledge_context: str = "") -> Dict:
     """AI决策枚举策略 - 根据上下文智能选择"""
-    prompt = f"""你是一个云安全专家，专门进行云资源枚举和权限分析。
 
+    # 构建知识库参考部分
+    knowledge_section = ""
+    if knowledge_context:
+        knowledge_section = f"""
+## Related Cloud Security Knowledge References
+{knowledge_context[:1000]}
+"""
+
+    prompt = f"""你是一个云安全专家，专门进行云资源枚举和权限分析。
+{knowledge_section}
 ## 任务
 根据已知信息，决定最优的云资源枚举策略。
 

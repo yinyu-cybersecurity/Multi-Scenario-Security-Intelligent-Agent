@@ -12,8 +12,6 @@ import requests
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from tool_framework import CommandLineTool
-from llm_client import llm_client
-from config import config
 
 
 @dataclass

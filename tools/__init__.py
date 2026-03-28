@@ -1,49 +1,56 @@
 # tools/__init__.py
+"""
+工具动态加载模块
+
+延迟加载机制：不在导入时立即加载工具，而是在首次使用时加载
+"""
 import os
 import importlib
 import inspect
-import sys
 
-# 确保父目录在路径中
-_parent_dir = os.path.dirname(os.path.dirname(__file__))
-if _parent_dir not in sys.path:
-    sys.path.insert(0, _parent_dir)
+# 延迟加载标志
+_tools_loaded = False
 
-from app.tool_framework import CTFTool, ToolRegistry
+def _ensure_tools_loaded():
+    """确保工具已加载（延迟加载）"""
+    global _tools_loaded
+    if _tools_loaded:
+        return
 
+    _tools_loaded = True
 
-def load_all_tools(registry: ToolRegistry):
-    """
-    动态扫描 tools 目录下的所有文件，自动注册所有合法的 CTFTool 具体子类
-    """
+    # 延迟导入，避免循环导入
+    from app.tool_framework import CTFTool, ToolRegistry
+
     tools_dir = os.path.dirname(__file__)
 
-    # 遍历当前目录下的所有文件
     for filename in os.listdir(tools_dir):
-        # 忽略非 Python 文件和 __init__.py 本身
         if filename.endswith(".py") and filename != "__init__.py":
             module_name = f"tools.{filename[:-3]}"
 
             try:
-                # 动态导入模块
                 module = importlib.import_module(module_name)
             except ImportError as e:
-                # 跳过缺少依赖的模块
                 print(f"[Warning] Skip {filename}: {e}")
                 continue
 
-            # 找出模块中所有的类
             for name, obj in inspect.getmembers(module, inspect.isclass):
-                # 条件：
-                # 1. 必须是 CTFTool 的子类
-                # 2. 必须是当前模块定义的类（防止重复加载导入的类）
-                # 3. 关键修复：不能是抽象类（跳过 MCPClientTool, CommandLineTool 等基类）
                 if (issubclass(obj, CTFTool) and
                         obj.__module__ == module_name and
                         not inspect.isabstract(obj)):
-                    # 实例化并注册
-                    registry.register(obj())
+                    try:
+                        registry = ToolRegistry()
+                        registry.register(obj())
+                    except Exception as e:
+                        print(f"[Warning] Failed to register {name}: {e}")
 
 
-# 自动加载所有工具
-load_all_tools(ToolRegistry)
+def get_tool_registry():
+    """获取工具注册表（触发延迟加载）"""
+    _ensure_tools_loaded()
+    from app.tool_framework import ToolRegistry
+    return ToolRegistry()
+
+
+# 不在导入时自动加载，改为按需加载
+# load_all_tools(ToolRegistry)  # 移除此行

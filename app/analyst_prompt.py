@@ -126,7 +126,7 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
 - 有过滤逻辑需要绕过
 
 场景特点：需要人工理解代码逻辑，而非批量扫描
-工具选择倾向：requests, python-exec
+工具选择提示：优先使用灵活的手工测试工具，根据代码逻辑定制攻击方案
 
 ### CVE利用场景
 识别特征：
@@ -135,7 +135,7 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
 - 标准化的漏洞模式
 
 场景特点：有现成的利用模板可用
-工具选择倾向：nuclei, xray, ysoserial
+工具选择提示：根据目标框架选择对应的扫描和利用工具
 
 ### 逻辑绕过场景
 识别特征：
@@ -144,7 +144,7 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
 - 存在白名单限制
 
 场景特点：需要精确构造绕过payload
-工具选择倾向：requests, python-exec
+工具选择提示：使用精确控制请求的工具，手工构造绕过逻辑
 
 ### 黑盒测试场景
 识别特征：
@@ -153,7 +153,7 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
 - 需要枚举发现攻击面
 
 场景特点：需要扩大攻击面
-工具选择倾向：dirsearch, ffuf, sqlmap
+工具选择提示：使用枚举和扫描工具发现更多攻击路径
 
 ## 场景→策略映射
 

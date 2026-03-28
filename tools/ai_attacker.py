@@ -8,8 +8,7 @@ import re
 import json
 import time
 import requests
-from typing import Dict, List, Optional, Tuple
-from urllib.parse import urlparse
+from typing import Dict, List, Optional
 
 from tool_framework import CTFTool
 

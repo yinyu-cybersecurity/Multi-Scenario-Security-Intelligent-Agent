@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
 from logger import get_logger
+from config import config
 
 logger = get_logger("ToolSelector")
 
@@ -105,8 +106,11 @@ class ToolSelector:
         Returns:
             可用工具名称列表
         """
-        # 默认返回通用工具列表
-        return ["requests", "python-exec", "nuclei"]
+        # 从配置获取基础工具列表，添加扫描工具作为备选
+        basic_tools = config.BASIC_TOOLS.copy()
+        # 添加默认扫描工具作为备选
+        basic_tools.extend(config.DEFAULT_SCAN_TOOLS)
+        return basic_tools
 
     def classify_vuln(self, vuln_info: Dict) -> VulnCategory:
         """根据漏洞信息分类"""
@@ -159,9 +163,10 @@ class ToolSelector:
                 if self.failed_tools.get(tool, 0) < 3:  # 失败次数少于3次
                     available_tools.append(tool)
 
-        # 如果没有历史记录，返回通用工具
+        # 如果没有历史记录，返回通用工具（从配置获取）
         if not available_tools:
-            available_tools = ["requests", "python-exec", "nuclei"]
+            available_tools = config.BASIC_TOOLS.copy()
+            available_tools.extend(config.DEFAULT_SCAN_TOOLS)
 
         for tool in available_tools:
             recommendations.append(ToolRecommendation(
@@ -292,9 +297,15 @@ def get_parallel_scanners(scene: str = "cve_full") -> List[str]:
         可用的扫描工具列表
     """
     from tool_framework import ToolRegistry
+    from tool_scenarios import get_scan_tools
 
-    # 默认扫描工具
-    default_tools = ["nuclei", "xray", "fscan"]
+    # 从配置和工具场景获取扫描工具列表（移除硬编码）
+    default_tools = config.DEFAULT_SCAN_TOOLS.copy()
+    # 补充工具优先级中定义的扫描工具
+    scan_priority_tools = get_scan_tools()
+    for tool in scan_priority_tools:
+        if tool not in default_tools:
+            default_tools.append(tool)
 
     # 过滤出实际可用的工具
     available_tools = []

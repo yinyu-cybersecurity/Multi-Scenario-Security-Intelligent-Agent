@@ -1,3 +1,10 @@
+# AD工具已迁移到独立工具文件
+# - petitpotam_tool.py: PetitPotam NTLM中继攻击
+# - rubeus_tool.py: Kerberos攻击
+# - impacket_tools.py: Impacket工具集
+#
+# 此文件保留用于向后兼容，不再主动维护
+
 # tools/ad_tools.py
 """
 AD域渗透工具集
