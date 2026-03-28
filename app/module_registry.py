@@ -24,6 +24,11 @@ if _project_root not in sys.path:
 if _current_dir not in sys.path:
     sys.path.insert(0, _current_dir)
 
+# 同时确保 app 目录下的模块可以正确导入
+_app_dir = os.path.join(_project_root, 'app')
+if _app_dir not in sys.path:
+    sys.path.insert(0, _app_dir)
+
 from typing import Callable, Dict, Any, Optional, List
 from dataclasses import dataclass, field
 import importlib

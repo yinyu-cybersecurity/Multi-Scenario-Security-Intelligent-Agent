@@ -28,6 +28,7 @@ pwn>=1.0.0  # pwntools
 impacket>=0.11.0
 bloodhound>=1.0.0
 defusedxml>=0.7.0  # dirsearch依赖
+psycopg[binary]>=3.1.0  # dirsearch PostgreSQL依赖
 
 # Database
 redis>=5.0.0
