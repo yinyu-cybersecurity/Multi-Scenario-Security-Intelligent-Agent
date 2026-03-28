@@ -17,17 +17,19 @@ import os
 import sys
 
 # 确保项目根目录和 app 目录在 sys.path 中
-_current_dir = os.path.dirname(__file__)
+# 使用绝对路径以确保在不同运行目录下都能正确工作
+_current_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(_current_dir)
+
+# 添加项目根目录（deploy 目录），用于导入 ai_security, cloud_security 等
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
+    print(f"[ModuleRegistry] Added to sys.path: {_project_root}")
+
+# 添加 app 目录，用于导入 llm_client, config, logger 等
 if _current_dir not in sys.path:
     sys.path.insert(0, _current_dir)
-
-# 同时确保 app 目录下的模块可以正确导入
-_app_dir = os.path.join(_project_root, 'app')
-if _app_dir not in sys.path:
-    sys.path.insert(0, _app_dir)
+    print(f"[ModuleRegistry] Added to sys.path: {_current_dir}")
 
 from typing import Callable, Dict, Any, Optional, List
 from dataclasses import dataclass, field
@@ -155,8 +157,13 @@ class ModuleRegistry:
         """导入节点函数"""
         try:
             module = importlib.import_module(module_path)
-            return getattr(module, node_name, None)
-        except ImportError:
+            node = getattr(module, node_name, None)
+            if node is None:
+                print(f"[ModuleRegistry] Warning: Node '{node_name}' not found in module '{module_path}'")
+            return node
+        except Exception as e:
+            # 捕获所有异常，记录错误信息
+            print(f"[ModuleRegistry] Failed to import '{node_name}' from '{module_path}': {type(e).__name__}: {e}")
             return None
 
     @classmethod
@@ -164,8 +171,13 @@ class ModuleRegistry:
         """导入模块属性"""
         try:
             module = importlib.import_module(module_path)
-            return getattr(module, attr_name, None)
-        except ImportError:
+            attr = getattr(module, attr_name, None)
+            if attr is None:
+                print(f"[ModuleRegistry] Warning: Attribute '{attr_name}' not found in module '{module_path}'")
+            return attr
+        except Exception as e:
+            # 捕获所有异常，记录错误信息
+            print(f"[ModuleRegistry] Failed to import '{attr_name}' from '{module_path}': {type(e).__name__}: {e}")
             return None
 
     @classmethod

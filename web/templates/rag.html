@@ -10,7 +10,7 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, 'Microsoft YaHei', sans-serif; background: #f0f2f5; color: #333; min-height: 100vh; padding-top: 56px; }
-        .header { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: linear-gradient(135deg, #722ed1 0%, #531dab 100%); color: #fff; padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+        .header { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%); color: #fff; padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
         .header h1 { font-size: 18px; }
         .nav-links { display: flex; gap: 8px; }
         .nav-link { padding: 6px 16px; color: rgba(255,255,255,0.85); text-decoration: none; border-radius: 4px; font-size: 14px; }
@@ -23,12 +23,12 @@
         .section-title { font-size: 13px; color: #666; margin-bottom: 12px; font-weight: 500; }
 
         .collection-item { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; padding: 12px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s; }
-        .collection-item:hover { border-color: #722ed1; }
-        .collection-item.selected { border-color: #722ed1; background: #f9f0ff; }
+        .collection-item:hover { border-color: #1890ff; }
+        .collection-item.selected { border-color: #1890ff; background: #e6f7ff; }
         .collection-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
         .collection-dot { width: 10px; height: 10px; border-radius: 50%; }
         .collection-name { font-weight: 500; font-size: 14px; }
-        .collection-count { font-size: 12px; color: #722ed1; }
+        .collection-count { font-size: 12px; color: #1890ff; }
         .collection-desc { font-size: 12px; color: #999; }
 
         .center-area { flex: 1; display: flex; flex-direction: column; background: #fff; }
@@ -36,8 +36,8 @@
         .search-row { display: flex; gap: 8px; margin-bottom: 12px; }
         .source-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
         .source-btn { padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; border: 1px solid #d9d9d9; background: #fff; color: #666; transition: all 0.2s; }
-        .source-btn:hover { border-color: #722ed1; color: #722ed1; }
-        .source-btn.active { background: #722ed1; border-color: #722ed1; color: #fff; }
+        .source-btn:hover { border-color: #1890ff; color: #1890ff; }
+        .source-btn.active { background: #1890ff; border-color: #1890ff; color: #fff; }
 
         .results-area { flex: 1; overflow-y: auto; padding: 16px; }
         .result-section { margin-bottom: 24px; }
@@ -46,10 +46,10 @@
         .result-count { font-size: 12px; color: #999; }
 
         .result-item { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; padding: 12px; margin-bottom: 8px; }
-        .result-item:hover { border-color: #722ed1; }
+        .result-item:hover { border-color: #1890ff; }
         .result-meta { display: flex; gap: 12px; margin-bottom: 8px; font-size: 12px; color: #666; }
         .result-content { font-size: 13px; line-height: 1.6; color: #333; white-space: pre-wrap; word-break: break-all; max-height: 150px; overflow: hidden; }
-        .result-score { font-size: 11px; color: #722ed1; }
+        .result-score { font-size: 11px; color: #1890ff; }
 
         .empty-state { text-align: center; padding: 60px 20px; color: #999; }
         .empty-icon { font-size: 48px; margin-bottom: 16px; }
@@ -58,9 +58,9 @@
         .loading { text-align: center; padding: 40px; color: #999; }
 
         .btn { padding: 8px 16px; border-radius: 4px; font-size: 13px; cursor: pointer; border: 1px solid #d9d9d9; background: #fff; color: #333; }
-        .btn:hover { border-color: #722ed1; color: #722ed1; }
-        .btn-primary { background: #722ed1; border-color: #722ed1; color: #fff; }
-        .btn-primary:hover { background: #9254de; border-color: #9254de; color: #fff; }
+        .btn:hover { border-color: #1890ff; color: #1890ff; }
+        .btn-primary { background: #1890ff; border-color: #1890ff; color: #fff; }
+        .btn-primary:hover { background: #40a9ff; border-color: #40a9ff; color: #fff; }
 
         .tag { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; margin-right: 4px; margin-bottom: 4px; }
         .tag-writeups { background: #e6f7ff; color: #1890ff; }
@@ -126,18 +126,18 @@
                     </div>
 
                     <div v-else-if="!hasSearched" class="empty-state">
-                        <div class="empty-icon">📚</div>
+                        <div class="empty-icon" style="color: #1890ff;">RAG</div>
                         <div class="empty-text">输入关键词搜索知识库<br>支持CTF Writeups、Nuclei模板、Payloads、安全资源</div>
                     </div>
 
                     <div v-else-if="totalResults === 0" class="empty-state">
-                        <div class="empty-icon">🔍</div>
+                        <div class="empty-icon" style="color: #999;">--</div>
                         <div class="empty-text">未找到相关结果<br>请尝试其他关键词</div>
                     </div>
 
                     <template v-else>
                         <div style="margin-bottom: 12px; color: #666; font-size: 13px;">
-                            共找到 <strong style="color: #722ed1;">{{ totalResults }}</strong> 条相关结果
+                            共找到 <strong style="color: #1890ff;">{{ totalResults }}</strong> 条相关结果
                         </div>
 
                         <!-- Writeups 结果 -->

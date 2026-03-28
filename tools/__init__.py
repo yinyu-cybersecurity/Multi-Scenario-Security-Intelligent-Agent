@@ -19,8 +19,9 @@ def _ensure_tools_loaded():
 
     _tools_loaded = True
 
-    # 延迟导入，避免循环导入
-    from app.tool_framework import CTFTool, ToolRegistry
+    # 延迟导入，使用与工具文件相同的导入路径
+    # 工具文件使用 `from tool_framework import ...`，这里也必须使用相同的路径
+    from tool_framework import CTFTool, ToolRegistry
 
     tools_dir = os.path.dirname(__file__)
 
@@ -48,7 +49,7 @@ def _ensure_tools_loaded():
 def get_tool_registry():
     """获取工具注册表（触发延迟加载）"""
     _ensure_tools_loaded()
-    from app.tool_framework import ToolRegistry
+    from tool_framework import ToolRegistry
     return ToolRegistry()
 
 
