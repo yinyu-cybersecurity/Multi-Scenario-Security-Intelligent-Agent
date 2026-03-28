@@ -9,13 +9,17 @@ import re
 from pathlib import Path
 from typing import List, Dict, Optional
 import chromadb
-from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
+# 重要：先导入config设置HF_ENDPOINT环境变量，再导入sentence_transformers
+# 这样模型加载时会使用国内镜像而不是原始huggingface.co
 from rag_builder.config import (
     WRITEUPS_DIR, CHROMA_DIR, SUPPORTED_EXTENSIONS,
-    EMBEDDING_MODEL, MAX_CONTENT_LENGTH
+    EMBEDDING_MODEL, MAX_CONTENT_LENGTH, HF_ENDPOINT
 )
+
+# config.py已设置HF_ENDPOINT，现在可以安全导入SentenceTransformer
+from sentence_transformers import SentenceTransformer
 
 # 新增知识库目录
 KNOWLEDGE_BASE_DIR = Path(__file__).parent.parent / "data" / "knowledge_base"
@@ -628,13 +632,39 @@ class UnifiedRetriever:
 
 # 全局单例
 _unified_retriever = None
+_retriever_init_error = None
 
 def get_unified_retriever() -> UnifiedRetriever:
-    """获取统一检索器实例"""
-    global _unified_retriever
-    if _unified_retriever is None:
+    """获取统一检索器实例
+
+    改进：支持初始化失败后重试，而不是永久返回失败状态
+    """
+    global _unified_retriever, _retriever_init_error
+
+    if _unified_retriever is not None:
+        return _unified_retriever
+
+    # 如果之前有错误，打印警告但允许重试（可能是临时网络问题）
+    if _retriever_init_error:
+        print(f"[RAG] Warning: Previous initialization failed: {_retriever_init_error}")
+        print("[RAG] Attempting re-initialization...")
+
+    try:
         _unified_retriever = UnifiedRetriever()
-    return _unified_retriever
+        _retriever_init_error = None  # 清除错误记录
+        return _unified_retriever
+    except Exception as e:
+        _retriever_init_error = str(e)
+        print(f"[RAG] Error initializing retriever: {e}")
+        # 返回一个空实例，避免API崩溃
+        raise  # 让调用者处理异常
+
+
+def reset_retriever():
+    """重置检索器单例（用于测试或强制重新初始化）"""
+    global _unified_retriever, _retriever_init_error
+    _unified_retriever = None
+    _retriever_init_error = None
 
 
 if __name__ == "__main__":
