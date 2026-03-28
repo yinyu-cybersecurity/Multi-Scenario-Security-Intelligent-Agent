@@ -24,9 +24,17 @@ from flask import Flask, Blueprint, render_template, jsonify, request, Response,
 from flask_cors import CORS
 import queue
 
-# 添加app目录和deploy目录到路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'app'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+# 添加app目录和deploy目录到路径（使用绝对路径确保在不同运行目录下都能正确工作）
+_web_dir = os.path.dirname(os.path.abspath(__file__))
+_deploy_dir = os.path.dirname(_web_dir)
+_app_dir = os.path.join(_deploy_dir, 'app')
+
+if _deploy_dir not in sys.path:
+    sys.path.insert(0, _deploy_dir)
+    print(f"[Web] Added to sys.path: {_deploy_dir}")
+if _app_dir not in sys.path:
+    sys.path.insert(0, _app_dir)
+    print(f"[Web] Added to sys.path: {_app_dir}")
 
 # 导入工具模块以触发工具注册（忽略错误）
 try:
@@ -2312,14 +2320,14 @@ def api_toggle_node(node_id):
         if node_control:
             node_control.set_enabled(node_id, enabled)
 
-        # 计算内存节省
-        memory_savings = node_control.get_memory_savings() if node_control else 0
+        # 获取禁用节点数量
+        disabled_count = node_control.get_disabled_count() if node_control else 0
 
         return jsonify({
             "success": True,
             "node": node_id,
             "enabled": enabled,
-            "memory_savings_mb": memory_savings,
+            "disabled_count": disabled_count,
             "graph": get_graph_structure()
         })
     except Exception as e:
@@ -2332,11 +2340,11 @@ def api_nodes_status():
     try:
         if node_control:
             status = node_control.get_all_status()
-            memory_savings = node_control.get_memory_savings()
+            disabled_count = node_control.get_disabled_count()
             disabled = node_control.get_disabled_nodes()
             return jsonify({
                 "nodes": status,
-                "memory_savings_mb": memory_savings,
+                "disabled_count": disabled_count,
                 "disabled_nodes": disabled
             })
         return jsonify({"nodes": node_enabled})
@@ -2382,14 +2390,14 @@ def api_toggle_node_group():
         else:
             count = node_control.disable_group(group_name)
 
-        memory_savings = node_control.get_memory_savings()
+        disabled_count = node_control.get_disabled_count()
 
         return jsonify({
             "success": True,
             "group": group_name,
             "enabled": enabled,
             "affected_nodes": count,
-            "memory_savings_mb": memory_savings
+            "disabled_count": disabled_count
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2409,13 +2417,13 @@ def api_get_node_groups():
                 "nodes": nodes,
                 "enabled_count": sum(1 for n in nodes if node_control.is_enabled(n)),
                 "total_count": len(nodes),
-                "memory_estimate_mb": sum(node_control.NODE_MEMORY_ESTIMATE.get(n, 0) for n in nodes)
+                "disabled_count": sum(1 for n in nodes if not node_control.is_enabled(n))
             }
             groups[group_name] = group_status
 
         return jsonify({
             "groups": groups,
-            "total_memory_savings_mb": node_control.get_memory_savings()
+            "total_disabled_count": node_control.get_disabled_count()
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500

@@ -71,35 +71,6 @@ class NodeControl:
         "ai": ["ai_detect", "ai_probe", "ai_exploit", "ai_exfiltrate"],
     }
 
-    # 节点内存占用估算 (MB) - 用于显示禁用后的内存节省
-    NODE_MEMORY_ESTIMATE = {
-        "internal_recon": 50,
-        "lateral_move": 30,
-        "privilege_escalation": 20,
-        "credential_gather": 40,
-        "flag_search": 10,
-        "persistence": 20,
-        "post_exploit": 15,
-        "upload_tools": 10,
-        "setup_tunnel": 10,
-        "crypto_analyst": 30,
-        "crypto_solver": 25,
-        "pwn_analyst": 35,
-        "pwn_exploiter": 40,
-        "reverse_analyst": 30,
-        "reverse_decompiler": 35,
-        "misc_analyst": 20,
-        "misc_extractor": 25,
-        "cloud_recon": 20,
-        "cloud_enum": 15,
-        "cloud_exploit": 25,
-        "cloud_escalate": 15,
-        "ai_detect": 15,
-        "ai_probe": 20,
-        "ai_exploit": 25,
-        "ai_exfiltrate": 15,
-    }
-
     def __init__(self):
         self._enabled: Dict[str, bool] = {name: True for name in self.DEFAULT_NODES}
         self._lock = threading.RLock()
@@ -171,19 +142,19 @@ class NodeControl:
                     count += 1
         return count
 
-    def get_memory_savings(self) -> int:
+    def get_disabled_count(self) -> int:
         """
-        计算当前禁用节点节省的内存 (MB)
+        获取当前禁用的节点数量
 
         Returns:
-            节省的内存 MB 数
+            禁用的节点数量
         """
-        total = 0
+        count = 0
         with self._lock:
             for node, enabled in self._enabled.items():
                 if not enabled:
-                    total += self.NODE_MEMORY_ESTIMATE.get(node, 0)
-        return total
+                    count += 1
+        return count
 
     def get_disabled_nodes(self) -> list:
         """获取所有被禁用的节点列表"""
@@ -195,7 +166,6 @@ class NodeControl:
         return {
             "name": node_name,
             "enabled": self.is_enabled(node_name),
-            "memory_estimate": self.NODE_MEMORY_ESTIMATE.get(node_name, 0),
             "group": self._get_node_group(node_name),
         }
 

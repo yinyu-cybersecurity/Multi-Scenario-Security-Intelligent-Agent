@@ -113,8 +113,8 @@
                     <div class="stat-row"><span class="stat-label">工具总数</span><span class="stat-value">{{ stats.tools }}</span></div>
                     <div class="stat-row"><span class="stat-label">节点总数</span><span class="stat-value">{{ stats.nodes }}</span></div>
                     <div class="stat-row" style="background: #e6f7ff; padding: 8px; margin-top: 8px; border-radius: 4px;">
-                        <span class="stat-label">内存节省</span>
-                        <span class="stat-value" style="color: #1890ff;">{{ stats.memorySavings }} MB</span>
+                        <span class="stat-label">禁用节点</span>
+                        <span class="stat-value" style="color: #1890ff;">{{ stats.disabledCount }}</span>
                     </div>
                 </div>
             </div>
@@ -273,7 +273,7 @@
                 const hasApiKey = ref(false);    // 是否已设置 API key
                 const graphNodes = ref([]);
                 const detailNode = ref(null);
-                const memorySavings = ref(0);
+                const disabledCount = ref(0);
                 const nodeGroups = ref({});
 
                 const stats = computed(() => {
@@ -283,7 +283,7 @@
                         available: mods.filter(m => m.available).length,
                         tools: tools.value.length,
                         nodes: mods.reduce((sum, m) => sum + (m.nodes?.length || 0), 0),
-                        memorySavings: memorySavings.value
+                        disabledCount: disabledCount.value
                     };
                 });
 
@@ -325,7 +325,7 @@
                 async function fetchNodeStatus() {
                     try {
                         const data = await (await fetch('/fisher_ctf_agent/api/nodes/status')).json();
-                        memorySavings.value = data.memory_savings_mb || 0;
+                        disabledCount.value = data.disabled_count || 0;
                     } catch (e) { console.error(e); }
                 }
                 async function fetchNodeGroups() {
@@ -367,8 +367,8 @@
                         if (data.success) {
                             const node = graphNodes.value.find(n => n.id === nodeId);
                             if (node) node.enabled = enabled;
-                            memorySavings.value = data.memory_savings_mb || 0;
-                            const msg = enabled ? '节点已启用' : `节点已禁用 (节省约 ${data.memory_savings_mb}MB 内存)`;
+                            disabledCount.value = data.disabled_count || 0;
+                            const msg = enabled ? '节点已启用' : '节点已禁用（跳过执行）';
                             ElementPlus.ElMessage.success(msg);
                         }
                     } catch (e) { console.error(e); }
@@ -436,7 +436,7 @@
                     fetchNodeGroups();
                 });
 
-                return { view, modules, tools, config, graphNodes, stats, detailNode, memorySavings, nodeGroups, toggleModule, toggleTool, toggleNode, toggleAllNodes, toggleAllTools, saveConfig, showNodeDetail, hasApiKey, clearApiKey, apiKeyPlaceholder };
+                return { view, modules, tools, config, graphNodes, stats, detailNode, disabledCount, nodeGroups, toggleModule, toggleTool, toggleNode, toggleAllNodes, toggleAllTools, saveConfig, showNodeDetail, hasApiKey, clearApiKey, apiKeyPlaceholder };
             }
         });
         app.use(ElementPlus).mount('#app');
