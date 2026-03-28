@@ -1091,14 +1091,117 @@ def api_task_logs(task_id):
 
 @bp.route('/api/task/<task_id>/cancel', methods=['POST'])
 def api_task_cancel(task_id):
-    """取消任务"""
+    """取消/终止任务"""
     if task_id not in tasks:
         return jsonify({"error": "Task not found"}), 404
 
-    tasks[task_id]["status"] = "cancelled"
-    log_callback(task_id, "[System] Task cancelled by user")
+    task = tasks[task_id]
+    if task["status"] == "running":
+        task["status"] = "cancelled"
+        log_callback(task_id, "[System] Task cancelled by user")
+        return jsonify({"status": "cancelled", "message": "Task cancelled"})
+    else:
+        return jsonify({"error": "Task is not running", "status": task["status"]}), 400
 
-    return jsonify({"status": "cancelled"})
+
+@bp.route('/api/task/<task_id>', methods=['DELETE'])
+def api_task_delete(task_id):
+    """删除任务记录"""
+    global tasks, task_logs, task_queues, task_states, task_results
+
+    if task_id not in tasks:
+        return jsonify({"error": "Task not found"}), 404
+
+    task = tasks[task_id]
+
+    # 不允许删除正在运行的任务
+    if task["status"] == "running":
+        return jsonify({"error": "Cannot delete running task. Cancel it first."}), 400
+
+    # 清理所有相关数据
+    tasks.pop(task_id, None)
+    task_logs.pop(task_id, None)
+    task_queues.pop(task_id, None)
+    task_states.pop(task_id, None)
+    task_results.pop(task_id, None)
+    task_completion_times.pop(task_id, None)
+
+    return jsonify({"status": "deleted", "task_id": task_id})
+
+
+@bp.route('/api/tasks/clear', methods=['POST'])
+def api_tasks_clear():
+    """清空所有已完成的任务"""
+    global tasks, task_logs, task_queues, task_states, task_results
+
+    cleared_count = 0
+    task_ids_to_delete = []
+
+    # 找出所有非运行状态的任务
+    for task_id, task in list(tasks.items()):
+        if task["status"] != "running":
+            task_ids_to_delete.append(task_id)
+
+    # 删除任务
+    for task_id in task_ids_to_delete:
+        tasks.pop(task_id, None)
+        task_logs.pop(task_id, None)
+        task_queues.pop(task_id, None)
+        task_states.pop(task_id, None)
+        task_results.pop(task_id, None)
+        task_completion_times.pop(task_id, None)
+        cleared_count += 1
+
+    return jsonify({
+        "status": "cleared",
+        "cleared_count": cleared_count,
+        "remaining_count": len(tasks)
+    })
+
+
+@bp.route('/api/task/<task_id>/restart', methods=['POST'])
+def api_task_restart(task_id):
+    """重启任务"""
+    if task_id not in tasks:
+        return jsonify({"error": "Task not found"}), 404
+
+    old_task = tasks[task_id]
+    target_url = old_task.get("target_url", "")
+
+    if not target_url:
+        return jsonify({"error": "No target URL found"}), 400
+
+    # 创建新任务
+    import uuid
+    new_task_id = str(uuid.uuid4())[:8]
+
+    tasks[new_task_id] = {
+        "id": new_task_id,
+        "target_url": target_url,
+        "status": "pending",
+        "current_node": "",
+        "visited_nodes": [],
+        "progress": 0,
+        "created_at": time.time(),
+        "task_name": old_task.get("task_name", ""),
+        "task_description": old_task.get("task_description", "")
+    }
+
+    task_logs[new_task_id] = []
+    task_queues[new_task_id] = queue.Queue()
+    task_states[new_task_id] = ""
+    task_results[new_task_id] = {}
+
+    # 在后台启动任务
+    thread = threading.Thread(target=run_task, args=(new_task_id, target_url))
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({
+        "status": "restarted",
+        "old_task_id": task_id,
+        "new_task_id": new_task_id
+    })
 
 
 @bp.route('/api/task/<task_id>/result')

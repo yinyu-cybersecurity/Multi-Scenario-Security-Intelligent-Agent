@@ -149,13 +149,21 @@
                     <div class="input-row">
                         <button class="btn btn-primary" style="flex:1" @click="startTask" :disabled="starting">{{ starting ? '启动中...' : '开始攻击' }}</button>
                         <button class="btn" @click="refreshAll">刷新</button>
+                        <button class="btn" style="background:#ff4d4f;margin-left:8px;" @click="clearHistory" v-if="taskList.length > 0">清空历史</button>
                     </div>
                 </div>
                 <div class="section-title" style="padding: 12px 16px;">任务列表</div>
                 <div class="task-list">
-                    <div v-for="task in taskList" :key="task.id" class="task-item" :class="{ active: currentTaskId === task.id }" @click="selectTask(task.id)">
-                        <div class="task-url">{{ task.target_url }}</div>
-                        <div class="task-meta"><span>{{ task.created_at }}</span><span>{{ statusText(task.status) }}</span></div>
+                    <div v-for="task in taskList" :key="task.id" class="task-item" :class="{ active: currentTaskId === task.id }">
+                        <div @click="selectTask(task.id)" style="flex: 1;">
+                            <div class="task-url">{{ task.target_url }}</div>
+                            <div class="task-meta"><span>{{ task.created_at }}</span><span>{{ statusText(task.status) }}</span></div>
+                        </div>
+                        <div class="task-actions" style="display: flex; gap: 4px; margin-left: 8px;">
+                            <button v-if="task.status === 'running'" class="action-btn" style="background:#ff4d4f;color:#fff;padding:2px 8px;font-size:11px;border-radius:3px;border:none;cursor:pointer;" @click.stop="cancelTask(task.id)">终止</button>
+                            <button v-if="task.status !== 'running'" class="action-btn" style="background:#1890ff;color:#fff;padding:2px 8px;font-size:11px;border-radius:3px;border:none;cursor:pointer;" @click.stop="restartTask(task.id)">重启</button>
+                            <button v-if="task.status !== 'running'" class="action-btn" style="background:#999;color:#fff;padding:2px 8px;font-size:11px;border-radius:3px;border:none;cursor:pointer;" @click.stop="deleteTask(task.id)">删除</button>
+                        </div>
                     </div>
                     <div v-if="taskList.length === 0" class="empty-text">暂无任务</div>
                 </div>
@@ -687,6 +695,69 @@
 
                 function refreshAll() { fetchGraph(); fetchTasks(); fetchSystemStatus(); fetchTools(); fetchLLMStatus(); fetchCompressionStats(); fetchRecoveryStats(); fetchPerfSummary(); fetchPerfDetails(); fetchSlowOps(); }
 
+                // 任务操作函数
+                async function cancelTask(id) {
+                    if (!confirm('确定要终止该任务吗？')) return;
+                    try {
+                        const res = await (await fetch(`/fisher_ctf_agent/api/task/${id}/cancel`, { method: 'POST' })).json();
+                        if (res.status === 'cancelled') {
+                            ElMessage.success('任务已终止');
+                            fetchTasks();
+                        } else {
+                            ElMessage.error(res.error || '终止失败');
+                        }
+                    } catch (e) {
+                        ElMessage.error('终止失败');
+                    }
+                }
+
+                async function deleteTask(id) {
+                    if (!confirm('确定要删除该任务吗？')) return;
+                    try {
+                        const res = await (await fetch(`/fisher_ctf_agent/api/task/${id}`, { method: 'DELETE' })).json();
+                        if (res.status === 'deleted') {
+                            ElMessage.success('任务已删除');
+                            if (currentTaskId.value === id) { currentTaskId.value = null; currentTask.value = null; logs.value = []; }
+                            fetchTasks();
+                        } else {
+                            ElMessage.error(res.error || '删除失败');
+                        }
+                    } catch (e) {
+                        ElMessage.error('删除失败');
+                    }
+                }
+
+                async function restartTask(id) {
+                    try {
+                        const res = await (await fetch(`/fisher_ctf_agent/api/task/${id}/restart`, { method: 'POST' })).json();
+                        if (res.status === 'restarted') {
+                            ElMessage.success('任务已重启');
+                            fetchTasks();
+                            selectTask(res.new_task_id);
+                        } else {
+                            ElMessage.error(res.error || '重启失败');
+                        }
+                    } catch (e) {
+                        ElMessage.error('重启失败');
+                    }
+                }
+
+                async function clearHistory() {
+                    if (!confirm('确定要清空所有历史任务吗？正在运行的任务不会被清除。')) return;
+                    try {
+                        const res = await (await fetch('/fisher_ctf_agent/api/tasks/clear', { method: 'POST' })).json();
+                        if (res.status === 'cleared') {
+                            ElMessage.success(`已清空 ${res.cleared_count} 个任务`);
+                            currentTaskId.value = null; currentTask.value = null; logs.value = [];
+                            fetchTasks();
+                        } else {
+                            ElMessage.error('清空失败');
+                        }
+                    } catch (e) {
+                        ElMessage.error('清空失败');
+                    }
+                }
+
                 function zoomIn() { if (currentZoom) currentZoom.scaleBy(d3.select('#graph-svg'), 1.3); }
                 function zoomOut() { if (currentZoom) currentZoom.scaleBy(d3.select('#graph-svg'), 0.7); }
                 function zoomReset() { if (currentZoom) currentZoom.transform(d3.select('#graph-svg'), d3.zoomIdentity); }
@@ -815,7 +886,8 @@
                     cpuChart, memoryChart, networkChart,
                     sseConnected, persistenceTasks, selectedPersistenceTask,
                     selectTask, startTask, refreshAll, statusText, zoomIn, zoomOut, zoomReset,
-                    formatBytes, formatTokens, fetchPersistenceTasks, showPersistenceDetail, disconnectSSE
+                    formatBytes, formatTokens, fetchPersistenceTasks, showPersistenceDetail, disconnectSSE,
+                    cancelTask, deleteTask, restartTask, clearHistory
                 };
             }
         });
