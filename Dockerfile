@@ -174,7 +174,8 @@ RUN python3.11 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --upgrade pip && \
     pip install torch --index-url https://download.pytorch.org/whl/cpu && \
-    pip install -r requirements.txt
+    pip install -r requirements.txt && \
+    pip install -r /app/thirdparty/dirsearch/requirements.txt 2>/dev/null || true
 
 COPY app/*.py ./
 COPY app/state_types ./state_types/
