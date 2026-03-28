@@ -154,10 +154,12 @@ class LoggerManager:
         root_logger.setLevel(logging.DEBUG)
         root_logger.handlers = []
 
-        # 控制台处理器（简洁输出）
+        # 控制台处理器（简洁输出，安全编码处理）
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(logging.INFO)
         console_handler.setFormatter(ConsoleFormatter())
+        # 设置错误处理，避免编码问题导致崩溃
+        console_handler.handleError = lambda record: None
         root_logger.addHandler(console_handler)
 
         self._loggers: Dict[str, logging.Logger] = {}

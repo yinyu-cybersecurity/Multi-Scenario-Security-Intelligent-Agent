@@ -18,6 +18,7 @@ import json
 import time
 import threading
 import subprocess
+import logging
 from datetime import datetime
 from flask import Flask, Blueprint, render_template, jsonify, request, Response, abort
 from flask_cors import CORS
@@ -508,6 +509,40 @@ class ThreadSafeLogCapture:
 _log_capture_instance = None
 
 
+class WebUILogHandler(logging.Handler):
+    """
+    自定义 logging Handler，将日志输出到 Web UI
+
+    解决问题：logging.StreamHandler 在初始化时持有原始 sys.stdout 引用，
+    之后替换 sys.stdout 不会影响已创建的 handler。
+    """
+    def __init__(self):
+        super().__init__()
+        self.setFormatter(logging.Formatter('%(message)s'))
+
+    def emit(self, record):
+        """发送日志记录到 Web UI"""
+        try:
+            task_id = get_current_task_id()
+            if task_id:
+                msg = self.format(record)
+                # 处理 emoji 编码问题 - 替换无法编码的字符
+                try:
+                    msg.encode('utf-8')
+                except UnicodeEncodeError:
+                    # 移除或替换 emoji
+                    msg = msg.encode('ascii', 'ignore').decode('ascii')
+
+                if msg.strip():
+                    log_callback(task_id, msg.strip())
+        except Exception:
+            # 静默处理异常，避免影响主流程
+            pass
+
+    def flush(self):
+        pass
+
+
 def init_log_capture():
     """初始化全局日志捕获器"""
     global _log_capture_instance, sys
@@ -515,6 +550,19 @@ def init_log_capture():
     if _log_capture_instance is None:
         _log_capture_instance = ThreadSafeLogCapture()
         sys.stdout = _log_capture_instance
+
+    # 每次都重新添加 WebUILogHandler（防止被其他模块清除）
+    root_logger = logging.getLogger()
+
+    # 检查是否已存在 WebUILogHandler
+    has_web_handler = any(isinstance(h, WebUILogHandler) for h in root_logger.handlers)
+
+    if not has_web_handler:
+        web_handler = WebUILogHandler()
+        web_handler.setLevel(logging.INFO)
+        # 插入到第一个位置，确保最先处理
+        root_logger.handlers.insert(0, web_handler)
+        root_logger.setLevel(logging.DEBUG)
 
 
 class LogCapture:
