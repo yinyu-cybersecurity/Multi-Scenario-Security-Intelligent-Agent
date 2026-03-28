@@ -10,31 +10,20 @@ AI安全攻击节点
 """
 
 import os
-import sys
-
-# 确保项目根目录和app目录在 sys.path 中
-_current_dir = os.path.dirname(__file__)
-_project_root = os.path.dirname(_current_dir)
-_app_dir = os.path.join(_project_root, 'app')
-if _project_root not in sys.path:
-    sys.path.insert(0, _project_root)
-if _app_dir not in sys.path:
-    sys.path.insert(0, _app_dir)
-
 import json
 import random
 import traceback
 from typing import Dict, List
 
-from app.llm_client import llm_client
-from app.config import config
-from app.logger import get_logger
+from llm_client import llm_client
+from config import config
+from logger import get_logger
 
 logger = get_logger("AISecurity")
 
 # 可选模块导入
 try:
-    from app.self_correction import self_correction_manager, ErrorSeverity, ErrorType
+    from self_correction import self_correction_manager, ErrorSeverity, ErrorType
     SELF_CORRECTION_AVAILABLE = True
 except ImportError:
     SELF_CORRECTION_AVAILABLE = False
