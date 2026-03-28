@@ -51,31 +51,37 @@ class CrackMapExecTool(CommandLineTool):
 
     def __init__(self):
         # 检测 crackmapexec 是否可用
-        # 优先检查 pipx 安装路径
-        pipx_path = "/root/.local/bin/crackmapexec"
-        pipx_cme_path = "/root/.local/bin/cme"
+        # pipx 安装路径
+        pipx_paths = [
+            "/root/.local/bin/crackmapexec",
+            "/root/.local/bin/cme",
+            os.path.expanduser("~/.local/bin/crackmapexec"),
+            os.path.expanduser("~/.local/bin/cme"),
+        ]
 
         # 检查系统PATH中的可执行文件
         crackmapexec_path = shutil.which("crackmapexec")
         cme_path = shutil.which("cme")
 
         # 按优先级选择可执行文件路径
-        if os.path.exists(pipx_path):
-            self.executable = pipx_path
-            self.cmd_path = pipx_path
-        elif os.path.exists(pipx_cme_path):
-            self.executable = pipx_cme_path
-            self.cmd_path = pipx_cme_path
-        elif crackmapexec_path:
-            self.executable = crackmapexec_path
-            self.cmd_path = crackmapexec_path
-        elif cme_path:
-            self.executable = cme_path
-            self.cmd_path = cme_path
-        else:
-            # 没有找到可执行文件，设置默认命令
-            self.executable = None
-            self.cmd_path = "crackmapexec"
+        self.executable = None
+        self.cmd_path = "crackmapexec"
+
+        # 优先检查 pipx 安装路径
+        for path in pipx_paths:
+            if os.path.exists(path):
+                self.executable = path
+                self.cmd_path = path
+                break
+
+        # 然后检查 PATH 中的
+        if self.executable is None:
+            if crackmapexec_path:
+                self.executable = crackmapexec_path
+                self.cmd_path = crackmapexec_path
+            elif cme_path:
+                self.executable = cme_path
+                self.cmd_path = cme_path
 
         super().__init__(self.cmd_path)
         self.timeout = 300  # 5分钟超时
@@ -98,44 +104,54 @@ class CrackMapExecTool(CommandLineTool):
 
     def check_available(self) -> bool:
         """检查 crackmapexec 是否可用"""
+        # 如果已知可执行文件路径且存在
         if self.executable and os.path.exists(self.executable):
             return True
 
-        # 尝试运行crackmapexec或cme检查版本
+        # 尝试通过 subprocess 检测（可能 pipx 安装的路径在 PATH 中）
         for cmd_name in ["crackmapexec", "cme"]:
             try:
                 result = subprocess.run(
                     [cmd_name, "--version"],
                     capture_output=True,
                     text=True,
-                    timeout=10
+                    timeout=15,
+                    # 不抛出异常，即使返回码非0
                 )
-                if result.returncode == 0:
-                    # 更新可执行文件路径
+                # 检查是否有输出（有些版本 --version 返回非0但仍输出信息）
+                if result.stdout.strip() or result.returncode == 0:
+                    # 找到可用命令，更新路径
                     cmd_path = shutil.which(cmd_name)
                     if cmd_path:
                         self.executable = cmd_path
                         self.cmd_path = cmd_path
+                    else:
+                        # 使用命令名，依赖 PATH
+                        self.cmd_path = cmd_name
                     return True
-            except (subprocess.SubprocessError, FileNotFoundError, OSError):
+            except subprocess.TimeoutExpired:
+                continue
+            except (FileNotFoundError, OSError, PermissionError):
+                continue
+            except Exception:
                 continue
 
-        # 最后尝试检查默认路径
-        if self.executable is None:
-            # 检查常见安装路径
-            common_paths = [
-                "/root/.local/bin/crackmapexec",
-                "/root/.local/bin/cme",
-                "/usr/local/bin/crackmapexec",
-                "/usr/local/bin/cme",
-                "/usr/bin/crackmapexec",
-                "/usr/bin/cme"
-            ]
-            for path in common_paths:
-                if os.path.exists(path):
-                    self.executable = path
-                    self.cmd_path = path
-                    return True
+        # 最后尝试检查常见安装路径
+        common_paths = [
+            "/root/.local/bin/crackmapexec",
+            "/root/.local/bin/cme",
+            "/usr/local/bin/crackmapexec",
+            "/usr/local/bin/cme",
+            "/usr/bin/crackmapexec",
+            "/usr/bin/cme",
+            os.path.expanduser("~/.local/bin/crackmapexec"),
+            os.path.expanduser("~/.local/bin/cme"),
+        ]
+        for path in common_paths:
+            if os.path.exists(path):
+                self.executable = path
+                self.cmd_path = path
+                return True
 
         return False
 
