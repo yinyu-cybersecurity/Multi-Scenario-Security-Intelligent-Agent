@@ -3559,8 +3559,15 @@ def run_single_task(task_name: str, task_description: str, target_url: str,
                             except Exception as cb_e:
                                 log(f"回调错误: {cb_e}")
 
-        # 返回最终结果
-        return result if result else {"current_mode": "end", "found_flag": False}
+        # 返回最终结果 - 使用累积状态而非最后一个节点输出
+        # 这样可以包含所有节点的状态（如 site_topology）
+        final_result = accumulated_state if accumulated_state else {"current_mode": "end", "found_flag": False}
+
+        # 清理不需要返回的大字段
+        for key in ["raw_html_snippet", "baseline_response", "page_history", "recon_data"]:
+            final_result.pop(key, None)
+
+        return final_result
 
     except Exception as e:
         import traceback
