@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: Apache Cocoon detect
+# description: Apache Cocoon detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: apache-cocoon-detect
+
+info:
+  name: Apache Cocoon detect
+  author: ffffffff0x
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:apache:cocoon:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: apache
+    product: cocoon
+    shodan-query: http.html:"Apache Cocoon"
+    fofa-query: app="APACHE-Cocoon"
+  tags: apache,cocoon,tech,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "X-Cocoon-Version"
+
+    extractors:
+      - type: regex
+        part: header
+        regex:
+          - 'X\-Cocoon\-Version:([ 0-9.]+)'

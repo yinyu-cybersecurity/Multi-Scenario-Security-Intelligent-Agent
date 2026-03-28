@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: CurrencyScoop API Test
+# description: Real-time and historical currency rates JSON API
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-currencyscoop
+
+info:
+  name: CurrencyScoop API Test
+  author: daffainfo
+  severity: info
+  description: Real-time and historical currency rates JSON API
+  reference:
+    - https://currencyscoop.com/api-documentation
+    - https://github.com/daffainfo/all-about-apikey/tree/main/currencyscoop
+  metadata:
+    max-request: 1
+  tags: token-spray,currencyscoop
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://api.currencyscoop.com/v1/historical?api_key={{token}}&date=2022-01-01"
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"date"'
+          - '"base"'
+          - '"rates"'
+        condition: and

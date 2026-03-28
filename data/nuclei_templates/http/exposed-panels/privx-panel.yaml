@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: SSH PrivX Login Panel - Detect
+# description: SSH PrivX login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: privx-panel
+
+info:
+  name: SSH PrivX Login Panel - Detect
+  author: korteke
+  severity: info
+  description: SSH PrivX login panel was detected.
+  reference:
+    - https://www.ssh.com/products/privx/
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:ssh:privx:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    shodan-query: title:"PrivX"
+    product: privx
+    vendor: ssh
+  tags: panel,privx,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/auth/login"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>PrivX</title>'
+
+      - type: status
+        status:
+          - 200

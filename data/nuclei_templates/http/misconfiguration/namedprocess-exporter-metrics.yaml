@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: Named Process Exporter
+# description: Named process exporter is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: namedprocess-exporter-metrics
+
+info:
+  name: Named Process Exporter
+  author: DhiyaneshDk
+  severity: low
+  description: Named process exporter is exposed.
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"Named Process Exporter"
+  tags: namedprocess,exposure,debug,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/metrics"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "namedprocess"
+          - "# HELP"
+        condition: and
+
+      - type: status
+        status:
+          - 200

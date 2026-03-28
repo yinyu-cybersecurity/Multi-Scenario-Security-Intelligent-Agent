@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: Tautulli - Exposed Installation
+# description: Tautulli is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Security Misconfiguration
+# severity: high
+# cve_id: N/A
+
+
+id: tautulli-install
+
+info:
+  name: Tautulli - Exposed Installation
+  author: ritikchaddha
+  severity: high
+  description: Tautulli is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:tautulli:tautulli:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: tautulli
+    product: tautulli
+    shodan-query: title:"Tautulli - Welcome"
+  tags: misconfig,tautulli,install,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/welcome"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>Tautulli - Welcome'
+          - 'Tautulli Setup Wizard'
+        condition: or
+
+      - type: status
+        status:
+          - 200

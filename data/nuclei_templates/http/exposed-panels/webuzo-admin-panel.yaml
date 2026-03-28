@@ -1,0 +1,49 @@
+# RAG Annotation:
+# name: Webuzo Admin Login Panel - Detect
+# description: Webuzo admin login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: webuzo-admin-panel
+
+info:
+  name: Webuzo Admin Login Panel - Detect
+  author: theamanrawat
+  severity: info
+  description: Webuzo admin login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:softaculous:webuzo:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: softaculous
+    product: webuzo
+    shodan-query:
+      - http.title:"Webuzo - Admin Panel"
+      - http.title:"webuzo - admin panel"
+    fofa-query: title="webuzo - admin panel"
+    google-query: intitle:"webuzo - admin panel"
+  tags: panel,webuzo,admin,softaculous,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Webuzo - Admin Panel'
+
+      - type: status
+        status:
+          - 200

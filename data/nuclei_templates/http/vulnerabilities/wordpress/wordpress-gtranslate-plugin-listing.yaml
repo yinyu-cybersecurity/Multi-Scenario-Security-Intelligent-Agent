@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: WordPress gtranslate Plugin Directory Listing
+# description: Searches for sensitive directories present in the gtranslate wordpress plugin.
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+---
+id: wordpress-gtranslate-plugin-listing
+
+info:
+  name: WordPress gtranslate Plugin Directory Listing
+  author: dhiyaneshDK
+  severity: info
+  description: Searches for sensitive directories present in the gtranslate wordpress plugin.
+  reference:
+    - https://www.exploit-db.com/ghdb/6160
+  metadata:
+    max-request: 1
+  tags: wordpress,listing,plugin,edb,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/wp-content/plugins/gtranslate/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Index of"
+          - "/wp-content/plugins/gtranslate/"
+        condition: and
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Manage Engine AD Search
+# description: Manage Engine AD Manager service can be configured to allow anonymous users to browse the AD list remotely.
+# vuln_type: Authentication Bypass
+# severity: high
+# cve_id: N/A
+
+
+id: manage-engine-ad-search
+
+info:
+  name: Manage Engine AD Search
+  author: PR3R00T
+  severity: high
+  description: Manage Engine AD Manager service can be configured to allow anonymous users to browse the AD list remotely.
+  classification:
+    cpe: cpe:2.3:a:zohocorp:manageengine_admanager_plus:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: zohocorp
+    product: manageengine_admanager_plus
+    shodan-query: title:"ManageEngine"
+  tags: unauth,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/ADSearch.cc?methodToCall=search"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "ManageEngine"
+          - "Showing Objects Of"
+          - "Export as"
+        condition: and
+
+      - type: word
+        part: body
+        words:
+          - "This search has been disabled"
+        negative: true
+
+      - type: status
+        status:
+          - 200

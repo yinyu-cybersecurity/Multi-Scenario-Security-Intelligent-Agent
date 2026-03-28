@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Piwigo Detect
+# description: Piwigo Detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: piwigo-detect
+
+info:
+  name: Piwigo Detect
+  author: pikpikcu
+  severity: info
+  metadata:
+    max-request: 1
+    fofa-query:
+      - title="piwigo"
+      - icon_hash=540706145
+    product: piwigo
+    vendor: piwigo
+    google-query: powered by piwigo
+    shodan-query: http.favicon.hash:540706145
+  tags: piwigo,tech,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'piwigo.org">Piwigo</a>'
+          - 'Piwigo (aka PWG), see piwigo.org'
+        condition: or
+
+      - type: status
+        status:
+          - 200

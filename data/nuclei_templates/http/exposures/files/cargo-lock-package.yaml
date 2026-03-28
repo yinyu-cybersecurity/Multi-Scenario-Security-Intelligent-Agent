@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: Cargo Lock Packages Disclosure
+# description: Cargo Lock Packages Disclosure
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: cargo-lock-package
+
+info:
+  name: Cargo Lock Packages Disclosure
+  author: DhiyaneshDk
+  severity: info
+  reference:
+    - https://raw.githubusercontent.com/maurosoria/dirsearch/master/db/dicc.txt
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"Cargo.lock"
+  tags: exposure,files,cargo,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/Cargo.lock'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "[[package]]"
+          - "dependencies = ["
+        condition: and
+
+      - type: status
+        status:
+          - 200

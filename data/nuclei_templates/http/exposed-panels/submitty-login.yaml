@@ -1,0 +1,50 @@
+# RAG Annotation:
+# name: Submitty Login Panel - Detect
+# description: Submitty login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: submitty-login
+
+info:
+  name: Submitty Login Panel - Detect
+  author: princechaddha
+  severity: info
+  description: Submitty login panel was detected.
+  reference:
+    - https://github.com/Submitty/Submitty
+    - https://rcos.io/
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    max-request: 1
+  tags: panel,submitty,oss,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/authentication/login'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'submitty-banner'
+          - 'https://submitty.org'
+        condition: and
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        part: body
+        name: version
+        group: 1
+        regex:
+          - '\/Submitty\/Submitty\/releases\/tag\/([a-z0-9.]+)" target="_blank'

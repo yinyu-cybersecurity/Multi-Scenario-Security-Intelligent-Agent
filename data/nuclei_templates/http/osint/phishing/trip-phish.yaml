@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: trip phishing Detection
+# description: A trip phishing website was detected
+
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: trip-phish
+
+info:
+  name: trip phishing Detection
+  author: rxerium
+  severity: info
+  description: |
+    A trip phishing website was detected
+  reference:
+    - https://trip.com
+  metadata:
+    max-request: 1
+  tags: phishing,trip,osint,discovery
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Trip.com: Book cheap flights, hotels, car rentals, trains and more'
+
+      - type: status
+        status:
+          - 200
+
+      - type: dsl
+        dsl:
+          - '!contains(host,"trip.com")'

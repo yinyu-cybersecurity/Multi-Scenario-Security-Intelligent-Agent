@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: Calendly API Test
+# description: Calendly API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-calendly
+
+info:
+  name: Calendly API Test
+  author: zzeitlin
+  severity: info
+  reference:
+    - https://calendly.stoplight.io/docs/api-docs-v1/b3A6MTg3MDczNg-about-me
+  metadata:
+    max-request: 1
+  tags: token-spray,calendly
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://calendly.com/api/v1/users/me"
+
+    headers:
+      X-Token: "{{token}}"
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"data":'
+          - '"id":'
+          - '"email":'
+        condition: and

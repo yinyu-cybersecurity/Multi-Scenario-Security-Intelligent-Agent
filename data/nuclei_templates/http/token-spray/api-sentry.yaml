@@ -1,0 +1,35 @@
+# RAG Annotation:
+# name: Sentry API Test
+# description: Sentry API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-sentry
+
+info:
+  name: Sentry API Test
+  author: 0ri2N
+  severity: info
+  reference:
+    - https://sentry.io
+    - https://docs.sentry.io
+    - https://docs.sentry.io/api/auth
+  metadata:
+    max-request: 1
+  tags: sentry,tracing,tracking,monitoring,token-spray
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://sentry.io/api/0/projects/"
+
+    headers:
+      Authorization: Bearer {{token}}
+    matchers:
+      - type: status
+        status:
+          - 200

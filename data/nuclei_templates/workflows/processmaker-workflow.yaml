@@ -1,0 +1,19 @@
+# RAG Annotation:
+# name: ProcessMaker Security Checks Workflow
+# description: 运行所有ProcessMaker相关nuclei模板的安全检查工作流，检测ProcessMaker工作流管理系统的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: processmaker-workflow
+
+info:
+  name: ProcessMaker Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all ProcessMaker related nuclei templates on a given target.
+workflows:
+  - template: http/technologies/fingerprinthub-web-fingerprints.yaml
+    matchers:
+      - name: processmaker
+        subtemplates:
+          - tags: processmaker

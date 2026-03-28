@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: Wikipedia phishing Detection
+# description: A Wikipedia phishing website was detected
+
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: Wikipedia-phish
+
+info:
+  name: Wikipedia phishing Detection
+  author: rxerium
+  severity: info
+  description: |
+    A Wikipedia phishing website was detected
+  reference:
+    - https://wikipedia.com
+  metadata:
+    max-request: 1
+  tags: phishing,wikipedia,osint,discovery
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Log in - Wikipedia'
+
+      - type: status
+        status:
+          - 200
+
+      - type: dsl
+        dsl:
+          - '!contains(host,"wikipedia.org")'

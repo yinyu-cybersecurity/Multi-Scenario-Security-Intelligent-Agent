@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: Payara Micro Detect
+# description: Payara Micro Detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: payara-micro-detect
+
+info:
+  name: Payara Micro Detect
+  author: pikpikcu
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:payara:payara:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: payara
+    product: payara
+    shodan-query: 'title:"Payara Micro #badassfish - Error report"'
+  tags: tech,payara,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Payara Micro #badassfish - Error report"
+
+      - type: status
+        status:
+          - 404

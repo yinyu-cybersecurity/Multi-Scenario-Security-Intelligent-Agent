@@ -1,0 +1,28 @@
+# RAG Annotation:
+# name: Amazon SNS Topic Disclosure
+# description: Amazon SNS Topic Disclosure
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: amazon-sns-topic
+
+info:
+  name: Amazon SNS Topic Disclosure
+  author: Ice3man
+  severity: info
+  metadata:
+    max-request: 1
+  tags: exposure,token,amazon,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - 'arn:aws:sns:[a-z0-9\-]+:[0-9]+:[A-Za-z0-9\-_]+'

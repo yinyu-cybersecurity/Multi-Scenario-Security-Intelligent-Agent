@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Accueil WAMPSERVER Configuration Page - Detect
+# description: Accueil WAMPSERVER configuration page was detected.
+# vuln_type: Sensitive Data Exposure
+# severity: medium
+# cve_id: N/A
+
+
+id: accueil-wampserver
+
+info:
+  name: Accueil WAMPSERVER Configuration Page - Detect
+  author: tess
+  severity: medium
+  description: Accueil WAMPSERVER configuration page was detected.
+  remediation: Restrict access to the WAMP server configuration page and sub-tools.
+  reference:
+    - https://www.wampserver.com/
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N
+    cvss-score: 5.3
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:wampserver:wampserver:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.title:"Accueil WAMPSERVER"
+    product: wampserver
+    vendor: wampserver
+  tags: exposure,accueil,wampserver,config,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Accueil WAMPSERVER"
+          - "Configuration Serveur"
+        condition: and
+
+      - type: status
+        status:
+          - 200

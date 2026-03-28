@@ -1,0 +1,52 @@
+# RAG Annotation:
+# name: GoCd Encryption Key
+# description: GoCd Encryption Key is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: gocd-encryption-key
+
+info:
+  name: GoCd Encryption Key
+  author: dhiyaneshDk
+  severity: low
+  description: GoCd Encryption Key is exposed.
+  reference:
+    - https://attackerkb.com/assessments/9101a539-4c6e-4638-a2ec-12080b7e3b50
+    - https://blog.sonarsource.com/gocd-pre-auth-pipeline-takeover
+    - https://twitter.com/wvuuuuuuuuuuuuu/status/1456316586831323140
+  classification:
+    cpe: cpe:2.3:a:thoughtworks:gocd:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: thoughtworks
+    product: gocd
+    shodan-query: http.title:"Create a pipeline - Go" html:"GoCD Version"
+  tags: go,gocd,exposure,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/go/add-on/business-continuity/api/cipher.aes"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: regex
+        regex:
+          - "([a-z0-9]){32}"
+
+      - type: word
+        part: header
+        words:
+          - "text/plain"
+
+    extractors:
+      - type: regex
+        regex:
+          - "([a-z0-9]){32}"

@@ -1,0 +1,19 @@
+# RAG Annotation:
+# name: DotNetNuke Security Checks Workflow
+# description: 运行所有DotNetNuke相关nuclei模板的安全检查工作流，检测DNN平台的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: dotnetnuke-workflow
+
+info:
+  name: DotNetNuke Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all DotNetNuke related nuclei templates on a given target.
+workflows:
+  - template: http/technologies/tech-detect.yaml
+    matchers:
+      - name: dotnetnuke
+        subtemplates:
+          - tags: dotnetnuke

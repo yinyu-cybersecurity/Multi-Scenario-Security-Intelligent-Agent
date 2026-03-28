@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: VectorAdmin Panel - Detect
+# description: VectorAdmin panel was discovered.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: vectoradmin-panel
+
+info:
+  name: VectorAdmin Panel - Detect
+  author: s4e-io
+  severity: info
+  description: |
+    VectorAdmin panel was discovered.
+  reference:
+    - https://vectoradmin.com
+    - https://github.com/Mintplex-Labs/vector-admin
+    - https://elest.io/open-source/vectoradmin/resources
+  metadata:
+    verified: true
+    max-request: 1
+    fofa-query: title=="VectorAdmin - Vector database management made easy."
+  tags: panel,login,vectoradmin,detect,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+    matchers:
+      - type: dsl
+        dsl:
+          - 'contains(body, "<title>VectorAdmin")'
+          - 'status_code == 200'
+        condition: and

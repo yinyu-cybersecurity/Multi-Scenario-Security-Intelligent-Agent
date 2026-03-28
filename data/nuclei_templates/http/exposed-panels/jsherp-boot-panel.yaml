@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: JshERP Boot Panel - Detect
+# description: JshERP Boot Panel - Detect
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: jsherp-boot-panel
+
+info:
+  name: JshERP Boot Panel - Detect
+  author: DhiyaneshDk
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:jishenghua:jsherp:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: jishenghua
+    product: jsherp
+    shodan-query: http.favicon.hash:-1298131932
+  tags: panel,jsherp,login,detect,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/user/login"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'jshERP-boot'
+          - 'ERP系统'
+        condition: or
+
+      - type: status
+        status:
+          - 200

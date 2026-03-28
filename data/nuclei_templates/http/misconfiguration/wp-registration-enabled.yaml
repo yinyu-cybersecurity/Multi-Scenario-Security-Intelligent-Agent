@@ -1,0 +1,52 @@
+# RAG Annotation:
+# name: WordPress User Registration Panel - Detect
+# description: WordPress user registration is currently configured so that anyone can register as a user, thereby enabling an attacker to possibly access sensitive data and execute unathorized operations.
+
+# vuln_type: Security Misconfiguration
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: wp-registration-enabled
+
+info:
+  name: WordPress User Registration Panel - Detect
+  author: tess,DhiyaneshDK
+  severity: info
+  description: |
+    WordPress user registration is currently configured so that anyone can register as a user, thereby enabling an attacker to possibly access sensitive data and execute unathorized operations.
+  remediation: |
+    Disable user registration if not needed. To do so, log in as an administrator and go to Settings -> General and uncheck "Anyone can register."
+  reference:
+    - https://www.acunetix.com/vulnerabilities/web/wordpress-user-registration-enabled/
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cvss-score: 0
+    cwe-id: CWE-200
+  metadata:
+    verified: true
+    max-request: 1
+  tags: wordpress,wp,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/wp-login.php"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '?action=register"'
+
+      - type: word
+        part: header
+        words:
+          - 'text/html'
+
+      - type: status
+        status:
+          - 200

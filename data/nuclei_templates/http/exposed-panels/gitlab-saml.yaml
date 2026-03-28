@@ -1,0 +1,54 @@
+# RAG Annotation:
+# name: Gitlab SAML - Detection
+# description: The presence of SAML-based authentication on GitLab instances. SAML is commonly used for Single Sign-On (SSO) integrations, which allows users to authenticate with GitLab using an external Identity Pr
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: gitlab-saml
+
+info:
+  name: Gitlab SAML - Detection
+  author: rootxharsh,iamnoooob,pdresearch
+  severity: info
+  description: |
+    The presence of SAML-based authentication on GitLab instances. SAML is commonly used for Single Sign-On (SSO) integrations, which allows users to authenticate with GitLab using an external Identity Provider (IdP).
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: gitlab
+    product: gitlab
+    shodan-query:
+      - http.title:"gitlab"
+      - cpe:"cpe:2.3:a:gitlab:gitlab"
+      - http.html:"gitlab enterprise edition"
+    fofa-query:
+      - body="gitlab enterprise edition"
+      - title="gitlab"
+    google-query: intitle:"gitlab"
+  tags: panel,saml,gitlab,discovery
+
+http:
+  - raw:
+      - |
+        GET /users/auth/saml/metadata HTTP/1.1
+        Host: {{Hostname}}
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "EntityDescriptor"
+          - "SAML"
+        condition: and
+
+      - type: word
+        part: content_type
+        words:
+          - "application/xml"
+
+      - type: status
+        status:
+          - 200

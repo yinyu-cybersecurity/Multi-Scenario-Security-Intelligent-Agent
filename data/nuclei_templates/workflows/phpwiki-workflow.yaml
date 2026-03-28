@@ -1,0 +1,19 @@
+# RAG Annotation:
+# name: phpWiki Security Checks Workflow
+# description: 运行所有phpWiki相关nuclei模板的安全检查工作流，检测phpWiki维基系统的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: phpwiki-workflow
+
+info:
+  name: phpwiki Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all phpwiki related nuclei templates on a given target.
+workflows:
+  - template: http/technologies/fingerprinthub-web-fingerprints.yaml
+    matchers:
+      - name: phpwiki
+        subtemplates:
+          - tags: phpwiki

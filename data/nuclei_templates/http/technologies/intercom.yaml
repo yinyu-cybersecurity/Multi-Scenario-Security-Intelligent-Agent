@@ -1,0 +1,31 @@
+# RAG Annotation:
+# name: Intercom widget detection
+# description: Intercom widget detection
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: intercom
+
+info:
+  name: Intercom widget detection
+  author: tess
+  severity: info
+  reference:
+    - https://www.intercom.com
+  metadata:
+    max-request: 1
+  tags: intercom,tech,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 3
+    matchers:
+      - type: word
+        words:
+          - 'intercom'

@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Bamboo - Detection
+# description: Detect the presence of Bamboo, a CI/CD tool.
+
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+
+
+id: bamboo-detect
+
+info:
+  name: Bamboo - Detection
+  author: bhutch
+  severity: info
+  description: |
+    Detect the presence of Bamboo, a CI/CD tool.
+  classification:
+    cpe: cpe:2.3:a:atlassian:bamboo:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: atlassian
+    product: bamboo
+    shodan-query: http.favicon.hash:-1379982221
+    category: devops
+  tags: tech,bamboo,atlassian,detect,cicd,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    redirects: true
+    matchers:
+      - type: dsl
+        dsl:
+          - contains(to_lower(body), "<title>log into atlassian - atlassian bamboo</title>")
+          - contains(to_lower(body), "meta name=\"application-name\" content=\"bamboo\" />")
+
+    extractors:
+      - type: regex
+        name: version
+        group: 1
+        regex:
+          - '(?i)atlassian bamboo</a> version (.*) -'

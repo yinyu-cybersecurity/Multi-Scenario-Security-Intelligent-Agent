@@ -1,0 +1,17 @@
+# RAG Annotation:
+# name: PRTG Security Checks Workflow
+# description: 运行所有PRTG相关nuclei模板的安全检查工作流，检测PRTG网络监控系统的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: prtg-workflow
+
+info:
+  name: PRTG Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all PRTG related nuclei templates on a given target.
+workflows:
+  - template: http/technologies/prtg-detect.yaml
+    subtemplates:
+      - tags: prtg

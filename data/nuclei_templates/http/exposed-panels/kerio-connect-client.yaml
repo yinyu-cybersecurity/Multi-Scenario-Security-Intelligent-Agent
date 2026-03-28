@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: Kerio Connect Login Panel - Detect
+# description: Kerio Connect login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: kerio-connect-client
+
+info:
+  name: Kerio Connect Login Panel - Detect
+  author: dhiyaneshDk
+  severity: info
+  description: Kerio Connect login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:gfi:kerio_connect:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    shodan-query: http.title:"Kerio Connect Client"
+    product: kerio_connect
+    vendor: gfi
+  tags: panel,kerio,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/webmail/login/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Kerio Connect Client</title>"
+
+      - type: status
+        status:
+          - 200

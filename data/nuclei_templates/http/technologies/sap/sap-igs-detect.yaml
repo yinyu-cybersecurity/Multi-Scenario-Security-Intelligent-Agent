@@ -1,0 +1,50 @@
+# RAG Annotation:
+# name: SAP Internet Graphics Server (IGS) Detection
+# description: Detection of SAP Internet Graphics Server (IGS)
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: sap-igs-detect
+
+info:
+  name: SAP Internet Graphics Server (IGS) Detection
+  author: _generic_human_
+  severity: info
+  description: Detection of SAP Internet Graphics Server (IGS)
+  metadata:
+    max-request: 1
+  tags: sap,tech,igs,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "SAP IGS"
+          - "is running"
+        condition: and
+
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        part: header
+        words:
+          - "SAP Internet Graphics Server"
+
+    extractors:
+      - type: kval
+        part: header
+        kval:
+          - "Server"

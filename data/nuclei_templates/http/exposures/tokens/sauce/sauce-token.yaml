@@ -1,0 +1,32 @@
+# RAG Annotation:
+# name: Sauce Token
+# description: Sauce Token
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: sauce-token
+
+info:
+  name: Sauce Token
+  author: DhiyaneshDK
+  severity: info
+  reference:
+    - https://github.com/praetorian-inc/noseyparker/blob/main/crates/noseyparker/data/default/builtin/rules/sauce.yml
+    - https://docs.saucelabs.com/dev/api/
+  metadata:
+    verified: true
+    max-request: 1
+  tags: sauce,token,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - '(?i)sauce.{0,50}\b([a-f0-9-]{36})\b'

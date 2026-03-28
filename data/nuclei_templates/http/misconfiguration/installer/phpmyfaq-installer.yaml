@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: phpMyFAQ Installation - Exposure
+# description: phpMyFAQ installation is exposed.
+# vuln_type: Security Misconfiguration
+# severity: high
+# cve_id: N/A
+
+
+id: phpmyfaq-installer
+
+info:
+  name: phpMyFAQ Installation - Exposure
+  author: ritikchaddha
+  severity: high
+  description: phpMyFAQ installation is exposed.
+  classification:
+    cpe: cpe:2.3:a:phpmyfaq:phpmyfaq:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: phpmyfaq
+    product: phpmyfaq
+    fofa-query: "phpMyFAQ-setup"
+  tags: misconfig,phpmyfaq,install,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/setup/index.php"
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>phpMyFAQ'
+          - 'Setup</title>'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - 'phpmyfaq-setup'

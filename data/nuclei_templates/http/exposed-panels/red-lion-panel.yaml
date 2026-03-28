@@ -1,0 +1,32 @@
+# RAG Annotation:
+# name: Red Lion Control Panel - Detect
+# description: Red Lion Control Panel - Detect
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: red-lion-panel
+
+info:
+  name: Red Lion Control Panel - Detect
+  author: ritikchaddha
+  severity: info
+  metadata:
+    verified: true
+    max-request: 1
+  tags: panel,redlion,detect,iot,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Red Lion</a>"
+          - "Red Lion Controls</a>"
+        case-insensitive: true
+        condition: or

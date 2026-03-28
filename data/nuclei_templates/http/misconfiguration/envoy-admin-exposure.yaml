@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: Envoy Admin Exposure
+# description: Envoy Admin page exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: medium
+# cve_id: N/A
+
+
+id: envoy-admin-exposure
+
+info:
+  name: Envoy Admin Exposure
+  author: DhiyaneshDk
+  severity: medium
+  description: Envoy Admin page exposed.
+  reference:
+    - https://www.envoyproxy.io/docs/envoy/latest/
+  classification:
+    cpe: cpe:2.3:a:envoyproxy:envoy:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: envoyproxy
+    product: envoy
+    shodan-query: title:"Envoy Admin"
+  tags: misconfig,envoy,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "<title>Envoy Admin</title>"
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: Remedy Axis Login Panel - Detect
+# description: Remedy Axis Login Panel - Detect
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: remedy-axis-login
+
+info:
+  name: Remedy Axis Login Panel - Detect
+  author: tess
+  severity: info
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:bmc:remedy_action_request_system:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 3
+    shodan-query: http.html:"BMC Remedy"
+    product: remedy_action_request_system
+    vendor: bmc
+  tags: panel,remedy,bmc,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+      - '{{BaseURL}}/arsys/shared/login.jsp'
+      - '{{BaseURL}}/rsso/admin/'
+
+    stop-at-first-match: true
+    redirects: true
+    max-redirects: 2
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "BMC&nbsp;Remedy&nbsp;Mid&nbsp;Tier&nbsp;"
+          - "Remedy Login Page"
+          - "BMC Remedy"
+          - "BMC Smart Reporting"
+        condition: or

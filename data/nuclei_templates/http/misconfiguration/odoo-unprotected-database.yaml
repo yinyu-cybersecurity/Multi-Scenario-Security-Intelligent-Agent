@@ -1,0 +1,50 @@
+# RAG Annotation:
+# name: Odoo - Unprotected Database
+# description: The system has an Odoo application whose database manager is unprotected, indicating potential unauthorized access.
+
+# vuln_type: Authentication Bypass
+# severity: critical
+# cve_id: N/A
+
+
+
+
+id: odoo-unprotected-database
+
+info:
+  name: Odoo - Unprotected Database
+  author: pdteam
+  severity: critical
+  description: |
+    The system has an Odoo application whose database manager is unprotected, indicating potential unauthorized access.
+  remediation: |
+    Implement and enforce proper authentication and access control measures to protect the Odoo database manager.
+  classification:
+    cpe: cpe:2.3:a:odoo:odoo:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: odoo
+    product: odoo
+    shodan-query: title:"Odoo"
+  tags: odoo,database,unauth,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/web/database/manager'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Warning, your Odoo database manager is not protected."
+
+      - type: word
+        words:
+          - "The database manager has been disabled by the administrator"
+        negative: true
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: Pulsar360 Admin Panel - Detect
+# description: Pulsar360 admin panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: pulsar360-admin-panel
+
+info:
+  name: Pulsar360 Admin Panel - Detect
+  author: tess
+  severity: info
+  description: Pulsar360 admin panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"Pulsar Admin"
+  tags: panel,pulsar360,pulsar,admin,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/admin/config.php'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Pulsar Admin'
+          - 'User Control Panel'
+        condition: and
+
+      - type: status
+        status:
+          - 200

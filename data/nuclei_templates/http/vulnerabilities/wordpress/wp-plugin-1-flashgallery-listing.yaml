@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: WordPress 1 flash gallery listing
+# description: Searches for sensitive directories present in the 1-flash-gallery plugin.
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+---
+id: wp-plugin-1-flashgallery-listing
+
+info:
+  name: WordPress 1 flash gallery listing
+  author: pussycat0x
+  severity: info
+  description: Searches for sensitive directories present in the 1-flash-gallery plugin.
+  reference:
+    - https://www.exploit-db.com/ghdb/6978
+  metadata:
+    max-request: 2
+  tags: wordpress,listing,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/wp-content/plugins/1-flash-gallery/"
+      - "{{BaseURL}}/blog/wp-content/plugins/1-flash-gallery/"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Index of"
+          - "/wp-content/plugins/1-flash-gallery"
+        condition: and
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: Websheets Configuration File - Detect
+# description: Websheets configuration file was detected.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: websheets-config
+
+info:
+  name: Websheets Configuration File - Detect
+  author: geeknik
+  severity: high
+  description: Websheets configuration file was detected.
+  reference:
+    - https://github.com/daveagp/websheets
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N
+    cvss-score: 7.5
+    cwe-id: CWE-200
+  metadata:
+    verified: true
+    max-request: 2
+  tags: websheets,config,exposure,files,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/ws-config.json'
+      - '{{BaseURL}}/ws-config.example.json'
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '"db-password":'
+          - '"db-database":'
+        condition: and
+
+      - type: status
+        status:
+          - 200

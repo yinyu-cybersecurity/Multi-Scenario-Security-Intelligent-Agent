@@ -1,0 +1,63 @@
+# RAG Annotation:
+# name: OpenNebula Login Panel - Detect
+# description: OpenNebula login panel was detected.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: opennebula-panel
+
+info:
+  name: OpenNebula Login Panel - Detect
+  author: kh4sh3i,darses
+  severity: info
+  description: |
+    OpenNebula login panel was detected.
+  reference:
+    - https://opennebula.io/
+    - https://github.com/OpenNebula
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query:
+      - http.html:"opennebula"
+      - title:"OpenNebula Sunstone Login"
+      - http.favicon.hash:-1616420987
+      - http.favicon.hash:656672194
+    fofa-query:
+      - title="OpenNebula Sunstone Login"
+      - icon_hash="-119786698"
+      - icon_hash="656672194"
+  tags: panel,opennebula,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>OpenNebula"
+          - "OpenNebula Systems"
+          - 'target="_blank">OpenNebula'
+        condition: or
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        group: 1
+        regex:
+          - "href=\"css/app\\.min\\.css\\?v=([\\d\\.]+)\""

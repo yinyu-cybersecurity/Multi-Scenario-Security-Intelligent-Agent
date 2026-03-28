@@ -196,8 +196,17 @@ deploy/
 │   ├── memory_manager.py       # 记忆管理
 │   ├── performance_persistence.py # 性能持久化
 │   └── token_stats.py          # Token统计
+├── data/                       # 数据目录
+│   ├── chroma_db/              # 向量数据库 (70MB, 12,988条记录)
+│   ├── nuclei_templates/       # Nuclei模板库 (已标注RAG Annotation)
+│   ├── security_resources/     # 安全资源库
+│   │   ├── PayloadsAllTheThings-4.2/  # Payload集合
+│   │   └── SecLists-master/    # 安全字典
+│   ├── knowledge_base/         # Payload知识库 (103个文件)
+│   └── writeups/               # CTF Writeup文档 (122个)
 ├── rag_builder/                # RAG知识检索
-│   ├── vector_store.py         # 向量存储
+│   ├── unified_vector_store.py # 统一向量库构建器
+│   ├── config.py               # RAG配置
 │   └ retriever.py              # 检索器
 ├── web/                        # Web UI
 │   ├── api.py                  # REST API (75KB)
@@ -211,7 +220,6 @@ deploy/
 │   ├── xray/                   # 漏洞扫描
 │   ├── SSRFmap/                # SSRF利用
 │   ├── Gopherus/               # Gopher生成
-│   ├── Githacker/              # .git泄露
 │   ├── phpggc/                 # PHP反序列化
 │   ├── marshalsec/             # Java反序列化
 │   ├── ysoserial/              # Java反序列化
@@ -229,6 +237,10 @@ deploy/
 │   ├── fscan_linux/            # 内网扫描
 │   ├── fscan_windows/          # 内网扫描
 │   └── php_filter_chain_generator/
+├── data/security_resources/    # 安全资源库
+│   ├── PayloadsAllTheThings-4.2/  # Payload集合
+│   ├── SecLists-master/        # 安全字典
+│   └── Githacker/              # .git泄露
 ├── docs/                       # 文档 (24个)
 ├── tests/                      # 单元测试
 ├── test_suite/                 # 测试套件
@@ -330,6 +342,11 @@ def my_node(state: CTFState) -> Dict:
 | 第三方工具 (thirdparty/) | 22 |
 | CTF方向模块 | 8 |
 | 状态类型 | 8 |
+| RAG向量记录 | 13,049 |
+| ├─ Writeups | 122 |
+| ├─ Nuclei模板(已标注) | 12,763 |
+| ├─ Payloads | 103 |
+| └─ Security Resources | 61 |
 | 文档文件 | 24 |
 | 核心代码行数 | ~50,000 |
 

@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Joplin Server Login - Panel
+# description: Joplin Server login panel detected.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: joplin-panel
+
+info:
+  name: Joplin Server Login - Panel
+  author: pussycat0x
+  severity: info
+  description: |
+    Joplin Server login panel detected.
+  metadata:
+    verified: true
+    shodan-query: 'title:"Joplin Server"'
+    max-request: 1
+  tags: panel,joplin,login,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/login"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Joplin Server - Login</title>"
+
+      - type: status
+        status:
+          - 200

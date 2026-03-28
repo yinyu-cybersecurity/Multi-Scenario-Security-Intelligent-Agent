@@ -1,0 +1,57 @@
+# RAG Annotation:
+# name: Zend Configuration File
+# description: Zend configuration file was exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: zend-config-file
+
+info:
+  name: Zend Configuration File
+  author: pdteam,geeknik,Akokonunes
+  severity: high
+  description: Zend configuration file was exposed.
+  metadata:
+    max-request: 13
+  tags: config,exposure,zend,php,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{paths}}"
+    payloads:
+      paths:
+        - "/application/configs/application.ini"
+        - "/admin/configs/application.ini"
+        - "/application.ini"
+        - "/aplicacao/application/configs/application.ini"
+        - "/cloudexp/application/configs/application.ini"
+        - "/cms/application/configs/application.ini"
+        - "/moto/application/configs/application.ini"
+        - "/Partners/application/configs/application.ini"
+        - "/radio/application/configs/application.ini"
+        - "/seminovos/application/configs/application.ini"
+        - "/shop/application/configs/application.ini"
+        - "/site_cg/application/configs/application.ini"
+        - "/slr/application/configs/application.ini"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: regex
+        regex:
+          - "db.*(.password).*="
+          - "db.*(.username).*="
+        condition: and
+
+      - type: word
+        words:
+          - "text/plain"
+        part: header
+
+      - type: status
+        status:
+          - 200

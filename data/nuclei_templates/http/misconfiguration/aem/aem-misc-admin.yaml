@@ -1,0 +1,60 @@
+# RAG Annotation:
+# name: Adobe AEM Misc Admin Dashboard Exposure
+# description: Adobe AEM Misc Admin Dashboard is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: aem-misc-admin
+
+info:
+  name: Adobe AEM Misc Admin Dashboard Exposure
+  author: dhiyaneshDk
+  severity: high
+  description: Adobe AEM Misc Admin Dashboard is exposed.
+  reference:
+    - https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/aem2.txt
+  metadata:
+    verified: true
+    max-request: 9
+    shodan-query:
+      - http.title:"AEM Sign In"
+      - http.component:"Adobe Experience Manager"
+  tags: misconfig,aem,adobe,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}{{paths}}"
+    payloads:
+      paths:
+        - "/miscadmin"
+        - "/mcmadmin#/content/dashboard"
+        - "/miscadmin#/etc/mobile"
+        - "/miscadmin#/etc/segmentation"
+        - "/miscadmin#/etc/blueprints"
+        - "/miscadmin#/etc/designs"
+        - "/miscadmin#/etc/importers"
+        - "/miscadmin#/etc/reports"
+        - "/miscadmin#/etc/msm/rolloutconfigs"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>AEM Tools</title>'
+          - '<title>AEM MCM</title>'
+        condition: or
+
+      - type: word
+        part: header
+        words:
+          - text/html
+
+      - type: status
+        status:
+          - 200

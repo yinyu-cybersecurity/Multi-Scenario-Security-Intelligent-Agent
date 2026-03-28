@@ -1,0 +1,35 @@
+# RAG Annotation:
+# name: Snyk Ignore File Disclosure
+# description: Snyk Ignore File Disclosure
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: snyk-ignore-file-disclosure
+
+info:
+  name: Snyk Ignore File Disclosure
+  author: dhiyaneshDk
+  severity: info
+  reference:
+    - https://github.com/detectify/ugly-duckling/blob/master/modules/crowdsourced/snyk-ignore-file-disclosure.json
+  metadata:
+    max-request: 1
+  tags: exposure,files,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.snyk"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "# Snyk (https://snyk.io) policy file, patches or ignores known vulnerabilities."
+        part: body
+
+      - type: status
+        status:
+          - 200

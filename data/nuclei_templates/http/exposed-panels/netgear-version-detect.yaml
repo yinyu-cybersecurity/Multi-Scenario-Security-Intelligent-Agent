@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: NETGEAR Router Panel - Detect
+# description: NETGEAR router panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: netgear-version-detect
+
+info:
+  name: NETGEAR Router Panel - Detect
+  author: dwisiswant0
+  severity: info
+  description: NETGEAR router panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    max-request: 1
+  tags: panel,router,netgear,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/currentsetting.htm"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: regex
+        part: body
+        regex:
+          - "^((((Re(adyShareSupportedLevel|gionTag)|InternetConnectionStatus|SOAPVersion|Firmware|Model)|Region)|LoginMethod)|ParentalControlSupported)="
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "Model=([^\\s]+)"
+          - "Firmware=([^\\s]+)"

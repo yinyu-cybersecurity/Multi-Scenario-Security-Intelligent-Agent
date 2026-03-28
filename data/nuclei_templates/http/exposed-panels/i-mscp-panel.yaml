@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Internet Multi Server Control Panel - Detect
+# description: Internet Multi Server Control Panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: i-mscp-panel
+
+info:
+  name: Internet Multi Server Control Panel - Detect
+  author: JustaAcat
+  severity: info
+  description: Internet Multi Server Control Panel was detected.
+  reference:
+    - https://i-mscp.net/
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"i-MSCP - Multi Server Control Panel"
+  tags: panel,i-mscp,detect,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/index.php'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "<title>i-MSCP - Multi Server Control Panel"
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,30 @@
+# RAG Annotation:
+# name: Mailchimp API Value
+# description: Mailchimp API Value
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: mailchimp-access-key-value
+
+info:
+  name: Mailchimp API Value
+  author: puzzlepeaches
+  severity: info
+  reference:
+    - https://mailchimp.com/help/about-api-keys/
+  metadata:
+    max-request: 1
+  tags: exposure,token,mailchimp,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "[0-9a-f]{32}-us[0-9]{1,2}"

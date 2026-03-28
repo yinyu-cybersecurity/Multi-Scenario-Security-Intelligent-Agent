@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: PNPM Lock Yaml File Disclosure
+# description: The pnpm-lock.yaml file is similar to the package-lock.json file used by npm or the yarn.lock file used by Yarn. It serves as a lock file that ensures consistent and reproducible installations of depe
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: pnpm-lock
+
+info:
+  name: PNPM Lock Yaml File Disclosure
+  author: noraj
+  severity: info
+  description: |
+    The pnpm-lock.yaml file is similar to the package-lock.json file used by npm or the yarn.lock file used by Yarn. It serves as a lock file that ensures consistent and reproducible installations of dependencies across different environments.
+  reference:
+    - https://pnpm.io/cli/install#tldr
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"pnpm-lock.yaml"
+  tags: exposure,files,node,npm,pnpm,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/pnpm-lock.yaml"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "lockfileVersion:"
+          - "specifiers:"
+          - "packages:"
+        condition: and
+
+      - type: status
+        status:
+          - 200

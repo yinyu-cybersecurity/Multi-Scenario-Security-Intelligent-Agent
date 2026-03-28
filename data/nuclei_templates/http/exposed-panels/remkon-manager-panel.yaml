@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: RemKon Device Manager Login Panel - Detect
+# description: RemKon Device Manager login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: remkon-manager-panel
+
+info:
+  name: RemKon Device Manager Login Panel - Detect
+  author: pikpikcu,daffainfo
+  severity: info
+  description: RemKon Device Manager login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:nascent:remkon_device_manager:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    shodan-query: http.title:"Remkon Device Manager"
+    product: remkon_device_manager
+    vendor: nascent
+  tags: panel,remkon,login,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/login.php'
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        part: body
+        words:
+          - "<title>Remkon Device Manager</title>"

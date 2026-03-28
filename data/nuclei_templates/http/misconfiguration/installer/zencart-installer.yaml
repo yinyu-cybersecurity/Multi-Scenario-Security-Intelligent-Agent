@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: Zen Cart Installer
+# description: Zen Cart is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: zencart-installer
+
+info:
+  name: Zen Cart Installer
+  author: DhiyaneshDk
+  severity: high
+  description: Zen Cart is susceptible to the Installation page exposure due to misconfiguration.
+  reference:
+    - https://www.zen-cart.com/
+  classification:
+    cpe: cpe:2.3:a:zen-cart:zen_cart:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: zen-cart
+    product: zen_cart
+    shodan-query: html:"shopping cart program by zen cart"
+    fofa-query: title="Installer" && icon_hash="899320116"
+  tags: misconfig,zencart,install,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/zc_install/index.php'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>Zen Cart&reg; Installer</title>'
+
+      - type: status
+        status:
+          - 200

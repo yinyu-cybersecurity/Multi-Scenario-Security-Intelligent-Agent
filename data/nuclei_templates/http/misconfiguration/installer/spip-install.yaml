@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: SPIP Install - Exposure
+# description: SPIP is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: spip-install
+
+info:
+  name: SPIP Install - Exposure
+  author: DhiyaneshDK
+  severity: high
+  description: SPIP is susceptible to the Installation page exposure due to misconfiguration.
+  metadata:
+    verified: "true"
+    max-request: 1
+  tags: exposure,spip,install,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/ecrire/?exec=install"
+
+    host-redirects: true
+    max-redirects: 1
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Installing publication system..."
+          - "SPIP"
+        condition: and
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: NodeBB Web Installer
+# description: NodeBB Web is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: nodebb-installer
+
+info:
+  name: NodeBB Web Installer
+  author: DhiyaneshDk
+  severity: high
+  description: NodeBB Web is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:nodebb:nodebb:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: nodebb
+    product: nodebb
+    shodan-query: title:"NodeBB Web Installer"
+  tags: misconfig,nodebb,install,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'NodeBB Web Installer'
+          - 'Create an Administrator account'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - 'text/html'
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,17 @@
+# RAG Annotation:
+# name: SAP Internet Graphics Server (IGS) Security Checks Workflow
+# description: 运行所有SAP IGS相关nuclei模板的安全检查工作流，检测SAP Internet Graphics Server的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: igs-workflow
+
+info:
+  name: SAP Internet Graphics Server (IGS) Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all SAP Internet Graphics Server (IGS) related nuclei templates on a given target.
+workflows:
+  - template: http/technologies/sap/sap-igs-detect.yaml
+    subtemplates:
+      - tags: igs

@@ -1,0 +1,50 @@
+# RAG Annotation:
+# name: Gespage Login Panel - Detect
+# description: Gespage login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: gespage-panel
+
+info:
+  name: Gespage Login Panel - Detect
+  author: pikpikcu,daffainfo
+  severity: info
+  description: Gespage login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:gespage:gespage:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    shodan-query: Path=/gespage
+    product: gespage
+    vendor: gespage
+  tags: panel,gespage,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/gespage/webapp/login.xhtml"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<link rel="stylesheet" href="css/gespage.css" />'
+          - '<link rel="stylesheet" href="css/menugrey.css" />'
+        condition: and
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        part: body
+        group: 1
+        regex:
+          - '\(Ver: ([0-9._A-Z]+)\)'

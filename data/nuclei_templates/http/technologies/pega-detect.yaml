@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: Pega Infinity Detection
+# description: Pega Infinity Detection
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: pega-detect
+
+info:
+  name: Pega Infinity Detection
+  author: sshell
+  severity: info
+  metadata:
+    max-request: 1
+  tags: tech,pega,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/prweb/PRRestService/unauthenticatedAPI/v1/docs"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"description" :"The Pega API'
+
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        part: header
+        words:
+          - 'application/json'

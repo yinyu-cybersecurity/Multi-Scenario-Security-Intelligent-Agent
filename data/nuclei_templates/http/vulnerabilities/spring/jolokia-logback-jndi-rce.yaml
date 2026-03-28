@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: Jolokia Logback JNDI - Remote Code Execution
+# description: Jolokia Logback is vulnerable to RCE.
+# vuln_type: Remote Code Execution
+# severity: high
+# cve_id: N/A
+
+
+---
+id: jolokia-logback-jndi-rce
+
+info:
+  name: Jolokia Logback JNDI - Remote Code Execution
+  author: SleepingBag945
+  severity: high
+  description: Jolokia Logback is vulnerable to RCE.
+  reference:
+    - https://thinkloveshare.com/hacking/ssrf_to_rce_with_jolokia_and_mbeans/
+    - https://github.com/laluka/jolokia-exploitation-toolkit
+    - https://github.com/LandGrey/SpringBootVulExploit#0x04jolokia-logback-jndi-rce
+  metadata:
+    max-request: 2
+  tags: jolokia,springboot,tomcat,rce,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/jolokia/list"
+      - "{{BaseURL}}/actuator/jolokia/list"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'ch.qos.logback.classic.jmx.JMXConfigurator'
+          - 'reloadByURL'
+        condition: and
+
+      - type: status
+        status:
+          - 200

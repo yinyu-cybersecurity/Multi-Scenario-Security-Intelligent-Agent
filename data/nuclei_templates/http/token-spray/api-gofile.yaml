@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: GoFile API Test
+# description: Unlimited size file uploads for free
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-gofile
+
+info:
+  name: GoFile API Test
+  author: daffainfo
+  severity: info
+  description: Unlimited size file uploads for free
+  reference:
+    - https://gofile.io/api
+    - https://github.com/daffainfo/all-about-apikey/tree/main/gofile
+  metadata:
+    max-request: 1
+  tags: token-spray,gofile
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://api.gofile.io/getAccountDetails?token={{token}}&allDetails=true"
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"token"'
+          - '"email"'
+          - '"rootFolder"'
+        condition: and

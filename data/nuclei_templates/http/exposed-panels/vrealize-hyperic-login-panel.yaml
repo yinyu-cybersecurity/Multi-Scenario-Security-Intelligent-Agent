@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: vRealize Hyperic Login Panel - Detect
+# description: vRealize Hyperic login panel was detected
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: vrealize-hyperic-panel
+
+info:
+  name: vRealize Hyperic Login Panel - Detect
+  author: Charles D
+  severity: info
+  description: |
+    vRealize Hyperic login panel was detected
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:vmware:hyperic_hq:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.title:"Sign In - Hyperic"
+    product: hyperic_hq
+    vendor: vmware
+  tags: login,panel,vrealize,hyperic,detect,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/app/login'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Sign In - Hyperic"
+
+      - type: status
+        status:
+          - 200

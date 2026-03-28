@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Hospital Management System Login Panel - Detect
+# description: Hospital Management System login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: hospital-management-panel
+
+info:
+  name: Hospital Management System Login Panel - Detect
+  author: arafatansari
+  severity: info
+  description: Hospital Management System login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:hospital_management_system_project:hospital_management_system:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: hospital_management_system_project
+    product: hospital_management_system
+    shodan-query:
+      - http.html:"Hospital Management System"
+      - http.html:"hospital management system"
+    fofa-query: body="hospital management system"
+  tags: panel,hms,cms,hospital_management_system_project,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/index.html"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Hospital Management System'
+          - 'Doctors Login'
+          - 'Admin Login'
+        condition: and
+
+      - type: status
+        status:
+          - 200

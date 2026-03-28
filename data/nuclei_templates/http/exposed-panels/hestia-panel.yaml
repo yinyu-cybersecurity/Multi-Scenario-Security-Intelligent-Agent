@@ -1,0 +1,53 @@
+# RAG Annotation:
+# name: Hestia Control Panel Login - Detect
+# description: Hestia Control Panel login was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: hestia-panel
+
+info:
+  name: Hestia Control Panel Login - Detect
+  author: JustaAcat
+  severity: info
+  description: Hestia Control Panel login was detected.
+  reference:
+    - https://hestiacp.com/
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:hestiacp:control_panel:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: hestiacp
+    product: control_panel
+    shodan-query:
+      - title:"Hestia Control Panel"
+      - http.favicon.hash:-476299640
+      - http.title:"hestia control panel"
+    fofa-query:
+      - icon_hash=-476299640
+      - title="hestia control panel"
+    google-query: intitle:"hestia control panel"
+  tags: panel,hestia,detect,hestiacp,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/login/'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Hestia Control Panel"
+          - "Welcome to Hestia Control"
+        condition: or
+
+      - type: status
+        status:
+          - 200

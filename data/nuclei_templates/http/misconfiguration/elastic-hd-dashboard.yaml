@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: Elastic HD Dashboard Exposure
+# description: Elastic HD Dashboard is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: elastic-hd-dashboard
+
+info:
+  name: Elastic HD Dashboard Exposure
+  author: tess
+  severity: low
+  description: Elastic HD Dashboard is exposed.
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"Elastic HD Dashboard"
+  tags: misconfig,exposure,elastic,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Elastic HD Dashboard"
+          - "elasticsearch go Edition head plugin"
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+
+      - type: status
+        status:
+          - 200

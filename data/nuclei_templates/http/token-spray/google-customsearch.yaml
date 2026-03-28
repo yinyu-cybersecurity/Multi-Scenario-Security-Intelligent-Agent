@@ -1,0 +1,31 @@
+# RAG Annotation:
+# name: Google Custom Search API Test
+# description: Google Custom Search API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-googlecustomsearch
+
+info:
+  name: Google Custom Search API Test
+  author: zzeitlin
+  severity: info
+  metadata:
+    max-request: 1
+  tags: token-spray,google,search
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://www.googleapis.com/customsearch/v1?cx=017576662512468239146:omuauf_lfve&q=lectures&key={{token}}"
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'error'
+        negative: true

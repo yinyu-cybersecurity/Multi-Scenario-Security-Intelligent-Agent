@@ -1,0 +1,17 @@
+# RAG Annotation:
+# name: GoCD Security Checks Workflow
+# description: 运行所有GoCD相关nuclei模板的安全检查工作流，检测GoCD持续交付系统的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: gocd-workflow
+
+info:
+  name: GoCD Security Checks
+  author: dhiyaneshDk
+  description: A simple workflow that runs all GoCD Pipeline related nuclei templates on a given target.
+workflows:
+  - template: http/exposed-panels/gocd-login.yaml
+    subtemplates:
+      - tags: gocd

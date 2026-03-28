@@ -1,0 +1,29 @@
+# RAG Annotation:
+# name: Google Static Streetview API Test
+# description: Google Static Streetview API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-googlestreetview
+
+info:
+  name: Google Static Streetview API Test
+  author: zzeitlin
+  severity: info
+  metadata:
+    max-request: 1
+  tags: token-spray,google,streetview
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://maps.googleapis.com/maps/api/streetview?size=400x400&location=40.720032,-73.988354&fov=90&heading=235&pitch=10&key={{token}}"
+
+    matchers:
+      - type: status
+        status:
+          - 200

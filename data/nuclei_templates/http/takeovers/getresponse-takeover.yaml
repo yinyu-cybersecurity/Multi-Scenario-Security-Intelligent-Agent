@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Getresponse Takeover Detection
+# description: Getresponse takeover was detected.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+id: getresponse-takeover
+
+info:
+  name: Getresponse Takeover Detection
+  author: pdteam
+  severity: high
+  description: Getresponse takeover was detected.
+  reference:
+    - https://github.com/EdOverflow/can-i-take-over-xyz/issues/235
+  metadata:
+    max-request: 1
+  tags: takeover,getresponse,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - Host != ip
+
+      - type: word
+        words:
+          - 'With GetResponse Landing Pages, lead generation has never been easier'
+
+    extractors:
+      - type: dsl
+        dsl:
+          - cname

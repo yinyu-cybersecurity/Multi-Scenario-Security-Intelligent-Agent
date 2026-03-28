@@ -1,0 +1,17 @@
+# RAG Annotation:
+# name: Thinfinity VirtualUI Security Checks Workflow
+# description: 运行所有Thinfinity VirtualUI相关nuclei模板的安全检查工作流，检测Thinness远程访问解决方案的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: thinfinity-workflow
+
+info:
+  name: Thinfinity VirtualUI Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all Thinfinity VirtualUI related nuclei templates on a given target.
+workflows:
+  - template: http/exposed-panels/thinfinity-virtualui-panel.yaml
+    subtemplates:
+      - tags: thinfinity

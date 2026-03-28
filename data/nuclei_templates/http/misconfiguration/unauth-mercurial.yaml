@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Unauthenticated Mercurial Detect
+# description: Mercurial repositories index is disclosed.
+# vuln_type: Authentication Bypass
+# severity: high
+# cve_id: N/A
+
+
+id: unauth-mercurial
+
+info:
+  name: Unauthenticated Mercurial Detect
+  author: pussycat0x
+  severity: high
+  description: Mercurial repositories index is disclosed.
+  classification:
+    cpe: cpe:2.3:a:mercurial:mercurial:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: mercurial
+    product: mercurial
+    shodan-query: html:"Mercurial repositories index"
+  tags: misconfig,unauth,mercurial,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Mercurial Repositories"
+          - "Last modified"
+        condition: and
+
+      - type: status
+        status:
+          - 200

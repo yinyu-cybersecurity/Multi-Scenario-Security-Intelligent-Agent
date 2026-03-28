@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Woodwing Studio Server - Phpinfo Config
+# description: Phpinfo Config file exposed in Woodwing Studio Server.
+# vuln_type: Security Misconfiguration
+# severity: medium
+# cve_id: N/A
+
+
+id: woodwing-phpinfo
+
+info:
+  name: Woodwing Studio Server - Phpinfo Config
+  author: pdteam
+  severity: medium
+  description: Phpinfo Config file exposed in Woodwing Studio Server.
+  reference:
+    - https://twitter.com/ynsmroztas/status/1680961398011047936
+  metadata:
+    max-request: 2
+    shodan-query: http.title:"WoodWing Studio Server"
+    fofa-query: title=="WoodWing Studio Server"
+  tags: misconfig,woodwing,phpinfo,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/StudioServer/server/wwtest/phpinfo.php"
+      - "{{BaseURL}}/server/wwtest/phpinfo.php"
+
+    stop-at-first-match: true
+    redirects: true
+    max-redirects: 2
+    matchers:
+      - type: dsl
+        dsl:
+          - contains(tolower(body), 'woodwing')
+          - contains(tolower(body), 'php extension')
+          - contains(tolower(body), 'php version')
+          - status_code == 200
+        condition: and

@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: OSASI Login - Panel
+# description: OSASI Login panel was discovered.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: osasi-panel
+
+info:
+  name: OSASI Login - Panel
+  author: biero-el-corridor
+  severity: info
+  description: |
+    OSASI Login panel was discovered.
+  metadata:
+    shodan-query: html:"/css/osasiasp.css"
+    verified: true
+    max-request: 1
+  tags: osasi,panel,login,detect,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/users/login"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "/img/osasil_logo_f.png"
+          - "UserLoginid"
+        condition: and
+
+      - type: status
+        status:
+          - 200

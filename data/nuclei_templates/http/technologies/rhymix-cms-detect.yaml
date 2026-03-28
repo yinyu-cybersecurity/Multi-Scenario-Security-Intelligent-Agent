@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: Rhymix CMS Detect
+# description: Detects Rhymix CMS
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: rhymix-cms-detect
+
+info:
+  name: Rhymix CMS Detect
+  author: gy741
+  severity: info
+  description: Detects Rhymix CMS
+  reference:
+    - https://github.com/rhymix/rhymix
+  metadata:
+    max-request: 1
+  tags: tech,rhymix,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: header
+        words:
+          - 'rx_sesskey1'
+
+      - type: word
+        part: body
+        words:
+          - '<meta name="generator" content="Rhymix" />'

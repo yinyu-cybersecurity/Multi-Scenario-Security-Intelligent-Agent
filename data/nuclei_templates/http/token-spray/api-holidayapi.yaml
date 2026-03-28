@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: Holiday API Test
+# description: Historical data regarding holidays
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-holidayapi
+
+info:
+  name: Holiday API Test
+  author: daffainfo
+  severity: info
+  description: Historical data regarding holidays
+  reference:
+    - https://holidayapi.com/docs
+    - https://github.com/daffainfo/all-about-apikey/tree/main/holiday-api
+  metadata:
+    max-request: 1
+  tags: token-spray,holidayapi
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://holidayapi.com/v1/holidays?pretty&key={{token}}&country=US&year=2020&language=EN"
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"holidays":'
+          - '"name":'
+          - '"date":'
+        condition: and

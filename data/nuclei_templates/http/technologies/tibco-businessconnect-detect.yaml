@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: TIBCO BusinessConnect - Detect
+# description: TIBCO BusinessConnect technology was detected.
+
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+
+
+id: tibco-businessconnect-detect
+
+info:
+  name: TIBCO BusinessConnect - Detect
+  author: righettod
+  severity: info
+  description: |
+    TIBCO BusinessConnect technology was detected.
+  reference:
+    - https://www.tibco.com/products/tibco-businessconnect
+  classification:
+    cpe: cpe:2.3:a:tibco:businessconnect:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: tibco
+    product: businessconnect
+    shodan-query: http.html:"TIBCO BusinessConnect"
+  tags: tibco,detect,tech,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers:
+      - type: dsl
+        dsl:
+          - 'status_code == 200'
+          - 'contains(header, "TIBCO BusinessConnect")'
+        condition: and

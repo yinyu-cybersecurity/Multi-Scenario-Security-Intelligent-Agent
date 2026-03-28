@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: Amplitude phishing Detection
+# description: A Amplitude phishing website was detected
+
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: amplitude-phish
+
+info:
+  name: Amplitude phishing Detection
+  author: rxerium
+  severity: info
+  description: |
+    A Amplitude phishing website was detected
+  reference:
+    - https://amplitude.com
+  metadata:
+    max-request: 1
+  tags: phishing,amplitude,analytics,osint,discovery
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>AI Analytics Platform for Modern Digital Analytics | Amplitude'
+
+      - type: status
+        status:
+          - 200
+
+      - type: dsl
+        dsl:
+          - '!contains(host,"amplitude.com")'

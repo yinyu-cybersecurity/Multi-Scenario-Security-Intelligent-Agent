@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Go.mod Disclosure
+# description: go.mod internal file is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: go-mod-disclosure
+
+info:
+  name: Go.mod Disclosure
+  author: DhiyaneshDk
+  severity: low
+  description: go.mod internal file is exposed.
+  classification:
+    cpe: cpe:2.3:a:golang:go:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: golang
+    product: go
+    shodan-query: html:"go.mod"
+  tags: exposure,files,go,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/go.mod"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'module'
+          - 'go'
+          - 'require ('
+        condition: and
+
+      - type: status
+        status:
+          - 200

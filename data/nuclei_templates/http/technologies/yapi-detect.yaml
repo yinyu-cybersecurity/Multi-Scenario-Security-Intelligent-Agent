@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: YApi Detect
+# description: YApi Detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: yapi-detect
+
+info:
+  name: YApi Detect
+  author: pikpikcu
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:ymfe:yapi:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: ymfe
+    product: yapi
+    shodan-query: http.title:"YApi"
+  tags: tech,yapi,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>YApi-高效、易用、功能强大的可视化接口管理平台</title>"
+
+      - type: status
+        status:
+          - 200

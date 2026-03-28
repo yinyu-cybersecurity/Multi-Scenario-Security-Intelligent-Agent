@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: Sensitive Configuration Files Listing - Detect
+# description: Listing of sensitive configuration files containing items such as usernames, passwords, and IP addresses was detected.
+# vuln_type: Sensitive Data Exposure
+# severity: medium
+# cve_id: N/A
+
+
+id: configuration-listing
+
+info:
+  name: Sensitive Configuration Files Listing - Detect
+  author: j33n1k4
+  severity: medium
+  description: Listing of sensitive configuration files containing items such as usernames, passwords, and IP addresses was detected.
+  reference:
+    - https://www.exploit-db.com/ghdb/7014
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N
+    cvss-score: 5.3
+    cwe-id: CWE-200
+  metadata:
+    max-request: 1
+  tags: config,listing,exposure,edb,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/config/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Index of /config"
+          - "Parent Directory"
+        condition: and
+
+      - type: status
+        status:
+          - 200

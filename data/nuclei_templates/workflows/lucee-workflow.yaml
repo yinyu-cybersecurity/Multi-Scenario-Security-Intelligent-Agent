@@ -1,0 +1,17 @@
+# RAG Annotation:
+# name: Lucee Detection Workflow
+# description: 运行所有Lucee相关nuclei模板的安全检查工作流，检测Lucee CFML引擎的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: lucee-workflow
+
+info:
+  name: Lucee Detection Workflow
+  author: geeknik,dhiyaneshDk
+  description: A simple workflow that runs all Lucee related nuclei templates on a given target.
+workflows:
+  - template: http/technologies/lucee-detect.yaml
+    subtemplates:
+      - tags: lucee

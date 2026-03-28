@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Joomla! htaccess file disclosure
+# description: Joomla!  has an htaccess file to store configurations about HTTP config, directory listing, etc.
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: joomla-htaccess-file
+
+info:
+  name: Joomla! htaccess file disclosure
+  author: oppsec
+  severity: info
+  description: Joomla!  has an htaccess file to store configurations about HTTP config, directory listing, etc.
+  metadata:
+    max-request: 1
+  tags: miscellaneous,misc,joomla,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/htaccess.txt"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Joomla"
+          - "Open Source Matters. All rights reserved"
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/plain"
+
+      - type: status
+        status:
+          - 200

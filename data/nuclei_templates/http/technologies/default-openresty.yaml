@@ -1,0 +1,33 @@
+# RAG Annotation:
+# name: OpenResty Default Page
+# description: OpenResty Default Page
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: default-openresty
+
+info:
+  name: OpenResty Default Page
+  author: dhiyaneshDk
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:openresty:openresty:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: openresty
+    product: openresty
+    shodan-query: http.title:"Welcome to OpenResty!"
+  tags: tech,openresty,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers:
+      - type: word
+        words:
+          - "<title>Welcome to OpenResty!</title>"
+        part: body

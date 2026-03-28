@@ -1,0 +1,50 @@
+# RAG Annotation:
+# name: Google Chromecast - Detect
+# description: Searches for Google Chromecast via their eureka_info route.
+
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+
+
+id: chromecast-detect
+
+info:
+  name: Google Chromecast - Detect
+  author: LucianNitescu
+  severity: info
+  description: |
+    Searches for Google Chromecast via their eureka_info route.
+  reference:
+    - https://github.com/thewhiteh4t/killcast/blob/ee81cfa03c963d47d3335770fcea2ca48bddeabf/killcast.py#L100C25-L100C43
+    - https://rithvikvibhu.github.io/GHLocalApi/#section/Google-Home-Local-API/Authentication
+  classification:
+    cpe: cpe:2.3:h:google:chromecast:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: google
+    product: chromecast
+    shodan-query: Chromecast
+  tags: google,chromecast,detect,discovery
+
+http:
+  - raw:
+      - |
+        GET /setup/eureka_info HTTP/1.1
+        Host: {{Hostname}}
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"cast_build_revision":'
+          - '"ssdp_udn":'
+        condition: and
+
+      - type: status
+        status:
+          - 200

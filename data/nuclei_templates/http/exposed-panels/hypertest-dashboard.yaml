@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: HyperTest Common Dashboard - Detect
+# description: HyperTest Common Dashboard was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: hypertest-dashboard
+
+info:
+  name: HyperTest Common Dashboard - Detect
+  author: DhiyaneshDk
+  severity: info
+  description: HyperTest Common Dashboard was detected.
+  reference:
+    - https://www.facebook.com/photo?fbid=487809593389565&set=a.467014098802448
+    - https://www.hypertest.co
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"HyperTest"
+  tags: panel,exposure,hypertest,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/dashboard/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "<title>HyperTest | Common Dashboard</title>"
+          - "HyperTest | Dashboard"
+          - "HyperTest doesn't work"
+        condition: or
+
+      - type: word
+        part: header
+        words:
+          - 'text/html'

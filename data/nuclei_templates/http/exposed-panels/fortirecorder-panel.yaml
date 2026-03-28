@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: FortiRecorder Panel - Detect
+# description: FortiRecorder Panel was discovered.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: fortirecorder-panel
+
+info:
+  name: FortiRecorder Panel - Detect
+  author: rxerium
+  severity: info
+  description: |
+    FortiRecorder Panel was discovered.
+  reference:
+    - https://www.fortinet.com/content/dam/fortinet/assets/data-sheets/FortiRecorder.pdf
+  metadata:
+    max-request: 1
+    verified: true
+    shodan-query: title:FortiRecorder
+    fofa-query: title="FortiRecorder"
+  tags: fortinet,fortirecorder,login,panel,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/admin/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "FortiRecorder Admin"
+          - "Log In"
+        condition: and
+
+      - type: status
+        status:
+          - 200

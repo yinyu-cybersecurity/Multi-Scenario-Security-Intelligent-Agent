@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: Brave New Coin API Test
+# description: Real-time and historic crypto data from more than 200+ exchanges
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-bravenewcoin
+
+info:
+  name: Brave New Coin API Test
+  author: daffainfo
+  severity: info
+  description: Real-time and historic crypto data from more than 200+ exchanges
+  reference:
+    - https://bravenewcoin.com/developers
+    - https://github.com/daffainfo/all-about-apikey/tree/main/brave-new-coin
+  metadata:
+    max-request: 1
+  tags: token-spray,bravenewcoin
+
+self-contained: true
+
+http:
+  - raw:
+      - |
+        GET https://bravenewcoin.p.rapidapi.com/market HTTP/1.1
+        X-Rapidapi-Host: bravenewcoin.p.rapidapi.com
+        X-Rapidapi-Key: {{token}}
+        Host: bravenewcoin.p.rapidapi.com
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"content":'
+          - '"id":'
+          - '"baseAssetId":'
+          - '"quoteAssetId":'
+        condition: and

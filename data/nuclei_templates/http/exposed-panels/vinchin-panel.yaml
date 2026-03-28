@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: Vinchin Backup & Recovery Panel - Detect
+# description: Vinchin Backup & Recovery login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: vinchin-panel
+
+info:
+  name: Vinchin Backup & Recovery Panel - Detect
+  author: pussycat0x
+  severity: info
+  description: Vinchin Backup & Recovery login panel was detected.
+  classification:
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:vinchin:vinchin_backup_and_recovery:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"VinChin"
+    product: vinchin_backup_and_recovery
+    vendor: vinchin
+  tags: panel,vinchin,login,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    host-redirects: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Vinchin Backup & Recovery'
+
+      - type: status
+        status:
+          - 200

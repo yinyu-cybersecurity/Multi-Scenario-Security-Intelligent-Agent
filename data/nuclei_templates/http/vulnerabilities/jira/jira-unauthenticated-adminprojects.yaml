@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: Jira Unauthenticated Admin Projects
+# description: Jira Unauthenticated Admin Projects
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+---
+id: jira-unauthenticated-adminprojects
+
+info:
+  name: Jira Unauthenticated Admin Projects
+  author: TESS
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:atlassian:jira:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: atlassian
+    product: jira
+    shodan-query: http.component:"Atlassian Jira"
+  tags: atlassian,jira,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/rest/menu/latest/admin"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'key'
+          - 'link'
+          - 'label'
+          - 'self'
+        condition: and
+
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        part: header
+        words:
+          - "atlassian.xsrf.token"

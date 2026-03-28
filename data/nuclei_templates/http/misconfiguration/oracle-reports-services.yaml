@@ -1,0 +1,52 @@
+# RAG Annotation:
+# name: Oracle Reports Services - Servlet
+# description: Oracle Reports Services - Servlet Command dashboard
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: oracle-reports-services
+
+info:
+  name: Oracle Reports Services - Servlet
+  author: dogasantos
+  severity: info
+  description: Oracle Reports Services - Servlet Command dashboard
+  classification:
+    cpe: cpe:2.3:a:oracle:reports:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 3
+    vendor: oracle
+    product: reports
+    shodan-query: title:"Oracle Forms"
+  tags: exposure,oracle,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/reports/"
+      - "{{BaseURL}}/ora/reports/"
+      - "{{BaseURL}}/oracle/reports/"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Valid Reports Servlet Commands'
+          - 'rwservlet'
+          - 'killengine'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - text/html
+
+      - type: status
+        status:
+          - 200

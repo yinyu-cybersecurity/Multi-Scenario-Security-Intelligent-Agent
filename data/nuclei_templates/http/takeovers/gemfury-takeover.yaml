@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: Gemfury Takeover Detection
+# description: Gemfury takeover was detected.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+id: gemfury-takeover
+
+info:
+  name: Gemfury Takeover Detection
+  author: pdteam,daffainfo
+  severity: high
+  description: Gemfury takeover was detected.
+  reference:
+    - https://github.com/EdOverflow/can-i-take-over-xyz/issues/154
+  metadata:
+    max-request: 1
+  tags: takeover,gemfury,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 1
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - Host != ip
+
+      - type: word
+        part: header
+        words:
+          - "Location: https://gemfury.com/404"
+
+    extractors:
+      - type: dsl
+        dsl:
+          - cname

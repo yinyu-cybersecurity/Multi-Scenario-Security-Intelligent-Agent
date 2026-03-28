@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: SpotWeb Login Panel - Detect
+# description: SpotWeb Login Panel - Detect
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: spotweb-login-panel
+
+info:
+  name: SpotWeb Login Panel - Detect
+  author: theamanrawat
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:spotweb_project:spotweb:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: spotweb_project
+    product: spotweb
+    shodan-query:
+      - title:"SpotWeb - overview"
+      - http.title:"spotweb - overview"
+    fofa-query: title="spotweb - overview"
+    google-query: intitle:"spotweb - overview"
+  tags: panel,spotweb,detect,spotweb_project,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "SpotWeb - overview"
+          - "initSpotwebJs"
+        condition: or
+
+      - type: status
+        status:
+          - 200

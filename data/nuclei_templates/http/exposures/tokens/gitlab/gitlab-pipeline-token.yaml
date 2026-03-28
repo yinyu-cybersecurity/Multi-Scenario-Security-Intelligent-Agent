@@ -1,0 +1,34 @@
+# RAG Annotation:
+# name: GitLab Pipeline Trigger Token
+# description: GitLab Pipeline Trigger Token
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: gitlab-pipeline-token
+
+info:
+  name: GitLab Pipeline Trigger Token
+  author: DhiyaneshDK
+  severity: info
+  reference:
+    - https://github.com/praetorian-inc/noseyparker/blob/main/crates/noseyparker/data/default/builtin/rules/gitlab.yml
+    - https://docs.gitlab.com/ee/ci/triggers/
+    - https://gitlab.com/gitlab-org/gitlab/-/issues/371396
+    - https://gitlab.com/gitlab-org/gitlab/-/issues/388379
+  metadata:
+    verified: true
+    max-request: 1
+  tags: gitlab,token,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - '\b(glptt-[0-9a-f]{40})\b'

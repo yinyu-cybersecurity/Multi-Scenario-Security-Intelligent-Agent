@@ -1,0 +1,17 @@
+# RAG Annotation:
+# name: OpenEMR Security Checks Workflow
+# description: 运行所有OpenEMR相关nuclei模板的安全检查工作流，检测OpenEMR医疗记录系统的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: openemr-workflow
+
+info:
+  name: OpenEMR Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all OpenEMR related nuclei templates on a given target.
+workflows:
+  - template: http/exposed-panels/openemr-detect.yaml
+    subtemplates:
+      - tags: openemr

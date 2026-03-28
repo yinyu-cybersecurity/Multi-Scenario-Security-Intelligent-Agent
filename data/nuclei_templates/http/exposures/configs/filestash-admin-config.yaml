@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: Filestash Admin Password Configuration
+# description: Filestash is susceptible to the Admin Password Configuration page exposure due to misconfiguration.
+
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: filestash-admin-config
+
+info:
+  name: Filestash Admin Password Configuration
+  author: DhiyaneshDK
+  severity: high
+  description: |
+    Filestash is susceptible to the Admin Password Configuration page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:filestash:filestash:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: filestash
+    product: filestash
+    shodan-query: html:"<title>Admin Console</title>"
+  tags: exposure,filestash,config,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/admin/setup"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>Admin Console</title>'
+          - 'component-loader'
+        condition: and
+
+      - type: status
+        status:
+          - 200

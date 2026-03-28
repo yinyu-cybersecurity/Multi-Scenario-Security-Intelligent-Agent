@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: Icecast Streaming Media Server Detection
+# description: Icecast Streaming Media Server Detection
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: icecast-server-detect
+
+info:
+  name: Icecast Streaming Media Server Detection
+  author: theamanrawat
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:xiph:icecast:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: xiph
+    product: icecast
+    shodan-query: http.title:"Icecast Streaming Media Server"
+  tags: tech,icecast,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "Icecast"
+
+      - type: status
+        status:
+          - 200

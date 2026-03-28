@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: Xerox Workcentre Detect
+# description: Xerox Workcentre Detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: xerox-workcentre-detect
+
+info:
+  name: Xerox Workcentre Detect
+  author: pussycat0x
+  severity: info
+  classification:
+    cpe: cpe:2.3:h:xerox:workcentre_7970i:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: xerox
+    product: workcentre_7970i
+    shodan-query: title:"XEROX WORKCENTRE"
+  tags: tech,xerox,workcentre,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/index.dhtml"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "XEROX WORKCENTRE"
+          - "/header.php?tab=status"
+        condition: and
+
+      - type: status
+        status:
+          - 200

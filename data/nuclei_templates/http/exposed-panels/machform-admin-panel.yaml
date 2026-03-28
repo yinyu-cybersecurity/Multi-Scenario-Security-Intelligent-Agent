@@ -1,0 +1,49 @@
+# RAG Annotation:
+# name: MachForm Admin Panel - Detect
+# description: MachForm Admin panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: machform-admin-panel
+
+info:
+  name: MachForm Admin Panel - Detect
+  author: ritikchaddha
+  severity: info
+  description: MachForm Admin panel was detected.
+  reference:
+    - https://www.machform.com/
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:machform:machform:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"MachForm Admin Panel"
+    product: machform
+    vendor: machform
+  tags: panel,machform,admin,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'alt="MachForm"'
+          - '<title>MachForm Admin Panel</title>'
+        condition: or
+
+      - type: status
+        status:
+          - 200

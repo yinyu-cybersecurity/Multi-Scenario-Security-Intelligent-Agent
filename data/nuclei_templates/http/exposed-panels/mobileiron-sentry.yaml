@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: MobileIron Sentry Panel - Detect
+# description: MobileIron Sentry panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: mobileiron-sentry
+
+info:
+  name: MobileIron Sentry Panel - Detect
+  author: pdteam
+  severity: info
+  description: MobileIron Sentry panel was detected.
+  reference:
+    - https://help.ivanti.com/mi/help/en_us/sntry/9.9.0/gdcl/Content/SentryGuide/MobileIron_Sentry_overvi.htm
+  classification:
+    cpe: cpe:2.3:a:mobileiron:sentry:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: mobileiron
+    product: sentry
+    shodan-query: http.favicon.hash:967636089
+  tags: panel,mobileiron,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/mics/login.jsp"
+
+    matchers:
+      - type: word
+        words:
+          - "MobileIron System Manager"
+
+    extractors:
+      - type: regex
+        group: 1
+        regex:
+          - \?([\d.]+)"

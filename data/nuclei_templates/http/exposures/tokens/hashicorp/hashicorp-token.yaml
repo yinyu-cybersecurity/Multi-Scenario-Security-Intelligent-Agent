@@ -1,0 +1,33 @@
+# RAG Annotation:
+# name: Hashicorp API Token
+# description: Hashicorp API Token
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: hashicorp-token
+
+info:
+  name: Hashicorp API Token
+  author: DhiyaneshDK
+  severity: info
+  reference:
+    - https://github.com/returntocorp/semgrep-rules/blob/develop/generic/secrets/gitleaks/hashicorp-tf-api-token.go
+    - https://github.com/returntocorp/semgrep-rules/blob/develop/generic/secrets/gitleaks/hashicorp-tf-api-token.yaml
+    - https://developer.hashicorp.com/vault/docs/concepts/tokens
+  metadata:
+    verified: true
+    max-request: 1
+  tags: hashicorp,exposure,tokens,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - (?i)[a-z0-9]{14}\.atlasv1\.[a-z0-9\-_=]{60,70}

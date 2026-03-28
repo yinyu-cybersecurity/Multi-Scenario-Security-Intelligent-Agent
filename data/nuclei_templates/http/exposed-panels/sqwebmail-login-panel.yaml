@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: SqWebMail Login Panel - Detect
+# description: SqWebMail login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: sqwebmail-login-panel
+
+info:
+  name: SqWebMail Login Panel - Detect
+  author: ritikchaddha
+  severity: info
+  description: SqWebMail login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    verified: true
+    max-request: 2
+    shodan-query: title:"SqWebMail"
+  tags: webmail,sqwebmail,panel,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/cgi-bin/sqwebmail"
+      - "{{BaseURL}}/cgi-bin/webmail"
+
+    host-redirects: true
+    max-redirects: 2
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "SqWebMail - Copyright"

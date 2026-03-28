@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: Airee Takeover Detection
+# description: Airee takeover was detected.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+id: airee-takeover
+
+info:
+  name: Airee Takeover Detection
+  author: pdteam
+  severity: high
+  description: Airee takeover was detected.
+  reference:
+    - https://github.com/EdOverflow/can-i-take-over-xyz/issues/104
+  metadata:
+    max-request: 1
+  tags: takeover,airee,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - Host != ip
+
+      - type: word
+        name: airee
+        words:
+          - 'Ошибка 402. Сервис Айри.рф не оплачен'
+
+    extractors:
+      - type: dsl
+        dsl:
+          - cname

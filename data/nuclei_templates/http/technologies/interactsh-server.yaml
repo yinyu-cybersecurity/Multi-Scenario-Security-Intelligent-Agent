@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: Interactsh Server
+# description: Interactsh Server
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: interactsh-server
+
+info:
+  name: Interactsh Server
+  author: pdteam
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:projectdiscovery:interactsh:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: projectdiscovery
+    product: interactsh
+    shodan-query: http.html:"Interactsh Server"
+  tags: tech,interactsh,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Interactsh Server"
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        group: 1
+        regex:
+          - '<b>(.*)<\/b> server'
+          - 'from <b>(.*)<\/b>'

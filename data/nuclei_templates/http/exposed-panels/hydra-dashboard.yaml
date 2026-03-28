@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Hydra Router Dashboard - Detect
+# description: Hydra router dashboard was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: hydra-dashboard
+
+info:
+  name: Hydra Router Dashboard - Detect
+  author: tess
+  severity: info
+  description: Hydra router dashboard was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:hydra_project:hydra:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: hydra_project
+    product: hydra
+    shodan-query:
+      - title:"Hydra Router Dashboard"
+      - http.title:"hydra router dashboard"
+    fofa-query: title="hydra router dashboard"
+    google-query: intitle:"hydra router dashboard"
+  tags: panel,exposure,hydra,hydra_project,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Hydra Router Dashboard"
+          - "screen: 'dashboard'"
+        condition: and
+
+      - type: status
+        status:
+          - 200

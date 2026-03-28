@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: FreshRSS - Installation
+# description: FreshRSS Installation panel has been exposed.
+
+# vuln_type: Security Misconfiguration
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: freshrss-installer
+
+info:
+  name: FreshRSS - Installation
+  author: ritikchaddha
+  severity: high
+  description: |
+    FreshRSS Installation panel has been exposed.
+  classification:
+    cpe: cpe:2.3:a:freshrss:freshrss:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: freshrss
+    product: freshrss
+    fofa-query: title="Installation · FreshRSS"
+  tags: freshrss,misconfig,install,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/i/?rid"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Installation · FreshRSS'
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,35 @@
+# RAG Annotation:
+# name: Default Parallels Plesk Panel Page
+# description: Default Parallels Plesk Panel Page
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: default-parallels-plesk
+
+info:
+  name: Default Parallels Plesk Panel Page
+  author: DhiyaneshDK,righettod
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:parallels:parallels_plesk_panel:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: parallels
+    product: parallels_plesk_panel
+    shodan-query: title:"Default Parallels Plesk Panel Page"
+  tags: tech,default-page,parallels,plesk,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers:
+      - type: dsl
+        dsl:
+          - 'status_code == 200'
+          - 'contains_any(to_lower(body), "<title>default parallels plesk panel page</title>", "welcome to parallels")'
+        condition: and

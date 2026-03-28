@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: WoWonder Installation Page - Exposure
+# description: Detects exposed WoWonder installation page.
+
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: wowonder-installer
+
+info:
+  name: WoWonder Installation Page - Exposure
+  author: DhiyaneshDK
+  severity: high
+  description: |
+    Detects exposed WoWonder installation page.
+  reference:
+    - https://www.wowonder.com/
+  classification:
+    cpe: cpe:2.3:a:wowonder:wowonder:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: wowonder
+    product: wowonder
+    fofa-query: body="WoWonder | Installation"
+  tags: misconfig,install,exposure,wowonder,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/install/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "WoWonder | Installation"
+
+      - type: status
+        status:
+          - 200

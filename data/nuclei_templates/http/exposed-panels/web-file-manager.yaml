@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: Web File Manager Login Panel - Detect
+# description: Web File Manager login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: web-file-manager
+
+info:
+  name: Web File Manager Login Panel - Detect
+  author: DhiyaneshDK
+  severity: info
+  description: Web File Manager login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:webdesi9:file_manager:*:*:*:*:wordpress:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"Web File Manager"
+    product: file_manager
+    vendor: webdesi9
+  tags: panel,filemanager,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/Login'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Web File Manager'
+          - 'Login'
+        condition: and
+
+      - type: status
+        status:
+          - 200

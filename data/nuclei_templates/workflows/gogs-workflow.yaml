@@ -1,0 +1,17 @@
+# RAG Annotation:
+# name: Gogs (Go Git Service) Security Checks Workflow
+# description: 运行所有Gogs相关nuclei模板的安全检查工作流，检测Gogs轻量级Git服务的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: gogs-workflow
+
+info:
+  name: Gogs (Go Git Service) - Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all Gogs related nuclei templates on a given target.
+workflows:
+  - template: http/exposed-panels/gogs-panel.yaml
+    subtemplates:
+      - tags: gogs

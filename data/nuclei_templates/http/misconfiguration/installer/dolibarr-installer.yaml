@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: Dolibarr Installer
+# description: Dolibarr is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: dolibarr-installer
+
+info:
+  name: Dolibarr Installer
+  author: pussycat0x
+  severity: high
+  description: Dolibarr is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:dolibarr:dolibarr_erp\\/crm:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: dolibarr
+    product: dolibarr_erp\\/crm
+    shodan-query: title:"Dolibarr install or upgrade"
+  tags: misconfig,exposure,install,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/install/index.php'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Dolibarr install or upgrade"
+          - "browser language"
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+
+      - type: status
+        status:
+          - 200

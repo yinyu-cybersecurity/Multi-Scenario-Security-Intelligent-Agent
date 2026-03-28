@@ -1,0 +1,49 @@
+# RAG Annotation:
+# name: Saltbo/zpan Panel - Detect
+# description: Detects the presence of the Saltbo/zpan file management panel.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: saltbo-zpan-panel
+
+info:
+  name: Saltbo/zpan Panel - Detect
+  author: ritikchaddha
+  severity: info
+  description: |
+    Detects the presence of the Saltbo/zpan file management panel.
+  reference:
+    - https://github.com/saltbo/zpan
+  classification:
+    cpe: cpe:2.3:a:saltbo:zpan:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: saltbo
+    product: zpan
+    fofa-query: title="zpan"
+    shodan-query: title:"zpan"
+  tags: panel,zpan,login,detect,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>ZPan"
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: ING phishing Detection
+# description: An ING phishing website was detected
+
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: ing-phish
+
+info:
+  name: ING phishing Detection
+  author: rxerium
+  severity: info
+  description: |
+    An ING phishing website was detected
+  reference:
+    - https://ing.com
+  metadata:
+    max-request: 1
+  tags: phishing,ing,bank,osint,discovery
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Corporate site of ING, a global financial institution of Dutch origin, providing news, investor relations and general information"
+
+      - type: status
+        status:
+          - 200
+
+      - type: dsl
+        dsl:
+          - '!contains(host,"ing.com")'

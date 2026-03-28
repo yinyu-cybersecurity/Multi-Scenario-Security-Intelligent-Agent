@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: ToolJet Login Panel - Detect
+# description: ToolJet login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: tooljet-panel
+
+info:
+  name: ToolJet Login Panel - Detect
+  author: DhiyaneshDk
+  severity: info
+  description: ToolJet login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:tooljet:tooljet:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 2
+    shodan-query: title:"ToolJet - Dashboard"
+    product: tooljet
+    vendor: tooljet
+  tags: panel,tooljet,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+      - "{{BaseURL}}/login?redirectTo=/"
+
+    stop-at-first-match: true
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "ToolJet - Dashboard"
+
+      - type: status
+        status:
+          - 200

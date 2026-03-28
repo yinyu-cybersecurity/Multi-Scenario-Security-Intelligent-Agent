@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: O2 Router Setup Panel - Detect
+# description: O2 router setup panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: o2-easy-panel
+
+info:
+  name: O2 Router Setup Panel - Detect
+  author: ritikchaddha
+  severity: info
+  description: O2 router setup panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"O2 Easy Setup"
+  tags: panel,o2,easy,iot,router,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>O2 Easy Setup</title>'
+
+      - type: status
+        status:
+          - 200

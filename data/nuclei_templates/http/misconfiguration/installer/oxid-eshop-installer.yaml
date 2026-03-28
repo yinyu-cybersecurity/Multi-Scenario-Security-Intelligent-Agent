@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Oxid EShop Installer Exposure
+# description: Oxid EShop is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: oxid-eshop-installer
+
+info:
+  name: Oxid EShop Installer Exposure
+  author: ritikchaddha
+  severity: high
+  description: Oxid EShop is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:oxid-esales:eshop:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: oxid-esales
+    product: eshop
+    shodan-query: title:"OXID eShop installation"
+  tags: misconfig,oxid,eshop,install,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/Setup/index.php/'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'OXID eShop installation'
+          - 'System Requirements'
+        condition: and
+
+      - type: status
+        status:
+          - 200

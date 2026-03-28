@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: Pantheon Takeover Detection
+# description: Pantheon takeover was detected.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+id: pantheon-takeover
+
+info:
+  name: Pantheon Takeover Detection
+  author: pdteam
+  severity: high
+  description: Pantheon takeover was detected.
+  reference:
+    - https://github.com/EdOverflow/can-i-take-over-xyz/issues/24
+    - https://medium.com/bug-bounty/how-i-took-over-several-stanford-subdomains-also-let-me-explain-you-the-pain-to-report-it-d84b08704be8
+  metadata:
+    max-request: 1
+  tags: takeover,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - Host != ip
+
+      - type: word
+        words:
+          - "The gods are wise, but do not know of the site which you seek."
+
+      - type: dsl
+        dsl:
+          - '!contains(host,"apigee.io")'
+
+    extractors:
+      - type: dsl
+        dsl:
+          - cname

@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: Untangle Exposed Admin Signup
+# description: Untangle Exposed Admin Signup is exposed publicly.
+# vuln_type: Security Misconfiguration
+# severity: medium
+# cve_id: N/A
+
+
+id: untangle-admin-setup
+
+info:
+  name: Untangle Exposed Admin Signup
+  author: ritikchaddha
+  severity: medium
+  description: Untangle Exposed Admin Signup is exposed publicly.
+  classification:
+    cpe: cpe:2.3:a:untangle:ng_firewall:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: untangle
+    product: ng_firewall
+    shodan-query: title:"Setup Wizard" html:"untangle"
+    fofa-query: title="Setup Wizard" && "untangle"
+  tags: misconfig,untangle,admin,setup,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/setup/setup.do"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>Setup Wizard</title>'
+          - 'java.untangle.com'
+        condition: and
+
+      - type: status
+        status:
+          - 200

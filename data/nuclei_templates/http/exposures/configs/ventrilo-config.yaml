@@ -1,0 +1,52 @@
+# RAG Annotation:
+# name: Ventrilo Configuration File - Detect
+# description: Ventrilo configuration file was detected, The file discloses the application's Adminpassword and Password.
+
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: ventrilo-config
+
+info:
+  name: Ventrilo Configuration File - Detect
+  author: geeknik
+  severity: high
+  description: |
+    Ventrilo configuration file was detected, The file discloses the application's Adminpassword and Password.
+  reference:
+    - https://www.ventrilo.com/setup.php
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N
+    cvss-score: 7.5
+    cwe-id: CWE-200
+  metadata:
+    verified: true
+    max-request: 1
+  tags: ventrilo,config,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/ventrilo_srv.ini"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "[Server]"
+          - "Name"
+          - "Phonetic"
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/plain"
+
+      - type: status
+        status:
+          - 200

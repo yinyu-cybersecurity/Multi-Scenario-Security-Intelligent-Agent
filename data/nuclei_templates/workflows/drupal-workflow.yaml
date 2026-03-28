@@ -1,0 +1,20 @@
+# RAG Annotation:
+# name: Drupal Security Checks Workflow
+# description: 运行所有Drupal相关nuclei模板的安全检查工作流，检测Drupal内容管理系统的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: drupal-workflow
+
+info:
+  name: Drupal Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all drupal related nuclei templates on a given target.
+
+workflows:
+  - template: http/technologies/tech-detect.yaml
+    matchers:
+      - name: drupal
+        subtemplates:
+          - tags: drupal

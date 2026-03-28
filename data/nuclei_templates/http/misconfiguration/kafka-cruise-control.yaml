@@ -1,0 +1,31 @@
+# RAG Annotation:
+# name: Kafka Cruise Control UI
+# description: Kafka Cruise Control UI is exposed.
+# vuln_type: Security Misconfiguration
+# severity: medium
+# cve_id: N/A
+
+
+id: kafka-cruise-control
+
+info:
+  name: Kafka Cruise Control UI
+  author: dhiyaneshDK
+  severity: medium
+  description: Kafka Cruise Control UI is exposed.
+  metadata:
+    max-request: 1
+    shodan-query: http.title:"Kafka Cruise Control UI"
+  tags: kafka,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    host-redirects: true
+    max-redirects: 2
+    matchers:
+      - type: word
+        words:
+          - '<title>Kafka Cruise Control UI</title>'

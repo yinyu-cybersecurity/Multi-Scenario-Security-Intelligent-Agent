@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: PyPI Server Detect
+# description: PyPI Server Detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: pypiserver-detect
+
+info:
+  name: PyPI Server Detect
+  author: ritikchaddha
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:python:pypiserver:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: python
+    product: pypiserver
+    shodan-query: html:"pypiserver"
+  tags: tech,pypiserver,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Welcome to pypiserver'
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,35 @@
+# RAG Annotation:
+# name: Zipkin Login Panel - Detect
+# description: Zipkin login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: zipkin-exposure
+
+info:
+  name: Zipkin Login Panel - Detect
+  author: pdteam
+  severity: info
+  description: Zipkin login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    verified: true
+    max-request: 2
+    shodan-query: html:"webpackJsonpzipkin-lens"
+  tags: panel,zipkin,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+      - "{{BaseURL}}/zipkin/"
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "webpackJsonpzipkin-lens"

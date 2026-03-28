@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Invicti Enterprise Installation Page - Exposure
+# description: Detects exposed Invicti Enterprise Installation page.
+
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: invicti-enterprise-installer
+
+info:
+  name: Invicti Enterprise Installation Page - Exposure
+  author: DhiyaneshDK
+  severity: high
+  description: |
+    Detects exposed Invicti Enterprise Installation page.
+  reference:
+    - https://www.invicti.com/
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"Invicti Enterprise - Installation Wizard"
+  tags: misconfig,install,exposure,invicti,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/wizard/database/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Invicti Enterprise - Installation Wizard"
+
+      - type: status
+        status:
+          - 200

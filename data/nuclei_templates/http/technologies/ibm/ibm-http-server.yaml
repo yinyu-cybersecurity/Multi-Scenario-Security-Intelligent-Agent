@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: Default IBM HTTP Server
+# description: Default IBM HTTP Server
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: ibm-http-server
+
+info:
+  name: Default IBM HTTP Server
+  author: dhiyaneshDK,pussycat0x
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:ibm:http_server:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: ibm
+    product: http_server
+    shodan-query: http.title:"IBM-HTTP-Server"
+  tags: tech,ibm,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>IBM HTTP Server</title>'
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "IBM HTTP Server ([0-9.]+)"

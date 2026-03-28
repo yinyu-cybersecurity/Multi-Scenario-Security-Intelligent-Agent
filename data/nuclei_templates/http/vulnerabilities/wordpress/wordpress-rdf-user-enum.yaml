@@ -1,0 +1,51 @@
+# RAG Annotation:
+# name: Wordpress RDF User Enumeration
+# description: Leaked Wordpress RDF leads to User Emumeration.
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+---
+id: wordpress-rdf-user-enum
+
+info:
+  name: Wordpress RDF User Enumeration
+  author: r3dg33k
+  severity: info
+  description: Leaked Wordpress RDF leads to User Emumeration.
+  metadata:
+    max-request: 1
+  tags: wordpress,enum,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/feed/rdf'
+
+    host-redirects: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "application/rdf+xml"
+
+      - type: word
+        part: body
+        words:
+          - "<rdf:RDF"
+          - "<dc:creator>"
+        condition: and
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        part: body
+        group: 1
+        regex:
+          - '<dc\:creator><\!\[CDATA\[(.*?)\]\]></dc'

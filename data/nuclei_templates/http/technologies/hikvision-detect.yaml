@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Hikvision Panel
+# description: Hikvision Panel
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: hikvision-detect
+
+info:
+  name: Hikvision Panel
+  author: pdteam,its0x08
+  severity: info
+  metadata:
+    verified: true
+    max-request: 2
+    shodan-query: http.favicon.hash:999357577
+    product: ds-2cd2026g2-iu\/sl_firmware
+    vendor: hikvision
+    fofa-query: icon_hash=999357577
+  tags: tech,hikvision,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/favicon.ico"
+      - "{{BaseURL}}/doc/page/login.asp"
+
+    stop-at-first-match: true
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Hikvision Digital Technology"
+
+      - type: word
+        name: server
+        part: header
+        words:
+          - "Hikvision-Webs"
+
+      - type: dsl
+        name: favicon
+        dsl:
+          - "'999357577' == mmh3(base64_py(body))"

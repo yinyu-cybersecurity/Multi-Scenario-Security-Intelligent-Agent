@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: NTFY Web - Exposure
+# description: Publicly exposed NTFY web interface allowing unauthorized publish or subscribe access.
+
+# vuln_type: Sensitive Data Exposure
+# severity: medium
+# cve_id: N/A
+
+
+
+
+id: ntfy-web-exposure
+
+info:
+  name: NTFY Web - Exposure
+  author: DhiyaneshDk
+  severity: medium
+  description: |
+    Publicly exposed NTFY web interface allowing unauthorized publish or subscribe access.
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"ntfy.sh"
+  tags: exposure,ntfy,web,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/settings"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>ntfy web</title>"
+
+      - type: status
+        status:
+          - 200

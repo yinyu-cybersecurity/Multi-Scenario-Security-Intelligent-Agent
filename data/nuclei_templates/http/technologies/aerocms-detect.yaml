@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: AeroCMS Detect
+# description: AeroCMS Detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: aerocms-detect
+
+info:
+  name: AeroCMS Detect
+  author: pikpikcu
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:aerocms_project:aerocms:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: aerocms_project
+    product: aerocms
+    shodan-query: title:"AeroCMS"
+    fofa-query: "AeroCMS"
+  tags: tech,aerocms,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - 'content="(.*)AeroCMS(.*)'
+
+      - type: status
+        status:
+          - 200

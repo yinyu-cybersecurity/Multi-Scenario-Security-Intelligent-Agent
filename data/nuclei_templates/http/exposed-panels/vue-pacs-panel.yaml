@@ -1,0 +1,60 @@
+# RAG Annotation:
+# name: Vue PACS - Panel
+# description: Vue PACS was detected.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: vue-pacs-panel
+
+info:
+  name: Vue PACS - Panel
+  author: righettod
+  severity: info
+  description: |
+    Vue PACS was detected.
+  reference:
+    - https://www.usa.philips.com/healthcare/solutions/diagnostic-informatics/enterprise-imaging-pacs
+  classification:
+    cpe: cpe:2.3:a:philips:vue_pacs:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: philips
+    product: vue_pacs
+    shodan-query:
+      - http.title:"Vue PACS"
+      - http.title:"vue pacs"
+    fofa-query: title="vue pacs"
+    google-query: intitle:"vue pacs"
+  tags: vue,pacs,panel,login,philips,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/portal/WebLogin.aspx"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Vue PACS</title>"
+          - "loginUsernameHidden"
+          - "loginPasswordHidden"
+        condition: and
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        part: body
+        group: 1
+        regex:
+          - 'version=([a-z0-9\.\s\-]+)'

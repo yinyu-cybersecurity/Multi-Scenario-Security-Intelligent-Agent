@@ -1,0 +1,53 @@
+# RAG Annotation:
+# name: Zyxel Firewall Panel - Detect
+# description: Zyxel Firewall panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: zyxel-firewall-panel
+
+info:
+  name: Zyxel Firewall Panel - Detect
+  author: 0x240x23elu
+  severity: info
+  description: Zyxel Firewall panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:o:zyxel:zywall_vpn50_firmware:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.favicon.hash:-440644339
+    product: zywall_vpn50_firmware
+    vendor: zyxel
+  tags: panel,xyxel,firewall,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "/lib/mode_ana"
+
+      - type: word
+        part: body
+        words:
+          - "VPN"
+          - "USG"
+          - "ATP"
+        condition: or
+
+    extractors:
+      - type: regex
+        part: body
+        group: 1
+        regex:
+          - "<title>(.*)</title>"

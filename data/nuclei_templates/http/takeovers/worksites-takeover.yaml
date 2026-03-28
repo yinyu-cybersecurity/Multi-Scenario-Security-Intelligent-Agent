@@ -1,0 +1,58 @@
+# RAG Annotation:
+# name: Worksites Takeover Detection
+# description: Worksites takeover was detected.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+id: worksites-takeover
+
+info:
+  name: Worksites Takeover Detection
+  author: melbadry9,dogasantos
+  severity: high
+  description: Worksites takeover was detected.
+  reference:
+    - https://melbadry9.gitbook.io/blog/dangling-dns/xyz-services/ddns-worksites
+  metadata:
+    verified: true
+    max-request: 2
+  tags: takeover,dns,vuln
+
+dns:
+  - name: "{{FQDN}}"
+    type: A
+    class: inet
+    recursion: true
+    retries: 3
+    matchers:
+      - type: word
+        words:
+          - "69.164.223.206"
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - Host != ip
+
+      - type: word
+        words:
+          - "Company Not Found"
+          - "worksites.net"
+        condition: and
+
+      - type: status
+        status:
+          - 404
+
+    extractors:
+      - type: dsl
+        dsl:
+          - cname

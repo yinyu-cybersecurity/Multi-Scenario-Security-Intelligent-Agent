@@ -1,0 +1,53 @@
+# RAG Annotation:
+# name: Angular JSON File Exposure
+# description: Angular JSON File Exposure
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: angular-json
+
+info:
+  name: Angular JSON File Exposure
+  author: DhiyaneshDk
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:angularjs:angular:*:*:*:*:node.js:*:*:*
+  metadata:
+    verified: true
+    max-request: 4
+    vendor: angularjs
+    product: angular
+    shodan-query:
+      - html:"angular.json"
+      - html:"angular-cli.json"
+  tags: exposure,angularjs,files,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.angular-cli.json"
+      - "{{BaseURL}}/angular-cli.json"
+      - "{{BaseURL}}/angular.json"
+      - "{{BaseURL}}/.angular.json"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"root":'
+          - '"config":'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "application/json"
+
+      - type: status
+        status:
+          - 200

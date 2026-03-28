@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: XBackBone Installer - Exposure
+# description: Checks for the presence of a XBackBone Installer.
+
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: xbackbone-installer
+
+info:
+  name: XBackBone Installer - Exposure
+  author: DhiyaneshDk
+  severity: high
+  description: |
+    Checks for the presence of a XBackBone Installer.
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"XBackBone Installer"
+  tags: install,xbackbone,exposure,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/install/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>XBackBone Installer</title>"
+
+      - type: status
+        status:
+          - 200

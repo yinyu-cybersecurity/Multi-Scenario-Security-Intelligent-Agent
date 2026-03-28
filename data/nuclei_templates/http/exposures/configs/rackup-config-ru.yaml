@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Rackup Configuration - Detect
+# description: Rackup configuration information was detected.
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: rackup-config-ru
+
+info:
+  name: Rackup Configuration - Detect
+  author: DhiyaneshDk
+  severity: info
+  description: Rackup configuration information was detected.
+  reference:
+    - https://raw.githubusercontent.com/maurosoria/dirsearch/master/db/dicc.txt
+    - https://learn.co/lessons/config-ru-tutorial
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cvss-score: 0
+    cwe-id: CWE-200
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"config.ru"
+  tags: exposure,files,config,rackup,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/config.ru'
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "run Rails.application"
+          - "/config/environment"
+        condition: and
+
+      - type: word
+        part: body
+        words:
+          - "Bundler.require"
+          - "require 'rubygems'"
+        condition: and

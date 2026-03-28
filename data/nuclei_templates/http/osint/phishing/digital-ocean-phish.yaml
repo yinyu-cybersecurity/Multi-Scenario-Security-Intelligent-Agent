@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: digital ocean phishing Detection
+# description: A digital-ocean phishing website was detected
+
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: digital-ocean-phish
+
+info:
+  name: digital ocean phishing Detection
+  author: rxerium
+  severity: info
+  description: |
+    A digital-ocean phishing website was detected
+  reference:
+    - https://digitalocean.com
+  metadata:
+    max-request: 1
+  tags: phishing,digital-ocean,osint,discovery
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'DigitalOcean | Cloud Infrastructure for Developers'
+          - 'DigitalOcean'
+        condition: and
+
+
+      - type: status
+        status:
+          - 200
+
+      - type: dsl
+        dsl:
+          - '!contains(host,"digitalocean.com")'

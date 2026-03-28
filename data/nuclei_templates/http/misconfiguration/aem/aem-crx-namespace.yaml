@@ -1,0 +1,49 @@
+# RAG Annotation:
+# name: Adobe AEM CRX Namespace Editor Exposure
+# description: Adobe AEM CRX Namespace Editor is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: aem-crx-namespace
+
+info:
+  name: Adobe AEM CRX Namespace Editor Exposure
+  author: dhiyaneshDk
+  severity: low
+  description: Adobe AEM CRX Namespace Editor is exposed.
+  reference:
+    - https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/aem2.txt
+  classification:
+    cpe: cpe:2.3:a:adobe:experience_manager_cloud_service:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: adobe
+    product: experience_manager_cloud_service
+    shodan-query:
+      - http.title:"AEM Sign In"
+      - http.component:"Adobe Experience Manager"
+  tags: exposure,aem,adobe,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/crx/explorer/ui/namespace_editor.jsp"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>Namespaces</title>'
+          - 'The following namespaces are registered in the repository:'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - text/html
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: Shopware Installer
+# description: Shopware is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: shopware-installer
+
+info:
+  name: Shopware Installer
+  author: DhiyaneshDk
+  severity: high
+  description: Shopware is susceptible to the Installation page exposure due to misconfiguration.
+  reference:
+    - https://www.shopware.com/en/
+  classification:
+    cpe: cpe:2.3:a:shopware:shopware:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: shopware
+    product: shopware
+    fofa-query: title="Installation | Shopware 6"
+  tags: misconfig,shopware,install,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/public/recovery/install/index.php"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Setup | Shopware'
+          - 'install'
+        condition: and
+
+      - type: status
+        status:
+          - 200

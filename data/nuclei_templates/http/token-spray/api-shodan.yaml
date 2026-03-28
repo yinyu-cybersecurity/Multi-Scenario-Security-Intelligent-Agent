@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Shodan API Test
+# description: Shodan is a search engine that lets users search for various types of servers connected to the internet using a variety of filters.
+
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: api-shodan
+
+info:
+  name: Shodan API Test
+  author: 0ri2N
+  severity: info
+  description: |
+    Shodan is a search engine that lets users search for various types of servers connected to the internet using a variety of filters.
+  reference:
+    - https://shodan.io
+    - https://developer.shodan.io
+    - https://developer.shodan.io/api
+  metadata:
+    max-request: 1
+  tags: recon,shodan,token-spray
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - https://api.shodan.io/api-info?key={{token}}
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"plan"'
+          - '"unlocked"'
+          - '"scan_credits"'
+        condition: and

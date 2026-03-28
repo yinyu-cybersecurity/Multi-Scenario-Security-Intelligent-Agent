@@ -1,0 +1,32 @@
+# RAG Annotation:
+# name: New Relic Pixie Deploy Key
+# description: New Relic Pixie Deploy Key
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: newrelic-pixie-deploy-key
+
+info:
+  name: New Relic Pixie Deploy Key
+  author: DhiyaneshDK
+  severity: info
+  reference:
+    - https://github.com/praetorian-inc/noseyparker/blob/main/crates/noseyparker/data/default/builtin/rules/newrelic.yml
+    - https://docs.px.dev/reference/admin/deploy-keys/
+  metadata:
+    verified: true
+    max-request: 1
+  tags: newrelic,pixie,token,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(px-dep-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"

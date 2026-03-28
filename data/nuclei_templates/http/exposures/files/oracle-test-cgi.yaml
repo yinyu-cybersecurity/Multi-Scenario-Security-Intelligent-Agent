@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: Oracle Application Server test-cgi Page
+# description: Oracle Application Server test-cgi Page
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: oracle-test-cgi
+
+info:
+  name: Oracle Application Server test-cgi Page
+  author: DhiyaneshDk
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:oracle:http_server:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: oracle
+    product: http_server
+    shodan-query: title:"Oracle Application Server"
+  tags: oracle,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/cgi-bin/test-cgi"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "SERVER_SOFTWARE ="
+
+      - type: word
+        part: header
+        words:
+          - "text/plain"
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: ZURB Foundation Framework - Detect
+# description: Detects the presence of ZURB Foundation, a responsive front-end framework.
+
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+
+
+id: zurb-foundation-detect
+
+info:
+  name: ZURB Foundation Framework - Detect
+  author: Shivam Kamboj
+  severity: info
+  description: |
+    Detects the presence of ZURB Foundation, a responsive front-end framework.
+  reference:
+    - https://get.foundation/
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"foundation.min.css"
+  tags: tech,discovery,zurb
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - '(?i)foundation(?:\.min)?\.(?:css|js)'

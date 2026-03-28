@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Detect Springboot Configprops Actuator
+# description: Sensitive environment variables may not be masked
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: springboot-configprops
+
+info:
+  name: Detect Springboot Configprops Actuator
+  author: that_juan_,dwisiswant0,wdahlenb
+  severity: low
+  description: Sensitive environment variables may not be masked
+  metadata:
+    max-request: 2
+  tags: springboot,exposure,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/configprops"
+      - "{{BaseURL}}/actuator/configprops"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "org.springframework.boot.actuate"
+          - "beans"
+          - "context"
+        condition: and
+
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "application/json"
+          - "application/vnd.spring-boot.actuator"
+          - "application/vnd.spring-boot.actuator.v1+json"
+        condition: or
+        part: header

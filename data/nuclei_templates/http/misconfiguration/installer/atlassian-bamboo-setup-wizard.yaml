@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: Atlassian Bamboo Setup Wizard
+# description: Atlassian Bamboo is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Security Misconfiguration
+# severity: info
+# cve_id: N/A
+
+
+id: atlassian-bamboo-setup
+
+info:
+  name: Atlassian Bamboo Setup Wizard
+  author: pussycat0x
+  severity: info
+  description: Atlassian Bamboo is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:atlassian:bamboo:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: atlassian
+    product: bamboo
+    shodan-query: title:"Bamboo setup wizard"
+  tags: misconfig,atlassian,bamboo,setup,installer,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/setup/setupLicense.action"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Bamboo setup wizard - Atlassian Bamboo"
+          - "Bamboo evaluation license"
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,28 @@
+# RAG Annotation:
+# name: Amazon MWS Auth Token
+# description: Amazon MWS Auth Token
+# vuln_type: Authentication Bypass
+# severity: info
+# cve_id: N/A
+
+
+id: amazon-mws-auth-token
+
+info:
+  name: Amazon MWS Auth Token
+  author: puzzlepeaches
+  severity: info
+  metadata:
+    max-request: 1
+  tags: exposure,token,aws,amazon,auth,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "amzn\\.mws\\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"

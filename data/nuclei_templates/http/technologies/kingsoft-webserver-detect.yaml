@@ -1,0 +1,33 @@
+# RAG Annotation:
+# name: Kingsoft Web Server Detect
+# description: Kingsoft Web Server Detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: kingsoft-webserver-detect
+
+info:
+  name: Kingsoft Web Server Detect
+  author: princechaddha
+  severity: info
+  metadata:
+    max-request: 1
+  tags: tech,kingsoft,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Welcome to Kingsoft Web Server!</title>"
+
+      - type: status
+        status:
+          - 200

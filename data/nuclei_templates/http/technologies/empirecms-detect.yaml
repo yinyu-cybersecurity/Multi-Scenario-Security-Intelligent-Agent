@@ -1,0 +1,33 @@
+# RAG Annotation:
+# name: EmpireCMS Detect
+# description: EmpireCMS Detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: empirecms-detect
+
+info:
+  name: EmpireCMS Detect
+  author: princechaddha
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:phome:empirecms:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: phome
+    product: empirecms
+    shodan-query: http.html:EmpireCMS
+  tags: tech,empirecms,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - '<meta (.*)EmpireCMS(.*)>'

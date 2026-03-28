@@ -1,0 +1,17 @@
+# RAG Annotation:
+# name: Spring Boot Security Checks Workflow
+# description: 运行所有Spring Boot相关nuclei模板的安全检查工作流，检测Spring Boot Actuator的安全漏洞和配置问题
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: springboot-workflow
+
+info:
+  name: Spring Boot Security Checks
+  author: dwisiswant0
+  description: A simple workflow that runs all Spring Boot related nuclei templates on a given target.
+workflows:
+  - template: http/technologies/springboot-actuator.yaml
+    subtemplates:
+      - tags: springboot

@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: WordPress WooCommerce - Directory Search
+# description: WordPress WooCommerce plugin sensitive directory searches were conducted.
+# vuln_type: Remote Code Execution
+# severity: info
+# cve_id: N/A
+
+
+---
+id: wordpress-woocommerce-listing
+
+info:
+  name: WordPress WooCommerce - Directory Search
+  author: dhiyaneshDK
+  severity: info
+  description: WordPress WooCommerce plugin sensitive directory searches were conducted.
+  reference:
+    - https://www.exploit-db.com/ghdb/6192
+  metadata:
+    max-request: 1
+  tags: edb,wordpress,listing,plugin,woocommerce,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/wp-content/plugins/woocommerce/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Index of"
+          - "/wp-content/plugins/woocommerce/"
+        condition: and
+
+      - type: status
+        status:
+          - 200

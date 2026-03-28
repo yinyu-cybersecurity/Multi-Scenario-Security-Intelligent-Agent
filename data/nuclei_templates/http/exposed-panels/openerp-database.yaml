@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: Odoo OpenERP Database Selector Panel - Detect
+# description: Odoo OpenERP database selector panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: openerp-database
+
+info:
+  name: Odoo OpenERP Database Selector Panel - Detect
+  author: impramodsargar
+  severity: info
+  description: Odoo OpenERP database selector panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:odoo:odoo:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: odoo
+    product: odoo
+    shodan-query:
+      - http.title:"odoo"
+      - cpe:"cpe:2.3:a:odoo:odoo"
+    fofa-query: title="odoo"
+    google-query: intitle:"odoo"
+  tags: openerp,panel,odoo,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/web/database/selector/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>Odoo</title>'
+
+      - type: status
+        status:
+          - 200

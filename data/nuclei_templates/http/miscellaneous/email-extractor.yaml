@@ -1,0 +1,28 @@
+# RAG Annotation:
+# name: Email Extractor
+# description: Email Extractor
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: email-extractor
+
+info:
+  name: Email Extractor
+  author: panch0r3d
+  severity: info
+  metadata:
+    max-request: 1
+  tags: miscellaneous,misc,email,generic,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "[a-zA-Z0-9-_.]{4,}@[A-Za-z0-9_-]+[.](com|org|net|io|gov|co|co.uk|com.mx|com.br|com.sv|co.cr|com.gt|com.hn|com.ni|com.au|com.cn)"

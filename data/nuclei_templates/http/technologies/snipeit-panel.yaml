@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Snipe-IT Panel - Detect
+# description: Snipe-IT panel was detected.
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: snipeit-panel
+
+info:
+  name: Snipe-IT Panel - Detect
+  author: pikpikcu
+  severity: info
+  description: Snipe-IT panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cvss-score: 0
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:snipeitapp:snipe-it:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    shodan-query: http.favicon.hash:431627549
+    product: snipe-it
+    vendor: snipeitapp
+  tags: panel,snipeit,tech,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/login"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "window.snipeit"
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,36 @@
+# RAG Annotation:
+# name: LuCi Login Panel - Detect
+# description: LuCi login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: luci-login-detection
+
+info:
+  name: LuCi Login Panel - Detect
+  author: aashiq
+  severity: info
+  description: LuCi login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    max-request: 1
+  tags: panel,login,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/cgi-bin/luci"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "Authorization Required"

@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Apdisk - File Disclosure
+# description: Apdisk internal file is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: apdisk-disclosure
+
+info:
+  name: Apdisk - File Disclosure
+  author: DhiyaneshDk
+  severity: low
+  description: Apdisk internal file is exposed.
+  reference:
+    - https://discussions.apple.com/thread/250354761
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"Apdisk"
+  tags: exposure,files,apdisk,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.apdisk"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<plist version="
+          - "<key>"
+          - "<string>"
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/xml"

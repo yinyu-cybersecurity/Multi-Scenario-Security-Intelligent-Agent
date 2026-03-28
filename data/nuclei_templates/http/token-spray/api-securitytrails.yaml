@@ -1,0 +1,36 @@
+# RAG Annotation:
+# name: SecurityTrails API Test
+# description: SecurityTrails API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-securitytrails
+
+info:
+  name: SecurityTrails API Test
+  author: 0ri2N
+  severity: info
+  reference:
+    - https://securitytrails.com
+    - https://docs.securitytrails.com
+    - https://securitytrails.com/corp/api
+  metadata:
+    max-request: 1
+  tags: recon,securitytrails,token-spray
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - https://api.securitytrails.com/v1/ping
+
+    headers:
+      APIKey: "{{token}}"
+    matchers:
+      - type: word
+        part: body
+        words:
+          - success

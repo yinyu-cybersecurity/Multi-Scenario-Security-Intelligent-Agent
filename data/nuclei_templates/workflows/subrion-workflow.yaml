@@ -1,0 +1,19 @@
+# RAG Annotation:
+# name: Subrion CMS Security Checks Workflow
+# description: 运行所有Subrion CMS相关nuclei模板的安全检查工作流，检测Subrion内容管理系统的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: subrion-workflow
+
+info:
+  name: Subrion CMS Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all Subrion CMS related nuclei templates on a given target.
+workflows:
+  - template: http/technologies/fingerprinthub-web-fingerprints.yaml
+    matchers:
+      - name: subrion
+        subtemplates:
+          - tags: subrion

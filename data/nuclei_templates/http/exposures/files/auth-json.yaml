@@ -1,0 +1,50 @@
+# RAG Annotation:
+# name: Auth.json File - Disclosure
+# description: auth.json file is exposed.
+# vuln_type: Authentication Bypass
+# severity: high
+# cve_id: N/A
+
+
+id: auth-json
+
+info:
+  name: Auth.json File - Disclosure
+  author: DhiyaneshDk
+  severity: high
+  description: auth.json file is exposed.
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"auth.json"
+  tags: devops,exposure,files,auth,config,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/auth.json"
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"http-basic": {'
+          - '"username":'
+          - '"password":'
+        condition: and
+
+      - type: word
+        part: body
+        words:
+          - '"github-oauth": {'
+          - '"github.com":'
+        condition: and
+
+      - type: word
+        part: body
+        words:
+          - '"bitbucket-oauth":'
+          - '"consumer-key":'
+          - '"consumer-secret":'
+        condition: and

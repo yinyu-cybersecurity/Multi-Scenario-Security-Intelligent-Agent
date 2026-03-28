@@ -1,0 +1,30 @@
+# RAG Annotation:
+# name: Publicly exposed Kafdrop Interface
+# description: Publicly Kafdrop Interface is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: exposed-kafdrop
+
+info:
+  name: Publicly exposed Kafdrop Interface
+  author: dhiyaneshDk
+  severity: low
+  description: Publicly Kafdrop Interface is exposed.
+  metadata:
+    max-request: 1
+  tags: exposure,misconfig,kafdrop,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers:
+      - type: word
+        words:
+          - "<title>Kafdrop: Broker List</title>"
+          - "Kafka Cluster Overview"
+        condition: and

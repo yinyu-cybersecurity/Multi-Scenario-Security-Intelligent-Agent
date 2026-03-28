@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: Vagrantfile Exposure
+# description: Vagrantfile is exposed to external users.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: vagrantfile-exposure
+
+info:
+  name: Vagrantfile Exposure
+  author: DhiyaneshDk
+  severity: low
+  description: Vagrantfile is exposed to external users.
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"Vagrantfile"
+  tags: config,exposure,vagrant,oss,files,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/Vagrantfile"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "./vagrant/config/vagrant-local.yml"
+          - "./vagrant/config/vagrant-local.example.yml"
+
+      - type: word
+        part: header
+        words:
+          - "application/json"
+          - "text/html"
+        negative: true
+        condition: or
+
+      - type: status
+        status:
+          - 200

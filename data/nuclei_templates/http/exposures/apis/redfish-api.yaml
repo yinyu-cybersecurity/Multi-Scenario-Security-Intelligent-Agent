@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: Redfish API - Detect
+# description: Redfish API was detected.
+
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: redfish-api
+
+info:
+  name: Redfish API - Detect
+  author: righettod
+  severity: info
+  description: |
+    Redfish API was detected.
+  reference:
+    - https://en.wikipedia.org/wiki/Redfish_(specification)
+    - https://www.dmtf.org/standards/redfish
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.html:"/redfish/v1"
+  tags: config,exposure,redfish,api,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/redfish/v1/"
+
+    matchers:
+      - type: dsl
+        dsl:
+          - 'contains_any(body, "\"@odata.type\":", "/redfish/v1/$metadata#Message")'
+          - 'contains(header, "application/json")'
+          - 'status_code == 200 || status_code == 502'
+        condition: and
+
+    extractors:
+      - type: regex
+        part: body
+        group: 1
+        regex:
+          - '[a-z]+\.v?([0-9_\.]+)\.'

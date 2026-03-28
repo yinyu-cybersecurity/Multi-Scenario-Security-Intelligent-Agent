@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: Server Backup Manager SE Panel - Detect
+# description: Server Backup Manager SE login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: server-backup-manager-se
+
+info:
+  name: Server Backup Manager SE Panel - Detect
+  author: dhiyaneshDK
+  severity: info
+  description: Server Backup Manager SE login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    max-request: 1
+    shodan-query: http.title:"Server Backup Manager SE"
+  tags: panel,server,backup,manager,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/login.zul'
+
+    matchers-condition: and
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - "<title>.*(Server Backup Manager SE).*</title>"
+
+      - type: status
+        status:
+          - 200

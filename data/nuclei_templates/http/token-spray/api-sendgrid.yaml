@@ -1,0 +1,52 @@
+# RAG Annotation:
+# name: Sendgrid API Test
+# description: A REST-like interface that enables you to send email at scale, ensuring your application can handle high-volume email with ease.
+
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: api-sendgrid
+
+info:
+  name: Sendgrid API Test
+  author: zzeitlin,0xpugal
+  severity: info
+  description: |
+    A REST-like interface that enables you to send email at scale, ensuring your application can handle high-volume email with ease.
+  reference:
+    - https://www.twilio.com/docs/sendgrid/api-reference/how-to-use-the-sendgrid-v3-api
+  metadata:
+    verified: true
+    max-request: 1
+  tags: token-spray,sendgrid
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://api.sendgrid.com/v3/scopes"
+
+    headers:
+      Authorization: Bearer {{token}}
+      Content-Type: application/json
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"scopes":['
+
+      - type: word
+        part: header
+        words:
+          - 'application/json'
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Flask Werkzeug Debugger Exposure
+# description: Flask Werkzeug Debugger is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: flask-werkzeug-debug
+
+info:
+  name: Flask Werkzeug Debugger Exposure
+  author: DhiyaneshDk
+  severity: low
+  description: Flask Werkzeug Debugger is exposed.
+  classification:
+    cpe: cpe:2.3:a:palletsprojects:werkzeug:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: palletsprojects
+    product: werkzeug
+    shodan-query: html:"Werkzeug powered traceback interpreter"
+  tags: werkzeug,exposure,debug,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Werkzeug powered traceback interpreter'
+
+      - type: status
+        status:
+          - 500

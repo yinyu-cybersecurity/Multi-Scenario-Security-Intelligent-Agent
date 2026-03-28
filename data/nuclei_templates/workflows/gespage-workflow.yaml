@@ -1,0 +1,17 @@
+# RAG Annotation:
+# name: Gespage Security Checks Workflow
+# description: 运行所有Gespage相关nuclei模板的安全检查工作流，检测Gespage打印管理系统的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: gespage-workflow
+
+info:
+  name: Gespage Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all Gespage related nuclei templates on a given target.
+workflows:
+  - template: http/exposed-panels/gespage-panel.yaml
+    subtemplates:
+      - tags: gespage

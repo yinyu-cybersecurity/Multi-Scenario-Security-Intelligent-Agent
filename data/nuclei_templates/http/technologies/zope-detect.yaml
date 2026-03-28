@@ -1,0 +1,36 @@
+# RAG Annotation:
+# name: Zope Quick Start Detect
+# description: Zope Quick Start Detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: zope-detect
+
+info:
+  name: Zope Quick Start Detect
+  author: pikpikcu
+  severity: info
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.title:"Zope QuickStart"
+  tags: tech,zope,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Zope QuickStart</title>"
+
+      - type: word
+        part: server
+        words:
+          - "Zope/"

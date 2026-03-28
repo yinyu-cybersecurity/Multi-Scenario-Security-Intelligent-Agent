@@ -1,0 +1,17 @@
+# RAG Annotation:
+# name: Atlassian Confluence Security Checks Workflow
+# description: 运行所有Confluence相关nuclei模板的安全检查工作流，检测Atlassian Confluence协作平台的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: confluence-workflow
+
+info:
+  name: Atlassian Confluence workflow
+  author: philippedelteil
+  description: Workflow that runs all Confluence related nuclei templates
+workflows:
+  - template: http/technologies/confluence-detect.yaml
+    subtemplates:
+      - tags: confluence

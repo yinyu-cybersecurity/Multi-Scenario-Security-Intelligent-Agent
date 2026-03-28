@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: OpenHAP Detection
+# description: OpenHAP Detection
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: opnhap-detect
+
+info:
+  name: OpenHAP Detection
+  author: fabaff
+  severity: info
+  reference:
+    - https://www.openhab.org/
+  classification:
+    cpe: cpe:2.3:a:openhab:openhab_web_interface:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: openhab
+    product: openhab_web_interface
+    shodan-query: http.title:"openHAB"
+  tags: tech,iot,openhab,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'openHAB'
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Snipe-IT Setup Page - Exposure
+# description: Detects exposed Snipe-IT Setup page.
+
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: snipe-it-installer
+
+info:
+  name: Snipe-IT Setup Page - Exposure
+  author: DhiyaneshDK
+  severity: high
+  description: |
+    Detects exposed Snipe-IT Setup page.
+  reference:
+    - https://snipeitapp.com/
+  classification:
+    cpe: cpe:2.3:a:snipeitapp:snipe-it:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: snipeitapp
+    product: snipe-it
+    shodan-query: html:"Snipe-IT Setup"
+  tags: misconfig,install,exposure,snipe-it,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/setup"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Snipe-IT Setup"
+          - "Create Admin User"
+        condition: and
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: kkFileView Panel - Detect
+# description: kkFileView panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: kkfileview-panel
+
+info:
+  name: kkFileView Panel - Detect
+  author: arafatansari
+  severity: info
+  description: kkFileView panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:keking:kkfileview:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.title:"kkFileView"
+    product: kkfileview
+    vendor: keking
+  tags: panel,kkfileview,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/index"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>kkFileView演示首页</title>'
+
+      - type: status
+        status:
+          - 200

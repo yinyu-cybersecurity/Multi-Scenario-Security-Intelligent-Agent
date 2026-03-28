@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: OrangeHrm Installer
+# description: OrangeHrm is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: orangehrm-installer
+
+info:
+  name: OrangeHrm Installer
+  author: pussycat0x
+  severity: high
+  description: OrangeHrm is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:orangehrm:orangehrm:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: orangehrm
+    product: orangehrm
+    shodan-query: http.title:"OrangeHRM Web Installation Wizard"
+  tags: misconfig,exposure,install,orangehrm,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/installer/installerUI.php"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "OrangeHRM Web Installation Wizard"
+          - "admin user creation"
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+
+      - type: status
+        status:
+          - 200

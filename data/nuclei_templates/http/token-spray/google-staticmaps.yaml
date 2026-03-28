@@ -1,0 +1,29 @@
+# RAG Annotation:
+# name: Google Static Maps API Test
+# description: Google Static Maps API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-googlestaticmaps
+
+info:
+  name: Google Static Maps API Test
+  author: zzeitlin
+  severity: info
+  metadata:
+    max-request: 1
+  tags: token-spray,google,maps
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://maps.googleapis.com/maps/api/staticmap?center=45%2C10&zoom=7&size=400x400&key={{token}}"
+
+    matchers:
+      - type: status
+        status:
+          - 200

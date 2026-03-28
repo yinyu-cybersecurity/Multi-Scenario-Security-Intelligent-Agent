@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: lighttpd Default Page
+# description: lighttpd Default Page
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: lighttpd-default
+
+info:
+  name: lighttpd Default Page
+  author: dhiyaneshDK
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:lighttpd:lighttpd:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: lighttpd
+    product: lighttpd
+    shodan-query: http.title:"Powered by lighttpd"
+  tags: tech,lighttpd,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "<title>Powered by lighttpd</title>"
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,36 @@
+# RAG Annotation:
+# name: NginX Auto Installer Exposure
+# description: NginX Auto is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: nginx-auto-installer
+
+info:
+  name: NginX Auto Installer Exposure
+  author: pussycat0x
+  severity: low
+  description: NginX Auto is susceptible to the Installation page exposure due to misconfiguration.
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"NginX Auto Installer"
+  tags: misconfig,nginx,install,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'NginX Auto Installer'
+
+      - type: status
+        status:
+          - 200

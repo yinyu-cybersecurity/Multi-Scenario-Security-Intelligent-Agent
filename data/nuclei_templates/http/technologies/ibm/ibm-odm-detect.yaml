@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: IBM Operational Decision Manager - Detect
+# description: IBM Operational Decision Manager was detected.
+
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+
+
+id: ibm-odm-detect
+
+info:
+  name: IBM Operational Decision Manager - Detect
+  author: DhiyaneshDK
+  severity: info
+  description: |
+    IBM Operational Decision Manager was detected.
+  reference:
+    - https://www.ibm.com/products/operational-decision-manager
+  classification:
+    cpe: cpe:2.3:a:ibm:operational_decision_manager:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: ibm
+    product: operational_decision_manager
+    fofa-query: "icon_hash=\"707491698\""
+  tags: ibm,decision-center,tech,detect,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>IBM ODM</title>"
+
+      - type: status
+        status:
+          - 200

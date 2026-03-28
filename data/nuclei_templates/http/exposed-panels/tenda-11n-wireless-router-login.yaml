@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Tenda 11n Wireless Router - Admin Panel
+# description: The administrative panel for a Tenda Technology 11n Wireless Router was found.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: tenda-11n-wireless-router-panel
+
+info:
+  name: Tenda 11n Wireless Router - Admin Panel
+  author: idealphase
+  severity: info
+  description: |
+    The administrative panel for a Tenda Technology 11n Wireless Router was found.
+  reference:
+    - https://www.tendacn.com/products/11n-routers.html
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-668
+    cpe: cpe:2.3:h:tenda:11n:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    shodan-query: http.title:"Tenda 11N Wireless Router Login Screen"
+    google-query: intitle:"Tenda 11N Wireless Router Login Screen"
+    product: 11n
+    vendor: tenda
+  tags: panel,tenda,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/login.asp"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Tenda 11N Wireless Router Login Screen</title>"
+
+      - type: status
+        status:
+          - 200

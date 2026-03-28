@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Dockerfile - Detect
+# description: Dockerfile was detected.
+# vuln_type: Sensitive Data Exposure
+# severity: medium
+# cve_id: N/A
+
+
+id: dockerfile-hidden-disclosure
+
+info:
+  name: Dockerfile - Detect
+  author: dhiyaneshDk
+  severity: medium
+  description: Dockerfile was detected.
+  reference:
+    - https://github.com/detectify/ugly-duckling/blob/master/modules/crowdsourced/dockerfile-hidden-disclosure.json
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N
+    cvss-score: 5.3
+    cwe-id: CWE-200
+  metadata:
+    max-request: 3
+  tags: exposure,config,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.dockerfile"
+      - "{{BaseURL}}/.Dockerfile"
+      - "{{BaseURL}}/Dockerfile"
+
+    matchers-condition: and
+    matchers:
+      - type: regex
+        regex:
+          - '^(?:FROM(?:CACHE)?|RUN|ADD|WORKDIR|ENV|EXPOSE|\#)\s+[ -~]+'
+        part: body
+
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+        negative: true

@@ -1,0 +1,73 @@
+# RAG Annotation:
+# name: PaperCut NG Panel - Detect
+# description: PaperCut is a print management system. Log in to manage your print quotas, see your print history and configure your system.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: papercut-ng-panel
+
+info:
+  name: PaperCut NG Panel - Detect
+  author: ritikchaddha
+  severity: info
+  description: |
+    PaperCut is a print management system. Log in to manage your print quotas, see your print history and configure your system.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:papercut:papercut_ng:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: papercut
+    product: papercut_ng
+    google-query:
+      - html:'content="PaperCut'
+      - html:'content="papercut'
+    shodan-query:
+      - product:"PaperCut MF"
+      - title:"PaperCut Login"
+      - http.favicon.hash:-1142586156
+      - http.html:'content="papercut'
+      - cpe:"cpe:2.3:a:papercut:papercut_ng"
+      - http.html:"content=\"papercut\""
+    fofa-query:
+      - icon_hash="-1142586156"
+      - title="PaperCut Login"
+      - body='content="papercut'
+      - body="content=\"papercut\""
+    zoomeye-query: app:"PaperCut"
+  tags: panel,papercut,detect,papercut-ng,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/user"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'content="PaperCut'
+          - "<title>PaperCut Login"
+        condition: or
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        name: build
+        group: 1
+        regex:
+          - "\\/css\\/style\\.css\\?(\\d+)papercut-mf"

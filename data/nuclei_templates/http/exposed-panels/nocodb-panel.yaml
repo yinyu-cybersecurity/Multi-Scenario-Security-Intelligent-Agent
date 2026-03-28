@@ -1,0 +1,51 @@
+# RAG Annotation:
+# name: NocoDB Panel - Detect
+# description: NocoDB Login panel was discovered.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: nocodb-panel
+
+info:
+  name: NocoDB Panel - Detect
+  author: userdehghani
+  severity: info
+  description: |
+    NocoDB Login panel was discovered.
+  reference:
+    - https://www.nocodb.com/
+    - https://docs.nocodb.com/
+  classification:
+    cpe: cpe:2.3:a:xgenecloud:nocodb:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 2
+    vendor: xgenecloud
+    product: nocodb
+    shodan-query: "http.favicon.hash:206985584"
+  tags: panel,nocodb,login,detect,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/dashboard/#/signin"
+      - "{{BaseURL}}/dashboard/favicon.ico"
+
+    stop-at-first-match: true
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'content="NocoDB'
+        case-insensitive: true
+
+      - type: dsl
+        dsl:
+          - "status_code==200 && (\"206985584\" == mmh3(base64_py(body)))"

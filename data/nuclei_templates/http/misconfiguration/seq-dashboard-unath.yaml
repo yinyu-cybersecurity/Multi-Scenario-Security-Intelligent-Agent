@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: Seq Dashboard - Unauthenticated
+# description: Seq is exposed without authentication
+
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: seq-dashboard-unauth
+
+info:
+  name: Seq Dashboard - Unauthenticated
+  author: DhiyaneshDK
+  severity: high
+  description: |
+    Seq is exposed without authentication
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"Seq"
+  tags: misconfig,exposure,seq,dashboard,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/#/dashboards"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Log out'
+          - 'dashboards</a>'
+        condition: and
+
+      - type: status
+        status:
+          - 200

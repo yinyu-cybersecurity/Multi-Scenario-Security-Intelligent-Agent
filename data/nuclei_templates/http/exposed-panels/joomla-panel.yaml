@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: Joomla! Panel
+# description: Joomla! Panel
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: joomla-panel
+
+info:
+  name: Joomla! Panel
+  author: its0x08
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:joomla:joomla\!:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: joomla
+    product: joomla\!
+    shodan-query:
+      - http.html:"joomla! - open source content management"
+      - http.component:"joomla"
+      - cpe:"cpe:2.3:a:joomla:joomla\!"
+    fofa-query: body="joomla! - open source content management"
+  tags: panel,joomla,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/administrator/"
+
+    matchers:
+      - type: word
+        words:
+          - '<meta name="generator" content="Joomla! - Open Source Content Management"
+            />'
+          - '/administrator/templates/isis/images/joomla.png'
+        condition: or

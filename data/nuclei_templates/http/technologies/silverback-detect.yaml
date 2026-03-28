@@ -1,0 +1,31 @@
+# RAG Annotation:
+# name: Silverback MDM - Detection
+# description: Silverback MDM - Detection
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: silverback-detect
+
+info:
+  name: Silverback MDM - Detection
+  author: nodauf
+  severity: info
+  reference:
+    - https://help.matrix42.com/010_SUEM/020_UEM/30Enterprise_Mobility_Management/010Installation_and_Update/10_Silverback
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.favicon.hash:635899646
+  tags: favicon,tech,silverback,mdm,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/sts/Content/Images/favicon.ico"
+
+    matchers:
+      - type: dsl
+        dsl:
+          - "status_code==200 && (\"635899646\" == mmh3(base64_py(body)))"

@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: Platformio Config File Disclosure
+# description: “platformio.ini” (Project Configuration File) was detected.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: platformio-ini
+
+info:
+  name: Platformio Config File Disclosure
+  author: DhiyaneshDK
+  severity: low
+  description: “platformio.ini” (Project Configuration File) was detected.
+  reference:
+    - https://docs.platformio.org/en/stable/projectconf/index.html
+  metadata:
+    verified: true
+    max-request: 1
+    google-query: inurl:"/platformio.ini"
+    github-query: '[platformio] language:INI'
+  tags: config,exposure,platformio,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/platformio.ini"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "[platformio]"
+          - "platform ="
+          - "board ="
+        condition: and
+
+      - type: status
+        status:
+          - 200

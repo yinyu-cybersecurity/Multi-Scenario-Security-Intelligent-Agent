@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: Ntopng Traffic Dashboard - Detect
+# description: Ntopng traffic dashboard was detected.
+# vuln_type: Security Misconfiguration
+# severity: medium
+# cve_id: N/A
+
+
+id: ntopng-traffic-dashboard
+
+info:
+  name: Ntopng Traffic Dashboard - Detect
+  author: theamanrawat
+  severity: medium
+  description: Ntopng traffic dashboard was detected.
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N
+    cvss-score: 5.3
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:ntop:ntopng:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.title:"ntopng - Traffic Dashboard"
+    product: ntopng
+    vendor: ntop
+  tags: misconfig,ntopng,dashboard,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>ntopng - Traffic Dashboard</title>'
+          - 'https://github.com/ntop/ntopng'
+        condition: and
+
+      - type: status
+        status:
+          - 200

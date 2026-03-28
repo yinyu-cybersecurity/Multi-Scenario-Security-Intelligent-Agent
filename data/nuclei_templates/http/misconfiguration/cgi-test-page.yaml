@@ -1,0 +1,34 @@
+# RAG Annotation:
+# name: CGI Test page
+# description: CGI Test page
+# vuln_type: Security Misconfiguration
+# severity: info
+# cve_id: N/A
+
+
+id: cgi-test-page
+
+info:
+  name: CGI Test page
+  author: YASH ANAND @yashanand155
+  severity: info
+  metadata:
+    max-request: 1
+  tags: cgi,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/cgi-bin/test/test.cgi"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - HTTP_ACCEPT
+          - HTTP_ACCEPT_ENCODING
+        condition: and
+
+      - type: status
+        status:
+          - 200

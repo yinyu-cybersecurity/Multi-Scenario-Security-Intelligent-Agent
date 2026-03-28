@@ -1,0 +1,34 @@
+# RAG Annotation:
+# name: IBM OpenAdmin Tool - Panel
+# description: IBM OpenAdmin Tool - Panel
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: ibm-openadmin-panel
+
+info:
+  name: IBM OpenAdmin Tool - Panel
+  author: DhiyaneshDK
+  severity: info
+  metadata:
+    verified: "true"
+    max-request: 1
+    shodan-query: http.favicon.hash:965982073
+  tags: openadmin,login,panel,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/openadmin/index.php"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'class="oat oneui"'
+
+      - type: status
+        status:
+          - 200

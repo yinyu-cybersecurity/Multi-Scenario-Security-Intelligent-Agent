@@ -1,0 +1,32 @@
+# RAG Annotation:
+# name: Facebook Access Token
+# description: Facebook Access Token
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: facebook-access-token
+
+info:
+  name: Facebook Access Token
+  author: DhiyaneshDK
+  severity: info
+  reference:
+    - https://github.com/praetorian-inc/noseyparker/blob/main/crates/noseyparker/data/default/builtin/rules/facebook.yml
+    - https://developers.facebook.com/docs/facebook-login/access-tokens/
+  metadata:
+    verified: true
+    max-request: 1
+  tags: facebook,token,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - '\b(EAACEdEose0cBA[a-zA-Z0-9]+)\b'

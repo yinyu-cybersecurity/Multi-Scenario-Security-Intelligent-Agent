@@ -1,0 +1,31 @@
+# RAG Annotation:
+# name: Google Client ID
+# description: Google Client ID
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: google-client-id
+
+info:
+  name: Google Client ID
+  author: DhiyaneshDK
+  severity: info
+  reference:
+    - https://github.com/praetorian-inc/noseyparker/blob/main/crates/noseyparker/data/default/builtin/rules/google.yml
+  metadata:
+    verified: true
+    max-request: 1
+  tags: google,token,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    extractors:
+      - type: regex
+        part: all
+        regex:
+          - '(?i)\b([0-9]+-[a-z0-9_]{32})\.apps\.googleusercontent\.com'

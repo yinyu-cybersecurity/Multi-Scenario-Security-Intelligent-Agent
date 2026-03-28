@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: XAMPP Default Page
+# description: XAMPP Default Page
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: xampp-default-page
+
+info:
+  name: XAMPP Default Page
+  author: dhiyaneshDK
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:apachefriends:xampp:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: apachefriends
+    product: xampp
+    shodan-query: http.title:"XAMPP"
+  tags: tech,php,xampp,apache,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/dashboard/'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>Welcome to XAMPP</title>'
+
+      - type: status
+        status:
+          - 200

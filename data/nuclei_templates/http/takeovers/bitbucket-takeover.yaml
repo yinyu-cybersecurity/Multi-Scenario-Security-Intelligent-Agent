@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: Bitbucket Takeover Detection
+# description: Bitbucket takeover was detected.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+id: bitbucket-takeover
+
+info:
+  name: Bitbucket Takeover Detection
+  author: pdteam
+  severity: high
+  description: Bitbucket takeover was detected.
+  reference:
+    - https://github.com/EdOverflow/can-i-take-over-xyz
+  metadata:
+    max-request: 1
+  tags: takeover,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - Host != ip
+
+      - type: word
+        words:
+          - "Repository not found"
+        part: body
+
+      - type: word
+        words:
+          - "text/plain"
+        part: header
+
+    extractors:
+      - type: dsl
+        dsl:
+          - cname

@@ -1,0 +1,33 @@
+# RAG Annotation:
+# name: Dependency Track API Key
+# description: Dependency Track API Key
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: dependency-track-api
+
+info:
+  name: Dependency Track API Key
+  author: DhiyaneshDK
+  severity: info
+  reference:
+    - https://github.com/praetorian-inc/noseyparker/blob/main/crates/noseyparker/data/default/builtin/rules/dependency_track.yml
+    - https://docs.dependencytrack.org/integrations/rest-api/
+    - https://docs.dependencytrack.org/getting-started/configuration/
+  metadata:
+    verified: true
+    max-request: 1
+  tags: dependency,exposure,tokens,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - \b(odt_[A-Za-z0-9]{32,255})\b

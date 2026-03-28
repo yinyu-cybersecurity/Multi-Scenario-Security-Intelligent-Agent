@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Apache ActiveMQ Artemis - Detection
+# description: Detects a Apache ActiveMQ Artemis Console, the next generation message broker by ActiveMQ.
+
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+
+
+id: apache-activemq-artemis-detect
+
+info:
+  name: Apache ActiveMQ Artemis - Detection
+  author: icarot
+  severity: info
+  description: |
+    Detects a Apache ActiveMQ Artemis Console, the next generation message broker by ActiveMQ.
+  reference:
+    - https://github.com/apache/activemq-artemis/
+  metadata:
+    max-request: 1
+    vendor: apache
+    product: activemq
+    shodan-query: title:"ActiveMQ Artemis Console"
+  tags: tech,activemq,artemis,apache,detect,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/console/hawtconfig.json"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'img/activemq.png'
+          - 'ActiveMQ Artemis'
+        condition: and
+
+    extractors:
+      - type: regex
+        part: body
+        name: version
+        group: 1
+        regex:
+          - '"productInfo":.*"value":\s*"(.*)"'

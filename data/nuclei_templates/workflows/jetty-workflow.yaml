@@ -1,0 +1,19 @@
+# RAG Annotation:
+# name: Jetty Security Checks Workflow
+# description: 运行所有Jetty相关nuclei模板的安全检查工作流，检测Jetty Web服务器的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: jetty-workflow
+
+info:
+  name: Jetty Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all Jetty related nuclei templates on a given target.
+workflows:
+  - template: http/technologies/tech-detect.yaml
+    matchers:
+      - name: jetty
+        subtemplates:
+          - tags: jetty

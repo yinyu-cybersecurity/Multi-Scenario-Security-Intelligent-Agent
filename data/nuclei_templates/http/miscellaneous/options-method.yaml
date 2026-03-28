@@ -1,0 +1,29 @@
+# RAG Annotation:
+# name: Allowed Options Method
+# description: Allowed Options Method
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: options-method
+
+info:
+  name: Allowed Options Method
+  author: pdteam
+  severity: info
+  metadata:
+    max-request: 1
+  tags: miscellaneous,misc,generic,vuln
+
+http:
+  - method: OPTIONS
+    path:
+      - "{{BaseURL}}"
+
+    extractors:
+      - type: regex
+        part: header
+        group: 1
+        regex:
+          - "Allow: ([A-Z, ]+)"

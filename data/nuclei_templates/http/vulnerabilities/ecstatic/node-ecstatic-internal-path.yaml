@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: Node ecstatic Internal Path - Exposure
+# description: Internal path exposure in Node ecstatic.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+---
+id: node-ecstatic-internal-path
+
+info:
+  name: Node ecstatic Internal Path - Exposure
+  author: DhiyaneshDK
+  severity: low
+  description: Internal path exposure in Node ecstatic.
+  reference:
+    - https://tripla.dk/2020/03/26/multiple-vulnerabilities-in-nodejs-ecstatic-http-server-http-party/
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: 'server: "ecstatic"'
+  tags: node,js,exposure,ecstatic,vuln
+variables:
+  payload: '{{repeat("A", 1000)}}'
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/{{payload}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'ENAMETOOLONG'
+          - 'stat'
+        condition: and
+
+      - type: status
+        status:
+          - 500

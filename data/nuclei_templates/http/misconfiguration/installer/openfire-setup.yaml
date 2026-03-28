@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: Openfire Setup - Exposure
+# description: Checks for the presence of a Openfire Setup Page.
+
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: openfire-setup
+
+info:
+  name: Openfire Setup - Exposure
+  author: DhiyaneshDk
+  severity: high
+  description: |
+    Checks for the presence of a Openfire Setup Page.
+  classification:
+    cpe: cpe:2.3:a:igniterealtime:openfire:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: igniterealtime
+    product: openfire
+    shodan-query: html:"Welcome to Openfire Setup"
+  tags: install,openfire,exposure,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/setup/index.jsp"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Welcome to Openfire Setup"
+
+      - type: status
+        status:
+          - 200

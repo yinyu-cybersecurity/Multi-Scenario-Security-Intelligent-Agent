@@ -1,0 +1,31 @@
+# RAG Annotation:
+# name: Google Speed Limit API Test
+# description: Google Speed Limit API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-googlespeedlimit
+
+info:
+  name: Google Speed Limit API Test
+  author: zzeitlin
+  severity: info
+  metadata:
+    max-request: 1
+  tags: token-spray,google,speed,limit
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://roads.googleapis.com/v1/speedLimits?path=38.75807927603043,-9.03741754643809&key={{token}}"
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'error'
+        negative: true

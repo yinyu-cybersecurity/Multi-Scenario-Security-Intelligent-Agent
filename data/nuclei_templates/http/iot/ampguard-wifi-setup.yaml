@@ -1,0 +1,36 @@
+# RAG Annotation:
+# name: AmpGuard Wifi Setup
+# description: AmpGuard wifi setup panel detected.
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: ampguard-wifi-setup
+
+info:
+  name: AmpGuard Wifi Setup
+  author: pussycat0x
+  severity: info
+  description: AmpGuard wifi setup panel detected.
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"AmpGuard wifi setup"
+  tags: ampguard,iot,setup,wifi,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "AmpGuard wifi setup"
+
+      - type: status
+        status:
+          - 200

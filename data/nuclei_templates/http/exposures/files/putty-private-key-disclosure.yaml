@@ -1,0 +1,53 @@
+# RAG Annotation:
+# name: Putty Private Key Disclosure
+# description: Putty internal user key file is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: medium
+# cve_id: N/A
+
+
+id: putty-private-key-disclosure
+
+info:
+  name: Putty Private Key Disclosure
+  author: DhiyaneshDk,geeknik
+  severity: medium
+  description: Putty internal user key file is exposed.
+  reference:
+    - https://github.com/detectify/ugly-duckling/blob/master/modules/crowdsourced/putty-private-key-disclosure.json
+  classification:
+    cpe: cpe:2.3:a:putty:putty:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 8
+    vendor: putty
+    product: putty
+    github-query: filename:putty.ppk
+  tags: exposure,files,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/my.ppk"
+      - "{{BaseURL}}/putty.ppk"
+      - "{{BaseURL}}/{{Hostname}}.ppk"
+      - "{{BaseURL}}/.ssh/putty.ppk"
+      - "{{BaseURL}}/.ssh/{{Hostname}}.ppk"
+      - "{{BaseURL}}/.putty/my.ppk"
+      - "{{BaseURL}}/.putty/putty.ppk"
+      - "{{BaseURL}}/.putty/{{Hostname}}.ppk"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "PuTTY-User-Key-File"
+          - "Encryption:"
+        condition: and
+
+      - type: status
+        status:
+          - 200

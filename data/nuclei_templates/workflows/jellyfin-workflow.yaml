@@ -1,0 +1,19 @@
+# RAG Annotation:
+# name: Jellyfin Security Checks Workflow
+# description: 运行所有Jellyfin相关nuclei模板的安全检查工作流，检测CVE-2020-26948、CVE-2021-21402等Jellyfin媒体服务器的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: jellyfin-workflow
+
+info:
+  name: Jellyfin Security Checks
+  author: dwisiswant0
+  description: A simple workflow that runs all Jellyfin related nuclei templates on a given target.
+workflows:
+  - template: http/technologies/jellyfin-detect.yaml
+    subtemplates:
+      - template: http/cves/2020/CVE-2020-26948.yaml
+
+      - template: http/cves/2021/CVE-2021-21402.yaml

@@ -1,0 +1,35 @@
+# RAG Annotation:
+# name: Detect tor SOCKS proxy
+# description: Detect tor SOCKS proxy
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: tor-socks-proxy
+
+info:
+  name: Detect tor SOCKS proxy
+  author: geeknik
+  severity: info
+  metadata:
+    max-request: 1
+  tags: tech,tor,proxy,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "This is a SOCKS Proxy"
+          - "HTTPTunnelPort"
+          - "SOCKSPort"
+        condition: and
+
+      - type: status
+        status:
+          - 501

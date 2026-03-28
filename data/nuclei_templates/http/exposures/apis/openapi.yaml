@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: OpenAPI - Detect
+# description: OpenAPI was detected.
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: openapi
+
+info:
+  name: OpenAPI - Detect
+  author: pdteam,ynnirc
+  severity: info
+  description: OpenAPI was detected.
+  reference:
+    - https://www.openapis.org/
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cvss-score: 0
+    cwe-id: CWE-200
+  metadata:
+    max-request: 1
+  tags: exposure,api,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/openapi.json"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - openapi
+          - paths
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - application/openapi+json
+          - application/json
+        condition: or
+
+      - type: status
+        status:
+          - 200

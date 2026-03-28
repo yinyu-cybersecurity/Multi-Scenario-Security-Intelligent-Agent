@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: ESPEasy Installation Exposure
+# description: ESPEasy is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: medium
+# cve_id: N/A
+
+
+id: espeasy-installer
+
+info:
+  name: ESPEasy Installation Exposure
+  author: ritikchaddha
+  severity: medium
+  description: ESPEasy is susceptible to the Installation page exposure due to misconfiguration.
+  metadata:
+    verified: true
+    max-request: 1
+  tags: misconfig,espeasy,install,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/ESPEasy"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Install ESPEasy"
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,35 @@
+# RAG Annotation:
+# name: FanRuanOA-detect
+# description: FanRuanOA-detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: fanruanoa-detect
+
+info:
+  name: FanRuanOA-detect
+  author: YanYun
+  severity: info
+  metadata:
+    max-request: 2
+  tags: oa,tech,dotnet,fanruan,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/WebReport/ReportServer"
+      - "{{BaseURL}}/ReportServer"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - 'DeploySuccess._init'

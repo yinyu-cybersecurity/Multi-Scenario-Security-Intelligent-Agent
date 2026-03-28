@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: Dynamics Container Host - Detect
+# description: Dynamics Container Host is detected in this template.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: dynamic-container-host
+
+info:
+  name: Dynamics Container Host - Detect
+  author: DhiyaneshDk
+  severity: low
+  description: Dynamics Container Host is detected in this template.
+  reference:
+    - https://www.facebook.com/photo/?fbid=631801132323743&set=pcb.631801782323678
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"Dynamics Container Host"
+  tags: exposure,dynamic,container,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>Dynamics Container Host</title>'
+
+      - type: status
+        status:
+          - 200

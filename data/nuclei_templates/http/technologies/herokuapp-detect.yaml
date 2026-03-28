@@ -1,0 +1,30 @@
+# RAG Annotation:
+# name: Detect websites using Herokuapp endpoints
+# description: Detected endpoints might be vulnerable to subdomain takeover or disclose sensitive info
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: herokuapp-detect
+
+info:
+  name: Detect websites using Herokuapp endpoints
+  author: alifathi-h1,righettod
+  severity: info
+  description: Detected endpoints might be vulnerable to subdomain takeover or disclose sensitive info
+  metadata:
+    max-request: 1
+  tags: heroku,tech,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "[a-z0-9.-]+\\.herokuapp\\.com"
+          - "[a-z0-9.-]+\\.herokucdn\\.com"

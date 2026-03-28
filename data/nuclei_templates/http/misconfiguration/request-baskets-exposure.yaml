@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Request Baskets - Exposure
+# description: Request Baskets is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: CVE-2023-27163
+
+
+id: request-baskets-exposure
+
+info:
+  name: Request Baskets - Exposure
+  author: DhiyaneshDk
+  severity: low
+  description: Request Baskets is exposed.
+  reference:
+    - https://notes.sjtu.edu.cn/s/MUUhEymt7#
+    - https://github.com/entr0pie/CVE-2023-27163
+  classification:
+    cpe: cpe:2.3:a:rbaskets:request_baskets:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: rbaskets
+    product: request_baskets
+    shodan-query: html:"request-baskets"
+  tags: misconfig,requests-baskets,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/web"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>Request Baskets</title>'
+
+      - type: word
+        part: header
+        words:
+          - text/html
+
+      - type: status
+        status:
+          - 200

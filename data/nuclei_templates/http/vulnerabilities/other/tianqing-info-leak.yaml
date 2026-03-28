@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: Tianqing Info Leak
+# description: Information exposed in Tianqing.
+# vuln_type: Sensitive Data Exposure
+# severity: medium
+# cve_id: N/A
+
+
+---
+id: tianqing-info-leak
+
+info:
+  name: Tianqing Info Leak
+  author: ritikchaddha
+  severity: medium
+  description: Information exposed in Tianqing.
+  reference:
+    - https://mp.weixin.qq.com/s/wH5luLISE_G381W2ssv93g
+  metadata:
+    max-request: 1
+  tags: tianqing,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/api/dbstat/gettablessize"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "schema_name"
+          - "table_name"
+          - "table_size"
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "application/json"
+
+      - type: status
+        status:
+          - 200

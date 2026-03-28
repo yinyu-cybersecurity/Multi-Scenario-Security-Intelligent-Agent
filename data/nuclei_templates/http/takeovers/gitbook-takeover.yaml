@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: gitbook takeover detection
+# description: gitbook takeover was detected.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+id: gitbook-takeover
+
+info:
+  name: gitbook takeover detection
+  author: philippedelteil
+  severity: high
+  description: gitbook takeover was detected.
+  reference:
+    - https://github.com/EdOverflow/can-i-take-over-xyz/issues/259
+    - https://hackerone.com/reports/223625
+  metadata:
+    max-request: 1
+  tags: takeover,gitbook,hackerone,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - Host != ip
+
+      - type: word
+        words:
+          - "If you need specifics, here's the error"
+          - "Domain not found"
+        condition: and
+
+    extractors:
+      - type: dsl
+        dsl:
+          - cname

@@ -1,0 +1,31 @@
+# RAG Annotation:
+# name: Google Nearest Roads API Test
+# description: Google Nearest Roads API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-googlenearestroads
+
+info:
+  name: Google Nearest Roads API Test
+  author: zzeitlin
+  severity: info
+  metadata:
+    max-request: 1
+  tags: token-spray,google,roads
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://roads.googleapis.com/v1/nearestRoads?points=60.170880,24.942795|60.170879,24.942796|60.170877,24.942796&key={{token}}"
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'error'
+        negative: true

@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: SuiteCRM Installer Exposure
+# description: SuiteCRM is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Security Misconfiguration
+# severity: high
+# cve_id: N/A
+
+
+id: suitecrm-installer
+
+info:
+  name: SuiteCRM Installer Exposure
+  author: DhiyaneshDk
+  severity: high
+  description: SuiteCRM is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:salesagility:suitecrm:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: salesagility
+    product: suitecrm
+    shodan-query: title:"SuiteCRM"
+  tags: misconfig,suitecrm,install,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/install.php'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "SuiteCRM Setup Wizard:"
+          - "Checking Environment"
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+
+      - type: status
+        status:
+          - 200

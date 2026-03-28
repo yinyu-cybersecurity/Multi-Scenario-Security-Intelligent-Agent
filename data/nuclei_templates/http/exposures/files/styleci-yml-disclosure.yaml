@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: StyleCi Yaml File Disclosure
+# description: StyleCi Yaml File Disclosure
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: styleci-yml-disclosure
+
+info:
+  name: StyleCi Yaml File Disclosure
+  author: DhiyaneshDk
+  severity: info
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: ".styleci.yml"
+  tags: config,exposure,devops,files,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.styleci.yml"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "php"
+          - "preset"
+          - "disabled"
+        condition: and
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: Afterpay phishing Detection
+# description: A Afterpay phishing website was detected
+
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: afterpay-phish
+
+info:
+  name: Afterpay phishing Detection
+  author: rxerium
+  severity: info
+  description: |
+    A Afterpay phishing website was detected
+  reference:
+    - https://afterpay.com
+  metadata:
+    max-request: 1
+  tags: phishing,afterpay,payment,osint,discovery
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>Buy Now Pay Later with Afterpay'
+
+      - type: status
+        status:
+          - 200
+
+      - type: dsl
+        dsl:
+          - '!contains(host,"afterpay.com")'

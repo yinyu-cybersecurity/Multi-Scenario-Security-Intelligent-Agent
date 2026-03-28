@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: Bitrix24 Installation Exposure
+# description: Bitrix24 is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: bitrix24-installer
+
+info:
+  name: Bitrix24 Installation Exposure
+  author: DhiyaneshDK
+  severity: high
+  description: Bitrix24 is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:bitrix24:bitrix24:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: bitrix24
+    product: bitrix24
+    shodan-query: http.favicon.hash:-2115208104
+  tags: misconfig,bitrix24,install,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Start installation'
+          - 'Bitrix24'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+
+      - type: status
+        status:
+          - 200

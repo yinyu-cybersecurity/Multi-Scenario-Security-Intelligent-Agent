@@ -1,0 +1,51 @@
+# RAG Annotation:
+# name: Oracle WebLogic UDDI Explorer Panel - Detect
+# description: Oracle WebLogic UDDI Explorer panel was detected.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: weblogic-uddiexplorer
+
+info:
+  name: Oracle WebLogic UDDI Explorer Panel - Detect
+  author: pdteam
+  severity: info
+  description: |
+    Oracle WebLogic UDDI Explorer panel was detected.
+  reference:
+    - https://www.tenable.com/plugins/was/112421
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:oracle:weblogic_server:*:*:*:*:-:*:*:*
+  metadata:
+    max-request: 1
+    vendor: oracle
+    product: weblogic_server
+    shodan-query:
+      - product:"oracle weblogic"
+      - http.title:"oracle peoplesoft sign-in"
+    fofa-query: title="oracle peoplesoft sign-in"
+    google-query: intitle:"oracle peoplesoft sign-in"
+  tags: panel,oracle,weblogic,tenable,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/uddiexplorer/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'WebLogic UDDI Explorer'
+
+      - type: status
+        status:
+          - 200

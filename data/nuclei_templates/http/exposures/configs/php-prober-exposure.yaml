@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: PHP Prober - Exposure
+# description: PHP Prober Server exposure was detected.
+# vuln_type: Sensitive Data Exposure
+# severity: medium
+# cve_id: N/A
+
+
+id: php-prober-exposure
+
+info:
+  name: PHP Prober - Exposure
+  author: ritikchaddha
+  severity: medium
+  description: PHP Prober Server exposure was detected.
+  metadata:
+    max-request: 1
+    verified: true
+    shodan-query: http.component:"php"
+  tags: exposure,php,prober
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/prober.php"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Server Parameters'
+          - 'PHP Prober'
+          - 'Real-time Data'
+        condition: and
+
+      - type: status
+        status:
+          - 200

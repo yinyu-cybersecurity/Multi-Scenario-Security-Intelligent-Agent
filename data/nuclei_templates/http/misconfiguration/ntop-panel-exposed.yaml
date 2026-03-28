@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: ntop Network Traffix Exposed
+# description: ntop Network Traffix Exposed
+# vuln_type: Sensitive Data Exposure
+# severity: unknown
+# cve_id: N/A
+
+
+id: ntop-panel-exposed
+
+info:
+  name: ntop Network Traffix Exposed
+  author: tess
+  severity: unknown
+  classification:
+    cpe: cpe:2.3:a:ntop:ntopng:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: ntop
+    product: ntopng
+    shodan-query: title:"Configure ntop"
+  tags: misconfig,ntop,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Configure ntop"
+          - "directory is properly installed"
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+
+      - type: status
+        status:
+          - 200

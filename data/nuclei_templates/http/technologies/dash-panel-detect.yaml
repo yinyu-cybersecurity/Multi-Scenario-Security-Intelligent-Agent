@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: Dash Panel Detect
+# description: Dash Panel Detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: dash-panel-detect
+
+info:
+  name: Dash Panel Detect
+  author: tess
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:dash:dash_core:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: dash
+    product: dash_core
+    shodan-query: html:"DashRenderer"
+  tags: tech,dash,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '_dash-config'
+          - 'DashRenderer'
+        condition: and
+
+      - type: status
+        status:
+          - 200

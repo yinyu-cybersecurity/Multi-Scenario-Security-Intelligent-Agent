@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: Kubernetes etcd Keys - Exposure
+# description: Kubernetes private etcd keys are exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: medium
+# cve_id: N/A
+
+
+id: kubernetes-etcd-keys
+
+info:
+  name: Kubernetes etcd Keys - Exposure
+  author: Hardik-Solanki
+  severity: medium
+  description: Kubernetes private etcd keys are exposed.
+  reference:
+    - https://github.com/maurosoria/dirsearch/blob/master/db/dicc.txt
+  metadata:
+    verified: true
+    max-request: 1
+    github-query: filename:apiserver-etcd-client.key
+  tags: files,exposure,kubernetes,k8s,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/apiserver-etcd-client.key"
+
+    matchers-condition: and
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - '(?m)^-----BEGIN PRIVATE KEY-----'
+
+      - type: word
+        part: header
+        words:
+          - "application/json"
+          - "application/html"
+        condition: and
+        negative: true
+
+      - type: status
+        status:
+          - 200

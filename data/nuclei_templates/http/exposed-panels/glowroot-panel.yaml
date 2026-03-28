@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: Glowroot - Panel
+# description: Glowroot - Panel
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: glowroot-panel
+
+info:
+  name: Glowroot - Panel
+  author: DhiyaneshDk
+  severity: info
+  reference:
+    - https://www.facebook.com/photo?fbid=618105097026680&set=a.467014098802448
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"Glowroot"
+  tags: panel,login,glowroot,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/login"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Glowroot'
+          - 'Change my password'
+        condition: and
+
+      - type: status
+        status:
+          - 200

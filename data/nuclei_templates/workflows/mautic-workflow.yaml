@@ -1,0 +1,19 @@
+# RAG Annotation:
+# name: Mautic CRM Security Checks Workflow
+# description: 运行所有Mautic CRM相关nuclei模板的安全检查工作流，检测Mautic营销自动化系统的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: mautic-workflow
+
+info:
+  name: Mautic CRM Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all Mautic CRM related nuclei templates on a given target.
+workflows:
+  - template: http/technologies/favicon-detect.yaml
+    matchers:
+      - name: mautic
+        subtemplates:
+          - tags: mautic

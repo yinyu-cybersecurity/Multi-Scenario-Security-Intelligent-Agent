@@ -1,0 +1,21 @@
+# RAG Annotation:
+# name: Lotus Domino Security Checks Workflow
+# description: 运行所有Lotus Domino相关nuclei模板的安全检查工作流，检测CVE-2005-2428等IBM Lotus Domino服务器安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: lotus-domino-workflow
+
+info:
+  name: Lotus Domino Security Checks
+  author: CasperGN
+  description: A simple workflow that runs all Lotus Domino related nuclei templates on a given target.
+workflows:
+  - template: http/technologies/tech-detect.yaml
+    matchers:
+      - name: lotus-domino
+        subtemplates:
+          - template: http/technologies/lotus-domino-version.yaml
+            subtemplates:
+              - template: http/cves/2005/CVE-2005-2428.yaml

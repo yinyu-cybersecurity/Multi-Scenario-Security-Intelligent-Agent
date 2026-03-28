@@ -1,0 +1,54 @@
+# RAG Annotation:
+# name: Gitea Public Registration Enabled
+# description: A misconfiguration in Gitea allows arbitrary users to sign up and read code hosted on the service.
+
+# vuln_type: Security Misconfiguration
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: gitea-public-signup
+
+info:
+  name: Gitea Public Registration Enabled
+  author: edoardottt
+  severity: high
+  description: |
+    A misconfiguration in Gitea allows arbitrary users to sign up and read code hosted on the service.
+  reference:
+    - https://www.youtube.com/watch?v=oHhofSj9lEM&t=157s
+    - https://gitea.io/en-us/
+  classification:
+    cpe: cpe:2.3:a:gitea:gitea:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: gitea
+    product: gitea
+    shodan-query: html:"Powered by Gitea"
+  tags: misconfig,gitea,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/user/sign_up'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Powered by Gitea'
+          - 'Register -'
+        condition: and
+
+      - type: word
+        part: body
+        words:
+          - "Registration is disabled. Please contact your site administrator."
+        negative: true
+
+      - type: status
+        status:
+          - 200

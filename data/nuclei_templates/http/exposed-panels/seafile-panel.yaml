@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: Seafile Panel - Detect
+# description: Seafile panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: seafile-panel
+
+info:
+  name: Seafile Panel - Detect
+  author: TechbrunchFR,righettod
+  severity: info
+  description: Seafile panel was detected.
+  reference:
+    - https://www.seafile.com/en/home/
+    - https://github.com/haiwen/seafile
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:seafile:seafile:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: seafile
+    product: seafile
+    shodan-query: http.favicon.hash:1552322396
+    fofa-query: icon_hash=1552322396
+  tags: sefile,panel,login,seafile,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/accounts/login/"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - "status_code==200"
+          - 'contains(body, "SEAFILE_GLOBAL") && contains(body, "seafile-ui.css")'
+        condition: and

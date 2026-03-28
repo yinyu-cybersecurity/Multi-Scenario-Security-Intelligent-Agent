@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: Payroll Management System Web Login Panel - Detect
+# description: Payroll Management System Web login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: payroll-management-system-panel
+
+info:
+  name: Payroll Management System Web Login Panel - Detect
+  author: idealphase
+  severity: info
+  description: Payroll Management System Web login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:payroll_management_system_project:payroll_management_system:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.title:"Admin | Employee's Payroll Management System"
+    product: payroll_management_system
+    vendor: payroll_management_system_project
+  tags: panel,payroll,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Admin | Employee's Payroll Management System</title>"
+
+      - type: status
+        status:
+          - 200

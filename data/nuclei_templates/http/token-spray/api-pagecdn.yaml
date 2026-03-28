@@ -1,0 +1,36 @@
+# RAG Annotation:
+# name: PageCDN API Test
+# description: Public API for javascript, css and font libraries on PageCDN
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-pagecdn
+
+info:
+  name: PageCDN API Test
+  author: daffainfo
+  severity: info
+  description: Public API for javascript, css and font libraries on PageCDN
+  reference:
+    - https://pagecdn.com/docs/public-api
+    - https://github.com/daffainfo/all-about-apikey/tree/main/pagecdn
+  metadata:
+    max-request: 1
+  tags: token-spray,pagecdn
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://pagecdn.com/api/v2/private/account/info?apikey={{token}}"
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"username"'
+          - '"email"'
+        condition: and

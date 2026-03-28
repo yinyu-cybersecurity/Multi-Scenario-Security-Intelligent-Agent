@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: Prometheus Panel - Detect
+# description: Prometheus panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: prometheus-exposed-panel
+
+info:
+  name: Prometheus Panel - Detect
+  author: organiccrap,jfbes
+  severity: info
+  description: Prometheus panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:prometheus:prometheus:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 2
+    vendor: prometheus
+    product: prometheus
+  tags: panel,prometheus,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/graph'
+      - "{{BaseURL}}/prometheus/graph"
+
+    stop-at-first-match: true
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>Prometheus Time Series Collection and Processing Server</title>'

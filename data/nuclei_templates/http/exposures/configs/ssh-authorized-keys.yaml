@@ -1,0 +1,50 @@
+# RAG Annotation:
+# name: SSH Authorized Keys File - Detect
+# description: SSH authorized keys file was detected.
+
+# vuln_type: Sensitive Data Exposure
+# severity: medium
+# cve_id: N/A
+
+
+
+
+id: ssh-authorized-keys
+
+info:
+  name: SSH Authorized Keys File - Detect
+  author: geeknik,0x_Akoko
+  severity: medium
+  description: |
+    SSH authorized keys file was detected.
+  reference:
+    - https://www.ssh.com/academy/ssh/authorized-key
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N
+    cvss-score: 5.3
+    cwe-id: CWE-200
+  metadata:
+    max-request: 2
+  tags: config,exposure,ssh,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.ssh/authorized_keys"
+      - "{{BaseURL}}/_/.ssh/authorized_keys"
+      - "{{BaseURL}}/authorized_keys"
+      - "{{BaseURL}}/.authorized_keys"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "ssh-dss"
+          - "ssh-ed25519"
+          - "ssh-rsa"
+          - "ecdsa-sha2-nistp256"
+        condition: or
+
+      - type: status
+        status:
+          - 200

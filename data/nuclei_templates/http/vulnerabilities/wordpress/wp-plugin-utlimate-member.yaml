@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: WordPress Plugin Ultimate Member
+# description: Searches for sensitive directories present in the ultimate-member plugin.
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+---
+id: wordpress-plugins-ultimate-member
+
+info:
+  name: WordPress Plugin Ultimate Member
+  author: pussycat0x
+  severity: info
+  description: Searches for sensitive directories present in the ultimate-member plugin.
+  reference:
+    - https://www.exploit-db.com/ghdb/6998
+  metadata:
+    max-request: 1
+  tags: wordpress,listing,plugin,edb,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/wp-content/plugins/ultimate-member/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Index of"
+          - "/wp-content/plugins/ultimate-member/"
+        condition: and
+
+      - type: status
+        status:
+          - 200

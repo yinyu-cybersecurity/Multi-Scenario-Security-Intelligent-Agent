@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Atlassian JIRA Setup - Installer
+# description: Atlassian JIRA is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Security Misconfiguration
+# severity: high
+# cve_id: N/A
+
+
+id: jira-setup
+
+info:
+  name: Atlassian JIRA Setup - Installer
+  author: ritikchaddha
+  severity: high
+  description: Atlassian JIRA is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:atlassian:jira:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 2
+    vendor: atlassian
+    product: jira
+    shodan-query: title:"JIRA - JIRA setup"
+  tags: misconfig,jira,atlassian,installer,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+      - '{{BaseURL}}/secure/SetupMode!default.jspa'
+
+    stop-at-first-match: true
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'JIRA - JIRA setup'
+          - 'jira.webresources:jira-setup"'
+        case-insensitive: true
+        condition: or
+
+      - type: status
+        status:
+          - 200

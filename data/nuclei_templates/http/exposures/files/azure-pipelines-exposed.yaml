@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: Azure Pipelines Configuration File Disclosure
+# description: Azure Pipelines internal critical file is disclosed.
+# vuln_type: Sensitive Data Exposure
+# severity: medium
+# cve_id: N/A
+
+
+id: azure-pipelines-exposed
+
+info:
+  name: Azure Pipelines Configuration File Disclosure
+  author: DhiyaneshDk
+  severity: medium
+  description: Azure Pipelines internal critical file is disclosed.
+  classification:
+    cpe: cpe:2.3:a:microsoft:azure_pipelines_agent:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 2
+    vendor: microsoft
+    product: azure_pipelines_agent
+    shodan-query: html:"azure-pipelines.yml"
+  tags: config,exposure,azure,microsoft,cloud,devops,files,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.azure-pipelines.yml"
+      - "{{BaseURL}}/azure-pipelines.yml"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "trigger:"
+          - "pool:"
+          - "variables:"
+        condition: and
+
+      - type: status
+        status:
+          - 200

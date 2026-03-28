@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: ProfitTrailer Setup Page - Exposure
+# description: Detects exposed ProfitTrailer Setup page.
+
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: profittrailer-installer
+
+info:
+  name: ProfitTrailer Setup Page - Exposure
+  author: DhiyaneshDK
+  severity: high
+  description: |
+    Detects exposed ProfitTrailer Setup page.
+  reference:
+    - https://profittrailer.com/
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"ProfitTrailer Setup"
+  tags: misconfig,install,exposure,profittrailer,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/setup/license"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "ProfitTrailer Setup"
+
+      - type: status
+        status:
+          - 200

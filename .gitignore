@@ -106,7 +106,7 @@ temp/
 # =============================================================================
 # Data directories (may contain sensitive data)
 # =============================================================================
-data/
+# data/  # 已注释，因为需要上传 chroma_db 和 nuclei_templates
 .memory/
 .memory_test/
 .tool_outputs/
@@ -170,10 +170,10 @@ logs/test_results_*.json
 .claude/
 
 # =============================================================================
-# RAG / Vector DB
+# RAG / Vector DB - 向量数据库已上传
 # =============================================================================
-chroma_db/
-rag_builder/index/
+# chroma_db/              # 已上传向量数据库
+# rag_builder/index/
 *.index
 
 # =============================================================================
@@ -206,7 +206,57 @@ tools/windows/*.exe
 # Thirdparty - 标注进度与大文件库
 # =============================================================================
 thirdparty/ANNOTATION_*.md
-thirdparty/PayloadsAllTheThings-4.2/
-thirdparty/SecLists-master/
+data/security_resources/PayloadsAllTheThings-4.2/
+data/security_resources/SecLists-master/
 thirdparty/nuclei-templates-10.4.0/
 thirdparty/chatgpt-prompts-library/
+thirdparty/Githacker/
+
+# =============================================================================
+# Thirdparty - 工具二进制文件（大文件）
+# =============================================================================
+thirdparty/nuclei/nuclei
+thirdparty/httpx/httpx
+thirdparty/xray/xray_linux_amd64
+thirdparty/xray/xray_darwin_amd64
+thirdparty/ffuf/ffuf
+thirdparty/frp/frpc
+thirdparty/frp/frps
+thirdparty/fscan_linux/fscan
+thirdparty/fscan_windows/fscan.exe
+thirdparty/rubeus/Rubeus.exe
+thirdparty/PetitPotam/PetitPotam.exe
+thirdparty/ysoserial/*.jar
+thirdparty/jndiexploit/*.jar
+thirdparty/marshalsec/*.jar
+thirdparty/phpggc/phpggc
+thirdparty/Gopherus/gopherus
+thirdparty/SSRFmap/ssrfmap
+thirdparty/XXEinjector/XXEinjector.py
+thirdparty/Ghostcat/*.jar
+thirdparty/JSFinder/JSFinder.py
+
+# =============================================================================
+# App运行时日志
+# =============================================================================
+app/log/
+
+# =============================================================================
+# Data子目录补充（敏感/临时数据）
+# =============================================================================
+data/tool_raw_logs/
+# data/nuclei_templates/  # 已上传向量数据库
+# data/chroma_db/         # 已上传向量数据库
+# data/knowledge_base/    # 已上传向量数据库
+# data/writeups/          # 已上传向量数据库
+# data/security_resources/  # 已上传向量数据库 (14MB)
+data/tasks.db
+
+# =============================================================================
+# Docs开发计划文档
+# =============================================================================
+docs/CODE_VERIFICATION_PLAN.md
+docs/REFACTOR_PLAN.md
+docs/ARCHITECTURE_OPTIMIZATION_PLAN.md
+docs/EXPLOIT_ENHANCEMENT_PLAN.md
+docs/PERFORMANCE_ENHANCEMENT_PLAN.md

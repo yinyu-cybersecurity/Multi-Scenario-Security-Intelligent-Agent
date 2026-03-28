@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: AdmiralCloud - Detect
+# description: AdmiralCloud was detected.
+
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+
+
+id: admiralcloud-detect
+
+info:
+  name: AdmiralCloud - Detect
+  author: righettod
+  severity: info
+  description: |
+    AdmiralCloud was detected.
+  reference:
+    - https://www.admiralcloud.com/en/
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.title:"AdmiralCloud"
+  tags: tech,admiralcloud,detect,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    redirects: true
+    max-redirects: 2
+    matchers:
+      - type: dsl
+        dsl:
+          - 'status_code == 200'
+          - 'contains_any(to_lower(body), "content=\"admiralcloud", "<title>admiralcloud")'
+        condition: and
+
+    extractors:
+      - type: regex
+        part: body
+        group: 1
+        regex:
+          - '\s+([0-9\.]+)</title>'

@@ -1,0 +1,33 @@
+# RAG Annotation:
+# name: SSL/TLS-aware Test Page
+# description: SSL/TLS-aware Test Page
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: default-ssltls-test-page
+
+info:
+  name: SSL/TLS-aware Test Page
+  author: dhiyaneshDk
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:apache:http_server:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: apache
+    product: http_server
+    shodan-query: http.title:"Test Page for the SSL/TLS-aware Apache Installation on Web Site"
+  tags: tech,ssltls,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers:
+      - type: word
+        words:
+          - "<TITLE>Test Page for the SSL/TLS-aware Apache Installation on Web Site</TITLE>"
+        part: body

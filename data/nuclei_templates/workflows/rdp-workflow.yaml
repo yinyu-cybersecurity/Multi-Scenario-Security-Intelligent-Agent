@@ -1,0 +1,17 @@
+# RAG Annotation:
+# name: RDP Security Checks Workflow
+# description: 运行所有RDP相关nuclei模板的安全检查工作流，检测远程桌面协议服务的安全漏洞和配置问题
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: rdp-workflow
+
+info:
+  name: RDP Security Checks
+  author: pussycat0x
+  description: A simple workflow that runs all RDP related nuclei templates on a given target.
+workflows:
+  - template: javascript/detection/rdp-detect.yaml
+    subtemplates:
+      - tags: rdp

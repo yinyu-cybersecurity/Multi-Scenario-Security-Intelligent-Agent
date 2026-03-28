@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: WebTrees Exposed Installation
+# description: WebTrees is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Security Misconfiguration
+# severity: high
+# cve_id: N/A
+
+
+id: webtrees-install
+
+info:
+  name: WebTrees Exposed Installation
+  author: ritikchaddha
+  severity: high
+  description: WebTrees is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:webtrees:webtrees:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: webtrees
+    product: webtrees
+    shodan-query: title:"Setup wizard for webtrees"
+  tags: misconfig,webtrees,install,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>Setup wizard for webtrees'
+
+      - type: status
+        status:
+          - 200

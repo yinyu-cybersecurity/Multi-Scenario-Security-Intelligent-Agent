@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: MongoD Server - Exposure
+# description: MongoD Server - Exposure
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: mongod-exposure
+
+info:
+  name: MongoD Server - Exposure
+  author: DhiyaneshDk
+  severity: low
+  classification:
+    cpe: cpe:2.3:a:mongodb:mongodb:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: mongodb
+    product: mongodb
+    shodan-query: html:"mongod"
+  tags: mongod,exposure,info-leak,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>mongod"
+          - "List all commands"
+        condition: and
+
+      - type: status
+        status:
+          - 200

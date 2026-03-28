@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: Apache RocketMQ Console Panel - Detect
+# description: Apache RocketMQ Console panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: rocketmq-console-exposure
+
+info:
+  name: Apache RocketMQ Console Panel - Detect
+  author: pdteam
+  severity: info
+  description: Apache RocketMQ Console panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:apache:rocketmq:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: apache
+    product: rocketmq
+    shodan-query:
+      - http.title:"RocketMq-console-ng"
+      - http.title:"rocketmq-console-ng"
+      - http.title:"rocketmq"
+    fofa-query:
+      - title="rocketmq-console-ng"
+      - protocol="rocketmq"
+      - title="rocketmq"
+    google-query:
+      - intitle:"rocketmq"
+      - intitle:"rocketmq-console-ng"
+  tags: panel,apache,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers:
+      - type: word
+        words:
+          - "<title>RocketMq-console-ng</title>"

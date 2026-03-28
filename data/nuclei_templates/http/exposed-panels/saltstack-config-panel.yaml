@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: SaltStack Config Panel - Detect
+# description: SaltStack config panel was detected.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: saltstack-config-panel
+
+info:
+  name: SaltStack Config Panel - Detect
+  author: pussycat0x
+  severity: info
+  description: |
+    SaltStack config panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:saltstack:saltstack:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"SaltStack Config"
+    product: saltstack
+    vendor: saltstack
+  tags: panel,vmware,login,saltstack,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/login"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "SaltStack Config"
+
+      - type: status
+        status:
+          - 200

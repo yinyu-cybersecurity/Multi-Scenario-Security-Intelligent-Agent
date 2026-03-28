@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: ProcessWire 3.x Installer Exposure
+# description: ProcessWire 3.x is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: processwire-installer
+
+info:
+  name: ProcessWire 3.x Installer Exposure
+  author: pussycat0x
+  severity: high
+  description: ProcessWire 3.x is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:processwire:processwire:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 2
+    vendor: processwire
+    product: processwire
+    shodan-query: title:"ProcessWire 3.x Installer"
+  tags: misconfig,processwire,install,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+      - '{{BaseURL}}/install.php'
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>ProcessWire 3.x Installer'
+
+      - type: status
+        status:
+          - 200

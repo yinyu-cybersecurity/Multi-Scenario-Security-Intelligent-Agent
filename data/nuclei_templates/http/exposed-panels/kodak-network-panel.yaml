@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: Kedacom Network Keyboard Console Panel - Detect
+# description: A Kedacom network keyboard console panel was detected.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: kedacom-network-panel
+
+info:
+  name: Kedacom Network Keyboard Console Panel - Detect
+  author: DhiyaneshDk
+  severity: info
+  description: |
+    A Kedacom network keyboard console panel was detected.
+  metadata:
+    verified: true
+    max-request: 1
+    fofa-query: 网络键盘控制台
+  tags: panel,login,kedacom,network,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/login.html"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '网络键盘控制台'
+
+      - type: status
+        status:
+          - 200

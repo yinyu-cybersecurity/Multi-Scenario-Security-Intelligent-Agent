@@ -274,13 +274,32 @@ def _probe_metadata(provider: str) -> Dict:
 
 def _ai_decide_enum_strategy(provider: str, state: Dict) -> Dict:
     """AI决策枚举策略 - 根据上下文智能选择"""
-    prompt = f"""
-分析云资源枚举策略。
+    prompt = f"""你是一个云安全专家，专门进行云资源枚举和权限分析。
 
-云服务商: {provider}
-已知信息: {list(state.get("metadata_leaked", {}).keys())}
+## 任务
+根据已知信息，决定最优的云资源枚举策略。
 
-返回JSON: {{"keyword": "枚举关键词", "targets": ["s3", "iam"]}}
+## 当前环境
+- 云服务商: {provider}
+- 已泄露信息: {list(state.get("metadata_leaked", {}).keys())}
+- 已发现资源: {list(state.get("resources_found", [])[:5])}
+
+## 目标类型参考
+- AWS: s3, iam, ec2, lambda, rds, secretsmanager, cloudformation
+- GCP: storage, compute, cloudfunctions, bigquery, secretmanager
+- Azure: storage, vm, functions, keyvault, sql
+
+## 输出格式 (JSON)
+{{
+    "keyword": "用于枚举搜索的关键词",
+    "targets": ["s3", "iam", ...],
+    "reason": "选择这些目标的理由",
+    "priority": "high/medium/low"
+}}
+
+## 注意
+- 如果信息不足，返回空关键词和常见目标
+- 输出必须是有效的JSON格式
 """
     try:
         resp = llm_client.call_chat_completion(
@@ -312,18 +331,42 @@ def _ai_analyze_escalation(credentials: List, roles: List, state: Dict) -> List[
     if not credentials and not roles:
         return []
 
-    prompt = f"""
-分析云权限提升路径。
+    prompt = f"""你是一个云安全专家，专注于云环境权限提升分析。
 
-凭据数: {len(credentials)}
-角色数: {len(roles)}
+## 任务
+分析当前云环境中的权限提升路径。
 
-常见提权路径:
-- iam:PutRolePolicy
-- lambda:CreateFunction
-- sts:AssumeRole
+## 当前权限信息
+- 凭据数量: {len(credentials)}
+- 角色数量: {len(roles)}
+- 已发现权限: {state.get("permissions_discovered", [])[:10]}
 
-返回JSON: {{"paths": ["推荐的提权路径"]}}
+## 常见提权技术
+### AWS
+- iam:PutRolePolicy / iam:AttachRolePolicy - 添加权限到角色
+- lambda:CreateFunction - 创建Lambda执行任意代码
+- sts:AssumeRole - 角色链切换
+- secretsmanager:GetSecretValue - 获取敏感信息
+
+### GCP
+- iam.serviceAccounts.actAs - 服务账户模拟
+- cloudfunctions.functions.create - 创建云函数
+- compute.instances.create - 创建计算实例
+
+### Azure
+- Microsoft.Authorization/roleDefinitions/write - 创建自定义角色
+- Microsoft.Compute/virtualMachines/write - 创建虚拟机
+
+## 输出格式 (JSON)
+{{
+    "paths": ["推荐的提权路径"],
+    "risks": ["潜在风险点"],
+    "recommendation": "首选攻击路径建议"
+}}
+
+## 注意
+- 如果信息不足，返回可能的通用提权路径
+- 输出必须是有效的JSON格式
 """
     try:
         resp = llm_client.call_chat_completion(

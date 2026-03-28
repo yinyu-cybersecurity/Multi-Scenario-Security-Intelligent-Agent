@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Pillowfort User Name Information - Detect
+# description: Pillowfort user name information check was conducted.
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: pillowfort
+
+info:
+  name: Pillowfort User Name Information - Detect
+  author: dwisiswant0
+  severity: info
+  description: Pillowfort user name information check was conducted.
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cvss-score: 0
+    cwe-id: CWE-200
+  metadata:
+    max-request: 1
+  tags: osint,osint-social,pillowfort,discovery
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://www.pillowfort.social/{{user}}"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        part: body
+        words:
+          - "<meta property=\"og:site_name\" content=\"Pillowfort\">"

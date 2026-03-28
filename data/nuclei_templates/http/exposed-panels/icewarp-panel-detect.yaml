@@ -1,0 +1,53 @@
+# RAG Annotation:
+# name: IceWarp Login Panel - Detect
+# description: IceWarp login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: icewarp-panel-detect
+
+info:
+  name: IceWarp Login Panel - Detect
+  author: ritikchaddha
+  severity: info
+  description: IceWarp login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:icewarp:icewarp_server:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: icewarp
+    product: icewarp_server
+    shodan-query:
+      - title:"icewarp"
+      - http.title:"icewarp"
+    fofa-query: title="icewarp"
+    google-query: intitle:"icewarp"
+  tags: icewarp,panel,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/webmail/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: header
+        words:
+          - 'IceWarp'
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        part: header
+        group: 1
+        regex:
+          - 'Server: (.{4,20})'

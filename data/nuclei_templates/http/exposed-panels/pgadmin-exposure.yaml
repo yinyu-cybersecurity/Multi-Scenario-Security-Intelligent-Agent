@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: PostgreSQL pgAdmin Dashboard Panel - Detect
+# description: PostgreSQL pgAdmin Dashboard panel was detected.
+# vuln_type: Authentication Bypass
+# severity: info
+# cve_id: N/A
+
+
+id: pgadmin-exposure
+
+info:
+  name: PostgreSQL pgAdmin Dashboard Panel - Detect
+  author: princechaddha
+  severity: info
+  description: PostgreSQL pgAdmin Dashboard panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    max-request: 1
+  tags: unauth,pgadmin,postgres,panel,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/browser/"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "PGADMIN_LANGUAGE="
+        part: header
+
+      - type: word
+        words:
+          - "<title>pgAdmin"
+        part: body

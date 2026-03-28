@@ -1,0 +1,19 @@
+# RAG Annotation:
+# name: Splunk Security Checks Workflow
+# description: 运行所有Splunk相关nuclei模板的安全检查工作流，检测Splunk数据平台的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: splunk-workflow
+
+info:
+  name: Splunk Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all Splunk related nuclei templates on a given target.
+workflows:
+  - template: http/technologies/tech-detect.yaml
+    matchers:
+      - name: splunk
+        subtemplates:
+          - tags: splunk

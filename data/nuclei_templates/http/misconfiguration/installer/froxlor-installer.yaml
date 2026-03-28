@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: Froxlor Server Management - Installer
+# description: Detects the Froxlor Server Management Panel installation page.
+
+# vuln_type: Security Misconfiguration
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: froxlor-installer
+
+info:
+  name: Froxlor Server Management - Installer
+  author: DhiyaneshDK
+  severity: high
+  description: |
+    Detects the Froxlor Server Management Panel installation page.
+  reference:
+    - https://www.exploit-db.com/ghdb/8397
+  classification:
+    cpe: cpe:2.3:a:froxlor:froxlor:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: froxlor
+    product: froxlor
+    fofa-query: title="Froxlor Server Management Panel - Installation"
+  tags: misconfig,froxlor,installer,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/install/install.php"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Froxlor Server Management Panel - Installation"
+
+      - type: status
+        status:
+          - 200

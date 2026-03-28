@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: Speedtest Panel - Detection
+# description: Speedtest panel was discovered
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: speedtest-panel
+
+info:
+  name: Speedtest Panel - Detection
+  author: rxerium
+  severity: info
+  description: |
+    Speedtest panel was discovered
+  reference:
+    - https://github.com/alexjustesen/speedtest-tracker
+    - https://docs.speedtest-tracker.dev/
+  classification:
+    cpe: cpe:2.3:a:speed_test_project:speed_test:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: speed_test_project
+    product: speed_test
+    shodan-query: title:"Speedtest Tracker"
+  tags: speedtest,tracker,panel,login,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/admin/login"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Login -  Speedtest Tracker'
+
+      - type: status
+        status:
+          - 200

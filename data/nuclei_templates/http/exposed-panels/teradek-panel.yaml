@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: Teradek Cube Administrative Console - Panel
+# description: Teradek Cube Administrative Console - Panel
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: teradek-panel
+
+info:
+  name: Teradek Cube Administrative Console - Panel
+  author: DhiyaneshDk
+  severity: info
+  reference:
+    - https://www.facebook.com/photo/?fbid=612496907587499&set=a.467014098802448
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"Teradek Cube Administrative Console"
+  tags: panel,login,teradek,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/login.cs"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Teradek Cube Administrative Console'
+          - 'Password:'
+        condition: and
+
+      - type: status
+        status:
+          - 200

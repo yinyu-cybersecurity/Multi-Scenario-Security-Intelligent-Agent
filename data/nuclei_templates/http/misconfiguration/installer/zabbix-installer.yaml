@@ -1,0 +1,53 @@
+# RAG Annotation:
+# name: Zabbix Installation Exposure
+# description: Zabbix is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: zabbix-installer
+
+info:
+  name: Zabbix Installation Exposure
+  author: DhiyaneshDK
+  severity: high
+  description: Zabbix is susceptible to the Installation page exposure due to misconfiguration.
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query:
+      - http.favicon.hash:892542951
+      - http.title:"zabbix-server"
+      - cpe:"cpe:2.3:a:zabbix:zabbix"
+    product: zabbix
+    vendor: zabbix
+    fofa-query:
+      - icon_hash=892542951
+      - app="zabbix-监控系统" && body="saml"
+      - title="zabbix-server"
+    google-query: intitle:"zabbix-server"
+  tags: misconfig,zabbix,install,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/setup.php'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>Installation</title>'
+          - 'zabbix'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+
+      - type: status
+        status:
+          - 200

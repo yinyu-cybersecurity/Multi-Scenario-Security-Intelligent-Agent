@@ -1,0 +1,32 @@
+# RAG Annotation:
+# name: Facebook API Token
+# description: Facebook API Token
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: facebook-token
+
+info:
+  name: Facebook API Token
+  author: DhiyaneshDK
+  severity: info
+  reference:
+    - https://github.com/returntocorp/semgrep-rules/blob/develop/generic/secrets/gitleaks/facebook.yaml
+    - https://github.com/returntocorp/semgrep-rules/blob/develop/generic/secrets/gitleaks/facebook.go
+  metadata:
+    verified: true
+    max-request: 1
+  tags: facebook,exposure,tokens,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - (?i)(?:facebook)(?:[0-9a-z\-_\t .]{0,20})(?:[\s|']|[\s|"]){0,3}(?:=|>|:=|\|\|:|<=|=>|:)(?:'|\"|\s|=|\x60){0,5}([a-f0-9]{32})(?:['|\"|\n|\r|\s|\x60|;]|$)

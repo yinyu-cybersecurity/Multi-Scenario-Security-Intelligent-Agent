@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: openai phishing Detection
+# description: A openai phishing website was detected
+
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: openai-phish
+
+info:
+  name: openai phishing Detection
+  author: rxerium
+  severity: info
+  description: |
+    A openai phishing website was detected
+  reference:
+    - https://openai.com
+  metadata:
+    max-request: 1
+  tags: phishing,openai,osint,discovery,ai
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Log in to OpenAI to continue to OpenAI Platform.'
+
+      - type: status
+        status:
+          - 200
+
+      - type: dsl
+        dsl:
+          - '!contains(host,"openai.com")'

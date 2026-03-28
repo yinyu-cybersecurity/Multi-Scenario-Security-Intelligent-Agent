@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Codeforces User Name Information - Detect
+# description: Codeforces user name information check was conducted.
+# vuln_type: Remote Code Execution
+# severity: info
+# cve_id: N/A
+
+
+id: codeforces
+
+info:
+  name: Codeforces User Name Information - Detect
+  author: dwisiswant0
+  severity: info
+  description: Codeforces user name information check was conducted.
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cvss-score: 0
+    cwe-id: CWE-200
+  metadata:
+    max-request: 1
+  tags: osint,osint-coding,codeforces,discovery
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://codeforces.com/profile/{{user}}"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        part: body
+        words:
+          - " - Codeforces</title>"

@@ -1,0 +1,52 @@
+# RAG Annotation:
+# name: Sophos Mobile Panel - Detect
+# description: Sophos Mobile panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: sophos-mobile-panel
+
+info:
+  name: Sophos Mobile Panel - Detect
+  author: Adam Crosser,idealphase
+  severity: info
+  description: Sophos Mobile panel was detected.
+  reference:
+    - https://www.sophos.com/en-us/products/mobile-control
+    - https://www.sophos.com/en-us/support/downloads/sophos-mobile
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:sophos:mobile:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: sophos
+    product: mobile
+    shodan-query:
+      - http.title:"Sophos Mobile"
+      - http.title:"sophos mobile"
+      - http.favicon.hash:-1274798165
+    fofa-query:
+      - icon_hash=-1274798165
+      - title="sophos mobile"
+    google-query: intitle:"sophos mobile"
+  tags: panel,sophos,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/login.xhtml?faces-redirect=true'
+
+    matchers:
+      - type: word
+        words:
+          - "<title>Sophos Mobile</title>"
+
+    extractors:
+      - type: regex
+        group: 1
+        regex:
+          - 'src="\/javax\.faces\.resource\/texteditor\/texteditor\.js\.xhtml\?ln=primefaces&amp;v=(.+)"><\/script>'
+          - 'src="\/javax\.faces\.resource\/components\.js\.xhtml\?ln=primefaces&amp;v=(.+)"><\/script>'

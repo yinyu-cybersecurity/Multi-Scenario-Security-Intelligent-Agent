@@ -1,0 +1,50 @@
+# RAG Annotation:
+# name: Drupal User Enumeration [Redirect]
+# description: Drupal User Enumeration [Redirect]
+# vuln_type: Security Misconfiguration
+# severity: info
+# cve_id: N/A
+
+
+id: drupal-user-enum-redirect
+
+info:
+  name: Drupal User Enumeration [Redirect]
+  author: 0w4ys
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:drupal:drupal:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 4
+    vendor: drupal
+    product: drupal
+    shodan-query: http.component:"Drupal"
+  tags: drupal,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/user/0"
+      - "{{BaseURL}}/user/1"
+      - "{{BaseURL}}/user/2"
+      - "{{BaseURL}}/user/3"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: regex
+        regex:
+          - '(?i)Location: https?:\/\/[\w\.\-]+[:\/\w-]*\/users\/\w+'
+        part: header
+
+      - type: status
+        status:
+          - 301
+
+    extractors:
+      - type: regex
+        part: header
+        regex:
+          - 'users\/\w+'

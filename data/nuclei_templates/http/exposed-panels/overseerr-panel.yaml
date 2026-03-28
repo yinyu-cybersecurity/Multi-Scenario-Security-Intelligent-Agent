@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: Overseerr Panel - Detect
+# description: Overseerr is a request management and media discovery tool built to work with your existing Plex ecosystem.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: overseerr-panel
+
+info:
+  name: Overseerr Panel - Detect
+  author: rxerium
+  severity: info
+  description: |
+    Overseerr is a request management and media discovery tool built to work with your existing Plex ecosystem.
+  reference:
+    - https://overseerr.dev/
+    - https://github.com/sct/overseerr
+  metadata:
+    verified: true
+    max-request: 1
+    fofa-query: Overseerr account
+  tags: panel,overseerr,detect,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/login"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Sign In - Overseerr"
+
+      - type: status
+        status:
+          - 200

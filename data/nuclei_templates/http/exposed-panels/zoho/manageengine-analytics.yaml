@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: ZOHO ManageEngine Analytics Plus Panel - Detect
+# description: ZOHO ManageEngine analytics plus panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: manageengine-analytics
+
+info:
+  name: ZOHO ManageEngine Analytics Plus Panel - Detect
+  author: dhiyaneshDK
+  severity: info
+  description: ZOHO ManageEngine analytics plus panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:zohocorp:manageengine_analytics_plus:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: zohocorp
+    product: manageengine_analytics_plus
+    fofa-query:
+      - app="ZOHO-流量管理"
+      - app="zoho-流量管理"
+      - title="apex it help desk"
+    shodan-query: http.title:"apex it help desk"
+    google-query: intitle:"apex it help desk"
+  tags: panel,zoho,manageengine,zohocorp,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/iam/login'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>ManageEngine Analytics Plus</title>'
+
+      - type: status
+        status:
+          - 200

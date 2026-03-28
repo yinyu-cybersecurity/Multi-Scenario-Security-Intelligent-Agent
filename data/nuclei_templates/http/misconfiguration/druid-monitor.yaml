@@ -1,0 +1,33 @@
+# RAG Annotation:
+# name: Alibaba Druid Monitor Unauthorized Access
+# description: Alibaba Druid Monitor is exposed.
+# vuln_type: Authentication Bypass
+# severity: high
+# cve_id: N/A
+
+
+id: druid-monitor
+
+info:
+  name: Alibaba Druid Monitor Unauthorized Access
+  author: ohlinge
+  severity: high
+  description: Alibaba Druid Monitor is exposed.
+  metadata:
+    max-request: 1
+  tags: druid,alibaba,unauth,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/druid/index.html"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Druid Stat Index</title>'
+
+      - type: status
+        status:
+          - 200

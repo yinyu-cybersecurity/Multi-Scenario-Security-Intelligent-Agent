@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: Locust Exposure
+# description: Locust is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: medium
+# cve_id: N/A
+
+
+id: locust-exposure
+
+info:
+  name: Locust Exposure
+  author: DhiyaneshDK,bhutch
+  severity: medium
+  description: Locust is exposed.
+  classification:
+    cpe: cpe:2.3:a:locust:locust:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: locust
+    product: locust
+    shodan-query: title:"Locust"
+  tags: exposure,locust,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - '<title>Locust(?: for.+)?</title>'
+
+      - type: word
+        part: body
+        words:
+          - 'locust.js'
+          - 'Charts</a>'
+        condition: or
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Aha - Subdomain Takeover Detection
+# description: An Aha subdomain takeover was detected.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+id: aha-takeover
+
+info:
+  name: Aha - Subdomain Takeover Detection
+  author: pdteam
+  severity: high
+  description: An Aha subdomain takeover was detected.
+  reference:
+    - https://github.com/EdOverflow/can-i-take-over-xyz
+  metadata:
+    max-request: 1
+  tags: takeover,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - Host != ip
+
+      - type: word
+        words:
+          - There is no portal here ... sending you back to Aha!
+
+    extractors:
+      - type: dsl
+        dsl:
+          - cname

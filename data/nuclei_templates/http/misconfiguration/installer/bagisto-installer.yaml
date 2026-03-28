@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: Bagisto Installer Exposure
+# description: Bagisto is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: bagisto-installer
+
+info:
+  name: Bagisto Installer Exposure
+  author: ritikchaddha
+  severity: high
+  description: Bagisto is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:webkul:bagisto:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: webkul
+    product: bagisto
+    shodan-query: http.title:"Bagisto Installer"
+  tags: misconfig,bagisto,install,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/installer'
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Bagisto Installer'
+
+      - type: status
+        status:
+          - 200

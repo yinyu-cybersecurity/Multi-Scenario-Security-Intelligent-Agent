@@ -1,0 +1,17 @@
+# RAG Annotation:
+# name: Pentaho Security Checks Workflow
+# description: 运行所有Pentaho相关nuclei模板的安全检查工作流，检测Pentaho数据集成和商业智能平台的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: pentaho-workflow
+
+info:
+  name: Pentaho Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all Pentaho related nuclei templates on a given target.
+workflows:
+  - template: http/exposed-panels/pentaho-panel.yaml
+    subtemplates:
+      - tags: pentaho

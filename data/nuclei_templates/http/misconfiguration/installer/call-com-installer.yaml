@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Call.com Setup Page - Exposure
+# description: Detects exposed Call.com  Setup page.
+
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: call-com-installer
+
+info:
+  name: Call.com Setup Page - Exposure
+  author: DhiyaneshDK
+  severity: high
+  description: |
+    Detects exposed Call.com  Setup page.
+  reference:
+    - https://cal.com/
+  classification:
+    cpe: cpe:2.3:a:cal:cal.com:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: cal
+    product: cal.com
+    fofa-query: body="Setup | Cal.com"
+  tags: misconfig,install,exposure,cal,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/auth/setup"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Setup | Cal.com"
+          - "Minimum 15 characters long</li>"
+        condition: and
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: ESXi System Login Panel - Detect
+# description: ESXi System login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: esxi-system
+
+info:
+  name: ESXi System Login Panel - Detect
+  author: dhiyaneshDK
+  severity: info
+  description: ESXi System login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:o:vmware:esxi:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: vmware
+    product: esxi
+    shodan-query:
+      - html:"esxUiApp"
+      - http.html:"esxuiapp"
+      - cpe:"cpe:2.3:o:vmware:esxi"
+    fofa-query: body="esxuiapp"
+  tags: panel,esxi,vmware,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/ui/#/login'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'ng-app="esxUiApp"'
+
+      - type: status
+        status:
+          - 200

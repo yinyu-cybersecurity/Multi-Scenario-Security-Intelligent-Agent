@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: Elgg - Installation
+# description: Elgg Installation was discovered.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: elgg-installer
+
+info:
+  name: Elgg - Installation
+  author: s4e-io
+  severity: high
+  description: Elgg Installation was discovered.
+  reference:
+    - https://github.com/elgg/elgg
+  classification:
+    cpe: cpe:2.3:a:elgg:elgg:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: elgg
+    product: elgg
+    fofa-query: title="Welcome to Elgg"
+  tags: install,elgg,exposure,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/install.php"
+
+    matchers:
+      - type: dsl
+        dsl:
+          - 'contains_any(body,"Elgg Install : Welcome", "Installing Elgg", "Welcome to Elgg")'
+          - 'status_code == 200'
+        condition: and

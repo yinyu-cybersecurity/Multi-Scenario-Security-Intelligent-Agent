@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Detect Kong
+# description: The Cloud-Native API Gateway
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: kong-detect
+
+info:
+  name: Detect Kong
+  author: geeknik,joshlarsen
+  severity: info
+  description: The Cloud-Native API Gateway
+  reference:
+    - https://github.com/Kong/kong
+  metadata:
+    max-request: 1
+  tags: tech,kong,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "server: kong"
+          - "x-kong-response-latency"
+          - "x-kong-upstream-latency"
+          - "x-kong-proxy-latency"
+          - "x-kong-admin-request-id"
+        condition: or
+        case-insensitive: true
+
+    extractors:
+      - type: kval
+        kval:
+          - server

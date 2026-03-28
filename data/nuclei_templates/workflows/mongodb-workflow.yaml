@@ -1,0 +1,17 @@
+# RAG Annotation:
+# name: MongoDB Security Checks Workflow
+# description: 运行所有MongoDB相关nuclei模板的安全检查工作流，检测MongoDB数据库的安全漏洞和配置问题
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: mongodb-workflow
+
+info:
+  name: MongoDb Security Checks
+  author: pussycat0x
+  description: A simple workflow that runs all MongoDB related nuclei templates on a given target.
+workflows:
+  - template: network/detection/mongodb-detect.yaml
+    subtemplates:
+      - tags: mongodb

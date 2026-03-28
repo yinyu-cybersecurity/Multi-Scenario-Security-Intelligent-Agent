@@ -1,0 +1,19 @@
+# RAG Annotation:
+# name: Symfony Security Checks Workflow
+# description: 运行所有Symfony相关nuclei模板的安全检查工作流，检测Symfony PHP框架的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: symfony-workflow
+
+info:
+  name: Symfony Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all Symfony related nuclei templates on a given target.
+workflows:
+  - template: http/technologies/tech-detect.yaml
+    matchers:
+      - name: symfony
+        subtemplates:
+          - tags: symfony

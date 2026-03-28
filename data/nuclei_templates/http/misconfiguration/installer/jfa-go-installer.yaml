@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: jfa-go Setup Page - Exposure
+# description: Detects exposed jfa-go Setup page.
+
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: jfa-go-installer
+
+info:
+  name: jfa-go Setup Page - Exposure
+  author: DhiyaneshDK
+  severity: high
+  description: |
+    Detects exposed jfa-go Setup page.
+  reference:
+    - https://github.com/hrfee/jfa-go
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"Setup - jfa-go"
+  tags: misconfig,install,exposure,jfa-go,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Setup - jfa-go"
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: Spotify API Test
+# description: Spotify API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-spotify
+
+info:
+  name: Spotify API Test
+  author: zzeitlin
+  severity: info
+  reference:
+    - https://developer.spotify.com/documentation/general/guides/authorization-guide/
+  metadata:
+    max-request: 1
+  tags: token-spray,spotify
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://api.spotify.com/v1/me/player/devices"
+
+    headers:
+      Authorization: Bearer {{token}}
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"devices":'
+          - '"id":'
+          - '"is_active":'
+        condition: and

@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: Google Safe Browsing API Test
+# description: Google Link/Domain Flagging
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-safebrowsing
+
+info:
+  name: Google Safe Browsing API Test
+  author: daffainfo
+  severity: info
+  description: Google Link/Domain Flagging
+  reference:
+    - https://developers.google.com/books/docs/overview
+    - https://github.com/daffainfo/all-about-apikey/tree/main/google-safe-browsing
+  metadata:
+    max-request: 1
+  tags: token-spray,google,safebrowsing
+
+self-contained: true
+
+http:
+  - raw:
+      - |
+        POST https://safebrowsing.googleapis.com/v4/threatListUpdates:fetch?key={{token}} HTTP/1.1
+        Host: safebrowsing.googleapis.com
+        Content-Type: application/json
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"clientId"'
+          - '"clientVersion"'
+        condition: and

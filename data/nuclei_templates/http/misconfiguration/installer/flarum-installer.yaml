@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Flarum Installation Page - Exposure
+# description: Detects exposed Flarum installation pages which could allow unauthorized access or information disclosure.
+
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: flarum-installer
+
+info:
+  name: Flarum Installation Page - Exposure
+  author: DhiyaneshDK
+  severity: high
+  description: |
+    Detects exposed Flarum installation pages which could allow unauthorized access or information disclosure.
+  reference:
+    - https://flarum.org/
+  classification:
+    cpe: cpe:2.3:a:flarum:flarum:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: flarum
+    product: flarum
+    shodan-query: html:"Install Flarum"
+  tags: misconfig,install,exposure,flarum,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Install Flarum</title>"
+          - "Admin Password"
+        condition: and
+
+      - type: status
+        status:
+          - 200

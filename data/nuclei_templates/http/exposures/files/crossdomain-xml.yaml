@@ -1,0 +1,35 @@
+# RAG Annotation:
+# name: Insecure cross-domain.xml file
+# description: Insecure cross-domain.xml file
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: insecure-crossdomain
+
+info:
+  name: Insecure cross-domain.xml file
+  author: Borna Nematzadeh,nadino
+  severity: info
+  reference:
+    - https://www.acunetix.com/vulnerabilities/web/insecure-crossdomain-xml-file
+  metadata:
+    max-request: 1
+  tags: exposure,generic,files,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/crossdomain.xml"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        part: body
+        words:
+          - '<allow-access-from domain="*"/>'

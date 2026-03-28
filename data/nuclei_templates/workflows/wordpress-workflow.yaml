@@ -1,0 +1,17 @@
+# RAG Annotation:
+# name: WordPress Security Checks Workflow
+# description: 运行所有WordPress相关nuclei模板的安全检查工作流，检测WordPress内容管理系统的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: wordpress-workflow
+
+info:
+  name: Wordpress Security Checks
+  author: kiblyn11,zomsop82
+  description: A simple workflow that runs all wordpress related nuclei templates on a given target.
+workflows:
+  - template: http/technologies/wordpress-detect.yaml
+    subtemplates:
+      - tags: wordpress

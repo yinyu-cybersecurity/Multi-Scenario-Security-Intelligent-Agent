@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Intercom Takeover Detection
+# description: Intercom takeover was detected.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+id: intercom-takeover
+
+info:
+  name: Intercom Takeover Detection
+  author: pdteam
+  severity: high
+  description: Intercom takeover was detected.
+  reference:
+    - https://github.com/EdOverflow/can-i-take-over-xyz/issues/69
+  metadata:
+    max-request: 1
+  tags: takeover,intercom,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - Host != ip
+
+      - type: word
+        words:
+          - '<h1 class="headline">Uh oh. That page doesn\’t exist.</h1>'
+          - 'This page is reserved for artistic dogs.'
+        condition: and
+
+    extractors:
+      - type: dsl
+        dsl:
+          - cname

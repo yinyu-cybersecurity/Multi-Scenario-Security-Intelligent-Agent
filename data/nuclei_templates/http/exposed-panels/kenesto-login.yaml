@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: Kenesto - Login Detect
+# description: Kenesto login panel was discovered.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: kenesto-login
+
+info:
+  name: Kenesto - Login Detect
+  author: pussycat0x
+  severity: info
+  description: Kenesto login panel was discovered.
+  reference:
+    - https://www.kenesto.com/
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    max-request: 1
+    fofa-query: app="kenesto"
+  tags: login,tech,kenesto,panel,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/Kenesto/Account/LogOn?ReturnUrl=%2fkenesto"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>Welcome To Kenesto&reg;</title>'
+        condition: and
+
+      - type: status
+        status:
+          - 200

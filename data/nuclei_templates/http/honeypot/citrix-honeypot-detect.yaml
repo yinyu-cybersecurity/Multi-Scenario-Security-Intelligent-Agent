@@ -1,0 +1,49 @@
+# RAG Annotation:
+# name: Citrix Honeypot - Detect
+# description: A Citrix honeypot has been identified. The HTTP response reveals a possible setup of the Citrix web application honeypot.
+# vuln_type: Honeypot Detection
+# severity: info
+# cve_id: N/A
+
+id: citrix-honeypot-detect
+
+info:
+  name: Citrix Honeypot - Detect
+  author: UnaPibaGeek
+  severity: info
+  description: |
+    A Citrix honeypot has been identified.
+    The HTTP response reveals a possible setup of the Citrix web application honeypot.
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: citrix
+    product: citrix
+    shodan-query:
+      - http.title:“Citrix Login”
+      - http.title:“citrix login”
+    fofa-query: title=“citrix login”
+    google-query: intitle:“citrix login”
+  tags: citrix,honeypot,ir,cti,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - 'len(body)<2000'
+
+      - type: word
+        part: body
+        words:
+          - "<title>Citrix Login</title>"
+
+      - type: word
+        part: body
+        words:
+          - "In order to use our services, you must agree to Citrix's Terms of Service."
+        negative: true

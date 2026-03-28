@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: Apache Shiro Default Page
+# description: Apache Shiro Default Page
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: default-apache-shiro
+
+info:
+  name: Apache Shiro Default Page
+  author: DhiyaneshDK
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:apache:shiro:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: apache
+    product: shiro
+    shodan-query: title:"Apache Shiro Quickstart"
+  tags: tech,apache,shiro,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Apache Shiro Quickstart</title>"
+
+      - type: status
+        status:
+          - 200

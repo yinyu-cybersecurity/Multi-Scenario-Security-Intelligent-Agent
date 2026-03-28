@@ -1,0 +1,34 @@
+# RAG Annotation:
+# name: SonarCloud API Test
+# description: SonarCloud API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-sonarcloud
+
+info:
+  name: SonarCloud API Test
+  author: zzeitlin
+  severity: info
+  reference:
+    - https://sonarcloud.io/web_api/api/authentication
+  metadata:
+    max-request: 1
+  tags: token-spray,sonarcloud
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://sonarcloud.io/api/authentication/validate"
+
+    headers:
+      Authorization: Basic {{base64(token + ':')}}
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '{"valid": true}'

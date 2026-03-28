@@ -1,0 +1,36 @@
+# RAG Annotation:
+# name: Defaced Website - Detection
+# description: The detected website is defaced.
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: defaced-website-detect
+
+info:
+  name: Defaced Website - Detection
+  author: ggranjus
+  severity: info
+  description: The detected website is defaced.
+  metadata:
+    verified: 'true'
+    max-request: 1
+    shodan-query: http.title:"Hacked By"
+  tags: miscellaneous,defacement,misc,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - '(?i)<title>.*Hacked( By .+)?<\/title>'
+
+    extractors:
+      - type: xpath
+        xpath:
+          - '/html/head/title'

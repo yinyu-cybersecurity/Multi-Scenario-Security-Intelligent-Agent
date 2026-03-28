@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Oracle HTTPServer12c
+# description: Oracle HTTPServer12c
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: oracle-httpserver12c
+
+info:
+  name: Oracle HTTPServer12c
+  author: tess,dhiyaneshDK
+  severity: info
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.html:"Oracle HTTP Server"
+  tags: tech,oracle,httpserver,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>Oracle HTTP Server 12c</title>'
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,36 @@
+# RAG Annotation:
+# name: Jira Unauthenticated Dashboards
+# description: Jira Unauthenticated Dashboards
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+---
+id: jira-unauthenticated-dashboards
+
+info:
+  name: Jira Unauthenticated Dashboards
+  author: TechbrunchFR
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:atlassian:jira:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: atlassian
+    product: jira
+    shodan-query: http.component:"Atlassian Jira"
+  tags: atlassian,jira,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/rest/api/2/dashboard?maxResults=100"
+
+    matchers:
+      - type: word
+        words:
+          - 'dashboards'
+          - 'startAt'
+          - 'maxResults'
+        condition: and

@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: Wiki.js Setup - Exposure
+# description: Checks for the presence of a Wiki.js Setup Page.
+
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: wiki-js-installer
+
+info:
+  name: Wiki.js Setup - Exposure
+  author: DhiyaneshDk
+  severity: high
+  description: |
+    Checks for the presence of a Wiki.js Setup Page.
+  classification:
+    cpe: cpe:2.3:a:requarks:wiki.js:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: requarks
+    product: wiki.js
+    shodan-query: title:"Wiki.js Setup"
+  tags: install,wiki-js,exposure,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Wiki.js Setup</title>"
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,50 @@
+# RAG Annotation:
+# name: SolarView Compact Panel - Detect
+# description: SolarView Compact panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: solarview-compact-panel
+
+info:
+  name: SolarView Compact Panel - Detect
+  author: princechaddha
+  severity: info
+  description: SolarView Compact panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:o:contec:solarview_compact_firmware:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: contec
+    product: solarview_compact_firmware
+    shodan-query:
+      - http.html:"SolarView Compact"
+      - http.favicon.hash:"-244067125"
+      - http.html:"solarview compact"
+      - cpe:"cpe:2.3:o:contec:solarview_compact_firmware"
+    fofa-query:
+      - body="solarview compact" && title="top"
+      - icon_hash="-244067125"
+      - body="solarview compact"
+  tags: panel,solarview,iot,contec,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/Solar_Menu.php"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "SolarViewCompact"
+
+      - type: status
+        status:
+          - 200

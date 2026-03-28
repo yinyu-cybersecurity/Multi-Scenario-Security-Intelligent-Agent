@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Readme.io Takeover Detection
+# description: Readme.io takeover was detected.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+id: readme-takeover
+
+info:
+  name: Readme.io Takeover Detection
+  author: pdteam
+  severity: high
+  description: Readme.io takeover was detected.
+  reference:
+    - https://github.com/EdOverflow/can-i-take-over-xyz/issues/41
+  metadata:
+    max-request: 1
+  tags: takeover,readme,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - Host != ip
+
+      - type: word
+        words:
+          - 'Project doesnt exist... yet!'
+
+    extractors:
+      - type: dsl
+        dsl:
+          - cname

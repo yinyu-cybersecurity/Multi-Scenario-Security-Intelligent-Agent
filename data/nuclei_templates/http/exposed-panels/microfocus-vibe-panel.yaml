@@ -1,0 +1,57 @@
+# RAG Annotation:
+# name: Micro Focus Vibe Login Panel - Detect
+# description: Micro Focus Vibe login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: microfocus-vibe-panel
+
+info:
+  name: Micro Focus Vibe Login Panel - Detect
+  author: ritikchaddha,righettod
+  severity: info
+  description: Micro Focus Vibe login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:microfocus:vibe:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: microfocus
+    product: vibe
+    shodan-query:
+      - http.html:"Micro Focus Vibe"
+      - http.html:"micro focus vibe"
+    fofa-query: body="micro focus vibe"
+  tags: panel,microfocus,vibe,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/ssf/s/portalLogin"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Micro Focus Vibe"
+          - "baseVibeUrl"
+        condition: and
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        part: body
+        group: 1
+        regex:
+          - '(?i)Copyright\s+([0-9-]+)\s+Micro\s+Focus'

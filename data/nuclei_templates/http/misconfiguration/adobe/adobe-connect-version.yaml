@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: Adobe Connect Central Version
+# description: Adobe Connect Central Version
+# vuln_type: Security Misconfiguration
+# severity: info
+# cve_id: N/A
+
+
+id: adobe-connect-version
+
+info:
+  name: Adobe Connect Central Version
+  author: dhiyaneshDk
+  severity: info
+  metadata:
+    max-request: 1
+  tags: adobe,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/version.txt"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'package='
+        part: body
+
+      - type: word
+        words:
+          - 'text/plain'
+        part: header
+
+      - type: status
+        status:
+          - 200

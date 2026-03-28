@@ -1,0 +1,62 @@
+# RAG Annotation:
+# name: Salesforce Tableau Server - Detect
+# description: Detects Salesforce Tableau Server and extracts the buildid.
+
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+
+
+id: tableau-server-detect
+
+info:
+  name: Salesforce Tableau Server - Detect
+  author: TechbrunchFR,aringo
+  severity: info
+  description: |
+    Detects Salesforce Tableau Server and extracts the buildid.
+  metadata:
+    max-request: 1
+    vendor: salesforce
+    product: tableau_server
+    shodan-query:
+      - product:"Tableau Server"
+      - "X-Tableau: Tableau Server"
+      - "Server: Tableau"
+      - http.favicon.hash:-1441956789
+    fofa-query:
+      - "X-Tableau: Tableau Server"
+      - server=="Tableau"
+      - icon_hash="-1441956789"
+    zoomeye-query: app:"Tableau Server"
+  tags: tech,detect,tableau,salesforce,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "X-Tableau: Tableau Server"
+          - "Server: Tableau"
+        condition: or
+
+      - type: word
+        part: body
+        words:
+          - "VizPortalRun"
+          - "vizportal"
+        condition: or
+
+    extractors:
+      - type: regex
+        part: body
+        group: 1
+        regex:
+          - 'data-build[iI]d="([0-9a-z_]*)'

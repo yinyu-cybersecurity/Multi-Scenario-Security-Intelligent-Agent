@@ -1,0 +1,35 @@
+# RAG Annotation:
+# name: OpenAI API Key
+# description: OpenAI API Key
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: openai-api-key
+
+info:
+  name: OpenAI API Key
+  author: DhiyaneshDK,Chemo850
+  severity: info
+  reference:
+    - https://github.com/praetorian-inc/noseyparker/blob/main/crates/noseyparker/data/default/builtin/rules/openai.yml
+    - https://platform.openai.com/docs/api-reference
+    - https://platform.openai.com/docs/api-reference/authentication
+    - https://platform.openai.com/settings/organization/api-keys
+  metadata:
+    verified: true
+    max-request: 1
+  tags: openai,token,exposure,vuln,ai
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - "(sk-[a-zA-Z0-9]{48})"
+          - "sk-proj-[A-Za-z0-9_-]{74}T3BlbkFJ[A-Za-z0-9_-]{74}"

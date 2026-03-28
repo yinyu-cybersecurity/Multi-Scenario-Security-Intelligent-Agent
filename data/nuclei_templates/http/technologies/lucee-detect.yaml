@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Detect Lucee
+# description: Lucee Server is a dynamic, Java based (JSR-223), tag and scripting language used for rapid web application development -- https://github.com/lucee/Lucee/
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: lucee-detect
+
+info:
+  name: Detect Lucee
+  author: geeknik,DhiyaneshDK
+  severity: info
+  description: Lucee Server is a dynamic, Java based (JSR-223), tag and scripting language used for rapid web application development -- https://github.com/lucee/Lucee/
+  metadata:
+    max-request: 2
+    shodan-query: "html:\"Lucee\""
+    fofa-query: "app=\"Lucee-Engine\""
+  tags: tech,lucee,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/lucee/doc/functions.cfm"
+      - "{{BaseURL}}"
+
+    stop-at-first-match: true
+    matchers-condition: or
+    matchers:
+      - type: regex
+        part: header
+        regex:
+          - "(?i)X-Lucee-Version"
+          - "(?i)X-CB-Server: LUCEE"
+          - "(?i)X-IDG-Appserver: Lucee"
+        condition: or
+
+      - type: word
+        part: body
+        words:
+          - "Lucee Function Reference"

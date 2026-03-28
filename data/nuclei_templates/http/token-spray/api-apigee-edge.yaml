@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Apigee Edge API Test
+# description: Apigee Edge API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-apigee-edge
+
+info:
+  name: Apigee Edge API Test
+  author: dwisiswant0
+  severity: info
+  reference:
+    - https://apidocs.apigee.com/apis
+  metadata:
+    max-request: 1
+  tags: token-spray,apigee
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://apimonitoring.enterprise.apigee.com/alerts"
+
+    headers:
+      Authorization: Bearer {{token}}
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        part: body
+        words:
+          - '"uuid":'
+          - '"name":'
+        condition: and

@@ -1,0 +1,35 @@
+# RAG Annotation:
+# name: GoAnywhere Web Client Login Panel - Detect
+# description: GoAnywhere Web Client login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: go-anywhere-client
+
+info:
+  name: GoAnywhere Web Client Login Panel - Detect
+  author: iamthefrogy
+  severity: info
+  description: GoAnywhere Web Client login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    max-request: 1
+  tags: panel,goanywhere,login,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/webclient/Login.xhtml"
+
+    host-redirects: true
+    max-redirects: 2
+    matchers:
+      - type: word
+        words:
+          - "Powered by GoAnywhere"
+          - "GoAnywhere.com"
+        condition: or

@@ -1,0 +1,19 @@
+# RAG Annotation:
+# name: b2evolution CMS Security Checks Workflow
+# description: 运行所有b2evolution CMS相关nuclei模板的安全检查工作流，检测b2evolution内容管理系统的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: b2evolution-workflow
+
+info:
+  name: b2evolution CMS Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all b2evolution CMS related nuclei templates on a given target.
+workflows:
+  - template: http/technologies/fingerprinthub-web-fingerprints.yaml
+    matchers:
+      - name: b2evolution
+        subtemplates:
+          - tags: b2evolution

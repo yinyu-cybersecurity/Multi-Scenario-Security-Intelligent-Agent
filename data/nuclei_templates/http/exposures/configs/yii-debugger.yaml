@@ -1,0 +1,57 @@
+# RAG Annotation:
+# name: View Yii Debugger Information
+# description: Detects potential exposure to Yii Debugger information.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: yii-debugger
+
+info:
+  name: View Yii Debugger Information
+  author: geeknik,rumble773
+  severity: low
+  description: Detects potential exposure to Yii Debugger information.
+  reference:
+    - https://yii2-framework.readthedocs.io/en/stable/guide/tool-debugger/
+  classification:
+    cpe: cpe:2.3:a:yii_software:yii:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 6
+    vendor: yii_software
+    product: yii
+    shodan-query: title:"Yii Debugger"
+  tags: yii,debug,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/debug/default/view.html"
+      - "{{BaseURL}}/debug/default/view"
+      - "{{BaseURL}}/frontend/web/debug/default/view"
+      - "{{BaseURL}}/web/debug/default/view"
+      - "{{BaseURL}}/sapi/debug/default/view"
+      - "{{BaseURL}}/debug/default"
+
+    host-redirects: true
+    max-redirects: 2
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "<title>Yii Debugger</title>"
+          - "Status"
+          - "Route"
+          - "Log"
+          - "Time"
+          - "Memory"
+          - "DB"
+        condition: and
+
+      - type: status
+        status:
+          - 200

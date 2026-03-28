@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: OKI Data Panel - Detect
+# description: OKI Data panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: oki-data-corporation
+
+info:
+  name: OKI Data Panel - Detect
+  author: dhiyaneshDK
+  severity: info
+  description: OKI Data panel was detected.
+  reference:
+    - https://www.exploit-db.com/ghdb/5937
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    max-request: 1
+  tags: panel,oki,edb,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/status.htm'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Oki Data Corporation'
+
+      - type: status
+        status:
+          - 200

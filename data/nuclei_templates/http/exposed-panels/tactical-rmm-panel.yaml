@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: Tactical RMM Login Panel - Detect
+# description: Tactical RMM login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: tactical-rmm-panel
+
+info:
+  name: Tactical RMM Login Panel - Detect
+  author: johnk3r
+  severity: info
+  description: Tactical RMM login panel was detected.
+  classification:
+    cwe-id: CWE-200
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.title:"Tactical RMM - Login"
+  tags: panel,tacticalrmm,login,detect,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Tactical RMM - Login"
+
+      - type: status
+        status:
+          - 200

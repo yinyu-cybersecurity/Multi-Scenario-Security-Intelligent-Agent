@@ -1,0 +1,36 @@
+# RAG Annotation:
+# name: Kronos Workforce Central Login Panel - Detect
+# description: Kronos Workforce Central login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: kronos-workforce-central
+
+info:
+  name: Kronos Workforce Central Login Panel - Detect
+  author: emadshanab,missing0x00
+  severity: info
+  description: Kronos Workforce Central login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    max-request: 2
+  tags: panel,kronos,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/wfc/portal'
+      - '{{BaseURL}}/wfc/logon'
+
+    stop-at-first-match: true
+
+    matchers:
+      - type: regex
+        regex:
+          - 'Kronos'
+          - 'Workforce Central(R)'
+        condition: or

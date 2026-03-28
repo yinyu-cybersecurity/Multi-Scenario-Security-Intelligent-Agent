@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: Pagewiz subdomain takeover
+# description: Pagewiz takeover was detected.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+id: pagewiz-takeover
+
+info:
+  name: Pagewiz subdomain takeover
+  author: brabbit10
+  severity: high
+  description: Pagewiz takeover was detected.
+  reference:
+    - https://help.pagewiz.com/hc/en-us/articles/115005391465-Page-URL
+  metadata:
+    max-request: 1
+  tags: takeover,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - Host != ip
+
+      - type: word
+        words:
+          - '404 - Page Not Found'
+          - 'Start Your New Landing Page Now!'
+          - 'pagewiz'
+        condition: and
+
+    extractors:
+      - type: dsl
+        dsl:
+          - cname

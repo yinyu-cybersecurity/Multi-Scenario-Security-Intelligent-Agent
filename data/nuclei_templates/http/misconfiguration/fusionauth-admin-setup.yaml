@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: FusionAuth Exposed Admin Setup
+# description: FusionAuth Admin Setup is exposed.
+# vuln_type: Authentication Bypass
+# severity: high
+# cve_id: N/A
+
+
+id: fusionauth-admin-setup
+
+info:
+  name: FusionAuth Exposed Admin Setup
+  author: ritikchaddha
+  severity: high
+  description: FusionAuth Admin Setup is exposed.
+  classification:
+    cpe: cpe:2.3:a:fusionauth:fusionauth:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: fusionauth
+    product: fusionauth
+    shodan-query: title:"FusionAuth Setup Wizard"
+    fofa-query: title="FusionAuth Setup Wizard"
+  tags: misconfig,fusionauth,admin,setup,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/admin/setup-wizard"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>FusionAuth Setup Wizard'
+          - 'FusionAuth is now installed and running'
+        condition: or
+
+      - type: status
+        status:
+          - 200

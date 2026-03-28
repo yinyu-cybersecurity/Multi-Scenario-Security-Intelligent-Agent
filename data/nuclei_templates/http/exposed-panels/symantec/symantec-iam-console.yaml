@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: Symantec Identity Manager Management Console
+# description: Management Console to administrate Symantec Identity Manager environment, authentication is sometimes disabled.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: symantec-iam-console
+
+info:
+  name: Symantec Identity Manager Management Console
+  author: therealtoastycat
+  severity: info
+  description: |
+    Management Console to administrate Symantec Identity Manager environment, authentication is sometimes disabled.
+  reference:
+    - https://techdocs.broadcom.com/us/en/symantec-security-software/identity-security/identity-manager/14-4/configuring/environments-overview/management-console.html
+  classification:
+    cpe: cpe:2.3:a:broadcom:symantec_identity_manager:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: broadcom
+    product: symantec_identity_manager
+  tags: symantec,panel,login,broadcom,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/iam/immanage/login.jsp"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "<title>Management Console</title>"
+        part: body
+
+      - type: status
+        status:
+          - 200

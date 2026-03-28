@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: MAC Address Lookup API Test
+# description: Retrieve vendor details and other information regarding a given MAC address or an OUI
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-mac-address-lookup
+
+info:
+  name: MAC Address Lookup API Test
+  author: daffainfo
+  severity: info
+  description: Retrieve vendor details and other information regarding a given MAC address or an OUI
+  reference:
+    - https://macaddress.io/api
+    - https://github.com/daffainfo/all-about-apikey/tree/main/mac-address-lookup
+  metadata:
+    max-request: 1
+  tags: token-spray,macaddresslookup
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://api.macaddress.io/v1?apiKey={{token}}&output=json&search=44:38:39:ff:ef:57"
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"vendorDetails"'
+          - '"companyName"'
+          - '"companyAddress"'
+        condition: and

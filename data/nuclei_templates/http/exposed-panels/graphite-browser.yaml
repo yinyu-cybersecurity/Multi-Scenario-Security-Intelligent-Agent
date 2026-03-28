@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: Graphite Browser Login Panel - Detect
+# description: Graphite Browser login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: graphite-browser
+
+info:
+  name: Graphite Browser Login Panel - Detect
+  author: 0x_Akoko
+  severity: info
+  description: Graphite Browser login panel was detected.
+  reference:
+    - https://graphiteapp.org/
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:graphite_project:graphite:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    shodan-query: http.title:"Graphite Browser"
+    product: graphite
+    vendor: graphite_project
+  tags: graphite,panel,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Graphite Browser</title>"
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: MAGMI (Magento Mass Importer) Plugin Detect
+# description: MAGMI (Magento Mass Importer) Plugin Detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: magmi-detect
+
+info:
+  name: MAGMI (Magento Mass Importer) Plugin Detect
+  author: dwisiswant0
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:magmi_project:magmi:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: magmi_project
+    product: magmi
+    shodan-query: http.component:"Magento"
+  tags: magento,magmi,plugin,tech,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/magmi/web/js/magmi_utils.js"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "magmi_multifield"
+        part: body
+
+      - type: status
+        status:
+          - 200

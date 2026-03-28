@@ -1,0 +1,33 @@
+# RAG Annotation:
+# name: IIS Windows Server Default Page
+# description: IIS Windows Server Default Page
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: default-windows-server-page
+
+info:
+  name: IIS Windows Server Default Page
+  author: dhiyaneshDk
+  severity: info
+  classification:
+    cpe: cpe:2.3:o:microsoft:windows_server_2003:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: microsoft
+    product: windows_server_2003
+    shodan-query: http.title:"IIS Windows Server"
+  tags: tech,windows,iis,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers:
+      - type: word
+        words:
+          - "<title>IIS Windows Server</title>"
+        part: body

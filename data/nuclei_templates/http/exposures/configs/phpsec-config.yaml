@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: phpspec Config - Detect
+# description: phpspec configuration information was detected.
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: phpsec-config
+
+info:
+  name: phpspec Config - Detect
+  author: DhiyaneshDK
+  severity: info
+  description: phpspec configuration information was detected.
+  reference:
+    - https://phpspec.net/en/stable/cookbook/configuration.html
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cvss-score: 0
+    cwe-id: CWE-200
+  metadata:
+    verified: true
+    max-request: 2
+    shodan-query: html:"phpspec.yml"
+  tags: exposure,phpsec,php,devops,cicd,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.phpspec.yml"
+      - "{{BaseURL}}/phpspec.yml"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'suites:'
+          - 'main:'
+          - 'namespace:'
+        condition: and
+
+      - type: status
+        status:
+          - 200

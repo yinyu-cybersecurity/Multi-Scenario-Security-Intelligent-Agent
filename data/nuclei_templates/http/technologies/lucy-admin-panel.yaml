@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Lucy Security Admin Panel
+# description: Lucy Security Admin Panel
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: lucy-admin-panel
+
+info:
+  name: Lucy Security Admin Panel
+  author: ritikchaddha
+  severity: info
+  metadata:
+    verified: true
+    max-request: 2
+    shodan-query: html:'title="Lucy'
+  tags: tech,lucy,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+      - "{{BaseURL}}/admin/login"
+
+    stop-at-first-match: true
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'title="Lucy"'
+          - 'aria-label="Lucy'
+        condition: or
+
+      - type: status
+        status:
+          - 200

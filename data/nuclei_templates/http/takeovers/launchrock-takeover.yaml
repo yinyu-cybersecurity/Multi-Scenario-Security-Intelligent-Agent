@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Launchrock Takeover Detection
+# description: Launchrock takeover was detected.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+id: launchrock-takeover
+
+info:
+  name: Launchrock Takeover Detection
+  author: pdteam
+  severity: high
+  description: Launchrock takeover was detected.
+  reference:
+    - https://github.com/EdOverflow/can-i-take-over-xyz/issues/74
+  metadata:
+    max-request: 1
+  tags: takeover,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - Host != ip
+
+      - type: word
+        words:
+          - It looks like you may have taken a wrong turn somewhere. Don't worry...it happens to all of us.
+
+    extractors:
+      - type: dsl
+        dsl:
+          - cname

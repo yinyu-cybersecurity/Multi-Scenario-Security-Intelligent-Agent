@@ -1,0 +1,49 @@
+# RAG Annotation:
+# name: Detects Springboot Features Actuator
+# description: Springboot Features Actuator is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: springboot-features
+
+info:
+  name: Detects Springboot Features Actuator
+  author: DhiyaneshDK
+  severity: low
+  description: Springboot Features Actuator is exposed.
+  metadata:
+    verified: true
+    max-request: 2
+    shodan-query: title:"Eureka"
+  tags: misconfig,springboot,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/features"
+      - "{{BaseURL}}/actuator/features"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"enabled":['
+          - '"disabled":['
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "application/json"
+          - "application/vnd.spring-boot.actuator"
+          - "application/vnd.spring-boot.actuator.v1+json"
+        condition: or
+
+      - type: status
+        status:
+          - 200

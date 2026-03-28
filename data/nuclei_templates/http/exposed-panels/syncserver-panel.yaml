@@ -1,0 +1,51 @@
+# RAG Annotation:
+# name: Symmetricom SyncServer Panel - Detect
+# description: Symmetricom SyncServer Panel - Detect
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: syncserver-panel
+
+info:
+  name: Symmetricom SyncServer Panel - Detect
+  author: DhiyaneshDk
+  severity: info
+  classification:
+    cpe: cpe:2.3:o:microchip:syncserver_s650_firmware:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: microchip
+    product: syncserver_s650_firmware
+    shodan-query:
+      - html:"Symmetricom SyncServer"
+      - http.html:"symmetricom syncserver"
+    fofa-query: body="symmetricom syncserver"
+  tags: panel,login,syncserver,symmetricom,detect,microchip,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/login.php"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Symmetricom SyncServer'
+          - 'login'
+        condition: and
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        part: body
+        group: 1
+        regex:
+          - "Symmetricom SyncServer ([A-Z0-9]+)"

@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: Prometheus Promtail - Exposure
+# description: Prometheus Promtail is an agent that gathers log data from various sources, such as files or systemd journal.
+
+# vuln_type: Sensitive Data Exposure
+# severity: medium
+# cve_id: N/A
+
+
+
+
+id: prometheus-promtail
+
+info:
+  name: Prometheus Promtail - Exposure
+  author: irshad ahamed
+  severity: medium
+  description: |
+    Prometheus Promtail is an agent that gathers log data from various sources, such as files or systemd journal.
+  reference:
+    - https://grafana.com/docs/loki/latest/clients/promtail/
+    - https://github.com/grafana/loki/issues/8680
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.favicon.hash:932345713
+  tags: misconfig,prometheus,promtail,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/service-discovery"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '>Promtail</a>'
+          - 'https://github.com/grafana/loki'
+        condition: and
+
+      - type: status
+        status:
+          - 200

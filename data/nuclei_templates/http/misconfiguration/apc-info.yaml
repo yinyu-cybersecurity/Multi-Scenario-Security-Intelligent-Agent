@@ -1,0 +1,33 @@
+# RAG Annotation:
+# name: APCu service information leakage
+# description: APCu service is vulnerable to information leakage.
+# vuln_type: Security Misconfiguration
+# severity: low
+# cve_id: N/A
+
+
+id: apcu-service
+
+info:
+  name: APCu service information leakage
+  author: koti2
+  severity: low
+  description: APCu service is vulnerable to information leakage.
+  metadata:
+    max-request: 2
+  tags: config,service,apcu,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/apc/apc.php"
+      - "{{BaseURL}}/apc.php"
+
+    stop-at-first-match: true
+    matchers:
+      - type: word
+        words:
+          - "APCu Version Information"
+          - "General Cache Information"
+          - "Detailed Memory Usage and Fragmentation"
+        condition: or

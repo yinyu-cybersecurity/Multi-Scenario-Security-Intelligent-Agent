@@ -1,0 +1,34 @@
+# RAG Annotation:
+# name: Apache Flink Login Panel - Detect
+# description: Apache Flink login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: flink-exposure
+
+info:
+  name: Apache Flink Login Panel - Detect
+  author: pdteam
+  severity: info
+  description: Apache Flink login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:apache:flink:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: apache
+    product: flink
+  tags: panel,apache,flink,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers:
+      - type: word
+        words:
+          - '<title>Apache Flink Web Dashboard</title>'

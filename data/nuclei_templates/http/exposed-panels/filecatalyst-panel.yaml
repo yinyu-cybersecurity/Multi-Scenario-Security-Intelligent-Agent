@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: FileCatalyst File Transfer Solution - Detect
+# description: Detects the presence of FileCatalyst file transfer solution login panel
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: filecatalyst-panel
+
+info:
+  name: FileCatalyst File Transfer Solution - Detect
+  author: DhiyaneshDK
+  severity: info
+  description: |
+    Detects the presence of FileCatalyst file transfer solution login panel
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"FileCatalyst file transfer solution"
+  tags: panel,login,filecatalyst,detect,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/workflow/jsp/logon.jsp"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "FileCatalyst file transfer solution"
+
+      - type: status
+        status:
+          - 200

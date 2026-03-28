@@ -1,0 +1,17 @@
+# RAG Annotation:
+# name: Pega Security Checks Workflow
+# description: 运行所有Pega相关nuclei模板的安全检查工作流，检测Pega业务流程管理系统的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: pega-workflow
+
+info:
+  name: Pega Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all Pega related nuclei templates on a given target.
+workflows:
+  - template: http/technologies/pega-detect.yaml
+    subtemplates:
+      - tags: pega

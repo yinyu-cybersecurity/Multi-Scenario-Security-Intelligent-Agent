@@ -1,0 +1,49 @@
+# RAG Annotation:
+# name: Icinga Web 2 Login Panel - Detect
+# description: Icinga Web 2 login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: icinga-web-login
+
+info:
+  name: Icinga Web 2 Login Panel - Detect
+  author: dhiyaneshDK
+  severity: info
+  description: Icinga Web 2 login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:icinga:icinga_web_2:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: icinga
+    product: icinga_web_2
+    shodan-query:
+      - http.title:"Icinga Web 2 Login"
+      - http.title:"icinga"
+      - http.title:"icinga web 2 login"
+    fofa-query:
+      - title="icinga web 2 login"
+      - title="icinga"
+    google-query:
+      - intitle:"icinga web 2 login"
+      - intitle:"icinga"
+  tags: panel,icinga,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/authentication/login'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "<title>Icinga Web 2 Login</title>"
+
+      - type: status
+        status:
+          - 200

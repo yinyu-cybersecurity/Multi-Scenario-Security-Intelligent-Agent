@@ -1,0 +1,33 @@
+# RAG Annotation:
+# name: TLS SNI Proxy Detection
+# description: TLS SNI Proxy Detection
+# vuln_type: Server-Side Request Forgery
+# severity: info
+# cve_id: N/A
+
+
+id: tls-sni-proxy
+
+info:
+  name: TLS SNI Proxy Detection
+  author: pdteam
+  severity: info
+  reference:
+    - https://www.invicti.com/blog/web-security/ssrf-vulnerabilities-caused-by-sni-proxy-misconfigurations/
+    - https://www.bamsoftware.com/computers/sniproxy/
+  metadata:
+    max-request: 1
+  tags: misconfig,ssrf,oast,tls,sni,proxy,vuln
+
+http:
+  - raw:
+      - |
+        @tls-sni: interactsh-url
+        GET HTTP/1.1
+        Host: {{Hostname}}
+
+    matchers:
+      - type: word
+        part: interactsh_protocol # Confirms the DNS Interaction
+        words:
+          - "dns"

@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Confluence OAuth Administration Endpoint
+# description: Confluence OAuth Administration Endpoint
+# vuln_type: Security Misconfiguration
+# severity: info
+# cve_id: N/A
+
+
+id: confluence-oauth-admin
+
+info:
+  name: Confluence OAuth Administration Endpoint
+  author: DhiyaneshDK
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:atlassian:confluence_server:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 2
+    vendor: atlassian
+    product: confluence_server
+    shodan-query: http.component:"Atlassian Confluence"
+  tags: misconfig,jira,confluence,atlassian,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/plugins/servlet/oauth/view-consumer-info"
+      - "{{BaseURL}}/confluence/plugins/servlet/oauth/view-consumer-info"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>OAuth Consumer Information'
+          - 'OAuth Administration'
+
+      - type: status
+        status:
+          - 200

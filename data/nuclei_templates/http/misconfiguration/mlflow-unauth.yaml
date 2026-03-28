@@ -1,0 +1,50 @@
+# RAG Annotation:
+# name: Mlflow - Unauthenticated Access
+# description: Unauthenticated Access to MLflow dashboard.
+
+# vuln_type: Authentication Bypass
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: mlflow-unauth
+
+info:
+  name: Mlflow - Unauthenticated Access
+  author: pussycat0x
+  severity: high
+  description: |
+    Unauthenticated Access to MLflow dashboard.
+  remediation: Add User Authentication
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.title:"mlflow"
+    product: mlflow
+    vendor: lfprojects
+    fofa-query:
+      - app="mlflow"
+      - title="mlflow"
+    google-query: intitle:"mlflow"
+  tags: unauth,mlflow,oss,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/ajax-api/2.0/preview/mlflow/experiments/get?experiment_id=0"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "experiment_id"
+          - "name"
+          - "artifact_location"
+        condition: and
+
+      - type: status
+        status:
+          - 200

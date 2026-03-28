@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: Cluster Overview - Unauthenticated Dashboard Exposure
+# description: Cluster Overview dashboard is exposed.
+# vuln_type: Authentication Bypass
+# severity: medium
+# cve_id: N/A
+
+
+id: unauth-cluster-trino
+
+info:
+  name: Cluster Overview - Unauthenticated Dashboard Exposure
+  author: tess
+  severity: medium
+  description: Cluster Overview dashboard is exposed.
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.title:"Cluster Overview - Trino"
+  tags: cluster,unauth,trino,misconfig,vuln
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}/ui/login"
+
+    headers:
+      Content-Type: application/x-www-form-urlencoded
+
+    body: |
+      username={{randstr}}&password=&redirectPath=
+    redirects: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Cluster Overview'
+          - 'Query Details'
+        condition: and
+
+      - type: status
+        status:
+          - 200

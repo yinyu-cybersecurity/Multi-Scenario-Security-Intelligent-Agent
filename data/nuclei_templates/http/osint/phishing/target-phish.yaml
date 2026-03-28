@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: target phishing Detection
+# description: A target phishing website was detected
+
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: target-phish
+
+info:
+  name: target phishing Detection
+  author: rxerium
+  severity: info
+  description: |
+    A target phishing website was detected
+  reference:
+    - https://target.com
+  metadata:
+    max-request: 1
+  tags: phishing,target,osint,discovery
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Target : Expect More. Pay Less.'
+
+      - type: status
+        status:
+          - 200
+
+      - type: dsl
+        dsl:
+          - '!contains(host,"target.com")'

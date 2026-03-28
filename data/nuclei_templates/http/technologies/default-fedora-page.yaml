@@ -1,0 +1,33 @@
+# RAG Annotation:
+# name: Fedora Default Test Page
+# description: Fedora Default Test Page
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: default-fedora-page
+
+info:
+  name: Fedora Default Test Page
+  author: dhiyaneshDk
+  severity: info
+  classification:
+    cpe: cpe:2.3:o:fedoraproject:fedora:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: fedoraproject
+    product: fedora
+    shodan-query: http.title:"Test Page for the HTTP Server on Fedora"
+  tags: tech,fedora,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers:
+      - type: word
+        words:
+          - '<title>Test Page for the HTTP Server on Fedora</title>'
+        part: body

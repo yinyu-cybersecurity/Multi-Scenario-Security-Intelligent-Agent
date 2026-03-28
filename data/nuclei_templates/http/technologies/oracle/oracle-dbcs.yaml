@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: Oracle Database as a Service
+# description: Oracle Database as a Service
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: oracle-dbcs
+
+info:
+  name: Oracle Database as a Service
+  author: pussycat0x
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:oracle:database_server:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: oracle
+    product: database_server
+    shodan-query: http.title:"Oracle Database as a Service"
+  tags: oracle,tech,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>Oracle Database as a Service</title>'
+        part: body
+
+      - type: status
+        status:
+          - 200

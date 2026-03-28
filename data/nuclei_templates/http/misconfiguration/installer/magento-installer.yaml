@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: Magento Installation Wizard
+# description: Magento is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: magento-installer
+
+info:
+  name: Magento Installation Wizard
+  author: DhiyaneshDk
+  severity: high
+  description: Magento is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:magento:magento:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: magento
+    product: magento
+    shodan-query: html:"Magento Installation"
+  tags: misconfig,magento,install,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/index.php/install/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Magento Installation Wizard"
+          - "Welcome to Magento's Installation Wizard!"
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+
+      - type: status
+        status:
+          - 200

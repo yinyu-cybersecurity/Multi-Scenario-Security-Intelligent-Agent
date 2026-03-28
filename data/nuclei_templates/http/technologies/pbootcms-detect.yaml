@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: PbootCMS Detect
+# description: PbootCMS Detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: pbootcms-detect
+
+info:
+  name: PbootCMS Detect
+  author: princechaddha,daffainfo
+  severity: info
+  reference:
+    - https://www.pbootcms.com/
+  classification:
+    cpe: cpe:2.3:a:pbootcms:pbootcms:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: pbootcms
+    product: pbootcms
+    shodan-query: http.html:"PbootCMS"
+  tags: tech,pbootcms,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'content="PbootCMS'
+
+      - type: regex
+        regex:
+          - '<title>PbootCMS(.*)</title>'
+
+    extractors:
+      - type: regex
+        part: body
+        group: 1
+        regex:
+          - 'title="(.*)正式发布">'

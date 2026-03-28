@@ -1,0 +1,51 @@
+# RAG Annotation:
+# name: Planet eStream Login Panel - Detect
+# description: Planet eStream login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: planet-estream-panel
+
+info:
+  name: Planet eStream Login Panel - Detect
+  author: arafatansari
+  severity: info
+  description: Planet eStream login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:planetestream:planet_estream:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: planetestream
+    product: planet_estream
+    shodan-query:
+      - title:"Login - Planet eStream"
+      - http.title:"login - planet estream"
+    fofa-query: title="login - planet estream"
+    google-query: intitle:"login - planet estream"
+  tags: panel,planet,estream,planetestream,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/Login.aspx"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Login - Planet eStream'
+          - 'Powered by Planet eStream'
+          - 'aria-label="Planet eStream Website'
+        condition: or
+
+      - type: status
+        status:
+          - 200

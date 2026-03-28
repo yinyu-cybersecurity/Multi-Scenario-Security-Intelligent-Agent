@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Espocrm Installer
+# description: Espocrm is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: espocrm-installer
+
+info:
+  name: Espocrm Installer
+  author: DhiyaneshDk
+  severity: high
+  description: Espocrm is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:espocrm:espocrm:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: espocrm
+    product: espocrm
+    shodan-query: html:"Welcome to Espocrm"
+  tags: misconfig,espocrm,install,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/install/'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>EspoCRM Installation'
+
+      - type: status
+        status:
+          - 200

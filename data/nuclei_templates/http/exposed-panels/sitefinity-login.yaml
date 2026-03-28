@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: Sitefinity Login
+# description: This template identifies the Sitefinity login page.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: sitefinity-login
+
+info:
+  name: Sitefinity Login
+  author: dhiyaneshDK
+  severity: info
+  description: This template identifies the Sitefinity login page.
+  reference:
+    - https://www.exploit-db.com/ghdb/6722
+  classification:
+    cpe: cpe:2.3:a:progress:sitefinity_cms:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: progress
+    product: sitefinity_cms
+  tags: sitefinity,edb,panel,progress,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/Sitefinity/Authenticate/SWT'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Telerik.Sitefinity.Web.UI.UserPreferences'
+
+      - type: status
+        status:
+          - 200

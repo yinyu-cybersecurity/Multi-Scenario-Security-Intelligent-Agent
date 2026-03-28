@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: vultr phishing Detection
+# description: A vultr phishing website was detected
+
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: vultr-phish
+
+info:
+  name: vultr phishing Detection
+  author: rxerium
+  severity: info
+  description: |
+    A vultr phishing website was detected
+  reference:
+    - https://my.vultr.com/
+  metadata:
+    max-request: 1
+  tags: phishing,vultr,osint,discovery
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Log In to your Vultr Account - Vultr.com'
+
+      - type: status
+        status:
+          - 200
+
+      - type: dsl
+        dsl:
+          - '!contains(host,"vultr.com")'

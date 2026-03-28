@@ -1,0 +1,36 @@
+# RAG Annotation:
+# name: Jeecg Boot Swagger Bootstrap UI - Detect
+# description: Jeecg Swagger Bootstrap UI exposed.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: jeecg-boot-swagger
+
+info:
+  name: Jeecg Boot Swagger Bootstrap UI - Detect
+  author: ritikchaddha
+  severity: info
+  description: Jeecg Swagger Bootstrap UI exposed.
+  classification:
+    cpe: cpe:2.3:a:jeecg:jeecg-boot:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: jeecg
+    product: jeecg-boot
+    shodan-query: title:"Jeecg-Boot"
+    fofa-query: title="JeecgBoot 企业级低代码平台"
+  tags: jeecg,swagger,detect,exposure,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/jeecg-boot/"
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Swagger-Bootstrap-UI</title>"

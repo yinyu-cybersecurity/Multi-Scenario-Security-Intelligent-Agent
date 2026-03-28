@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: Pa11y Dashboard Exposure
+# description: Pa11y Dashboard is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: pa11y-dashboard
+
+info:
+  name: Pa11y Dashboard Exposure
+  author: tess
+  severity: low
+  description: Pa11y Dashboard is exposed.
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"Pa11y Dashboard"
+  tags: misconfig,exposure,pa11y,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Pa11y Dashboard"
+          - "Add new URL"
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: Docker Cloud Yaml - File Disclosure
+# description: Docker cloud internal yaml file is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: medium
+# cve_id: N/A
+
+
+id: docker-cloud
+
+info:
+  name: Docker Cloud Yaml - File Disclosure
+  author: DhiyaneshDK
+  severity: medium
+  description: Docker cloud internal yaml file is exposed.
+  reference:
+    - https://www.exploit-db.com/ghdb/7959
+  metadata:
+    verified: true
+    max-request: 1
+    google-query: intitle:"index of" "docker-cloud.yml"
+  tags: exposure,cloud,devops,docker,files,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/docker-cloud.yml"
+
+    matchers-condition: and
+    matchers:
+      - type: regex
+        regex:
+          - '(?m)^  image:'
+          - '(?m)^  ports:'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "application/json"
+          - "text/html"
+        negative: true
+        condition: or
+
+      - type: status
+        status:
+          - 200

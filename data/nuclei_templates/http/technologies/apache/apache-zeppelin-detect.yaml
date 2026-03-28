@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: Apache Zeppelin detect
+# description: Apache Zeppelin detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: apache-zeppelin-detect
+
+info:
+  name: Apache Zeppelin detect
+  author: pikpikcu
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:apache:zeppelin:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: apache
+    product: zeppelin
+    fofa-query: app="APACHE-Zeppelin"
+  tags: apache,zeppelin,tech,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title ng-bind="$root.pageTitle">Zeppelin</title>'
+
+      - type: status
+        status:
+          - 200

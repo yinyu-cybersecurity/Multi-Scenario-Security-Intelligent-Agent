@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Star Micronics Network Utility Panel - Detect
+# description: Star Micronics Network Utility panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: star-network-utility
+
+info:
+  name: Star Micronics Network Utility Panel - Detect
+  author: ritikchaddha
+  severity: info
+  description: Star Micronics Network Utility panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.html:"Network Utility"
+  tags: panel,utility,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Star Micronics'
+          - 'Network Utility'
+        condition: and
+
+      - type: status
+        status:
+          - 200

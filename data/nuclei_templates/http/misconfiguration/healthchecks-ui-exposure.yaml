@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: Healthchecks UI Exposure
+# description: Healthchecks UI is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: healthchecks-ui-exposure
+
+info:
+  name: Healthchecks UI Exposure
+  author: tess
+  severity: low
+  description: Healthchecks UI is exposed.
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"Health Checks UI"
+  tags: misconfig,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 3
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Health Checks UI'
+          - 'var webhookEndpoint'
+        condition: and
+
+      - type: status
+        status:
+          - 200

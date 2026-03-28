@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: GCP/AWS Metadata Disclosure
+# description: GCP/AWS Metadata is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: cloud-metadata
+
+info:
+  name: GCP/AWS Metadata Disclosure
+  author: DhiyaneshDk
+  severity: low
+  description: GCP/AWS Metadata is exposed.
+  reference:
+    - https://www.facebook.com/ExWareLabs/photos/pcb.5605494709514357/5605493856181109/
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"instance_metadata"
+  tags: misconfig,exposure,devops,cloud,aws,gcp,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"instance_metadata":'
+          - '"cloud":'
+        condition: and
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        part: body
+        group: 1
+        regex:
+          - '"cloud":"([A-Z]+)",'

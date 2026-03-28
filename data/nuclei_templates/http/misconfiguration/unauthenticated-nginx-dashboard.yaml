@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: Nginx Dashboard
+# description: Nginx Dashboard is exposed.
+# vuln_type: Security Misconfiguration
+# severity: low
+# cve_id: N/A
+
+
+id: unauthenticated-nginx-dashboard
+
+info:
+  name: Nginx Dashboard
+  author: BibekSapkota (sar00n)
+  severity: low
+  description: Nginx Dashboard is exposed.
+  reference:
+    - https://www.acunetix.com/vulnerabilities/web/unrestricted-access-to-nginx-dashboard/
+  metadata:
+    max-request: 1
+    shodan-query: html:"NGINX+ Dashboard"
+  tags: misconfig,nginx,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/dashboard.html"
+
+    max-size: 2048
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Nginx+ Dashboard'
+
+      - type: status
+        status:
+          - 200

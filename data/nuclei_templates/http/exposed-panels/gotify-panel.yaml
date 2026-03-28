@@ -1,0 +1,49 @@
+# RAG Annotation:
+# name: Gotify Login Panel - Detect
+# description: Gotify login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: gotify-panel
+
+info:
+  name: Gotify Login Panel - Detect
+  author: righettod
+  severity: info
+  description: Gotify login panel was detected.
+  reference:
+    - https://github.com/gotify/server
+  classification:
+    cpe: cpe:2.3:a:gotify:server:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: gotify
+    product: server
+    shodan-query:
+      - http.title:"Gotify"
+      - http.title:"gotify"
+    fofa-query: title="gotify"
+    google-query: intitle:"gotify"
+  tags: panel,gotify,login,detect,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers:
+      - type: dsl
+        dsl:
+          - 'status_code == 200'
+          - 'contains_any(body, "<title>Gotify", "content=\"Gotify")'
+        condition: and
+
+    extractors:
+      - type: regex
+        part: body
+        group: 1
+        regex:
+          - '"version":"([0-9.]+)"'

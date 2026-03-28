@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: Polycom Admin Panel - Detect
+# description: Polycom admin panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: polycom-admin-detect
+
+info:
+  name: Polycom Admin Panel - Detect
+  author: e_schultze_
+  severity: info
+  description: Polycom admin panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:h:polycom:vvx:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: polycom
+    product: vvx
+  tags: panel,polycom,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/systemstatus.xml"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "SYSTEMSTATUS"
+        part: body
+
+      - type: word
+        words:
+          - "Server: lighttpd"
+        part: header

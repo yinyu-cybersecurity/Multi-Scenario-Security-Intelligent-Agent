@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: IUCN API Test
+# description: IUCN Red List of Threatened Species
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-iucn
+
+info:
+  name: IUCN API Test
+  author: daffainfo
+  severity: info
+  description: IUCN Red List of Threatened Species
+  reference:
+    - http://apiv3.iucnredlist.org/api/v3/docs
+    - https://github.com/daffainfo/all-about-apikey/tree/main/iucn
+  metadata:
+    max-request: 1
+  tags: token-spray,iucn
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "http://apiv3.iucnredlist.org/api/v3/country/list?token={{token}}"
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'taxonid'
+          - 'scientific_name'
+          - 'subspecies'
+        condition: and

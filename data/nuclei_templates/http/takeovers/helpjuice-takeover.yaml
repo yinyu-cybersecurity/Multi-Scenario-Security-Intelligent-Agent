@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: helpjuice takeover detection
+# description: helpjuice takeover was detected.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+id: helpjuice-takeover
+
+info:
+  name: helpjuice takeover detection
+  author: pdteam
+  severity: high
+  description: helpjuice takeover was detected.
+  reference:
+    - https://github.com/EdOverflow/can-i-take-over-xyz
+  metadata:
+    max-request: 1
+  tags: takeover,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - Host != ip
+
+      - type: word
+        words:
+          - We could not find what you're looking for.
+
+    extractors:
+      - type: dsl
+        dsl:
+          - cname

@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Jolokia - Searching MBeans
+# description: Unauth users can search Mbeans in Jolokia.
+# vuln_type: Security Misconfiguration
+# severity: low
+# cve_id: N/A
+
+
+id: jolokia-mbean-search
+
+info:
+  name: Jolokia - Searching MBeans
+  author: pussycat0x
+  severity: low
+  description: Unauth users can search Mbeans in Jolokia.
+  reference:
+    - https://thinkloveshare.com/hacking/ssrf_to_rce_with_jolokia_and_mbeans/
+    - https://github.com/laluka/jolokia-exploitation-toolkit
+  metadata:
+    max-request: 2
+  tags: jolokia,springboot,mbean,tomcat,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/jolokia/search/*:test=test"
+      - "{{BaseURL}}/actuator/jolokia/search/*:test=test"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        part: body
+        words:
+          - '"type":"search"'
+          - '"value":'
+        condition: and

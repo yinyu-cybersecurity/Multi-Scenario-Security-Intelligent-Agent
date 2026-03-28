@@ -1,0 +1,34 @@
+# RAG Annotation:
+# name: Apache Hadoop Panel - Detect
+# description: Apache Hadoop panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: hadoop-exposure
+
+info:
+  name: Apache Hadoop Panel - Detect
+  author: pdteam
+  severity: info
+  description: Apache Hadoop panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:apache:hadoop:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: apache
+    product: hadoop
+  tags: panel,apache,hadoop,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/dfshealth.html'
+
+    matchers:
+      - type: word
+        words:
+          - '<div class="navbar-brand">Hadoop</div>'

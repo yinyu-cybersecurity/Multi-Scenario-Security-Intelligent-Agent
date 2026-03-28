@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: Telerik Report Server Login Panel - Detect
+# description: Telerik Report Server login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: telerik-server-login
+
+info:
+  name: Telerik Report Server Login Panel - Detect
+  author: ritikchaddha
+  severity: info
+  description: Telerik Report Server login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:progress:telerik_report_server:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.html:"Telerik Report Server"
+    product: telerik_report_server
+    vendor: progress
+  tags: telerik,panel,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/Account/Login"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Telerik Report Server"
+
+      - type: status
+        status:
+          - 200

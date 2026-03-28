@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: Jeedom Login Panel - Detect
+# description: Jeedom login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: jeedom-panel
+
+info:
+  name: Jeedom Login Panel - Detect
+  author: pikpikcu,daffainfo
+  severity: info
+  description: Jeedom login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:jeedom:jeedom:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: jeedom
+    product: jeedom
+    shodan-query:
+      - http.title:"Jeedom"
+      - http.title:"jeedom"
+    fofa-query: title="jeedom"
+    google-query: intitle:"jeedom"
+  tags: panel,jeedom,login,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/index.php?v=d"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Jeedom</title>"
+          - "JEEDOM_PRODUCT_NAME"
+        condition: and
+
+      - type: status
+        status:
+          - 200

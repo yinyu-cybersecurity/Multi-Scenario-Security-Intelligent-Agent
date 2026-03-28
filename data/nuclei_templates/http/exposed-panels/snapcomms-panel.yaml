@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: SnapComms Content Manager Panel - Detect
+# description: SnapComms Content Manager was detected.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: snapcomms-panel
+
+info:
+  name: SnapComms Content Manager Panel - Detect
+  author: righettod
+  severity: info
+  description: |
+    SnapComms Content Manager was detected.
+  reference:
+    - https://www.snapcomms.com/
+  metadata:
+    verified: true
+    max-request: 1
+  tags: panel,snapcomms,login,detect,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/Manager/'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>SnapComms Content Manager</title>'
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        part: body
+        group: 1
+        regex:
+          - 'version=([0-9.]+)'

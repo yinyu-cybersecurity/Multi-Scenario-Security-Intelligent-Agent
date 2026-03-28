@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Web Viewer for Samsung DVR - Detect
+# description: Web Viewer for Samsung DVR - Detect
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: web-viewer-panel
+
+info:
+  name: Web Viewer for Samsung DVR - Detect
+  author: JustaAcat
+  severity: info
+  classification:
+    cpe: cpe:2.3:h:samsung:dvr:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: samsung
+    product: dvr
+    shodan-query:
+      - title:"Web Viewer for Samsung DVR"
+      - http.title:"web viewer for samsung dvr"
+    fofa-query: title="web viewer for samsung dvr"
+    google-query: intitle:"web viewer for samsung dvr"
+  tags: panel,web-viewer,detect,samsung,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "<title>Web Viewer for Samsung DVR</title>"
+
+      - type: status
+        status:
+          - 200

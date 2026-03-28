@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: Netsparker Enterprise Installer
+# description: Netsparker Enterprise is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: netsparker-enterprise-installer
+
+info:
+  name: Netsparker Enterprise Installer
+  author: pussycat0x
+  severity: info
+  description: Netsparker Enterprise is susceptible to the Installation page exposure due to misconfiguration.
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.favicon.hash:-1575154882
+  tags: misconfig,exposure,install,netsparker,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/wizard/database/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Netsparker Enterprise - Installation Wizard"
+          - "Netsparker Ltd"
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+
+      - type: status
+        status:
+          - 200

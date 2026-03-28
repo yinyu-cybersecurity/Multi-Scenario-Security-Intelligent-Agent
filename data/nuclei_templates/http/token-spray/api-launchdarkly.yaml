@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: LaunchDarkly REST API
+# description: LaunchDarkly REST API
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-launchdarkly
+
+info:
+  name: LaunchDarkly REST API
+  author: Luqmaan Hadia
+  severity: info
+  reference:
+    - https://apidocs.launchdarkly.com/
+  metadata:
+    max-request: 1
+  tags: token-spray,launchdarkly
+
+self-contained: true
+
+http:
+  - raw:
+      - |
+        GET https://app.launchdarkly.com/api/v2/members HTTP/1.1
+        Host: app.launchdarkly.com
+        Authorization: {{token}}
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - '"totalCount":'
+          - '"items":'
+        condition: and

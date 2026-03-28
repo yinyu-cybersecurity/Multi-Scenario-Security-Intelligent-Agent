@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: Immich Panel - Detect
+# description: Immich is a self-hosted photo and video backup solution
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: immich-panel
+
+info:
+  name: Immich Panel - Detect
+  author: rxerium
+  severity: info
+  description: |
+    Immich is a self-hosted photo and video backup solution
+  reference:
+    - https://immich.app/
+    - https://github.com/immich-app/immich
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.favicon.hash:-43504595
+  tags: panel,immich,detect,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/auth/login"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>Login - Immich'
+          - '"PUBLIC_IMMICH_'
+          - 'alt="Immich Logo'
+          - 'Welcome to Immich'
+        condition: or
+
+      - type: status
+        status:
+          - 200

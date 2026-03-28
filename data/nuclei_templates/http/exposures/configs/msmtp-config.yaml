@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Msmtp - Config Exposure
+# description: Msmtp configuration was discovered.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: msmtp-config
+
+info:
+  name: Msmtp - Config Exposure
+  author: geeknik
+  severity: high
+  description: Msmtp configuration was discovered.
+  reference:
+    - https://wiki.archlinux.org/title/Msmtp
+  metadata:
+    verified: true
+    max-request: 1
+  tags: exposure,msmtp,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.msmtprc"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'account'
+          - 'host'
+          - 'from'
+          - 'auth'
+          - 'tls'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - 'text/plain'
+          - 'octet-stream'
+        condition: or
+
+      - type: status
+        status:
+          - 200

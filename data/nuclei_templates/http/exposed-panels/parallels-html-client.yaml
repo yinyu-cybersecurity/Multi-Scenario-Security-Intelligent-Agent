@@ -1,0 +1,32 @@
+# RAG Annotation:
+# name: Parallels HTML5 Client Login Panel - Detect
+# description: Parallels HTML5 Client login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: parallels-html-client
+
+info:
+  name: Parallels HTML5 Client Login Panel - Detect
+  author: pdteam
+  severity: info
+  description: Parallels HTML5 Client login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    max-request: 1
+  tags: panel,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/RASHTML5Gateway/"
+
+    matchers:
+      - type: word
+        words:
+          - "<title>Parallels HTML5 Client</title>"
+        part: body

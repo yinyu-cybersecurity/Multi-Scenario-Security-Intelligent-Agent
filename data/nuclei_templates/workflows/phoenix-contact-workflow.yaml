@@ -1,0 +1,18 @@
+# RAG Annotation:
+# name: Phoenix Contact Security Checks Workflow
+# description: 运行所有Phoenix Contact相关nuclei模板的安全检查工作流，检测Phoenix Contact充电设备的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: phoenix-contact-workflow
+
+info:
+  name: Phoenix Contact Security Checks
+  author: inokii
+  description: A simple workflow that runs all Phoenix Contact related nuclei templates on a given target.
+
+workflows:
+  - template: http/exposed-panels/phoenix-contact-charx-panel.yaml
+    subtemplates:
+      - tags: phoenix-contact

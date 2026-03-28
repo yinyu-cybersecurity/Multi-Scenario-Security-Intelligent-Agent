@@ -1,0 +1,17 @@
+# RAG Annotation:
+# name: Apache Solr Security Checks Workflow
+# description: 运行所有Apache Solr相关nuclei模板的安全检查工作流，检测Solr搜索服务器的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: solr-workflow
+
+info:
+  name: Apache Solr Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all Apache Solr related nuclei templates on a given target.
+workflows:
+  - template: http/exposed-panels/solr-panel-exposure.yaml
+    subtemplates:
+      - tags: solr

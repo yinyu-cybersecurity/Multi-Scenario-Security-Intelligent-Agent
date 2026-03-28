@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: Hunter API Test
+# description: API for domain search, professional email finder, author finder and email verifier
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-hunter
+
+info:
+  name: Hunter API Test
+  author: daffainfo
+  severity: info
+  description: API for domain search, professional email finder, author finder and email verifier
+  reference:
+    - https://hunter.io/api-documentation/v2
+    - https://github.com/daffainfo/all-about-apikey/tree/main/hunter
+  metadata:
+    max-request: 1
+  tags: token-spray,hunter
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://api.hunter.io/v2/domain-search?domain=stripe.com&api_key={{token}}"
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"domain"'
+          - '"disposable"'
+          - '"webmail"'
+        condition: and

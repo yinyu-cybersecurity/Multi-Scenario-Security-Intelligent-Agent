@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Nortek Linear eMerge Panel - Detect
+# description: Nortek Linear eMerge panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: eMerge-panel
+
+info:
+  name: Nortek Linear eMerge Panel - Detect
+  author: arafatansari
+  severity: info
+  description: Nortek Linear eMerge panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:o:nortekcontrol:linear_emerge_essential_firmware:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: nortekcontrol
+    product: linear_emerge_essential_firmware
+    shodan-query:
+      - http.title:"eMerge"
+      - http.title:"emerge"
+    fofa-query: title="emerge"
+    google-query: intitle:"emerge"
+  tags: panel,emerge,nortek,nortekcontrol,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - '<title>(.*)Linear eMerge(.*)</title>'
+          - '/emerge.ico'
+        condition: or
+
+      - type: status
+        status:
+          - 200

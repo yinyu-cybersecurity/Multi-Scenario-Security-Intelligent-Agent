@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Anthropic phishing Detection
+# description: A Anthropic phishing website was detected
+
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: anthropic-phish
+
+info:
+  name: Anthropic phishing Detection
+  author: rxerium
+  severity: info
+  description: |
+    A Anthropic phishing website was detected
+  reference:
+    - https://anthropic.com
+  metadata:
+    max-request: 1
+  tags: phishing,anthropic,claude,ai,osint,discovery
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Anthropic'
+          - '<title>Home \ Anthropic'
+        condition: and
+
+      - type: status
+        status:
+          - 200
+
+      - type: dsl
+        dsl:
+          - '!contains(host,"anthropic.com")'
+          - '!contains(host,"claude.ai")'

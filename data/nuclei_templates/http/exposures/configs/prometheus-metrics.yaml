@@ -1,0 +1,62 @@
+# RAG Annotation:
+# name: Prometheus Metrics - Detect
+# description: Prometheus metrics page was detected.
+# vuln_type: Sensitive Data Exposure
+# severity: medium
+# cve_id: N/A
+
+
+id: prometheus-metrics
+
+info:
+  name: Prometheus Metrics - Detect
+  author: dhiyaneshDK,philippedelteil
+  severity: medium
+  description: Prometheus metrics page was detected.
+  reference:
+    - https://github.com/prometheus/prometheus
+    - https://hackerone.com/reports/1026196
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N
+    cvss-score: 5.3
+    cwe-id: CWE-200
+  metadata:
+    max-request: 2
+  tags: exposure,prometheus,hackerone,config,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/metrics"
+      - "{{BaseURL}}/api/metrics"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'cpu_seconds_total'
+          - 'http_request_duration_seconds'
+          - 'process_virtual_memory_bytes'
+          - 'process_start_time_seconds'
+        condition: or
+
+      - type: word
+        part: body
+        words:
+          - "lvm_"
+          - "kube"
+          - "namedprocess"
+          - "mysqld"
+          - "collectd_"
+          - "libvirt_"
+          - "mongodb"
+          - "blackbox_"
+          - "haproxy_"
+          - "rabbitmq_"
+        negative: true
+
+      - type: status
+        status:
+          - 200

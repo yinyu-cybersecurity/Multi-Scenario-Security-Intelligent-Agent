@@ -1,0 +1,36 @@
+# RAG Annotation:
+# name: Akeeba Backup Installer - Exposure
+# description: Akeeba Backup is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: akeeba-installer
+
+info:
+  name: Akeeba Backup Installer - Exposure
+  author: DhiyaneshDK
+  severity: high
+  description: Akeeba Backup is susceptible to the Installation page exposure due to misconfiguration.
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"Akeeba Backup"
+  tags: misconfig,akeeba,install,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/installation/index.php'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Akeeba Backup Installer'
+
+      - type: status
+        status:
+          - 200

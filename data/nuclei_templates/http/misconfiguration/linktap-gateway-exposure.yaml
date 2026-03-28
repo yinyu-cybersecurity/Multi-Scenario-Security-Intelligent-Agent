@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: LinkTap Gateway Exposure
+# description: LinkTap Gateway is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: linktap-gateway-exposure
+
+info:
+  name: LinkTap Gateway Exposure
+  author: DhiyaneshDk
+  severity: low
+  description: LinkTap Gateway is exposed.
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"LinkTap Gateway"
+  tags: misconfig,linktap,iot,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Device infomation'
+          - 'Ethernet settings'
+        condition: and
+
+      - type: status
+        status:
+          - 200

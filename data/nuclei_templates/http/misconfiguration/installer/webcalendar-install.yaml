@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: WebCalendar Exposed Installation
+# description: WebCalendar is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Security Misconfiguration
+# severity: high
+# cve_id: N/A
+
+
+id: webcalendar-install
+
+info:
+  name: WebCalendar Exposed Installation
+  author: ritikchaddha
+  severity: high
+  description: WebCalendar is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:k5n:webcalendar:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: k5n
+    product: webcalendar
+    shodan-query: title:"WebCalendar Setup Wizard"
+    fofa-query: title="WebCalendar Setup Wizard"
+  tags: misconfig,webcalendar,install,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/install/index.php"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>WebCalendar Setup Wizard'
+          - '>WebCalendar Installation Wizard'
+        condition: or
+
+      - type: status
+        status:
+          - 200

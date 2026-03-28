@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: Buildkite API Test
+# description: Buildkite API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-buildkite
+
+info:
+  name: Buildkite API Test
+  author: zzeitlin
+  severity: info
+  reference:
+    - https://buildkite.com/docs/apis/rest-api/user
+  metadata:
+    max-request: 1
+  tags: token-spray,buildkite
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://api.buildkite.com/v2/user"
+
+    headers:
+      Authorization: Bearer {{token}}
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"id":'
+          - '"graphql_id":'
+          - '"email":'
+        condition: and

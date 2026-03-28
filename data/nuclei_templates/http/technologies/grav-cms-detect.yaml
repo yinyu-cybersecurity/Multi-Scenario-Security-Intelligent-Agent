@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: Grav CMS Detect
+# description: Detects Grav CMS
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: grav-cms-detect
+
+info:
+  name: Grav CMS Detect
+  author: cyllective
+  severity: info
+  description: Detects Grav CMS
+  reference:
+    - https://github.com/getgrav/grav
+  metadata:
+    max-request: 1
+  tags: tech,grav,cms,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: header
+        words:
+          - 'Set-Cookie: grav-site-'
+
+      - type: word
+        part: body
+        words:
+          - '<meta name="generator" content="GravCMS" />'

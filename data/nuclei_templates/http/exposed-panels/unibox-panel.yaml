@@ -1,0 +1,50 @@
+# RAG Annotation:
+# name: Unibox Panel - Detect
+# description: Unibox Administrator panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: unibox-panel
+
+info:
+  name: Unibox Panel - Detect
+  author: theamanrawat
+  severity: info
+  description: Unibox Administrator panel was detected.
+  classification:
+    cpe: cpe:2.3:h:indionetworks:unibox:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: indionetworks
+    product: unibox
+    shodan-query: http.favicon.hash:176427349
+  tags: panel,unibox,login,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    host-redirects: true
+    max-redirects: 3
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>Unibox Administration</title>'
+          - 'Please Login to continue'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - 'text/html'
+
+      - type: status
+        status:
+          - 200

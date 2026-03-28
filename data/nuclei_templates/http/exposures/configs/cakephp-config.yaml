@@ -1,0 +1,52 @@
+# RAG Annotation:
+# name: CakePHP Configuration File - Detect
+# description: CakePHP configuration file was detected.
+# vuln_type: Sensitive Data Exposure
+# severity: medium
+# cve_id: N/A
+
+
+id: cakephp-config
+
+info:
+  name: CakePHP Configuration File - Detect
+  author: DhiyaneshDk
+  severity: medium
+  description: CakePHP configuration file was detected.
+  reference:
+    - https://book.cakephp.org/phinx/0/en/configuration.html
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N
+    cvss-score: 5.3
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:cakephp:cakephp:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 2
+    shodan-query: html:"phinx.yml"
+    product: cakephp
+    vendor: cakephp
+  tags: files,exposure,config,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/phinx.yml"
+      - "{{BaseURL}}/phinx.yaml"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "host:"
+          - "name:"
+          - "pass:"
+          - "adapter:"
+        condition: and
+
+      - type: status
+        status:
+          - 200

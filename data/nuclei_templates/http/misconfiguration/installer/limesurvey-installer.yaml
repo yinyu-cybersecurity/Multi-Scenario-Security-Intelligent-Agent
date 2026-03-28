@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: Limesurvey Installer Exposure
+# description: Limesurvey is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Security Misconfiguration
+# severity: high
+# cve_id: N/A
+
+
+id: limesurvey-installer
+
+info:
+  name: Limesurvey Installer Exposure
+  author: DhiyaneshDk
+  severity: high
+  description: Limesurvey is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:limesurvey:limesurvey:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"Limesurvey Installer"
+    product: limesurvey
+    vendor: limesurvey
+  tags: misconfig,limesurvey,install,vuln
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/index.php?r=installer/welcome'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'LimeSurvey installer'
+          - 'Progress'
+          - 'Your preferred language will be used through out the installation process'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+
+      - type: status
+        status:
+          - 200

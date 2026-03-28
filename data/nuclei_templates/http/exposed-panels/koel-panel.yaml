@@ -1,0 +1,51 @@
+# RAG Annotation:
+# name: Koel Panel - Detect
+# description: Personal audio streaming service that works.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: koel-panel
+
+info:
+  name: Koel Panel - Detect
+  author: rxerium
+  severity: info
+  description: |
+    Personal audio streaming service that works.
+  reference:
+    - https://koel.dev/
+    - https://github.com/koel/koel
+  classification:
+    cpe: cpe:2.3:a:koel:koel:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: koel
+    product: koel
+    shodan-query: title:"Koel"
+  tags: panel,koel,login,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>Koel</title>'
+          - 'Personal audio streaming service that works.'
+        condition: and
+
+      - type: status
+        status:
+          - 200

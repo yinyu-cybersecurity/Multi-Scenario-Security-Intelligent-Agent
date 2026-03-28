@@ -1,0 +1,19 @@
+# RAG Annotation:
+# name: Apache SkyWalking Security Checks Workflow
+# description: 运行所有Apache SkyWalking相关nuclei模板的安全检查工作流，检测SkyWalking应用性能监控系统的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: skywalking-workflow
+
+info:
+  name: Apache SkyWalking Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all Apache SkyWalking related nuclei templates on a given target.
+workflows:
+  - template: http/technologies/fingerprinthub-web-fingerprints.yaml
+    matchers:
+      - name: skywalking
+        subtemplates:
+          - tags: skywalking

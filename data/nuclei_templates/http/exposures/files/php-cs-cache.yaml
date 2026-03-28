@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: PHP-CS-Fixer Cache - File Disclosure
+# description: PHP CS fixer cache internal file is disclosed.
+# vuln_type: Sensitive Data Exposure
+# severity: medium
+# cve_id: N/A
+
+
+id: php-cs-cache
+
+info:
+  name: PHP-CS-Fixer Cache - File Disclosure
+  author: DhiyaneshDk
+  severity: medium
+  description: PHP CS fixer cache internal file is disclosed.
+  reference:
+    - https://www.acunetix.com/vulnerabilities/web/php-cs-fixer-cache-file-publicly-accessible-php_cs-cache/
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"php_cs.cache"
+  tags: exposure,files,php,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.php_cs.cache"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '{"php":'
+          - '"version":'
+          - '"indent":'
+        condition: and
+
+      - type: status
+        status:
+          - 200

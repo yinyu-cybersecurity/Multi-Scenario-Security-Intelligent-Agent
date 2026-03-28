@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: Express Stack Trace
+# description: Express Stack trace is exposed.
+# vuln_type: Security Misconfiguration
+# severity: low
+# cve_id: N/A
+
+
+id: express-stack-trace
+
+info:
+  name: Express Stack Trace
+  author: DhiyaneshDk
+  severity: low
+  description: Express Stack trace is exposed.
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"Welcome to Express"
+  tags: misconfig,express,intrusive,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/{{randstr}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "NotFoundError: Not Found"
+          - "at Function.handle"
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+
+      - type: status
+        status:
+          - 404

@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: Horde Webmail Login Panel - Detect
+# description: Horde Webmail login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: horde-webmail-login
+
+info:
+  name: Horde Webmail Login Panel - Detect
+  author: ritikchaddha
+  severity: info
+  description: Horde Webmail login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    verified: true
+    max-request: 2
+    shodan-query: http.favicon.hash:2104916232
+  tags: horde,webmail,panel,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/horde/imp/login.php"
+      - "{{BaseURL}}/imp/login.php"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Welcome to Horde"
+
+      - type: status
+        status:
+          - 200

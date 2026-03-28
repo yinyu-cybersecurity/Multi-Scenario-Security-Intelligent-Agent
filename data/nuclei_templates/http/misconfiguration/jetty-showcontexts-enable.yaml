@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Jetty showContexts Enable in DefaultHandler
+# description: Jetty showContexts is Enabled in DefaultHandler
+# vuln_type: Security Misconfiguration
+# severity: low
+# cve_id: N/A
+
+
+id: jetty-showcontexts-enable
+
+info:
+  name: Jetty showContexts Enable in DefaultHandler
+  author: dhiyaneshDK
+  severity: low
+  description: Jetty showContexts is Enabled in DefaultHandler
+  reference:
+    - https://github.com/jaeles-project/jaeles-signatures/blob/master/common/jetty-showcontexts-enable.yaml
+    - https://swarm.ptsecurity.com/jetty-features-for-hacking-web-apps/
+  classification:
+    cpe: cpe:2.3:a:eclipse:jetty:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: eclipse
+    product: jetty
+    shodan-query: html:"contexts known to this"
+  tags: jetty,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Contexts known to this server are:"
+
+      - type: status
+        status:
+          - 404

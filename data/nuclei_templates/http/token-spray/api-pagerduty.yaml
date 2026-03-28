@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: Pagerduty API Test
+# description: Pagerduty API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-pagerduty
+
+info:
+  name: Pagerduty API Test
+  author: zzeitlin
+  severity: info
+  reference:
+    - https://developer.pagerduty.com/api-reference
+  metadata:
+    max-request: 1
+  tags: token-spray,pagerduty
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://api.pagerduty.com/schedules"
+
+    headers:
+      Accept: application/vnd.pagerduty+json;version=2
+      Authorization: Token token={{token}}
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"schedules":'
+          - '"id":'
+        condition: and

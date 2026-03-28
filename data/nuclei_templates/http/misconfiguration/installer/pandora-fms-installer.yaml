@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: Pandora FMS Installation Page - Exposure
+# description: Detects exposed Pandora FMS installation page.
+
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: pandora-fms-installer
+
+info:
+  name: Pandora FMS Installation Page - Exposure
+  author: DhiyaneshDK
+  severity: high
+  description: |
+    Detects exposed Pandora FMS installation page.
+  reference:
+    - https://pandorafms.com/en/
+  classification:
+    cpe: cpe:2.3:a:pandorafms:pandora_fms:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: pandorafms
+    product: pandora_fms
+    fofa-query: body="Pandora FMS - Installation Wizard"
+  tags: misconfig,install,exposure,pandora-fms,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/install.php"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Pandora FMS - Installation Wizard"
+
+      - type: status
+        status:
+          - 200

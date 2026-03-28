@@ -7,7 +7,7 @@ from pathlib import Path
 # 项目根目录
 BASE_DIR = Path(__file__).parent.parent
 
-# Writeup存放目录（你把167篇WP放这里）
+# Writeup存放目录
 WRITEUPS_DIR = BASE_DIR / "data" / "writeups"
 
 # 向量数据库存储目录
@@ -21,13 +21,18 @@ CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 SUPPORTED_EXTENSIONS = [".md", ".txt", ".markdown"]
 
 # Embedding模型配置
-# 多语言模型（同时支持中英文）
+# 使用国内镜像加速下载
+HF_ENDPOINT = os.environ.get('HF_ENDPOINT', 'https://hf-mirror.com')
+os.environ['HF_ENDPOINT'] = HF_ENDPOINT
+
+# 多语言模型（同时支持中英文）- 使用国内镜像
 EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-# 如果只想用英文，可以用这个： "sentence-transformers/all-MiniLM-L6-v2"
+# 更轻量的替代方案（更快下载）:
+# EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 # 检索配置
 TOP_K_RESULTS = 5  # 默认返回几条相似结果
-SIMILARITY_THRESHOLD = 0.6  # 相似度阈值（低于此值的不返回）
+SIMILARITY_THRESHOLD = 0.5  # 相似度阈值（提高到0.5减少噪声结果）
 
 # 分块大小（WP内容太长时可以截断）
 MAX_CONTENT_LENGTH = 2000  # 只取前2000字符

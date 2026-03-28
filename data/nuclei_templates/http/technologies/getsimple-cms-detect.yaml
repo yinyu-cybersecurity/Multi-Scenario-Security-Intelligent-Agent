@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: GetSimple CMS Detection
+# description: Template to detect a running GetSimple CMS instance
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: getsimple-cms-detect
+
+info:
+  name: GetSimple CMS Detection
+  author: pikpikcu,philippedelteil
+  severity: info
+  description: Template to detect a running GetSimple CMS instance
+  metadata:
+    max-request: 2
+  tags: tech,getsimple,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+      - "{{BaseURL}}/readme.txt"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "Powered by  GetSimple"
+          - 'GetSimple CMS is a flatfile CMS'
+        part: body
+        condition: or

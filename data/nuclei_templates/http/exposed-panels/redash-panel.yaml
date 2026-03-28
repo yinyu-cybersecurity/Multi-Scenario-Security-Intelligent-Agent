@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: Redash Login Panel - Detect
+# description: Redash login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: redash-panel
+
+info:
+  name: Redash Login Panel - Detect
+  author: princechaddha
+  severity: info
+  description: Redash login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:redash:redash:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: redash
+    product: redash
+    shodan-query: http.favicon.hash:698624197
+    fofa-query: icon_hash=698624197
+  tags: panel,redash,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/login"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Login to Redash</title>"
+          - "<title>Login | Redash</title>"
+        condition: or
+
+      - type: status
+        status:
+          - 200

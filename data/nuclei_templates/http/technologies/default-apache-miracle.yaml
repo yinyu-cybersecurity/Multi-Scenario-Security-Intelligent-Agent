@@ -1,0 +1,35 @@
+# RAG Annotation:
+# name: Default Apache Miracle Linux Web Server Page
+# description: Default Apache Miracle Linux Web Server Page
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: default-apache-miracle
+
+info:
+  name: Default Apache Miracle Linux Web Server Page
+  author: DhiyaneshDK
+  severity: info
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"Apache Miracle Linux Web Server"
+  tags: tech,default-page,apache,miracle,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<TITLE>Apache Miracle Linux Web Server</TITLE>'
+
+      - type: status
+        status:
+          - 200

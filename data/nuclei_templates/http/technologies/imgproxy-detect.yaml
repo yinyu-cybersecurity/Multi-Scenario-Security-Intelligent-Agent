@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Imgproxy Detect
+# description: imgproxy is a fast and secure standalone server for resizing, processing, and converting images.
+
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+
+
+id: imgproxy-detect
+
+info:
+  name: Imgproxy Detect
+  author: userdehghani
+  severity: info
+  description: |
+    imgproxy is a fast and secure standalone server for resizing, processing, and converting images.
+  reference:
+    - https://imgproxy.net/
+  classification:
+    cpe: cpe:2.3:a:evilmartians:imgproxy:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: evilmartians
+    product: imgproxy
+    shodan-query: html:"imgproxy"
+  tags: imgproxy,tech,detect,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers:
+      - type: dsl
+        dsl:
+          - 'status_code == 200'
+          - 'contains(server, "imgproxy")'
+        condition: and

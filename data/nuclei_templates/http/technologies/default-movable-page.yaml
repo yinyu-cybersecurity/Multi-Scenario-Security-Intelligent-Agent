@@ -1,0 +1,33 @@
+# RAG Annotation:
+# name: Movable Default Page
+# description: Movable Default Page
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: default-movable-page
+
+info:
+  name: Movable Default Page
+  author: dhiyaneshDk
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:sixapart:movable_type:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    shodan-query: title:"Welcome to Movable Type"
+    product: movable_type
+    vendor: sixapart
+  tags: tech,movable,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers:
+      - type: word
+        words:
+          - "<title>Welcome to Movable Type</title>"
+        part: body

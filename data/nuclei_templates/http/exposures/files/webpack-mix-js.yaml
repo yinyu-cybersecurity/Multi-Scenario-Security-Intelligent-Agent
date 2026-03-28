@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Webpack Mix File Disclosure
+# description: Webpack Mix File Disclosure
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: webpack-mix-js
+
+info:
+  name: Webpack Mix File Disclosure
+  author: DhiyaneshDk
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:webpack.js:webpack:*:*:*:*:node.js:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: webpack.js
+    product: webpack
+    shodan-query: html:"webpack.mix.js"
+  tags: config,exposure,devops,files,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/webpack.mix.js"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Mix Asset Management"
+          - "const mix"
+        condition: and
+
+      - type: status
+        status:
+          - 200

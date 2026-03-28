@@ -1,0 +1,36 @@
+# RAG Annotation:
+# name: WordPress Setup Configuration
+# description: Exposed Wordpress Setup Configuration.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+---
+id: wp-config-setup
+
+info:
+  name: WordPress Setup Configuration
+  author: princechaddha
+  severity: high
+  description: Exposed Wordpress Setup Configuration.
+  reference:
+    - https://smaranchand.com.np/2020/04/misconfigured-wordpress-takeover-to-remote-code-execution/
+  metadata:
+    max-request: 1
+  tags: wordpress,setup,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/wp-admin/setup-config.php?step=1"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Below you should enter your database connection details."
+
+      - type: status
+        status:
+          - 200

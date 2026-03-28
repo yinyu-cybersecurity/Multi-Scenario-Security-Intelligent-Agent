@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Magnolia CMS Installer
+# description: Magnolia CMS is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: magnolia-installer
+
+info:
+  name: Magnolia CMS Installer
+  author: pussycat0x
+  severity: info
+  description: Magnolia CMS is susceptible to the Installation page exposure due to misconfiguration.
+  reference:
+    - https://www.magnolia-cms.com/
+  classification:
+    cpe: cpe:2.3:a:magnolia-cms:magnolia_cms:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: magnolia-cms
+    product: magnolia_cms
+    shodan-query: title:"Magnolia Installation"
+  tags: magnolia,exposure,installer,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Magnolia Installation"
+          - "Welcome to Magnolia"
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - 'text/html'
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,36 @@
+# RAG Annotation:
+# name: Intercom API Test
+# description: Intercom API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-intercom
+
+info:
+  name: Intercom API Test
+  author: dwisiswant0
+  severity: info
+  reference:
+    - https://developers.intercom.com/building-apps/docs/rest-api-reference
+  metadata:
+    max-request: 1
+  tags: token-spray,intercom
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://api.intercom.io/users"
+
+    headers:
+      Authorization: Bearer {{token}}
+      Accept: application/json
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Access Token Invalid"
+        negative: true

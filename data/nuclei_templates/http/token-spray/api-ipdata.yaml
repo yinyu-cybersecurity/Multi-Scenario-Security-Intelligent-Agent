@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: IP Data API Test
+# description: IP Data API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-ipdata
+
+info:
+  name: IP Data API Test
+  author: 0xpugal
+  severity: info
+  reference:
+    - https://docs.ipdata.co/docs
+  metadata:
+    verified: true
+    max-request: 1
+  tags: token-spray,ipdata
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://api.ipdata.co/?api-key={{token}}"
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"ip":'
+          - '"name":'
+          - '"asn":'
+          - '"route":'
+          - '"time_zone":'
+        condition: and

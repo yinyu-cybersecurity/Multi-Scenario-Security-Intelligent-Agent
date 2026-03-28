@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Ubersmith Setup Page - Exposure
+# description: Detects exposed Ubersmith Setup page.
+
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: ubersmith-installer
+
+info:
+  name: Ubersmith Setup Page - Exposure
+  author: DhiyaneshDK
+  severity: high
+  description: |
+    Detects exposed Ubersmith Setup page.
+  reference:
+    - https://ubersmith.com/
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"Ubersmith Setup"
+  tags: misconfig,install,exposure,ubersmith,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/setup/index.php"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Ubersmith Setup"
+
+      - type: status
+        status:
+          - 200

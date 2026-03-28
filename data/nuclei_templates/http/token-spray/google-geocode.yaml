@@ -1,0 +1,31 @@
+# RAG Annotation:
+# name: Google Geocode API Test
+# description: Google Geocode API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-googlegeocode
+
+info:
+  name: Google Geocode API Test
+  author: zzeitlin
+  severity: info
+  metadata:
+    max-request: 1
+  tags: token-spray,google,geocode
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://maps.googleapis.com/maps/api/geocode/json?latlng=40,30&key={{token}}"
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'error_message'
+        negative: true

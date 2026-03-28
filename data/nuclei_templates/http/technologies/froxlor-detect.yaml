@@ -1,0 +1,33 @@
+# RAG Annotation:
+# name: Froxlor Detect
+# description: Froxlor Detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: froxlor-detect
+
+info:
+  name: Froxlor Detect
+  author: pikpikcu
+  severity: info
+  metadata:
+    max-request: 1
+  tags: tech,froxlor,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Froxlor Server Management Panel</title>"
+
+      - type: status
+        status:
+          - 200

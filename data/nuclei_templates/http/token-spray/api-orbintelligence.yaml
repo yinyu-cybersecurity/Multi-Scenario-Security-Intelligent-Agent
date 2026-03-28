@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: ORB Intelligence API Test
+# description: Company lookup
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-orbintelligence
+
+info:
+  name: ORB Intelligence API Test
+  author: daffainfo
+  severity: info
+  description: Company lookup
+  reference:
+    - https://api.orb-intelligence.com/docs/
+    - https://github.com/daffainfo/all-about-apikey/tree/main/orb-intelligence
+  metadata:
+    max-request: 1
+  tags: token-spray,orbintelligence
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://api.orb-intelligence.com/3/fetch/1/?api_key={{token}}"
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"entity_type":'
+          - '"company_status":'
+          - '"orb_num":'
+        condition: and

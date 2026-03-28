@@ -1,0 +1,33 @@
+# RAG Annotation:
+# name: CampaignMonitor Takeover Detection
+# description: CampaignMonitor takeover was detected.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+id: campaignmonitor-takeover
+
+info:
+  name: CampaignMonitor Takeover Detection
+  author: pdteam
+  severity: high
+  description: CampaignMonitor takeover was detected.
+  reference:
+    - https://github.com/EdOverflow/can-i-take-over-xyz/issues/275
+  metadata:
+    max-request: 1
+  tags: takeover,campaignmonitor,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    redirects: true
+    max-redirects: 1
+    matchers:
+      - type: word
+        words:
+          - 'Email Newsletter Software'
+          - 'css.createsend1.com'
+        condition: and

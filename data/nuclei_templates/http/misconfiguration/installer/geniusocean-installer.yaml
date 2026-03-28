@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: GeniusOcean Installer Exposure
+# description: GeniusOcean is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: geniusocean-installer
+
+info:
+  name: GeniusOcean Installer Exposure
+  author: DhiyaneshDk
+  severity: high
+  description: GeniusOcean is susceptible to the Installation page exposure due to misconfiguration.
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"GeniusOcean Installer"
+  tags: misconfig,geniusocean,install,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/install/?step=1'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'GeniusOcean - Script Installer'
+          - 'GeniusOcean Installer'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - 'text/html'
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,34 @@
+# RAG Annotation:
+# name: Puppet Node Manager - Unauthorized Access
+# description: Pupper Node Manager is exposed to external users.
+# vuln_type: Security Misconfiguration
+# severity: medium
+# cve_id: N/A
+
+
+id: unauthorized-puppet-node-manager
+
+info:
+  name: Puppet Node Manager - Unauthorized Access
+  author: pussycat0x
+  severity: medium
+  description: Pupper Node Manager is exposed to external users.
+  metadata:
+    max-request: 1
+    fofa-query: 'app="puppet-Node-Manager"'
+  tags: node,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<a href="/nodes">Nodes</a>'
+
+      - type: status
+        status:
+          - 200

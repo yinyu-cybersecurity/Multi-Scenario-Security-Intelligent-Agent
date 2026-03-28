@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Monstra Installation Exposure
+# description: Monstra is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Security Misconfiguration
+# severity: high
+# cve_id: N/A
+
+
+id: monstra-installer
+
+info:
+  name: Monstra Installation Exposure
+  author: ritikchaddha
+  severity: high
+  description: Monstra is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:monstra:monstra_cms:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: monstra
+    product: monstra_cms
+    shodan-query: 'title:"Monstra :: Install"'
+  tags: misconfig,monstra,install,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Monstra :: Install"
+
+      - type: status
+        status:
+          - 200

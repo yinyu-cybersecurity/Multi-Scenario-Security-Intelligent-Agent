@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: Visual Studio Code jsconfig.json - Detect
+# description: Visual Studio Code jsconfig.json was detected.
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: jsconfig-json
+
+info:
+  name: Visual Studio Code jsconfig.json - Detect
+  author: DhiyaneshDk
+  severity: info
+  description: Visual Studio Code jsconfig.json was detected.
+  reference:
+    - https://code.visualstudio.com/docs/languages/jsconfig
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"jsconfig.json"
+  tags: devops,exposure,jsconfig,config,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/jsconfig.json"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"compilerOptions": {'
+          - '"typeAcquisition": {'
+        condition: or
+
+      - type: word
+        part: header
+        words:
+          - 'application/json'
+
+      - type: status
+        status:
+          - 200

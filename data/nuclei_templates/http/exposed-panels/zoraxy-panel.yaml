@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: Zoraxy Login Panel - Detect
+# description: Zoraxy products was detected.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: zoraxy-panel
+
+info:
+  name: Zoraxy Login Panel - Detect
+  author: righettod
+  severity: info
+  description: |
+    Zoraxy products was detected.
+  reference:
+    - https://github.com/tobychui/zoraxy
+    - https://zoraxy.aroz.org/
+  metadata:
+    max-request: 1
+    verified: true
+    shodan-query: http.title:"Login | Zoraxy"
+  tags: panel,zoraxy,login,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/web/login.html"
+
+    matchers:
+      - type: dsl
+        dsl:
+          - 'status_code == 200'
+          - 'contains_any(to_lower(body), "zoraxy</title>", "zoraxy.csrf.token")'
+        condition: and

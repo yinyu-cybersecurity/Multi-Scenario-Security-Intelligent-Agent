@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: ArcGIS Exposed REST API documentation
+# description: ArcGIS REST API documentation was discovered.
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: arcgis-rest-api
+
+info:
+  name: ArcGIS Exposed REST API documentation
+  author: Podalirius
+  severity: info
+  description: ArcGIS REST API documentation was discovered.
+  reference:
+    - https://enterprise.arcgis.com/en/
+  classification:
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:esri:arcgis_engine:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: esri
+    product: arcgis_engine
+  tags: api,arcgis,cms,tech,esri,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/server/sdk/rest/index.html'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'ArcGIS REST API'
+
+      - type: status
+        status:
+          - 200

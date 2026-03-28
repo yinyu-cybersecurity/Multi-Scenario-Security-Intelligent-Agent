@@ -1,0 +1,28 @@
+# RAG Annotation:
+# name: JWT Token Disclosure
+# description: JWT Token Disclosure
+# vuln_type: Sensitive Data Exposure
+# severity: unknown
+# cve_id: N/A
+
+
+id: jwt-token
+
+info:
+  name: JWT Token Disclosure
+  author: Ice3man
+  severity: unknown
+  metadata:
+    max-request: 1
+  tags: exposure,token,generic,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - 'eyJ[a-zA-Z0-9]{10,}\.eyJ[a-zA-Z0-9]{10,}\.[a-zA-Z0-9_\-]{10,}'

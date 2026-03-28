@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: sync storage phishing Detection
+# description: A sync storage phishing website was detected
+
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: sync-phish
+
+info:
+  name: sync storage phishing Detection
+  author: rxerium
+  severity: info
+  description: |
+    A sync storage phishing website was detected
+  reference:
+    - https://sync.com
+  metadata:
+    max-request: 1
+  tags: phishing,sync,osint,discovery
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Sync | Secure Cloud Storage, File Sharing and Document Collaboration'
+
+      - type: status
+        status:
+          - 200
+
+      - type: dsl
+        dsl:
+          - '!contains(host,"sync.com")'

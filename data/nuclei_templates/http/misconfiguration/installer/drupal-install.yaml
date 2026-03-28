@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: Drupal Install
+# description: Drupal Install panel exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: drupal-install
+
+info:
+  name: Drupal Install
+  author: NkxxkN
+  severity: high
+  description: Drupal Install panel exposed.
+  metadata:
+    max-request: 2
+    shodan-query:
+      - http.component:"drupal"
+      - cpe:"cpe:2.3:a:drupal:drupal"
+    product: drupal
+    vendor: drupal
+  tags: misconfig,drupal,install,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/install.php?profile=default"
+      - "{{BaseURL}}/core/install.php"
+
+    stop-at-first-match: true
+    host-redirects: true
+    max-redirects: 1
+    matchers:
+      - type: word
+        words:
+          - "<title>Choose language | Drupal</title>"

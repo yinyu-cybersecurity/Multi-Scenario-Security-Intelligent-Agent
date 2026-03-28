@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: Detect .dockercfg
+# description: Docker registry authentication data
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: dockercfg-config
+
+info:
+  name: Detect .dockercfg
+  author: geeknik
+  severity: high
+  description: Docker registry authentication data
+  metadata:
+    max-request: 2
+  tags: docker,exposure,config,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.dockercfg"
+      - "{{BaseURL}}/.docker/config.json"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '"email":'
+          - '"auth":'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/plain"
+
+      - type: status
+        status:
+          - 200

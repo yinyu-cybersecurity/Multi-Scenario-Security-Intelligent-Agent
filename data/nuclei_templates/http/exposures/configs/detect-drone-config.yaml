@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: Drone - Configuration Detection
+# description: Drone configuration was discovered.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: detect-drone-config
+
+info:
+  name: Drone - Configuration Detection
+  author: geeknik
+  severity: high
+  description: Drone configuration was discovered.
+  reference:
+    - https://github.com/drone/drone
+  metadata:
+    max-request: 1
+  tags: config,exposure,drone,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.drone.yml"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "kind:"
+          - "name:"
+          - "steps:"
+        condition: and
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: HelpDocs Takeover Detection
+# description: HelpDocs Takeover Detection
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+id: helpdocs-takeover
+
+info:
+  name: HelpDocs Takeover Detection
+  author: philippedelteil
+  severity: high
+  reference:
+    - https://github.com/EdOverflow/can-i-take-over-xyz/issues/402
+  metadata:
+    max-request: 1
+  tags: takeover,helpdocs,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - Host != ip
+
+      - type: word
+        part: body
+        words:
+          - "You've tried to access an account/page that does not exist"
+
+    extractors:
+      - type: dsl
+        dsl:
+          - cname

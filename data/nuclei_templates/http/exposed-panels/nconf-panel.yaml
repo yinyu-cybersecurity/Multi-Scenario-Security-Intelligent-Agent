@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: NConf Login Panel - Detect
+# description: NConf login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: nconf-panel
+
+info:
+  name: NConf Login Panel - Detect
+  author: ritikchaddha
+  severity: info
+  description: NConf login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:nconf_project:nconf:*:*:*:*:node.js:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.title:"nconf"
+    product: nconf
+    vendor: nconf_project
+  tags: panel,nconf,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "nconf.js"
+          - "<title>NConf"
+        condition: or
+
+      - type: status
+        status:
+          - 200

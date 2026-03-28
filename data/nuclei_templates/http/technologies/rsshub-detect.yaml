@@ -1,0 +1,35 @@
+# RAG Annotation:
+# name: RSSHub Detect
+# description: RSSHub Detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: rsshub-detect
+
+info:
+  name: RSSHub Detect
+  author: ritikchaddha
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:rsshub:rsshub:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: rsshub
+    product: rsshub
+    shodan-query: http.favicon.hash:-1893514038
+  tags: tech,rsshub,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/favicon.ico"
+
+    host-redirects: true
+    max-redirects: 2
+    matchers:
+      - type: dsl
+        dsl:
+          - "('-1893514038' == mmh3(base64_py(body)))"

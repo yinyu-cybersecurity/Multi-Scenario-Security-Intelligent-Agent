@@ -1,0 +1,30 @@
+# RAG Annotation:
+# name: Google frontend HttpServer
+# description: Google frontend HttpServer
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: google-frontend-httpserver
+
+info:
+  name: Google frontend HttpServer
+  author: pikpikcu
+  severity: info
+  metadata:
+    verified: true
+    max-request: 1
+    fofa-query: "Server: Google Frontend"
+  tags: tech,google,httpserver,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "Google Frontend"

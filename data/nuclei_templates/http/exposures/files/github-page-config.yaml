@@ -1,0 +1,36 @@
+# RAG Annotation:
+# name: Github pages config file
+# description: Find github pages config file.
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: github-page-config
+
+info:
+  name: Github pages config file
+  author: hahwul
+  severity: info
+  description: Find github pages config file.
+  metadata:
+    max-request: 1
+  tags: github,exposure,config,files,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/_config.yml"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "jekyll"
+          - "title"
+          - "baseurl"
+        condition: and

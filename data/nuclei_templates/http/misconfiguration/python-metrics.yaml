@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: Detect Python Exposed Metrics
+# description: Information Disclosure of Garbage Collection
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: python-metrics
+
+info:
+  name: Detect Python Exposed Metrics
+  author: dhiyaneshDK
+  severity: low
+  description: Information Disclosure of Garbage Collection
+  reference:
+    - https://gist.github.com/ruanbekker/e5b1e7895f62b020ff29b5f40767190c
+  classification:
+    cpe: cpe:2.3:a:python:python:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: python
+    product: python
+    shodan-query: html:"python_gc_objects_collected_total"
+  tags: exposure,devops,python,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/metrics"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "python_gc_objects_collected_total"
+          - "python_info"
+        condition: and
+
+      - type: status
+        status:
+          - 200

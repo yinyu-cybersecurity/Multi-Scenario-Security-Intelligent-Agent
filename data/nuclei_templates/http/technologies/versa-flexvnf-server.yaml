@@ -1,0 +1,51 @@
+# RAG Annotation:
+# name: Versa FlexVNF Server
+# description: Versa FlexVNF Server Detection (magic request params exposes Server signature/version)
+
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+
+
+id: versa-flexvnf-server
+
+info:
+  name: Versa FlexVNF Server
+  author: c-sh0
+  severity: info
+  description: |
+    Versa FlexVNF Server Detection (magic request params exposes Server signature/version)
+  reference:
+    - https://versa-networks.com/products/components/
+  metadata:
+    max-request: 1
+  tags: tech,versa,flexvnf,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/&?=?"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "Server: Versa"
+          - "FlexVNF"
+        condition: and
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: kval
+        part: header
+        kval:
+          - Server

@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: Apache Druid Unauth
+# description: Apache Druid is exposed to external users.
+# vuln_type: Authentication Bypass
+# severity: low
+# cve_id: N/A
+
+
+id: apache-druid-unauth
+
+info:
+  name: Apache Druid Unauth
+  author: DhiyaneshDk
+  severity: low
+  description: Apache Druid is exposed to external users.
+  classification:
+    cpe: cpe:2.3:a:apache:druid:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: apache
+    product: druid
+    shodan-query: title:"Apache Druid"
+  tags: misconfig,druid,unauth,apache,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/unified-console.html'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>Apache Druid</title>'
+
+      - type: status
+        status:
+          - 200

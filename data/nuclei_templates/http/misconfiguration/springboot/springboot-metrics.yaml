@@ -1,0 +1,52 @@
+# RAG Annotation:
+# name: Springboot Actuator Metrics - Exposure
+# description: Spring Boot Metrics Actuator endpoint was detected, which may expose system metrics information. This template detects both older Spring Boot 1.x format and newer 2.x/3.x format.
+
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+
+
+id: springboot-metrics
+
+info:
+  name: Springboot Actuator Metrics - Exposure
+  author: pussycat0x,TheZakMan
+  severity: low
+  description: |
+    Spring Boot Metrics Actuator endpoint was detected, which may expose system metrics information. This template detects both older Spring Boot 1.x format and newer 2.x/3.x format.
+  metadata:
+    verified: true
+    max-request: 2
+  tags: springboot,exposure,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/metrics"
+      - "{{BaseURL}}/actuator/metrics"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - "contains_any(tolower(content_type), 'application/json', 'application/vnd.spring-boot')"
+          - "status_code == 200"
+        condition: and
+
+      - type: word
+        part: body
+        words:
+          - '{"mem":'
+          - '{"heap":'
+          - '{"nonheap":'
+          - '{"threads":'
+          - '{"gc":'
+          - '{"names":['
+          - '"jvm.memory'
+          - '"process.cpu'
+        condition: or

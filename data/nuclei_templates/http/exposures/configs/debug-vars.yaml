@@ -1,0 +1,35 @@
+# RAG Annotation:
+# name: Golang Expvar - Detect
+# description: Golang expvar function exposes multiple public variables via HTTP such as stack trace information and server operation counters.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: debug-vars
+
+info:
+  name: Golang Expvar - Detect
+  author: luqman
+  severity: low
+  description: Golang expvar function exposes multiple public variables via HTTP such as stack trace information and server operation counters.
+  metadata:
+    max-request: 1
+  tags: go,debug,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/debug/vars"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '"memstats":'
+          - '"cmdline":'
+        condition: and
+
+      - type: status
+        status:
+          - 200

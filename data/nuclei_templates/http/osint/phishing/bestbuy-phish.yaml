@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: best buy phishing Detection
+# description: A best buy phishing website was detected
+
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: best-buy-phish
+
+info:
+  name: best buy phishing Detection
+  author: rxerium
+  severity: info
+  description: |
+    A best buy phishing website was detected
+  reference:
+    - https://bestbuy.com
+  metadata:
+    max-request: 1
+  tags: phishing,bestbuy,osint,discovery
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Best Buy | Official Online Store | Shop Now &amp; Save'
+
+      - type: status
+        status:
+          - 200
+
+      - type: dsl
+        dsl:
+          - '!contains(host,"bestbuy.com")'

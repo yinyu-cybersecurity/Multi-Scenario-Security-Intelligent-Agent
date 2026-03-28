@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: SonicWall Network Security Login - Detect
+# description: SonicWall Network Security Login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: sonicwall-security-login
+
+info:
+  name: SonicWall Network Security Login - Detect
+  author: JustaAcat
+  severity: info
+  description: SonicWall Network Security Login panel was detected.
+  classification:
+    cpe: cpe:2.3:h:sonicwall:tz_350:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 2
+    vendor: sonicwall
+    product: tz_350
+    shodan-query:
+      - title:"SonicWall Network Security Login"
+      - http.title:"sonicwall network security login"
+    fofa-query: title="sonicwall network security login"
+    google-query: intitle:"sonicwall network security login"
+  tags: panel,sonicwall,login,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+      - "{{BaseURL}}/sonicui/7/login/"
+
+    stop-at-first-match: true
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "SonicWall Network Security Login"
+
+      - type: status
+        status:
+          - 200

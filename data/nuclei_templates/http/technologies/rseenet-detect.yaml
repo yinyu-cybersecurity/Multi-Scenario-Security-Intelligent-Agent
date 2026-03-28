@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: Advantech R-SeeNet Detection
+# description: Advantech R-SeeNet Detection
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: rseenet-detect
+
+info:
+  name: Advantech R-SeeNet Detection
+  author: pdteam
+  severity: info
+  reference:
+    - https://icr.advantech.cz/products/software/r-seenet
+  classification:
+    cpe: cpe:2.3:a:advantech:r-seenet:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    shodan-query: http.title:"R-SeeNet"
+    product: r-seenet
+    vendor: advantech
+  tags: tech,rseenet,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - '<title>R-SeeNet (.*)</title>'
+
+    extractors:
+      - type: regex
+        group: 1
+        regex:
+          - '<title>R-SeeNet (.*)</title>'

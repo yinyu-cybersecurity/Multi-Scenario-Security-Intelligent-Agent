@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Saia PCD Web-Server Configuration Page - Detect
+# description: Saia PCD Web-Server configuration page was detected.
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: saia-web-server
+
+info:
+  name: Saia PCD Web-Server Configuration Page - Detect
+  author: DhiyaneshDk
+  severity: info
+  description: Saia PCD Web-Server configuration page was detected.
+  reference:
+    - https://www.exploit-db.com/ghdb/6865
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cvss-score: 0
+    cwe-id: CWE-200
+  metadata:
+    max-request: 1
+  tags: edb,config,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/loadtextfile.htm#programinfo"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "<title>Saia PCD Web Server</title>"
+        part: body
+
+      - type: status
+        status:
+          - 200

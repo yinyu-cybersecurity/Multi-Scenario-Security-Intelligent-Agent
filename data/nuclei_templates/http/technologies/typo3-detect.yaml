@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: TYPO3 Detection
+# description: TYPO3 Detection
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: typo3-detect
+
+info:
+  name: TYPO3 Detection
+  author: dadevel
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:typo3:typo3:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: typo3
+    product: typo3
+    shodan-query: http.component:"TYPO3"
+  tags: tech,typo3,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: header
+        case-insensitive: true
+        words:
+          - 'X-TYPO3-Parsetime:'
+
+      - type: word
+        part: body
+        words:
+          - '<meta name="generator" content="TYPO3'

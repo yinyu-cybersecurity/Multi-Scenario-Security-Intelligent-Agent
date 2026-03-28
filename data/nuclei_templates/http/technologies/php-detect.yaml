@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: PHP Detect
+# description: PHP Detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: php-detect
+
+info:
+  name: PHP Detect
+  author: y0no
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:php:php:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: php
+    product: php
+    shodan-query: "X-Powered-By: PHP"
+  tags: tech,php,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "PHP"
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        part: header
+        group: 1
+        regex:
+          - "X-Powered-By: PHP/([0-9.]+)"

@@ -1,0 +1,19 @@
+# RAG Annotation:
+# name: ShopXO Security Checks Workflow
+# description: 运行所有ShopXO相关nuclei模板的安全检查工作流，检测ShopXO电商系统的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: shopxo-workflow
+
+info:
+  name: ShopXO Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all ShopXO related nuclei templates on a given target.
+workflows:
+  - template: http/technologies/fingerprinthub-web-fingerprints.yaml
+    matchers:
+      - name: shopxo
+        subtemplates:
+          - tags: shopxo

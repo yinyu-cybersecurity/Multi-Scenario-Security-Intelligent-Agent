@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: SUNGROW Logger1000 Panel - Detect
+# description: SUNGROW (Solar Energy Inverter Monitoring Devices) Logger1000 panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: sungrow-logger1000-detect
+
+info:
+  name: SUNGROW Logger1000 Panel - Detect
+  author: gy741
+  severity: info
+  description: SUNGROW (Solar Energy Inverter Monitoring Devices) Logger1000 panel was detected.
+  reference:
+    - https://www.europe-solarstore.com/download/Sungrow/Sungrow-data-logger-1000_1000B-usert-manual.pdf
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:logger html:"htmlWebpackPlugin.options.title"
+  tags: panel,logger1000,sungrow,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'htmlWebpackPlugin.options.title'
+          - 'logger'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - text/html
+
+      - type: status
+        status:
+          - 200

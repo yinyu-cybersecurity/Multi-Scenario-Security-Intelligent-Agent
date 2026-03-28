@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: Unauthenticated Spark WebUI
+# description: Spark WebUI is exposed to external users without any authentication.
+# vuln_type: Authentication Bypass
+# severity: medium
+# cve_id: N/A
+
+
+id: spark-webui-unauth
+
+info:
+  name: Unauthenticated Spark WebUI
+  author: princechaddha
+  severity: medium
+  description: Spark WebUI is exposed to external users without any authentication.
+  reference:
+    - https://github.com/vulhub/vulhub/tree/master/spark/unacc
+  metadata:
+    max-request: 1
+  tags: unauth,vulhub,spark,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "<title>Spark Master at spark://"
+          - "<strong>URL:</strong>"
+        part: body
+        condition: and

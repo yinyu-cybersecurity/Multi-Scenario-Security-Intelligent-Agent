@@ -1,0 +1,30 @@
+# RAG Annotation:
+# name: Artifactory API Token Disclosure
+# description: Artifactory API Token Disclosure
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: artifactory-api-token
+
+info:
+  name: Artifactory API Token Disclosure
+  author: Ice3man
+  severity: info
+  reference:
+    - https://jfrog.com/help/r/jfrog-rest-apis/introduction-to-the-artifactory-rest-apis
+  metadata:
+    max-request: 1
+  tags: exposure,token,artifactory,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - '(?:\s|=|:|"|^)AKC[a-zA-Z0-9]{10,}'

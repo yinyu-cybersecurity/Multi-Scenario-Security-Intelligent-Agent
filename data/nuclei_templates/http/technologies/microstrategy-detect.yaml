@@ -1,0 +1,64 @@
+# RAG Annotation:
+# name: MicroStrategy Instances Detection Template
+# description: Detect if MicroStrategy instances exist in your URLS
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: microstrategy-detect
+
+info:
+  name: MicroStrategy Instances Detection Template
+  author: philippedelteil,Retr02332
+  severity: info
+  description: Detect if MicroStrategy instances exist in your URLS
+  metadata:
+    max-request: 16
+  tags: microstrategy,panel,tech,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/{{path}}"
+
+    payloads:
+      path:
+        - MicroStrategy/servlet/mstrWebAdmin/
+        - MicroStrategy/servlet/mstrWebAdmin
+        - MicroStrategy/servlet/taskProc/
+        - MicroStrategy/servlet/taskProc
+        - MicroStrategy/servlet/mstrWeb/
+        - MicroStrategy/servlet/mstrWeb
+        - MicroStrategy/
+        - MicroStrategy
+        - servlet/mstrWebAdmin/
+        - servlet/mstrWebAdmin
+        - servlet/taskProc/
+        - servlet/taskProc
+        - servlet/mstrWeb/
+        - servlet/mstrWeb
+        - asp/Main.aspx
+        - MicroStrategy/asp
+
+    stop-at-first-match: true
+    matchers:
+      - type: dsl
+        condition: or
+        dsl:
+          - 'contains(body, "MicroStrategy, Incorporated.")'
+          - 'contains(body, "microstrategy.servletName")'
+          - 'contains(body, "mstrHiddenInput")'
+
+    extractors:
+      - type: regex
+        part: body
+        group: 1
+        regex:
+          - 'ProductHelp/([0-9.A-Z]+)'
+
+      - type: regex
+        part: body
+        group: 1
+        regex:
+          - 'WELCOME. MicroStrategy ([0-9]+)'

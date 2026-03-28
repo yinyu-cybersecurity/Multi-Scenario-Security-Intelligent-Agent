@@ -1,0 +1,33 @@
+# RAG Annotation:
+# name: Apache2 Default Test Page
+# description: Apache2 Default Test Page
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: default-apache2-page
+
+info:
+  name: Apache2 Default Test Page
+  author: dhiyaneshDk
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:apache:http_server:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: apache
+    product: http_server
+    shodan-query: http.title:"Apache2 Debian Default Page:"
+  tags: tech,apache,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers:
+      - type: word
+        words:
+          - "<title>Apache2 Debian Default Page: It works</title>"
+        part: body

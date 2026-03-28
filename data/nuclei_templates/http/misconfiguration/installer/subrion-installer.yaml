@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Subrion CMS Web Installer - Exposure
+# description: Subrion CMS Web Installer has been exposed.
+
+# vuln_type: Security Misconfiguration
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: subrion-installer
+
+info:
+  name: Subrion CMS Web Installer - Exposure
+  author: ritikchaddha
+  severity: high
+  description: |
+    Subrion CMS Web Installer has been exposed.
+  reference:
+    - https://github.com/intelliants/subrion
+  classification:
+    cpe: cpe:2.3:a:intelliants:subrion:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: intelliants
+    product: subrion
+    fofa-query: title="Subrion CMS Web Installer"
+  tags: subrion,cms,install,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/install/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Subrion CMS Web Installer"
+          - "Installation wizard"
+        condition: and
+
+      - type: status
+        status:
+          - 200

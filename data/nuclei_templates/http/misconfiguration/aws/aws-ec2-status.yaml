@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Amazon EC2 Status
+# description: Amazon EC2 Status
+# vuln_type: Security Misconfiguration
+# severity: info
+# cve_id: N/A
+
+
+id: aws-ec2-status
+
+info:
+  name: Amazon EC2 Status
+  author: DhiyaneshDk
+  severity: info
+  reference:
+    - https://www.facebook.com/photo/?fbid=644887334348456&set=a.467014098802448
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: html:"Amazon EC2 Status"
+  tags: misconfig,ec2,aws,amazon,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>Amazon EC2 Status</title>'
+
+      - type: word
+        part: header
+        words:
+          - text/html
+
+      - type: status
+        status:
+          - 200

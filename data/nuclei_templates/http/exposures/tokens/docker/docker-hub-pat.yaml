@@ -1,0 +1,32 @@
+# RAG Annotation:
+# name: Docker Hub Personal Access Token
+# description: Docker Hub Personal Access Token
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: docker-hub-pat
+
+info:
+  name: Docker Hub Personal Access Token
+  author: DhiyaneshDK
+  severity: info
+  reference:
+    - https://github.com/praetorian-inc/noseyparker/blob/main/crates/noseyparker/data/default/builtin/rules/dockerhub.yml
+    - https://docs.docker.com/security/for-developers/access-tokens/
+  metadata:
+    verified: true
+    max-request: 1
+  tags: docker,exposure,tokens,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - \b(dckr_pat_[a-zA-Z0-9_-]{27})(?:$|[^a-zA-Z0-9_-])

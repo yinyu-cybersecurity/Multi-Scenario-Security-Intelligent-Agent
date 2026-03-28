@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: MongoDB Ops Manager Login Panel - Detect
+# description: MongoDB Ops Manager login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: mongodb-ops-manager
+
+info:
+  name: MongoDB Ops Manager Login Panel - Detect
+  author: dhiyaneshDK
+  severity: info
+  description: MongoDB Ops Manager login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:mongodb:ops_manager_server:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    shodan-query: http.title:"MongoDB Ops Manager"
+    product: ops_manager_server
+    vendor: mongodb
+  tags: panel,mongodb,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/account/login'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'MongoDB Ops Manager</title>'
+
+      - type: status
+        status:
+          - 200

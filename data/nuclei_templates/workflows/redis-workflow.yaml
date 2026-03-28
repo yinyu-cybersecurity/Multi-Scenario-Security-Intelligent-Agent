@@ -1,0 +1,17 @@
+# RAG Annotation:
+# name: Redis Security Checks Workflow
+# description: 运行所有Redis相关nuclei模板的安全检查工作流，检测Redis缓存数据库的安全漏洞和配置问题
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: redis-workflow
+
+info:
+  name: Redis Security Checks
+  author: pussycat0x
+  description: A simple workflow that runs all Redis related nuclei templates on a given target.
+workflows:
+  - template: javascript/enumeration/redis/redis-info.yaml
+    subtemplates:
+      - tags: redis

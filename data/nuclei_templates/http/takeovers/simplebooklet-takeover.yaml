@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: simplebooklet takeover detection
+# description: simplebooklet takeover was detected.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+id: simplebooklet-takeover
+
+info:
+  name: simplebooklet takeover detection
+  author: pdteam
+  severity: high
+  description: simplebooklet takeover was detected.
+  reference:
+    - https://github.com/EdOverflow/can-i-take-over-xyz
+  metadata:
+    max-request: 1
+  tags: takeover,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - Host != ip
+
+      - type: word
+        words:
+          - We can't find this <a href="https://simplebooklet.com
+
+    extractors:
+      - type: dsl
+        dsl:
+          - cname

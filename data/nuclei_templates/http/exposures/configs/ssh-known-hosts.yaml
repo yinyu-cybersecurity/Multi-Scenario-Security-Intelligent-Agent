@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: SSH Known Hosts File - Detect
+# description: SSH known hosts file was detected.
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: ssh-known-hosts
+
+info:
+  name: SSH Known Hosts File - Detect
+  author: geeknik
+  severity: info
+  description: SSH known hosts file was detected.
+  reference:
+    - https://datacadamia.com/ssh/known_hosts
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cvss-score: 0
+    cwe-id: CWE-200
+  metadata:
+    max-request: 2
+  tags: config,exposure,ssh,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.ssh/known_hosts"
+      - "{{BaseURL}}/.ssh/known_hosts.old"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "ssh-dss"
+          - "ssh-ed25519"
+          - "ssh-rsa"
+          - "ecdsa-sha2-nistp256"
+        condition: or
+
+      - type: status
+        status:
+          - 200

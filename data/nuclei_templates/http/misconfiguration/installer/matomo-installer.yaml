@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: Matomo Installer Exposure
+# description: Matomo is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Security Misconfiguration
+# severity: high
+# cve_id: N/A
+
+
+id: matomo-installer
+
+info:
+  name: Matomo Installer Exposure
+  author: DhiyaneshDk
+  severity: high
+  description: Matomo is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:matomo:matomo:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: matomo
+    product: matomo
+    shodan-query: title:"Matomo"
+  tags: misconfig,matomo,install,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Matomo"
+          - "Installation status"
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+
+      - type: status
+        status:
+          - 200

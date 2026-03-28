@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: CodeMeter Webadmin Dashboard
+# description: CodeMeter Webadmin Dashboard is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: codemeter-webadmin
+
+info:
+  name: CodeMeter Webadmin Dashboard
+  author: DhiyaneshDk
+  severity: low
+  description: CodeMeter Webadmin Dashboard is exposed.
+  classification:
+    cpe: cpe:2.3:a:wibu:codemeter:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: wibu
+    product: codemeter
+    shodan-query: html:"CodeMeter"
+  tags: misconfig,exposure,codemeter,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/index.html'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'WebAdmin | Dashboard'
+          - 'CodeMeter'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - text/html
+
+      - type: status
+        status:
+          - 200

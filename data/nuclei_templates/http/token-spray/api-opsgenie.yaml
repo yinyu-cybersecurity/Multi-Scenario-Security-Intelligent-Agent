@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: OpsGenie API Test
+# description: Forex currency market data
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-opsgenie
+
+info:
+  name: OpsGenie API Test
+  author: 0xpugal
+  severity: info
+  description: Forex currency market data
+  reference:
+    - https://docs.opsgenie.com/docs/api-overview
+  metadata:
+    max-request: 1
+  tags: token-spray,opsgenie
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://api.opsgenie.com/v2/alerts"
+
+    headers:
+      Authorization: GenieKey {{token}}
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"data":'
+          - '"paging":'
+          - '"took":'
+        condition: and

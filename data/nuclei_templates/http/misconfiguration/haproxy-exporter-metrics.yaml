@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: Detect Haproxy Exporter
+# description: Haproxy metrics is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: haproxy-exporter-metrics
+
+info:
+  name: Detect Haproxy Exporter
+  author: pussycat0x
+  severity: low
+  description: Haproxy metrics is exposed.
+  classification:
+    cpe: cpe:2.3:a:haproxy:haproxy:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: haproxy
+    product: haproxy
+    shodan-query: title:"haproxy exporter"
+  tags: haproxy,exposure,debug,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/metrics"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "HELP haproxy_"
+
+      - type: word
+        part: body
+        words:
+          - "haproxy_exporter"
+          - "haproxy_backend"
+        condition: or
+
+      - type: status
+        status:
+          - 200

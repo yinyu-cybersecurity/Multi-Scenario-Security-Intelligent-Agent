@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: Selenium Grid Panel - Detect
+# description: Selenium Grid panel was detected.
+# vuln_type: Authentication Bypass
+# severity: info
+# cve_id: N/A
+
+
+id: selenium-grid
+
+info:
+  name: Selenium Grid Panel - Detect
+  author: pussycat0x
+  severity: info
+  description: Selenium Grid panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:selenium:selenium_grid:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    shodan-query: http.title:"Selenium Grid"
+    product: selenium_grid
+    vendor: selenium
+  tags: panel,unauth,selenium,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/ui/index.html"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Selenium Grid</title>"
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: TYPO3 Debug Mode Enabled
+# description: TYPO3 Debug Mode is enabled.
+# vuln_type: Security Misconfiguration
+# severity: low
+# cve_id: N/A
+
+
+id: typo3-debug-mode
+
+info:
+  name: TYPO3 Debug Mode Enabled
+  author: tess,FLX
+  severity: low
+  description: TYPO3 Debug Mode is enabled.
+  classification:
+    cpe: cpe:2.3:a:typo3:typo3:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: typo3
+    product: typo3
+    shodan-query: http.title:"TYPO3 Exception"
+  tags: typo3,debug,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "TYPO3 Exception"
+          - "Uncaught TYPO3 Exception"
+        condition: or
+
+      - type: dsl
+        dsl:
+          - "status_code >= 500 && status_code < 600"

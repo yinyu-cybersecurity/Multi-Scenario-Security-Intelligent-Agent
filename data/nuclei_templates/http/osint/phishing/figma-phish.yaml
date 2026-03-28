@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: figma phishing Detection
+# description: A figma phishing website was detected
+
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: figma-phish
+
+info:
+  name: figma phishing Detection
+  author: rxerium
+  severity: info
+  description: |
+    A figma phishing website was detected
+  reference:
+    - https://figma.com
+  metadata:
+    max-request: 1
+  tags: phishing,figma,osint,discovery
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Figma: The Collaborative Interface Design Tool'
+
+      - type: status
+        status:
+          - 200
+
+      - type: dsl
+        dsl:
+          - '!contains(host,"figma.com")'

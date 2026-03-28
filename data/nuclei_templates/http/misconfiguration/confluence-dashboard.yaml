@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: Confluence Dashboard Exposed
+# description: Confluence Dashboard is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: confluence-dashboard
+
+info:
+  name: Confluence Dashboard Exposed
+  author: tess
+  severity: low
+  description: Confluence Dashboard is exposed.
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"Dashboard - Confluence"
+  tags: misconfig,exposure,confluence,atlassian,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Dashboard - Confluence'
+          - 'title="Spaces">'
+          - 'Atlassian Confluence'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - 'text/html'
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,52 @@
+# RAG Annotation:
+# name: Open Journal Systems Detect
+# description: Open Journal Systems, also known as OJS, is a free software for the management of peer-reviewed academic journals, created by the Public Knowledge Project.
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: open-journal-systems
+
+info:
+  name: Open Journal Systems Detect
+  author: ricardomaia
+  severity: info
+  description: Open Journal Systems, also known as OJS, is a free software for the management of peer-reviewed academic journals, created by the Public Knowledge Project.
+  reference:
+    - https://pkp.sfu.ca/ojs/
+  classification:
+    cpe: cpe:2.3:a:openjournalsystems:open_journal_systems:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: openjournalsystems
+    product: open_journal_systems
+    shodan-query: html:"Open Journal Systems"
+  tags: tech,ojs,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: regex
+        regex:
+          - '(?i).*<meta.name="generator".content="Open.Journal.Systems.*>'
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        name: version
+        part: body
+        group: 1
+        regex:
+          - '(?i).*<meta.name="generator".content="Open.Journal.Systems.([\d.|\d]+)'

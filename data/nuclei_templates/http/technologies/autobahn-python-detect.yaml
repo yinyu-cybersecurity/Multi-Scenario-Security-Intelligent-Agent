@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: Autobahn-Python Webserver Detect
+# description: Autobahn-Python Webserver Detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: autobahn-python-detect
+
+info:
+  name: Autobahn-Python Webserver Detect
+  author: pussycat0x
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:crossbar:autobahn:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: crossbar
+    product: autobahn
+    shodan-query: "AutobahnPython"
+  tags: tech,webserver,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: regex
+        regex:
+          - '<h1>AutobahnPython([ 0-9.]+)<\/h1>'
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - 'AutobahnPython([ 0-9.]+)'

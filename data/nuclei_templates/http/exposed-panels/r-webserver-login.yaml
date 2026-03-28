@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: R WebServer Login Panel - Detect
+# description: R WebServer login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: r-webserver-login
+
+info:
+  name: R WebServer Login Panel - Detect
+  author: pussycat0x
+  severity: info
+  description: R WebServer login panel was detected.
+  reference:
+    - https://www.exploit-db.com/ghdb/7132
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    max-request: 1
+  tags: edb,panel,rwebserver,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "<title>R WebServer</title>"
+
+      - type: status
+        status:
+          - 200

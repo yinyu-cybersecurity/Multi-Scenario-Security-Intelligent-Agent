@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: WordPress takeover detection
+# description: Bigcartel takeover was detected.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+id: wordpress-takeover
+
+info:
+  name: WordPress takeover detection
+  author: pdteam,geeknik
+  severity: high
+  description: Bigcartel takeover was detected.
+  reference:
+    - https://github.com/EdOverflow/can-i-take-over-xyz/pull/176
+    - https://hackerone.com/reports/274336
+  metadata:
+    max-request: 1
+  tags: takeover,wordpress,hackerone,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - Host != ip
+
+      - type: word
+        words:
+          - "Do you want to register"
+          - ".wordpress.com</em> doesn&#8217;t&nbsp;exist"
+        condition: and
+
+      - type: word
+        words:
+          - "cannot be registered"
+        negative: true
+
+    extractors:
+      - type: dsl
+        dsl:
+          - cname

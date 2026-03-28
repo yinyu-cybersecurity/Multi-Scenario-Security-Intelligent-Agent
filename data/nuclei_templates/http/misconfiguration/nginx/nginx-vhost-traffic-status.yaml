@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: Nginx Vhost Traffic Status
+# description: Nginx Vhost Traffic status is exposed.
+# vuln_type: Security Misconfiguration
+# severity: low
+# cve_id: N/A
+
+
+id: nginx-vhost-traffic-status
+
+info:
+  name: Nginx Vhost Traffic Status
+  author: geeknik
+  severity: low
+  description: Nginx Vhost Traffic status is exposed.
+  reference:
+    - https://github.com/vozlt/nginx-module-vts
+  metadata:
+    max-request: 1
+  tags: status,nginx,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/status"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Nginx Vhost Traffic Status"
+          - "Host"
+          - "Zone"
+        condition: and
+
+      - type: status
+        status:
+          - 200

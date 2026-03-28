@@ -1,0 +1,54 @@
+# RAG Annotation:
+# name: ExaGrid Manager Login Panel - Detect
+# description: ExaGrid Manager login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: exagrid-manager-panel
+
+info:
+  name: ExaGrid Manager Login Panel - Detect
+  author: pussycat0x
+  severity: info
+  description: ExaGrid Manager login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:h:exagrid:backup_appliance:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: exagrid
+    product: backup_appliance
+    shodan-query:
+      - title:"ExaGrid Manager"
+      - http.title:"exagrid manager"
+    fofa-query: title="exagrid manager"
+    google-query: intitle:"exagrid manager"
+  tags: exagrid,manager,login,panel,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "ExaGrid Manager"
+
+      - type: word
+        part: header
+        words:
+          - text/html
+
+      - type: status
+        status:
+          - 200

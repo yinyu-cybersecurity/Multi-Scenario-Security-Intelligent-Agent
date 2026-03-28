@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: Redis Enterprise - Detect
+# description: Redis Enterprise - Detect
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: redis-enterprise-panel
+
+info:
+  name: Redis Enterprise - Detect
+  author: tess
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:redis:redis_enterprise:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: redis
+    product: redis_enterprise
+    shodan-query: title:"Enterprise-Class Redis for Developers"
+  tags: panel,redis,enterprise,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/#/login"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Enterprise-Class Redis for Developers'
+          - 'cm/config/environment'
+        condition: and
+
+      - type: status
+        status:
+          - 200

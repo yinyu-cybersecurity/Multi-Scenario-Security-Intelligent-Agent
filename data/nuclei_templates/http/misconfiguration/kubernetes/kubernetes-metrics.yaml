@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Detect Kubernetes Exposed Metrics
+# description: Information Disclosure of Garbage Collection
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: kubernetes-metrics
+
+info:
+  name: Detect Kubernetes Exposed Metrics
+  author: pussycat0x
+  severity: low
+  description: Information Disclosure of Garbage Collection
+  reference:
+    - https://kubernetes.io/docs/concepts/cluster-administration/system-metrics/#metrics-in-kubernetes
+  metadata:
+    max-request: 1
+  tags: kubernetes,exposure,devops,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/metrics"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        condition: and
+        words:
+          - "namespace"
+          - "HELP"
+          - "TYPE"
+          - "kube"
+
+      - type: status
+        status:
+          - 200

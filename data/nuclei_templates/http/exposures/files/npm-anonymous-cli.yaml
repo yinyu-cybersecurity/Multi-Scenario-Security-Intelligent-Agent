@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: NPM Anonymous CLI Metrics Exposure
+# description: NPM Anonymous CLI Metrics Exposure
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: npm-anonymous-cli
+
+info:
+  name: NPM Anonymous CLI Metrics Exposure
+  author: DhiyaneshDK
+  severity: info
+  reference:
+    - https://github.com/maurosoria/dirsearch/blob/master/db/dicc.txt
+  metadata:
+    verified: true
+    max-request: 2
+    shodan-query: html:"anonymous-cli-metrics.json"
+  tags: exposure,npm,config,files,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/.npm/anonymous-cli-metrics.json'
+      - '{{BaseURL}}/anonymous-cli-metrics.json'
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"metricId":'
+          - '"metrics":'
+          - '"successfulInstalls":'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "application/json"

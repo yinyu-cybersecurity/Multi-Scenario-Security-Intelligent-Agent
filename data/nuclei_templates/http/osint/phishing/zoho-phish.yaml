@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: Zoho phishing Detection
+# description: A Zoho phishing website was detected
+
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: zoho-phish
+
+info:
+  name: Zoho phishing Detection
+  author: rxerium
+  severity: info
+  description: |
+    A Zoho phishing website was detected
+  reference:
+    - https://zoho.com
+  metadata:
+    max-request: 1
+  tags: phishing,zoho,business,osint,discovery
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>Zoho - Cloud Software Suite and SaaS Applications for Businesses'
+
+      - type: status
+        status:
+          - 200
+
+      - type: dsl
+        dsl:
+          - '!contains(host,"zoho.com")'

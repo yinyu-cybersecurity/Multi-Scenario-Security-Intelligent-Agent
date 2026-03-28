@@ -1,0 +1,34 @@
+# RAG Annotation:
+# name: Travis CI API Test
+# description: Travis CI API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-travisci
+
+info:
+  name: Travis CI API Test
+  author: zzeitlin
+  severity: info
+  reference:
+    - https://developer.travis-ci.com/
+  metadata:
+    max-request: 1
+  tags: token-spray,travis
+
+self-contained: true
+http:
+  - method: GET
+    path:
+      - "https://api.travis-ci.com/user"
+    headers:
+      Travis-API-Version: 3
+      Authorization: token {{token}}
+
+    matchers:
+      - type: status
+        status:
+          - 403
+        negative: true

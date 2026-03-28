@@ -1,0 +1,51 @@
+# RAG Annotation:
+# name: Gitea Detect
+# description: Gitea was detected.
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: gitea-detect
+
+info:
+  name: Gitea Detect
+  author: pikpikcu,righettod
+  severity: info
+  description: Gitea was detected.
+  reference:
+    - https://about.gitea.com/
+    - https://docs.gitea.com/api
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.title:"Gitea"
+  tags: tech,gitea,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/user/login"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Powered by Gitea"
+          - 'content="Gitea'
+        condition: or
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        part: body
+        group: 1
+        regex:
+          - "Powered by Gitea(\\s*)Version:(\\s*)([\\d.]+)"
+          - "Gitea Version: ([0-9a-z+-.~]+)"
+          - 'theme-gitea-auto.css\?v=([0-9a-z+-.~]+)'
+          - 'encodeURIComponent.{2}([0-9a-z+-.~]+).{2}'

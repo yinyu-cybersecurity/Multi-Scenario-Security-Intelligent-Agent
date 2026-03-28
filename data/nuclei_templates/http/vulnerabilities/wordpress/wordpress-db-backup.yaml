@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: WordPress DB Backup
+# description: This template checks for exposed database in wordpress.
+# vuln_type: Security Assessment
+# severity: medium
+# cve_id: N/A
+
+
+---
+id: wordpress-db-backup
+
+info:
+  name: WordPress DB Backup
+  author: dwisiswant0
+  severity: medium
+  description: This template checks for exposed database in wordpress.
+  metadata:
+    max-request: 1
+  tags: wordpress,backups,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/wp-content/backup-db/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Index of /"
+          - ".sql\">"
+        condition: and
+        part: body
+
+      - type: status
+        status:
+          - 200

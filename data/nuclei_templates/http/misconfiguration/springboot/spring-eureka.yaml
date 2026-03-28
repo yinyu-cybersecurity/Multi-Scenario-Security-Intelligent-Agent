@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: Spring Eureka Exposure
+# description: Spring Eureka is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: spring-eureka
+
+info:
+  name: Spring Eureka Exposure
+  author: tess
+  severity: low
+  description: Spring Eureka is exposed.
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"Eureka"
+  tags: misconfig,springboot,exposure,eureka,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Eureka'
+          - 'Toggle navigation'
+          - 'Last 1000 since startup'
+        condition: and
+
+      - type: status
+        status:
+          - 200

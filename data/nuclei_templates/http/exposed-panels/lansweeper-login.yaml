@@ -1,0 +1,53 @@
+# RAG Annotation:
+# name: Lansweeper Login Panel - Detect
+# description: Lansweeper login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: lansweeper-login
+
+info:
+  name: Lansweeper Login Panel - Detect
+  author: divya_mudgal
+  severity: info
+  description: Lansweeper login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:lansweeper:lansweeper:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: lansweeper
+    product: lansweeper
+    shodan-query:
+      - title:"Lansweeper - Login"
+      - http.title:"lansweeper - login"
+    fofa-query: title="lansweeper - login"
+    google-query: intitle:"lansweeper - login"
+  tags: lansweeper,tech,panel,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/login.aspx"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        name: login
+        words:
+          - "Lansweeper - Login"
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        part: body
+        group: 1
+        regex:
+          - '"\/js\/CustomControls\.js\?([0-9.]+)" type="text\/javascript"'

@@ -1,0 +1,17 @@
+# RAG Annotation:
+# name: Lansweeper Security Checks Workflow
+# description: 运行所有Lansweeper相关nuclei模板的安全检查工作流，检测Lansweeper IT资产管理系统的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: lansweeper-workflow
+
+info:
+  name: Lansweeper Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all Lansweeper related nuclei templates on a given target.
+workflows:
+  - template: http/exposed-panels/lansweeper-login.yaml
+    subtemplates:
+      - tags: lansweeper

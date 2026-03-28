@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: eZ Publish Login Panel - Detect
+# description: eZ Publish login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: ez-publish-panel
+
+info:
+  name: eZ Publish Login Panel - Detect
+  author: ritikchaddha
+  severity: info
+  description: eZ Publish login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:ez:ez_publish:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.html:"eZ Publish"
+    product: ez_publish
+    vendor: ez
+  tags: panel,ez,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'content="eZ Publish'
+        case-insensitive: true
+
+      - type: word
+        part: header
+        words:
+          - 'eZ Publish'

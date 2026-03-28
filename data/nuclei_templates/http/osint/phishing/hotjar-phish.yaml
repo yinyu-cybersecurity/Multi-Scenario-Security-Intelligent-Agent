@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: Hotjar phishing Detection
+# description: A Hotjar phishing website was detected
+
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: hotjar-phish
+
+info:
+  name: Hotjar phishing Detection
+  author: rxerium
+  severity: info
+  description: |
+    A Hotjar phishing website was detected
+  reference:
+    - https://hotjar.com
+  metadata:
+    max-request: 1
+  tags: phishing,hotjar,analytics,osint,discovery
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>Hotjar: Website Heatmaps &amp; Behavior Analytics Tools'
+
+      - type: status
+        status:
+          - 200
+
+      - type: dsl
+        dsl:
+          - '!contains(host,"hotjar.com")'

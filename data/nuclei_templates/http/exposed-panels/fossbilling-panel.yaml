@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: FOSSBilling Panel - Detect
+# description: FOSSBilling panel has been detected.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: fossbilling-panel
+
+info:
+  name: FOSSBilling Panel - Detect
+  author: ritikchaddha
+  severity: info
+  description: |
+    FOSSBilling panel has been detected.
+  classification:
+    cpe: cpe:2.3:a:fossbilling:fossbilling:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: fossbilling
+    product: fossbilling
+    shodan-query: title:"FOSSBilling"
+  tags: fossbilling,panel,detect,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>FOSSBilling"
+
+      - type: status
+        status:
+          - 200

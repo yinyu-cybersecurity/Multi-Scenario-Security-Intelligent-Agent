@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: Vtiger CRM Installer Exposure
+# description: Vtiger CRM is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: vtiger-installer
+
+info:
+  name: Vtiger CRM Installer Exposure
+  author: DhiyaneshDk
+  severity: high
+  description: Vtiger CRM is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:vtiger:vtiger_crm:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: vtiger
+    product: vtiger_crm
+    shodan-query: html:"Welcome to Vtiger CRM"
+  tags: misconfig,vtiger,install,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/index.php?module=Install&view=Index'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Installation Wizard'
+          - 'Welcome to Vtiger CRM'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,50 @@
+# RAG Annotation:
+# name: qdPM Login Panel
+# description: qdPM Login Panel
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: qdpm-login-panel
+
+info:
+  name: qdPM Login Panel
+  author: theamanrawat
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:qdpm:qdpm:*:*:*:*:*:*:*:*
+  metadata:
+    verified: "true"
+    max-request: 2
+    vendor: qdpm
+    product: qdpm
+    shodan-query: http.favicon.hash:762074255
+    fofa-query: icon_hash=762074255
+  tags: panel,qdpm,login,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+      - '{{BaseURL}}/index.php/login'
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'qdPM'
+          - '/index.php/login/restorePassword'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - 'text/html'
+
+      - type: status
+        status:
+          - 200

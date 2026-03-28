@@ -1,0 +1,55 @@
+# RAG Annotation:
+# name: Kiteworks PCN Panel - Detect
+# description: Kiteworks PCN Login Panel was detected.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: kiteworks-pcn-panel
+
+info:
+  name: Kiteworks PCN Panel - Detect
+  author: righettod
+  severity: info
+  description: |
+    Kiteworks PCN Login Panel was detected.
+  reference:
+    - https://www.kiteworks.com/platform/private-content-network/
+  classification:
+    cpe: cpe:2.3:a:accellion:kiteworks:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: accellion
+    product: kiteworks
+    shodan-query: http.favicon.hash:-1215318992
+    fofa-query: icon_hash=-1215318992
+  tags: panel,kiteworks,login,detect,accellion,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/login/locales/login_en.json'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Secured by Kiteworks'
+          - 'Return to sign in'
+        condition: and
+        case-insensitive: true
+
+      - type: word
+        part: header
+        words:
+          - 'application/octet-stream'
+
+      - type: status
+        status:
+          - 200

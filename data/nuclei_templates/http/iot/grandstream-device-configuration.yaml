@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: Grandstream Device Configuration
+# description: Exposed Grandstream device configuration page detected.
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: grandstream-device-configuration
+
+info:
+  name: Grandstream Device Configuration
+  author: dhiyaneshDK
+  severity: info
+  description: Exposed Grandstream device configuration page detected.
+  classification:
+    cpe: cpe:2.3:o:grandstream:ht801_firmware:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: grandstream
+    product: ht801_firmware
+    shodan-query: http.title:"Grandstream Device Configuration"
+  tags: iot,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>Grandstream Device Configuration</title>'
+
+      - type: status
+        status:
+          - 200

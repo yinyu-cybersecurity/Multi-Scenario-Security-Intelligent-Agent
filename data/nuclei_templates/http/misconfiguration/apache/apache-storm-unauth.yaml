@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: Apache Storm Unauth
+# description: Apache Storm instance is exposed.
+# vuln_type: Authentication Bypass
+# severity: medium
+# cve_id: N/A
+
+
+id: apache-storm-unauth
+
+info:
+  name: Apache Storm Unauth
+  author: pikpikcu
+  severity: medium
+  description: Apache Storm instance is exposed.
+  reference:
+    - https://storm.apache.org/releases/current/STORM-UI-REST-API.html
+  metadata:
+    max-request: 1
+  tags: apache,unauth,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/api/v1/cluster/summary'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"totalMem":'
+          - '"stormVersion":'
+        condition: and
+
+      - type: status
+        status:
+          - 200

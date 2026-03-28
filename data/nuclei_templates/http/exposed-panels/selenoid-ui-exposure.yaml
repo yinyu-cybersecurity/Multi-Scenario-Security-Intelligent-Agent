@@ -1,0 +1,33 @@
+# RAG Annotation:
+# name: Selenoid UI Login Panel - Detect
+# description: Selenoid UI login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: selenoid-ui-exposure
+
+info:
+  name: Selenoid UI Login Panel - Detect
+  author: pdteam
+  severity: info
+  description: Selenoid UI login panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+  metadata:
+    max-request: 1
+  tags: panel,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/admin/login'
+
+    matchers:
+      - type: word
+        words:
+          - "<title>Selenoid UI</title>"
+          - "/manifest.json"
+        condition: and

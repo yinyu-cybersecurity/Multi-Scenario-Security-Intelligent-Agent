@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: Global Traffic Statistics Exposure
+# description: Global Traffic Statistics page is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: global-traffic-statistics
+
+info:
+  name: Global Traffic Statistics Exposure
+  author: tess
+  severity: low
+  description: Global Traffic Statistics page is exposed.
+  classification:
+    cpe: cpe:2.3:a:f5:big-ip_global_traffic_manager:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: f5
+    product: big-ip_global_traffic_manager
+    shodan-query: title:"Global Traffic Statistics"
+  tags: misconfig,global,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Global Traffic Statistics"
+          - "Listening on"
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - "text/html"
+
+      - type: status
+        status:
+          - 200

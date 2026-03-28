@@ -1,0 +1,31 @@
+# RAG Annotation:
+# name: Google Elevation API Test
+# description: Google Elevation API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-googleelevation
+
+info:
+  name: Google Elevation API Test
+  author: zzeitlin
+  severity: info
+  metadata:
+    max-request: 1
+  tags: token-spray,google,elevation
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://maps.googleapis.com/maps/api/elevation/json?locations=39.7391536,-104.9847034&key={{token}}"
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'error_message'
+        negative: true

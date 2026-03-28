@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: Tengine Default Page
+# description: Tengine Default Page
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: default-tengine-page
+
+info:
+  name: Tengine Default Page
+  author: pussycat0x
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:alibaba:tengine:*:*:*:*:nginx:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: alibaba
+    product: tengine
+    shodan-query: http.title:"Welcome to tengine"
+  tags: tech,tengine,default-page,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Welcome to tengine'
+          - 'Thank you for using tengine'
+        condition: and
+
+      - type: status
+        status:
+          - 200

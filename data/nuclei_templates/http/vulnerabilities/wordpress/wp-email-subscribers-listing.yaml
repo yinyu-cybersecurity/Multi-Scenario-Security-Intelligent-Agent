@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: WordPress Plugin Email Subscribers Listing
+# description: Searches for sensitive directories present in the email-subscribers plugin.
+# vuln_type: Security Assessment
+# severity: low
+# cve_id: N/A
+
+
+---
+id: wp-email-subscribers-listing
+
+info:
+  name: WordPress Plugin Email Subscribers Listing
+  author: pussycat0x
+  severity: low
+  description: Searches for sensitive directories present in the email-subscribers plugin.
+  reference:
+    - https://www.exploit-db.com/ghdb/6428
+  metadata:
+    max-request: 1
+  tags: wordpress,listing,plugin,edb,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/wp-content/plugins/email-subscribers"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Index of"
+          - "wp-content/plugins/email-subscribers"
+        condition: and
+
+      - type: status
+        status:
+          - 200

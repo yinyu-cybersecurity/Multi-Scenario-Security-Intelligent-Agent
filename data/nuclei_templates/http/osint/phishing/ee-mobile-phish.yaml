@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: ee phishing Detection
+# description: A ee phishing website was detected
+
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: ee-mobile-phish
+
+info:
+  name: ee phishing Detection
+  author: rxerium
+  severity: info
+  description: |
+    A ee phishing website was detected
+  reference:
+    - https://ee.co.uk
+  metadata:
+    max-request: 1
+  tags: phishing,ee,osint,discovery
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Superfast 5G &amp; 4G Phones, Tablets and Fibre Broadband | EE'
+
+      - type: status
+        status:
+          - 200
+
+      - type: dsl
+        dsl:
+          - '!contains(host,"ee.co.uk")'

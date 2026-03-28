@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: SMF Installer
+# description: SMF is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: smf-installer
+
+info:
+  name: SMF Installer
+  author: DhiyaneshDk
+  severity: high
+  description: SMF is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:simplemachines:simple_machine_forum:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: simplemachines
+    product: simple_machine_forum
+    shodan-query: title:"SMF Installer"
+  tags: misconfig,smf,install,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/install.php'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'SMF Installer'
+          - 'Progress'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - 'text/html'
+
+      - type: status
+        status:
+          - 200

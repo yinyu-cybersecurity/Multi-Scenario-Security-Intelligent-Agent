@@ -1,0 +1,28 @@
+# RAG Annotation:
+# name: Unauthenticated Lansweeper Instance
+# description: Lansweeper Instance is exposed.
+# vuln_type: Authentication Bypass
+# severity: high
+# cve_id: N/A
+
+
+id: unauthenticated-lansweeper
+
+info:
+  name: Unauthenticated Lansweeper Instance
+  author: divya_mudgal
+  severity: high
+  description: Lansweeper Instance is exposed.
+  metadata:
+    max-request: 1
+  tags: lansweeper,unauth,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/Default.aspx"
+
+    matchers:
+      - type: word
+        words:
+          - "Main page - Lansweeper"

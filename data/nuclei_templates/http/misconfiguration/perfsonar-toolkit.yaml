@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: perfSONAR Toolkit - Exposure
+# description: perfSONAR Toolkit is exposed.
+# vuln_type: Security Misconfiguration
+# severity: medium
+# cve_id: N/A
+
+
+id: perfsonar-toolkit
+
+info:
+  name: perfSONAR Toolkit - Exposure
+  author: DhiyaneshDk
+  severity: medium
+  description: perfSONAR Toolkit is exposed.
+  reference:
+    - https://www.facebook.com/photo?fbid=619180260252497&set=pcb.619180283585828
+  classification:
+    cpe: cpe:2.3:a:perfsonar:perfsonar:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: perfsonar
+    product: perfsonar
+    shodan-query: title:"perfSONAR"
+  tags: misconfig,perfsonar,toolkit,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/toolkit/"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>perfSONAR Toolkit</title>'
+
+      - type: status
+        status:
+          - 200

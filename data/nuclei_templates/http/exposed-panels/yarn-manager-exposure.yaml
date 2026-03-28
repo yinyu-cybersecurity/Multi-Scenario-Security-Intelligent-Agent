@@ -1,0 +1,35 @@
+# RAG Annotation:
+# name: Apache YARN ResourceManager Panel - Detect
+# description: Apache YARN ResourceManager panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: low
+# cve_id: N/A
+
+
+id: yarn-manager-exposure
+
+info:
+  name: Apache YARN ResourceManager Panel - Detect
+  author: pdteam
+  severity: low
+  description: Apache YARN ResourceManager panel was detected.
+  classification:
+    cpe: cpe:2.3:a:apache:hadoop:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: apache
+    product: hadoop
+  tags: panel,apache,yarn,exposure,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/cluster/cluster'
+
+    matchers:
+      - type: word
+        words:
+          - 'hadoop'
+          - 'resourcemanager'
+          - 'logged in as: dr.who'
+        condition: and

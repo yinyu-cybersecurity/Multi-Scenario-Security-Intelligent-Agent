@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: alfacgiapi
+# description: Searches for sensitive directories present in the alfacgiapi plugin.
+# vuln_type: Security Assessment
+# severity: low
+# cve_id: N/A
+
+
+---
+id: alfacgiapi-wordpress
+
+info:
+  name: alfacgiapi
+  author: pussycat0x
+  severity: low
+  description: Searches for sensitive directories present in the alfacgiapi plugin.
+  reference:
+    - https://www.exploit-db.com/ghdb/6999
+  metadata:
+    max-request: 4
+  tags: wordpress,listing,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/wp-includes/ALFA_DATA/"
+      - "{{BaseURL}}/wp-content/uploads/alm_templates/ALFA_DATA/alfacgiapi/"
+      - "{{BaseURL}}/ALFA_DATA/alfacgiapi/"
+      - "{{BaseURL}}/cgi-bin/ALFA_DATA/alfacgiapi/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Index of"
+
+      - type: word
+        words:
+          - "/wp-content/plugins/"
+          - "/wp-includes/ALFA_DATA/"
+          - "/ALFA_DATA/alfacgiapi/"
+          - "/cgi-bin/ALFA_DATA/alfacgiapi/"
+        condition: or
+
+      - type: status
+        status:
+          - 200

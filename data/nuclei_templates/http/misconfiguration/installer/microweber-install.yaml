@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: Microweber Exposed Installation - Detected
+# description: Microweber Installation page was exposed.
+
+# vuln_type: Security Misconfiguration
+# severity: high
+# cve_id: N/A
+
+
+
+
+id: microweber-install
+
+info:
+  name: Microweber Exposed Installation - Detected
+  author: pussycat0x
+  severity: high
+  description: |
+    Microweber Installation page was exposed.
+  metadata:
+    verified: true
+    max-request: 1
+  tags: misconfig,microweber,install,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '<title>Installation</title>'
+          - 'Database Server'
+          - 'Login Information'
+        condition: and
+
+      - type: status
+        status:
+          - 200

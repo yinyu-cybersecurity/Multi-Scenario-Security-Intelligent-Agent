@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Samsung SmartTV Debug Config
+# description: Samsung SmartTV Debug Config
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: samsung-smarttv-debug
+
+info:
+  name: Samsung SmartTV Debug Config
+  author: pussycat0x
+  severity: info
+  classification:
+    cpe: cpe:2.3:o:samsung:nt14u_firmware:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: samsung
+    product: nt14u_firmware
+    shodan-query: title:"Debug Config"
+  tags: samsung,tech,iot,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>Debug Config</title>'
+          - 'MultiScreen Service'
+        condition: and
+
+      - type: status
+        status:
+          - 200

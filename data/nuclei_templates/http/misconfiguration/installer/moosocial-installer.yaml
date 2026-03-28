@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: mooSocial Installation - Exposure
+# description: mooSocial Installation - Exposure
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: moosocial-installer
+
+info:
+  name: mooSocial Installation - Exposure
+  author: ritikchaddha
+  severity: high
+  classification:
+    cpe: cpe:2.3:a:moosocial:moosocial:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: moosocial
+    product: moosocial
+    shodan-query: html:"mooSocial Installation"
+  tags: exposure,moosocial,misconfig,install,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/install"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Welcome to mooSocial Installation'
+
+      - type: status
+        status:
+          - 200

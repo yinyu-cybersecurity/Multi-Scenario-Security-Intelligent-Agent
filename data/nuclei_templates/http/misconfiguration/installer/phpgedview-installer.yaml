@@ -1,0 +1,43 @@
+# RAG Annotation:
+# name: PhpGedView Installer Exposure
+# description: PhpGedView is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: phpgedview-installer
+
+info:
+  name: PhpGedView Installer Exposure
+  author: ritikchaddha
+  severity: high
+  description: PhpGedView is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:phpgedview:phpgedview:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: phpgedview
+    product: phpgedview
+    shodan-query: html:"/phpgedview.db"
+  tags: misconfig,phpgedview,install,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/install.php'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Installation Wizard'
+          - 'phpgedview'
+        condition: and
+        case-insensitive: true
+
+      - type: status
+        status:
+          - 200

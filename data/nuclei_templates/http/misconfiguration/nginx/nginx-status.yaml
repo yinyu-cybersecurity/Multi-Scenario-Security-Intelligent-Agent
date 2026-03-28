@@ -1,0 +1,33 @@
+# RAG Annotation:
+# name: Nginx Status Page
+# description: Nginx Status Page
+# vuln_type: Security Misconfiguration
+# severity: info
+# cve_id: N/A
+
+
+id: nginx-status
+
+info:
+  name: Nginx Status Page
+  author: dhiyaneshDK
+  severity: info
+  metadata:
+    max-request: 2
+  tags: misconfig,nginx,status,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/nginx_status"
+      - "{{BaseURL}}/nginx-status"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Active connections:'
+
+      - type: status
+        status:
+          - 200

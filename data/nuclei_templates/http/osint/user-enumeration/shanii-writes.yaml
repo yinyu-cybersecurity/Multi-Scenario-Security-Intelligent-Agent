@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Shanii Writes User Name Information - Detect
+# description: Shanii Writes user name information check was conducted.
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: shanii-writes
+
+info:
+  name: Shanii Writes User Name Information - Detect
+  author: dwisiswant0
+  severity: info
+  description: Shanii Writes user name information check was conducted.
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cvss-score: 0
+    cwe-id: CWE-200
+  metadata:
+    max-request: 1
+  tags: osint,osint-social,shanii-writes,discovery
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://forum.shanniiwrites.com/u/{{user}}/summary.json"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        part: body
+        words:
+          - "topics"

@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: HCP Anywhere - Detect
+# description: HCP Anywhere was detected.
+
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+
+
+id: hcpanywhere-detect
+
+info:
+  name: HCP Anywhere - Detect
+  author: righettod
+  severity: info
+  description: |
+    HCP Anywhere was detected.
+  reference:
+    - https://hcpanywhere.hds.com/portal/public/help-complete/en/cp_hcpaw_what_is.html
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: icon_hash="915499123"
+  tags: tech,hcpanywhere,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/userportal/documentation/mapping.json"
+
+    matchers:
+      - type: dsl
+        dsl:
+          - 'status_code == 200'
+          - 'contains_any(body, "brandedUrl", "helpId", "url") && contains(body, "hcpaw")'
+        condition: and

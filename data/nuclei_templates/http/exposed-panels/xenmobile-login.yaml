@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: Xenmobile Console Login Panel - Detect
+# description: Xenmobile Console login panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: xenmobile-login
+
+info:
+  name: Xenmobile Console Login Panel - Detect
+  author: dhiyaneshDK
+  severity: info
+  description: Xenmobile Console login panel was detected.
+  reference:
+    - https://www.exploit-db.com/ghdb/6675
+  classification:
+    cvss-metrics: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:citrix:xenmobile_device_manager_mdm:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: citrix
+    product: xenmobile_device_manager_mdm
+  tags: panel,edb,citrix,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/zdm/login_xdm_uc.jsp'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>XenMobile - Console - Logon</title>'
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: Openssl Detect
+# description: Openssl Detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: openssl-detect
+
+info:
+  name: Openssl Detect
+  author: h4kux,princechaddha
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:openssl:openssl:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: openssl
+    product: openssl
+    shodan-query: OpenSSL
+  tags: tech,openssl,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: server
+        words:
+          - "OpenSSL"
+
+      - type: status
+        status:
+          - 200
+
+    extractors:
+      - type: regex
+        part: header
+        regex:
+          - 'OpenSSL\/([0-9.a-z]+)'

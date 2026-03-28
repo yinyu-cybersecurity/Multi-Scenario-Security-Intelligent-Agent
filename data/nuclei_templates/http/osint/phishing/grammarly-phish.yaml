@@ -1,0 +1,45 @@
+# RAG Annotation:
+# name: Grammarly phishing Detection
+# description: A Grammarly phishing website was detected
+
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: grammarly-phish
+
+info:
+  name: Grammarly phishing Detection
+  author: rxerium
+  severity: info
+  description: |
+    A Grammarly phishing website was detected
+  reference:
+    - https://grammarly.com
+  metadata:
+    max-request: 1
+  tags: phishing,grammarly,writing,osint,discovery
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - '<title>Grammarly: Free AI Writing Assistant'
+
+      - type: status
+        status:
+          - 200
+
+      - type: dsl
+        dsl:
+          - '!contains(host,"grammarly.com")'

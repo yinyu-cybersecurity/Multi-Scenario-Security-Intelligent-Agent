@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: Craft CMS Detect
+# description: Detects Craft CMS
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: craft-cms-detect
+
+info:
+  name: Craft CMS Detect
+  author: skeltavik
+  severity: info
+  description: Detects Craft CMS
+  reference:
+    - https://craftcms.com
+  metadata:
+    max-request: 1
+  tags: tech,craftcms,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers:
+      - type: word
+        part: header
+        words:
+          - 'X-Powered-By: Craft CMS'
+
+      - type: regex
+        part: header
+        regex:
+          - 'Set-Cookie: (Craft|CRAFT)'
+
+      - type: regex
+        part: body
+        regex:
+          - '(?i)CRAFT_CSRF_TOKEN'

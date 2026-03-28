@@ -1,0 +1,39 @@
+# RAG Annotation:
+# name: Kube API Nodes
+# description: Scans for kube nodes
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: kube-api-nodes
+
+info:
+  name: Kube API Nodes
+  author: sharath,ritikchaddha
+  severity: info
+  description: Scans for kube nodes
+  metadata:
+    max-request: 1
+  tags: tech,k8s,kubernetes,devops,kube,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/api/v1/nodes"
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"NodeList":'
+          - '"items":'
+        condition: and
+
+      - type: word
+        part: body
+        words:
+          - '"containerRuntimeVersion"'
+          - '"kubeletVersion": "v'
+        condition: and

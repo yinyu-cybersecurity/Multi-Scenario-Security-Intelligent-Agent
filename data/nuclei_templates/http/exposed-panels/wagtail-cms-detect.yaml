@@ -1,0 +1,49 @@
+# RAG Annotation:
+# name: Wagtail Login - Detect
+# description: The Wagtail panel has been detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: wagtail-login
+
+info:
+  name: Wagtail Login - Detect
+  author: kishore-hariram
+  severity: info
+  description: The Wagtail panel has been detected.
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:torchbox:wagtail:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 2
+    vendor: torchbox
+    product: wagtail
+    shodan-query:
+      - title:"Wagtail - Sign in"
+      - http.title:"wagtail - sign in"
+    fofa-query: title="wagtail - sign in"
+    google-query: intitle:"wagtail - sign in"
+  tags: panel,wagtail,torchbox,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/login/?next=/'
+      - '{{BaseURL}}/admin/login/?next=/admin/'
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Wagtail - Sign in'
+
+      - type: status
+        status:
+          - 200

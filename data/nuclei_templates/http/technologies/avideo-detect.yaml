@@ -1,0 +1,51 @@
+# RAG Annotation:
+# name: Avideo Detect
+# description: Avideo Detect
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: avideo-detect
+
+info:
+  name: Avideo Detect
+  author: pikpikcu
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:wwbn:avideo:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: wwbn
+    product: avideo
+    shodan-query: http.title:"AVideo"
+    fofa-query: "AVideo"
+  tags: tech,avideo,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - '<title>(.*)AVideo(.*)</title>'
+          - 'AVideo Analytics'
+        condition: or
+
+      - type: word
+        part: header
+        words:
+          - "/install/index.php"
+        negative: true
+
+      - type: status
+        status:
+          - 200

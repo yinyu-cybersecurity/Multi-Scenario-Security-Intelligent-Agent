@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: Kubernetes Enterprise Manager Panel - Detect
+# description: Kubernetes Enterprise Manager panel was detected.
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+id: kubernetes-enterprise-manager
+
+info:
+  name: Kubernetes Enterprise Manager Panel - Detect
+  author: pussycat0x
+  severity: info
+  description: Kubernetes Enterprise Manager panel was detected.
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:kubernetes:kubernetes:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: kubernetes
+    product: kubernetes
+    fofa-query:
+      - app="Kubernetes-Enterprise-Manager"
+      - title="kubernetes web view"
+      - app="kubernetes-enterprise-manager"
+    shodan-query: http.title:"kubernetes web view"
+    google-query: intitle:"kubernetes web view"
+  tags: tech,kubernetes,panel,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Kubernetes Enterprise Manager"
+
+      - type: status
+        status:
+          - 200

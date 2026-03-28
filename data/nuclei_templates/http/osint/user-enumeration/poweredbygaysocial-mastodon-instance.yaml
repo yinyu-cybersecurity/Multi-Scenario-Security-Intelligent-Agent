@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: Poweredbygay.social (Mastodon Instance) User Name Information - Detect
+# description: Poweredbygay.social (Mastodon Instance) user name information check was conducted.
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: poweredbygaysocial-mastodon-instance
+
+info:
+  name: Poweredbygay.social (Mastodon Instance) User Name Information - Detect
+  author: dwisiswant0
+  severity: info
+  description: Poweredbygay.social (Mastodon Instance) user name information check was conducted.
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N
+    cvss-score: 0
+    cwe-id: CWE-200
+  metadata:
+    max-request: 1
+  tags: osint,osint-social,poweredbygaysocial-mastodon-instance,discovery
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://poweredbygay.social/api/v1/accounts/lookup?acct={{user}}"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        part: body
+        words:
+          - "display_name"

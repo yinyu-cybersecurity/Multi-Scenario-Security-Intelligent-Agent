@@ -1,0 +1,34 @@
+# RAG Annotation:
+# name: Shopizer Detection
+# description: Shopizer Detection
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: shopizer-detect
+
+info:
+  name: Shopizer Detection
+  author: pikpikcu
+  severity: info
+  metadata:
+    max-request: 2
+  tags: tech,shopizer,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+      - "{{BaseURL}}/shop/"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - 'Powered by <a href="http://www.shopizer.com"'
+        part: body

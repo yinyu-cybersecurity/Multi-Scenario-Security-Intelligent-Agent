@@ -1,0 +1,40 @@
+# RAG Annotation:
+# name: mashery takeover detection
+# description: mashery takeover was detected.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+id: mashery-takeover
+
+info:
+  name: mashery takeover detection
+  author: pdteam
+  severity: high
+  description: mashery takeover was detected.
+  reference:
+    - https://github.com/EdOverflow/can-i-take-over-xyz/issues/14
+  metadata:
+    max-request: 1
+  tags: takeover,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - Host != ip
+
+      - type: word
+        words:
+          - Unrecognized domain <strong>
+
+    extractors:
+      - type: dsl
+        dsl:
+          - cname

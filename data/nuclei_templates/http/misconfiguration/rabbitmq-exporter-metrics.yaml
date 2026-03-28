@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: RabbitMQ Exporter
+# description: RabbitMQ Exporter is exposed.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: rabbitmq-exporter-metrics
+
+info:
+  name: RabbitMQ Exporter
+  author: DhiyaneshDk
+  severity: low
+  description: RabbitMQ Exporter is exposed.
+  classification:
+    cpe: cpe:2.3:a:vmware:rabbitmq:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: vmware
+    product: rabbitmq
+    shodan-query: title:"RabbitMQ Exporter"
+  tags: rabbitmq,exposure,debug,misconfig,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/metrics"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "rabbitmq_up"
+          - "rabbitmq_exporter_build_info"
+        condition: and
+
+      - type: status
+        status:
+          - 200

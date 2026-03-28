@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: Uservoice Takeover Detection
+# description: Uservoice takeover was detected.
+# vuln_type: Security Assessment
+# severity: high
+# cve_id: N/A
+
+
+id: uservoice-takeover
+
+info:
+  name: Uservoice Takeover Detection
+  author: MiryangJung
+  severity: high
+  description: Uservoice takeover was detected.
+  reference:
+    - https://github.com/EdOverflow/can-i-take-over-xyz/issues/163
+    - https://hackerone.com/reports/269109
+  metadata:
+    max-request: 1
+  tags: takeover,uservoice,hackerone,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: dsl
+        dsl:
+          - Host != ip
+
+      - type: word
+        words:
+          - "This UserVoice subdomain is currently available!"
+
+    extractors:
+      - type: dsl
+        dsl:
+          - cname

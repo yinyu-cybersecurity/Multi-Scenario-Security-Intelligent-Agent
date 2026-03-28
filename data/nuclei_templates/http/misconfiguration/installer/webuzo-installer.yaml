@@ -1,0 +1,47 @@
+# RAG Annotation:
+# name: Webuzo Installer
+# description: Webuzo is susceptible to the Installation page exposure due to misconfiguration.
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: webuzo-installer
+
+info:
+  name: Webuzo Installer
+  author: DhiyaneshDk
+  severity: high
+  description: Webuzo is susceptible to the Installation page exposure due to misconfiguration.
+  classification:
+    cpe: cpe:2.3:a:softaculous:webuzo:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: softaculous
+    product: webuzo
+    shodan-query: title:"Webuzo Installer"
+  tags: misconfig,webuzo,install,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}/install.php'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'Webuzo Installer'
+          - 'Webuzo Initial Setup'
+        condition: and
+
+      - type: word
+        part: header
+        words:
+          - 'text/html'
+
+      - type: status
+        status:
+          - 200

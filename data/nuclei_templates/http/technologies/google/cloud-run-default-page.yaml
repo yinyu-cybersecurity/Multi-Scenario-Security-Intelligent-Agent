@@ -1,0 +1,38 @@
+# RAG Annotation:
+# name: Google Cloud Run Default Page
+# description: Google Cloud Run Default Page
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: cloud-run-default-page
+
+info:
+  name: Google Cloud Run Default Page
+  author: dhiyaneshDK
+  severity: info
+  reference:
+    - https://cloud.google.com/run/docs/overview/what-is-cloud-run
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: title:"Congratulations | Cloud Run"
+  tags: tech,cloudrun,google,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - 'Congratulations | Cloud Run'
+          - 'alt="A group celebrating'
+        condition: and
+
+      - type: status
+        status:
+          - 200

@@ -1,0 +1,32 @@
+# RAG Annotation:
+# name: Alibaba Access Key ID
+# description: Alibaba Access Key ID
+# vuln_type: Sensitive Data Exposure
+# severity: info
+# cve_id: N/A
+
+
+id: alibaba-accesskey-id
+
+info:
+  name: Alibaba Access Key ID
+  author: DhiyaneshDK
+  severity: info
+  reference:
+    - https://github.com/returntocorp/semgrep-rules/blob/develop/generic/secrets/gitleaks/alibaba-access-key-id.yaml
+    - https://github.com/returntocorp/semgrep-rules/blob/develop/generic/secrets/gitleaks/alibaba-access-key-id.go
+  metadata:
+    verified: true
+    max-request: 1
+  tags: alibaba,exposure,tokens,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    extractors:
+      - type: regex
+        part: body
+        regex:
+          - (?i)\b((LTAI)(?i)[a-z0-9]{20})(?:['|\"|\n|\r|\s|\x60|;]|$)

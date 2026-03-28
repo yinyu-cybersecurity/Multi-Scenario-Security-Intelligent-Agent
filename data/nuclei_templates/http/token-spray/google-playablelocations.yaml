@@ -1,0 +1,31 @@
+# RAG Annotation:
+# name: Google Playable Locations API Test
+# description: Google Playable Locations API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-googleplayablelocations
+
+info:
+  name: Google Playable Locations API Test
+  author: zzeitlin
+  severity: info
+  metadata:
+    max-request: 1
+  tags: token-spray,google,playable,locations
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://playablelocations.googleapis.com/v3:samplePlayableLocations?key={{token}}"
+
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'error'
+        negative: true

@@ -1,0 +1,44 @@
+# RAG Annotation:
+# name: SoftEther VPN Panel - Detect
+# description: SoftEther VPN panel was detected.
+
+# vuln_type: Exposed Panel/Detection
+# severity: info
+# cve_id: N/A
+
+
+
+
+id: softether-vpn-panel
+
+info:
+  name: SoftEther VPN Panel - Detect
+  author: bhutch
+  severity: info
+  description: |
+    SoftEther VPN panel was detected.
+  classification:
+    cpe: cpe:2.3:a:softether:vpn:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: softether
+    product: vpn
+    shodan-query: http.title:"SoftEther VPN Server"
+  tags: panel,vpn,softether,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>SoftEther VPN Server</title>"
+
+      - type: status
+        status:
+          - 202

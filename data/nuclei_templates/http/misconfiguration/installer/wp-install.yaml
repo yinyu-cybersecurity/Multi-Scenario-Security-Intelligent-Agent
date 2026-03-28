@@ -1,0 +1,42 @@
+# RAG Annotation:
+# name: WordPress Exposed Installation
+# description: Wordpress installation files have been detected
+# vuln_type: Exposed Panel/Detection
+# severity: critical
+# cve_id: N/A
+
+
+id: wp-install
+
+info:
+  name: WordPress Exposed Installation
+  author: princechaddha,0xpugal
+  severity: critical
+  description: Wordpress installation files have been detected
+  reference:
+    - https://smaranchand.com.np/2020/04/misconfigured-wordpress-takeover-to-remote-code-execution/
+    - https://x.com/0xPugal/status/1610315762392268802
+  classification:
+    cvss-metrics: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:H/A:H
+    cvss-score: 9.4
+    cwe-id: CWE-284
+  metadata:
+    max-request: 1
+  tags: misconfig,panel,wordpress,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/wp-admin/install.php?step=1"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "<title>WordPress &rsaquo; Installation</title>"
+          - "Site Title"
+        condition: and
+
+      - type: status
+        status:
+          - 200

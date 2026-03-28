@@ -93,7 +93,7 @@ RUN gem install zsteg one_gadget || true
 
 WORKDIR /app
 
-RUN mkdir -p /app/thirdparty /app/data/tool_outputs /app/data/tool_raw_logs /app/data/sessions /app/data/tunnels /app/.memory /app/log /opt/tools/potato /opt/tools/ad /opt/tools/linux /opt/tools/windows /opt/frp
+RUN mkdir -p /app/thirdparty /app/data/tool_outputs /app/data/tool_raw_logs /app/data/sessions /app/data/tunnels /app/data/security_resources /app/.memory /app/log /opt/tools/potato /opt/tools/ad /opt/tools/linux /opt/tools/windows /opt/frp
 
 # ============ 从本地 thirdparty 复制工具 ============
 # 复制二进制工具到 /usr/local/bin
@@ -118,7 +118,7 @@ COPY thirdparty/XXEinjector /app/thirdparty/xxe-injector
 COPY thirdparty/php_filter_chain_generator /app/thirdparty/php_filter_chain
 COPY thirdparty/PetitPotam /app/thirdparty/PetitPotam
 COPY thirdparty/Ghostcat /app/thirdparty/ajpshooter
-COPY thirdparty/Githacker /app/thirdparty/Githacker
+COPY data/security_resources/Githacker /app/data/security_resources/Githacker
 COPY thirdparty/marshalsec /app/thirdparty/marshalsec
 COPY thirdparty/fscan_windows /opt/tools/windows/fscan
 COPY thirdparty/ysoserial/ysoserial-all.jar /app/thirdparty/ysoserial.jar
@@ -134,11 +134,8 @@ RUN cd /app/thirdparty/marshalsec && \
 # dirsearch
 RUN git clone --depth 1 https://gitee.com/mirrors/dirsearch.git /app/thirdparty/dirsearch || true
 
-# SecLists
-RUN git clone --depth 1 https://gitee.com/RichardoMrMu/SecLists.git /app/thirdparty/SecLists || true
-
 # PayloadsAllTheThings
-RUN git clone --depth 1 https://gitee.com/RichardoMrMu/PayloadsAllTheThings.git /app/thirdparty/PayloadsAllTheThings || true
+RUN git clone --depth 1 https://gitee.com/RichardoMrMu/PayloadsAllTheThings.git /app/data/security_resources/PayloadsAllTheThings || true
 
 # ============ 从本地 thirdparty 复制工具 (Rubeus, JNDIExploit) ============
 COPY thirdparty/rubeus/Rubeus.exe /opt/tools/windows/Rubeus.exe
@@ -170,7 +167,7 @@ RUN mkdir -p /opt/linux && \
     ln -sf /app/thirdparty/dirsearch/dirsearch.py /usr/local/bin/dirsearch && \
     ln -sf /app/thirdparty/php_filter_chain/php_filter_chain_generator.py /usr/local/bin/php-filter-chain && \
     chmod +x /usr/local/bin/dirsearch /usr/local/bin/php-filter-chain && \
-    chmod +x /app/thirdparty/Githacker/GitHack.py
+    chmod +x /app/data/security_resources/Githacker/GitHack.py
 
 COPY requirements.txt .
 RUN python3.11 -m venv /opt/venv

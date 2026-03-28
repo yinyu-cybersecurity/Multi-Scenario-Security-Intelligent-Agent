@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: Pendo API Test
+# description: Pendo API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-pendo
+
+info:
+  name: Pendo API Test
+  author: zzeitlin
+  severity: info
+  reference:
+    - https://help.pendo.io/resources/support-library/api/index.html
+  metadata:
+    max-request: 1
+  tags: token-spray,pendo
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://app.pendo.io/api/v1/feature"
+
+    headers:
+      Content-Type: application/json
+      X-Pendo-Integration-Key: "{{token}}"
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"createdByUser":'
+          - '"id":'
+        condition: and

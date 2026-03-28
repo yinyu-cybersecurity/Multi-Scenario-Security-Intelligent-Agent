@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: ConnectWise Setup Wizard - Exposure
+# description: ConnectWise Setup Wizard - Exposure
+# vuln_type: Sensitive Data Exposure
+# severity: high
+# cve_id: N/A
+
+
+id: connectwise-setup
+
+info:
+  name: ConnectWise Setup Wizard - Exposure
+  author: DhiyaneshDk
+  severity: high
+  classification:
+    cpe: cpe:2.3:a:connectwise:control:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: connectwise
+    product: control
+    shodan-query: html:"ContentPanel SetupWizard"
+  tags: misconfig,exposure,install,connectwise,vuln
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/SetupWizard.aspx"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "SetupWizardPage"
+          - "ContentPanel SetupWizard"
+        condition: and
+
+      - type: status
+        status:
+          - 200

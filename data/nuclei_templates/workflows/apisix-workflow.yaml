@@ -1,0 +1,17 @@
+# RAG Annotation:
+# name: Apache Apisix Security Checks Workflow
+# description: 运行所有Apache Apisix相关nuclei模板的安全检查工作流，检测Apisix API网关的安全漏洞
+# vuln_type: workflow
+# severity: medium
+# cve_id: N/A
+
+id: apisix-workflow
+
+info:
+  name: Apache Apisix Security Checks
+  author: daffainfo
+  description: A simple workflow that runs all Apache Apisix related nuclei templates on a given target.
+workflows:
+  - template: http/exposed-panels/apache/apache-apisix-panel.yaml
+    subtemplates:
+      - tags: apisix

@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: Lokalise API Test
+# description: Lokalise API Test
+# vuln_type: Security Assessment
+# severity: info
+# cve_id: N/A
+
+
+id: api-lokalise
+
+info:
+  name: Lokalise API Test
+  author: zzeitlin
+  severity: info
+  reference:
+    - https://app.lokalise.com/api2docs/curl/#resource-projects
+  metadata:
+    max-request: 1
+  tags: token-spray,lokalise
+
+self-contained: true
+
+http:
+  - method: GET
+    path:
+      - "https://api.lokalise.com/api2/teams"
+
+    headers:
+      x-api-Token: "{{token}}"
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"teams":'
+          - '"team_id":'
+          - '"name":'
+        condition: and

@@ -1,0 +1,37 @@
+# RAG Annotation:
+# name: Brother Printer
+# description: Brother Printer unauthorized access was detected.
+# vuln_type: Authentication Bypass
+# severity: medium
+# cve_id: N/A
+
+
+id: brother-unauthorized-access
+
+info:
+  name: Brother Printer
+  author: pussycat0x
+  severity: medium
+  description: Brother Printer unauthorized access was detected.
+  reference:
+    - https://www.exploit-db.com/ghdb/6889
+  metadata:
+    max-request: 1
+  tags: iot,printer,unauth,vuln,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/net/net/net.html"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "Brother Industries"
+          - "Network Status"
+        condition: and
+
+      - type: status
+        status:
+          - 200

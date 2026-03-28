@@ -1,0 +1,48 @@
+# RAG Annotation:
+# name: Sitecore CMS - Detect
+# description: Detect Sitecore Content Management System (CMS) websites based on a redirect from the sitecore media handler URL pattern to the notfound.aspx page.
+
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+
+
+id: sitecore-cms
+
+info:
+  name: Sitecore CMS - Detect
+  author: RandomDhiraj
+  severity: info
+  description: |
+    Detect Sitecore Content Management System (CMS) websites based on a redirect from the sitecore media handler URL pattern to the notfound.aspx page.
+  reference:
+    - https://www.sitecore.com
+  classification:
+    cpe: cpe:2.3:a:sitecore:cms:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    vendor: sitecore
+    product: cms
+    shodan-query: title:"sitecore"
+  tags: cms,sitecore,tech,discovery
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/-/media/doo-doo.ashx"
+
+    host-redirects: true
+
+    matchers-condition: and
+    matchers:
+      - type: regex
+        part: header
+        regex:
+          - "Location: /sitecore/service/notfound.aspx"
+
+      - type: status
+        status:
+          - 302

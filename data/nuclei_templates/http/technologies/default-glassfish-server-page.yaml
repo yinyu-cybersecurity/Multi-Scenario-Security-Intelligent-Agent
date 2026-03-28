@@ -1,0 +1,41 @@
+# RAG Annotation:
+# name: GlassFish Server Default Page
+# description: GlassFish Server Default Page
+# vuln_type: tech-detection
+# severity: info
+# cve_id: 
+
+
+id: default-glassfish-server-page
+
+info:
+  name: GlassFish Server Default Page
+  author: dhiyaneshDk,righettod
+  severity: info
+  classification:
+    cpe: cpe:2.3:a:oracle:glassfish_server:*:*:*:*:*:*:*:*
+  metadata:
+    max-request: 1
+    vendor: oracle
+    product: glassfish_server
+    shodan-query: http.title:"GlassFish Server - Server Running"
+  tags: tech,glassfish,discovery
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    matchers:
+      - type: dsl
+        dsl:
+          - 'status_code == 200'
+          - 'contains_any(to_lower(body), "glassfish server - server running", "glassfish server with premier support", "<b>glassfish server</b>", "glassfish server installation directory")'
+        condition: and
+
+    extractors:
+      - type: regex
+        part: header
+        group: 1
+        regex:
+          - 'GlassFish\s+Server\s+([A-Za-z0-9\s.]+)(\n|\r)'

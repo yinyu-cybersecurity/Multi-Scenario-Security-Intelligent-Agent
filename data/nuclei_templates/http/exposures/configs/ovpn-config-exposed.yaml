@@ -1,0 +1,46 @@
+# RAG Annotation:
+# name: OVPN Configuration Download Page - Detect
+# description: OVPS configuration download page was detected.
+# vuln_type: Sensitive Data Exposure
+# severity: low
+# cve_id: N/A
+
+
+id: ovpn-config-exposed
+
+info:
+  name: OVPN Configuration Download Page - Detect
+  author: tess
+  severity: low
+  description: OVPS configuration download page was detected.
+  classification:
+    cwe-id: CWE-200
+    cpe: cpe:2.3:a:openvpn:connect:*:*:*:*:*:*:*:*
+  metadata:
+    verified: true
+    max-request: 1
+    shodan-query: http.title:"OVPN Config Download"
+    product: connect
+    vendor: openvpn
+  tags: config,ovpn,exposure,vuln
+
+http:
+  - method: GET
+    path:
+      - '{{BaseURL}}'
+
+    host-redirects: true
+    max-redirects: 2
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'OVPN Config Download'
+          - 'Config List'
+        condition: and
+
+      - type: status
+        status:
+          - 200
