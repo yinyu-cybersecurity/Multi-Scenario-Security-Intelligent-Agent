@@ -6,11 +6,13 @@ import time
 import re
 import json
 import os
+import sys
 import hashlib
 
 from typing import Dict, List
 
 from logger import get_logger
+from state_v2 import CTFState
 
 logger = get_logger("Evolution")
 
@@ -148,7 +150,8 @@ class EvolutionManager:
         # 如果是归档/孵化状态且再次命中，复活/转正
         if old_rule.get("status") in ["incubating", "archived"]:
             old_rule["status"] = "active"
-            logger.info(f"  🎉 规则激活: {old_rule.get('id')} 状态变更为 active")
+            icon = "🎉" if (hasattr(sys.stdout, 'encoding') and sys.stdout.encoding and sys.stdout.encoding.lower() in ('utf-8', 'utf8')) else "[ACTIVE]"
+            logger.info(f"  {icon} 规则激活: {old_rule.get('id')} 状态变更为 active")
             
         # 如果是归档规则复活，重置老化时间
         if old_rule.get("status") == "archived":
@@ -254,7 +257,9 @@ def evolution_node(state: CTFState) -> Dict:
     """
     进化闭环 - 深度优化版 (支持全链条学习)
     """
-    logger.info("🧬 启动进化引擎...")
+    icon = "🧬" if (hasattr(sys.stdout, 'encoding') and sys.stdout.encoding and sys.stdout.encoding.lower() in ('utf-8', 'utf8')) else "[EVOL]"
+    warn_icon = "⚠️" if (hasattr(sys.stdout, 'encoding') and sys.stdout.encoding and sys.stdout.encoding.lower() in ('utf-8', 'utf8')) else "[WARN]"
+    logger.info(f"{icon} 启动进化引擎...")
 
     # 1. 严格验证成功
     if not state.get("found_flag"):
@@ -262,7 +267,7 @@ def evolution_node(state: CTFState) -> Dict:
 
     trace = state.get("success_trace", [])
     if not trace:
-        logger.warning("  ⚠️ 缺少成功回溯信息，无法进化")
+        logger.warning(f"  {warn_icon} 缺少成功回溯信息，无法进化")
         return {}
 
     manager = EvolutionManager()
@@ -285,10 +290,11 @@ def evolution_node(state: CTFState) -> Dict:
 
     if not significant_steps:
         # 兜底：确实没有任何显著步骤时，不进行任何学习，直接退出
-        logger.warning("  ⚠️ 未发现有效攻击路径，跳过本次学习")
+        logger.warning(f"  {warn_icon} 未发现有效攻击路径，跳过本次学习")
         return {}
 
-    logger.info(f"  🔗 正在从 {len(significant_steps)} 个关键步骤中提取攻击链条...")
+    chain_icon = "🔗" if (hasattr(sys.stdout, 'encoding') and sys.stdout.encoding and sys.stdout.encoding.lower() in ('utf-8', 'utf8')) else "[CHAIN]"
+    logger.info(f"  {chain_icon} 正在从 {len(significant_steps)} 个关键步骤中提取攻击链条...")
 
     for step in significant_steps:
         # 跳过信息不足的步骤
@@ -333,7 +339,7 @@ def evolution_node(state: CTFState) -> Dict:
     manager._age_rules()
     manager._save_rules()
 
-    logger.info(f"🧬 进化完成: 新增 {new_rules_count} 条规则, 强化 {reinforced_count} 条规则")
+    logger.info(f"{icon} 进化完成: 新增 {new_rules_count} 条规则, 强化 {reinforced_count} 条规则")
     logger.info(f"               规则库总规模: {len(manager.rules)} 条")
 
     return {"permanent_rules": manager.rules}

@@ -1,4 +1,5 @@
 import os
+import sys
 import hashlib
 import time
 import json
@@ -105,7 +106,8 @@ class PageDiffManager:
             with open(file_path, 'wb') as f:
                 f.write(content)
         except Exception as e:
-            logger.warning(f"❌ 保存文件失败: {e}")
+            fail_icon = "❌" if (hasattr(sys.stdout, 'encoding') and sys.stdout.encoding and sys.stdout.encoding.lower() in ('utf-8', 'utf8')) else "[FAIL]"
+            logger.warning(f"{fail_icon} 保存文件失败: {e}")
             return {}
 
         # 更新该URL的历史记录

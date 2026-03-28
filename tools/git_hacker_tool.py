@@ -14,6 +14,8 @@ class GitHackerTool(CommandLineTool):
     """
     GitHacker 封装 - Git 泄露漏洞利用工具
     可以恢复完整的 .git 目录并提取敏感信息
+
+    使用直接复制模式：直接从 thirdparty/Githacker/GitHack.py 运行
     """
 
     def __init__(self):
@@ -21,86 +23,14 @@ class GitHackerTool(CommandLineTool):
         cmd = "python3" if os.path.exists("/.dockerenv") else sys.executable
         super().__init__(cmd)
 
-        # 智能路径探测 - 多种方式尝试
-        self.script_path = None
-        self.use_pipx = False
-        self.use_module = False
-        self.available = False
-        self._install_attempted = False
-
-        # 方式1: 检查 pipx 安装路径 (多种可能的可执行文件名)
-        pipx_paths = [
-            "/root/.local/bin/git-hacker",  # 带连字符
-            "/root/.local/bin/githacker",   # 不带连字符
-            "/opt/venv/bin/git-hacker",     # venv路径
-            "/opt/venv/bin/githacker",
-        ]
-        for path in pipx_paths:
-            if os.path.exists(path):
-                self.cmd_path = path
-                self.use_pipx = True
-                self.script_path = path
-                self.available = True
-                break
-
-        # 方式2: 检查系统 PATH
-        if not self.available:
-            for name in ["git-hacker", "githacker"]:
-                path = shutil.which(name)
-                if path:
-                    self.cmd_path = path
-                    self.use_pipx = True
-                    self.script_path = path
-                    self.available = True
-                    break
-
-        # 方式3: 检查源码目录 (备用)
-        if not self.available:
-            docker_path = "/app/thirdparty/git-hacker"
-            local_path = os.path.join(os.getcwd(), "thirdparty", "git-hacker") if os.getcwd() else ""
-            self.source_dir = docker_path if os.path.exists(docker_path) else local_path
-
-            if os.path.exists(self.source_dir):
-                # 检查是否有 githacker.py 或 githacker 目录
-                githacker_py = os.path.join(self.source_dir, "githacker.py")
-                githacker_dir = os.path.join(self.source_dir, "githacker")
-                if os.path.exists(githacker_py) or os.path.exists(githacker_dir):
-                    self.use_module = True
-                    self.script_path = self.source_dir
-                    self.available = True
-
-        # 方式4: 尝试pip安装（运行时安装）
-        if not self.available:
-            self._try_install()
-
+        # 直接复制模式：设置脚本路径
+        docker_path = "/app/thirdparty/Githacker/GitHack.py"
+        local_path = os.path.join(os.getcwd(), "thirdparty", "Githacker", "GitHack.py")
+        self.script_path = docker_path if os.path.exists(docker_path) else local_path
         self.timeout = 120
 
-    def _try_install(self):
-        """尝试运行时安装git-hacker"""
-        if self._install_attempted:
-            return
-        self._install_attempted = True
-
-        try:
-            print("[git-hacker] 尝试运行时安装...")
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "git-hacker", "-q"],
-                capture_output=True,
-                timeout=60
-            )
-            if result.returncode == 0:
-                # 再次检查
-                for name in ["git-hacker", "githacker"]:
-                    path = shutil.which(name)
-                    if path:
-                        self.cmd_path = path
-                        self.use_pipx = True
-                        self.script_path = path
-                        self.available = True
-                        print(f"[git-hacker] 安装成功: {path}")
-                        break
-        except Exception as e:
-            print(f"[git-hacker] 安装失败: {e}")
+        # 检查是否可用
+        self.available = self.script_path is not None and os.path.exists(self.script_path)
 
     def name(self) -> str:
         return "git-hacker"
@@ -145,23 +75,29 @@ class GitHackerTool(CommandLineTool):
         if not url.rstrip("/").endswith(".git"):
             url = url.rstrip("/") + "/.git/"
 
-        # 构建命令
-        if shutil.which("githacker"):
-            # 使用已安装的 githacker 命令
-            cmd = ["githacker", "--url", url]
-        else:
-            # 使用源码运行
-            cmd = [self.cmd_path, "-m", "githacker", "--url", url]
-            # 需要切换到源码目录
-            if hasattr(self, 'source_dir'):
-                os.chdir(self.source_dir)
+        # 检查脚本是否可用
+        if not self.check_available():
+            return {
+                "success": False,
+                "error": "GitHack.py 脚本不可用",
+                "vulnerable": False,
+                "summary": "工具未安装或脚本路径不存在"
+            }
 
-        # 输出目录
+        # 构建命令：python GitHack.py <url>
+        cmd = [self.cmd_path, self.script_path, url]
+
+        # 输出目录参数（GitHack.py 不支持 --output，但会创建域名目录）
+        # 我们通过环境变量或切换到指定目录来控制输出位置
         output_dir = params.get("output_dir")
-        if output_dir:
-            cmd.extend(["--output", output_dir])
+        current_dir = os.getcwd()
 
         try:
+            # 如果有输出目录，切换到该目录执行
+            if output_dir:
+                os.makedirs(output_dir, exist_ok=True)
+                os.chdir(output_dir)
+
             raw_result = self._run_command(cmd, timeout=self.timeout, stream_output=True)
             stdout = raw_result.get("stdout", "")
             stderr = raw_result.get("stderr", "")
@@ -170,11 +106,23 @@ class GitHackerTool(CommandLineTool):
             downloaded_files = re.findall(r"(?:download|write|save)[^\n]*", stdout, re.IGNORECASE)
             source_files = re.findall(r"[\w/\-]+\.(py|php|js|html|sql|conf|ini|yml|yaml|json|txt|md)", stdout)
 
+            # 获取实际创建的目录（GitHack.py 会创建以域名为名的目录）
+            domain_dir = None
+            if output_dir:
+                # 在输出目录中查找最新创建的目录
+                domain_match = re.search(r"Download and parse index file \.\.\.", stdout)
+                if domain_match:
+                    # 尝试提取域名
+                    import urllib.parse
+                    parsed = urllib.parse.urlparse(url)
+                    domain = parsed.netloc.replace(':', '_')
+                    domain_dir = os.path.join(output_dir, domain) if output_dir else domain
+
             result = {
                 "success": raw_result.get("success", False),
                 "vulnerable": "git" in stdout.lower() or len(downloaded_files) > 0,
                 "downloaded_files": source_files[:20],
-                "output_dir": output_dir,
+                "output_dir": output_dir or domain_dir,
                 "summary": f"Git 泄露利用{'成功' if raw_result.get('success') else '失败'}"
             }
 
@@ -190,3 +138,7 @@ class GitHackerTool(CommandLineTool):
                 "vulnerable": False,
                 "summary": f"执行失败: {str(e)}"
             }
+        finally:
+            # 恢复原始目录
+            if output_dir:
+                os.chdir(current_dir)

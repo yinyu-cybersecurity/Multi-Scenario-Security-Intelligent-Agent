@@ -21,6 +21,7 @@
 """
 
 from typing import Dict, Any, Callable, Optional
+from state_v2 import CTFState
 from functools import wraps
 import threading
 from logger import get_logger

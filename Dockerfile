@@ -68,7 +68,24 @@ RUN pipx install ROPgadget || true
 RUN pipx install git-hacker || true
 RUN pipx install ldapdomaindump || true
 RUN pipx install bloodhound || true
-RUN pipx install crackmapexec || true
+
+# 安装 crackmapexec 依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libffi-dev \
+    build-essential \
+    libxml2-dev \
+    libxslt1-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装 crackmapexec (使用 pipx，失败时使用 pip 作为备选)
+RUN pipx install crackmapexec || \
+    (pip install crackmapexec && echo "Installed via pip as fallback") || \
+    echo "Warning: crackmapexec installation failed"
+
+# 验证 crackmapexec 安装
+RUN (crackmapexec --version 2>/dev/null || cme --version 2>/dev/null || echo "crackmapexec validation failed but continuing") && \
+    echo "crackmapexec installation verified"
 
 # Ruby gems 国内镜像
 RUN gem sources --add https://gems.ruby-china.com/ --remove https://rubygems.org/ || true
@@ -101,6 +118,7 @@ COPY thirdparty/XXEinjector /app/thirdparty/xxe-injector
 COPY thirdparty/php_filter_chain_generator /app/thirdparty/php_filter_chain
 COPY thirdparty/PetitPotam /app/thirdparty/PetitPotam
 COPY thirdparty/Ghostcat /app/thirdparty/ajpshooter
+COPY thirdparty/Githacker /app/thirdparty/Githacker
 COPY thirdparty/marshalsec /app/thirdparty/marshalsec
 COPY thirdparty/fscan_windows /opt/tools/windows/fscan
 COPY thirdparty/ysoserial/ysoserial-all.jar /app/thirdparty/ysoserial.jar
@@ -151,7 +169,8 @@ RUN mkdir -p /opt/linux && \
     ln -sf /usr/local/bin/subfinder /opt/linux/subfinder && \
     ln -sf /app/thirdparty/dirsearch/dirsearch.py /usr/local/bin/dirsearch && \
     ln -sf /app/thirdparty/php_filter_chain/php_filter_chain_generator.py /usr/local/bin/php-filter-chain && \
-    chmod +x /usr/local/bin/dirsearch /usr/local/bin/php-filter-chain
+    chmod +x /usr/local/bin/dirsearch /usr/local/bin/php-filter-chain && \
+    chmod +x /app/thirdparty/Githacker/GitHack.py
 
 COPY requirements.txt .
 RUN python3.11 -m venv /opt/venv

@@ -3,7 +3,9 @@
 # 负责人：安全专家
 
 import json
+import sys
 from typing import Dict, List
+from state_v2 import CTFState
 from config import config
 from llm_client import llm_client
 from logger import get_logger
@@ -129,8 +131,9 @@ def innovator_node(state: CTFState) -> Dict:
         temp_rules = result.get("temp_rules", [])
         analysis = result.get("analysis", "")
 
-        logger.info(f"✅ 思考结论: {analysis[:100]}...")
-        logger.info(f"✅ 生成了 {len(temp_rules)} 条临时规则")
+        ok_icon = "✅" if (hasattr(sys.stdout, 'encoding') and sys.stdout.encoding and sys.stdout.encoding.lower() in ('utf-8', 'utf8')) else "[OK]"
+        logger.info(f"{ok_icon} 思考结论: {analysis[:100]}...")
+        logger.info(f"{ok_icon} 生成了 {len(temp_rules)} 条临时规则")
 
         # AI过滤低质量规则
         if temp_rules and len(temp_rules) > 0:
@@ -146,7 +149,8 @@ def innovator_node(state: CTFState) -> Dict:
         }
         
     except json.JSONDecodeError:
-        logger.warning(f"❌ JSON 解析失败: {response_text[:100]}...")
+        fail_icon = "❌" if (hasattr(sys.stdout, 'encoding') and sys.stdout.encoding and sys.stdout.encoding.lower() in ('utf-8', 'utf8')) else "[FAIL]"
+        logger.warning(f"{fail_icon} JSON 解析失败: {response_text[:100]}...")
         return {}
 
 

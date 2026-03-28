@@ -55,17 +55,26 @@ class CrackMapExecTool(CommandLineTool):
         pipx_path = "/root/.local/bin/crackmapexec"
         pipx_cme_path = "/root/.local/bin/cme"
 
+        # 检查系统PATH中的可执行文件
+        crackmapexec_path = shutil.which("crackmapexec")
+        cme_path = shutil.which("cme")
+
+        # 按优先级选择可执行文件路径
         if os.path.exists(pipx_path):
             self.executable = pipx_path
+            self.cmd_path = pipx_path
         elif os.path.exists(pipx_cme_path):
             self.executable = pipx_cme_path
+            self.cmd_path = pipx_cme_path
+        elif crackmapexec_path:
+            self.executable = crackmapexec_path
+            self.cmd_path = crackmapexec_path
+        elif cme_path:
+            self.executable = cme_path
+            self.cmd_path = cme_path
         else:
-            self.executable = shutil.which("crackmapexec") or shutil.which("cme")
-
-        if self.executable:
-            self.cmd_path = self.executable
-        else:
-            # 尝试 pip 安装的路径
+            # 没有找到可执行文件，设置默认命令
+            self.executable = None
             self.cmd_path = "crackmapexec"
 
         super().__init__(self.cmd_path)
@@ -89,17 +98,46 @@ class CrackMapExecTool(CommandLineTool):
 
     def check_available(self) -> bool:
         """检查 crackmapexec 是否可用"""
-        if self.executable:
+        if self.executable and os.path.exists(self.executable):
             return True
-        try:
-            result = subprocess.run(
-                ["crackmapexec", "--version"],
-                capture_output=True,
-                timeout=10
-            )
-            return result.returncode == 0
-        except Exception:
-            return False
+
+        # 尝试运行crackmapexec或cme检查版本
+        for cmd_name in ["crackmapexec", "cme"]:
+            try:
+                result = subprocess.run(
+                    [cmd_name, "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                if result.returncode == 0:
+                    # 更新可执行文件路径
+                    cmd_path = shutil.which(cmd_name)
+                    if cmd_path:
+                        self.executable = cmd_path
+                        self.cmd_path = cmd_path
+                    return True
+            except (subprocess.SubprocessError, FileNotFoundError, OSError):
+                continue
+
+        # 最后尝试检查默认路径
+        if self.executable is None:
+            # 检查常见安装路径
+            common_paths = [
+                "/root/.local/bin/crackmapexec",
+                "/root/.local/bin/cme",
+                "/usr/local/bin/crackmapexec",
+                "/usr/local/bin/cme",
+                "/usr/bin/crackmapexec",
+                "/usr/bin/cme"
+            ]
+            for path in common_paths:
+                if os.path.exists(path):
+                    self.executable = path
+                    self.cmd_path = path
+                    return True
+
+        return False
 
     def expected_params(self) -> Dict[str, Dict[str, Any]]:
         return {

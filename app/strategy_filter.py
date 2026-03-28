@@ -3,6 +3,7 @@
 
 from typing import Dict
 from logger import get_logger
+from state_v2 import CTFState
 
 logger = get_logger("Strategy")
 

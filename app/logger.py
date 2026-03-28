@@ -66,21 +66,66 @@ NODE_ICONS = {
 class ConsoleFormatter(logging.Formatter):
     """控制台简洁格式化器"""
 
+    def __init__(self):
+        super().__init__()
+        # 检测控制台是否支持UTF-8/emoji
+        self._supports_utf8 = self._check_utf8_support()
+        self._safe_icons = self._get_safe_icons()
+
+    def _check_utf8_support(self) -> bool:
+        """检测控制台是否支持UTF-8"""
+        try:
+            # 尝试写入一个emoji，看是否成功
+            test_char = '📋'
+            if hasattr(sys.stdout, 'buffer'):
+                # 检查是否是UTF-8编码的TextIOWrapper
+                if hasattr(sys.stdout, 'encoding') and sys.stdout.encoding:
+                    return sys.stdout.encoding.lower() in ('utf-8', 'utf8')
+            return False
+        except:
+            return False
+
+    def _get_safe_icons(self) -> Dict[str, str]:
+        """获取安全的图标映射"""
+        if self._supports_utf8:
+            return NODE_ICONS.copy()
+        # ASCII fallback
+        return {
+            'recon': '[RECON]',
+            'analyst': '[ANALYST]',
+            'attacker': '[ATTACK]',
+            'verifier': '[VERIFY]',
+            'explorer': '[EXPLORE]',
+            'innovator': '[IDEA]',
+            'evolution': '[EVOLVE]',
+            'mode_manager': '[MODE]',
+            'strategy_filter': '[STRATEGY]',
+            'post_exploit': '[POST]',
+            'internal_recon': '[INT-RECON]',
+            'lateral_move': '[LAT-MOVE]',
+            'privilege_escalation': '[PRIVESC]',
+            'credential_gather': '[CRED]',
+            'default': '[LOG]'
+        }
+
     def format(self, record):
         # 提取节点名（从logger名称）
         parts = record.name.split('.')
         node_name = parts[-1] if parts else 'main'
-        icon = NODE_ICONS.get(node_name, NODE_ICONS['default'])
+        icon = self._safe_icons.get(node_name, self._safe_icons['default'])
 
         # 简洁格式: [图标] 消息
-        level_color = COLORS.get(record.levelname, '')
+        level_color = COLORS.get(record.levelname, '') if self._supports_utf8 else ''
         msg = record.getMessage()
 
         # 如果消息已有前缀图标，不再添加
-        if any(icon in msg for icon in NODE_ICONS.values()):
-            return f"{level_color}{msg}{COLORS['RESET']}"
+        node_icon_values = list(NODE_ICONS.values())
+        if any(icon in msg for icon in node_icon_values):
+            reset = COLORS['RESET'] if self._supports_utf8 else ''
+            return f"{level_color}{msg}{reset}"
 
-        return f"{level_color}{icon} {msg}{COLORS['RESET']}"
+        reset = COLORS['RESET'] if self._supports_utf8 else ''
+        return f"{level_color}{icon} {msg}{reset}"
 
 
 class LoggerManager:
@@ -285,9 +330,18 @@ def node_log(node_name: str, message: str, level: str = "info"):
     log_func(message)
 
 
+def _safe_emoji(emoji: str, fallback: str = "[OK]") -> str:
+    """返回安全的emoji或ASCII替代"""
+    # 检测是否支持UTF-8 (延迟检测，避免循环依赖)
+    if hasattr(sys.stdout, 'encoding') and sys.stdout.encoding:
+        if sys.stdout.encoding.lower() in ('utf-8', 'utf8'):
+            return emoji
+    return fallback
+
+
 def log_node_start(node_name: str, **kwargs):
     """记录节点开始执行"""
-    icon = NODE_ICONS.get(node_name, '▶️')
+    icon = _safe_emoji(NODE_ICONS.get(node_name, '📋'), f"[{node_name.upper()}]")
     details = " | ".join(f"{k}={v}" for k, v in kwargs.items() if v)
     msg = f"{icon} [{node_name}] 开始执行"
     if details:
@@ -297,7 +351,7 @@ def log_node_start(node_name: str, **kwargs):
 
 def log_node_result(node_name: str, success: bool, result: str = ""):
     """记录节点执行结果"""
-    icon = "✅" if success else "❌"
+    icon = _safe_emoji("✅" if success else "❌", "[OK]" if success else "[FAIL]")
     msg = f"{icon} [{node_name}] {'成功' if success else '失败'}"
     if result:
         msg += f": {result[:100]}"
@@ -306,7 +360,7 @@ def log_node_result(node_name: str, success: bool, result: str = ""):
 
 def log_attack(action: str, target: str, result: str = ""):
     """记录攻击动作"""
-    icon = "⚔️"
+    icon = _safe_emoji("⚔️", "[ATTACK]")
     msg = f"{icon} {action} -> {target}"
     if result:
         msg += f" | {result[:50]}"
@@ -315,7 +369,7 @@ def log_attack(action: str, target: str, result: str = ""):
 
 def log_flag_found(flag: str):
     """记录找到FLAG"""
-    icon = "🎉"
+    icon = _safe_emoji("🎉", "[FLAG]")
     node_log("verifier", f"{icon} 找到FLAG: {flag}", "info")
 
 

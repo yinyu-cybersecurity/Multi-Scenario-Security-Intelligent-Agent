@@ -10,6 +10,7 @@
 - ToolResult: 统一的结果类型 (新增)
 """
 import os
+import sys
 import uuid
 import time
 import json
@@ -22,6 +23,14 @@ from dataclasses import dataclass, field
 from logger import get_logger
 
 logger = get_logger("Tool")
+
+# 安全emoji函数 - 避免Windows GBK编码问题
+def _safe_status_icon(available: bool) -> str:
+    """返回安全的状态图标"""
+    if hasattr(sys.stdout, 'encoding') and sys.stdout.encoding:
+        if sys.stdout.encoding.lower() in ('utf-8', 'utf8'):
+            return "✅" if available else "❌"
+    return "[OK]" if available else "[FAIL]"
 
 # ==========================================
 # 0. 统一结果类型 (新增 - 任务1.1)
@@ -718,7 +727,7 @@ class ToolRegistry:
 
         # 只在第一次注册时打印
         if not already_registered:
-            status = "✅" if available else "❌"
+            status = _safe_status_icon(available)
             logger.info(f"[ToolRegistry] {status} {tool.name()} (supports: {', '.join(tool.supported_vulns())}) - {'available' if available else 'unavailable'}")
 
     @classmethod

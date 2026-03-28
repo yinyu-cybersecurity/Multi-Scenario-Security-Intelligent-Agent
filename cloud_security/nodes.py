@@ -9,8 +9,19 @@
 - 集成错误处理机制
 """
 
-import json
 import os
+import sys
+
+# 确保项目根目录和app目录在 sys.path 中
+_current_dir = os.path.dirname(__file__)
+_project_root = os.path.dirname(_current_dir)
+_app_dir = os.path.join(_project_root, 'app')
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+if _app_dir not in sys.path:
+    sys.path.insert(0, _app_dir)
+
+import json
 import traceback
 from typing import Dict, List
 import requests
