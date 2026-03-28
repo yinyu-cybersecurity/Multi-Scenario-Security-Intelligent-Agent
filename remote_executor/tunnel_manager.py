@@ -20,6 +20,9 @@ import socket
 import subprocess
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
+from logger import get_logger
+
+logger = get_logger("Tunnel")
 
 
 @dataclass
@@ -253,7 +256,7 @@ localPort = {local_port}
         )
 
         self._save_tunnels()
-        print(f"[TunnelManager] 创建隧道: {tunnel_id} -> {local_ip}:{remote_port}")
+        logger.info(f"创建隧道: {tunnel_id} -> {local_ip}:{remote_port}")
         return tunnel_id
 
     def check_tunnel(self, tunnel_id: str) -> bool:
@@ -328,11 +331,11 @@ socks5 127.0.0.1 {socks5_port}
             with open(config_path, 'w') as f:
                 f.write(config)
 
-            print(f"[TunnelManager] 配置proxychains: socks5 127.0.0.1 {socks5_port}")
+            logger.info(f"配置proxychains: socks5 127.0.0.1 {socks5_port}")
             return True
 
         except Exception as e:
-            print(f"[TunnelManager] 配置proxychains失败: {e}")
+            logger.warning(f"配置proxychains失败: {e}")
             return False
 
     def execute_via_tunnel(self, tunnel_id: str, command: str, timeout: int = 60) -> Dict:
@@ -419,8 +422,8 @@ def start_local_frps(port: int = 7000, frp_dir: str = "/opt/frp") -> Optional[su
 
     # 检查frps是否存在
     if not os.path.exists(frps_path):
-        print(f"[TunnelManager] frps不存在: {frps_path}")
-        print("[TunnelManager] 请先下载frp: https://github.com/fatedier/frp/releases")
+        logger.warning(f"frps不存在: {frps_path}")
+        logger.info("[TunnelManager] 请先下载frp: https://github.com/fatedier/frp/releases")
         return None
 
     # 生成默认配置 (frp 0.52.0+ TOML格式)
@@ -430,7 +433,7 @@ auth.token = "ctf_agent_token"
 """
         with open(config_path, 'w') as f:
             f.write(config)
-        print(f"[TunnelManager] 生成frps配置: {config_path}")
+        logger.info(f"生成frps配置: {config_path}")
 
     # 启动frps
     try:
@@ -439,12 +442,12 @@ auth.token = "ctf_agent_token"
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
-        print(f"[TunnelManager] frps启动成功: 端口 {port}")
-        print(f"[TunnelManager] PID: {process.pid}")
+        logger.info(f"frps启动成功: 端口 {port}")
+        logger.info(f"PID: {process.pid}")
         return process
 
     except Exception as e:
-        print(f"[TunnelManager] frps启动失败: {e}")
+        logger.warning(f"frps启动失败: {e}")
         return None
 
 

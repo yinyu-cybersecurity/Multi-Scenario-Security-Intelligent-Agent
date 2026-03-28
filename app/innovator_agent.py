@@ -4,9 +4,11 @@
 
 import json
 from typing import Dict, List
-from state import CTFState
 from config import config
 from llm_client import llm_client
+from logger import get_logger
+
+logger = get_logger("Innovator")
 
 # Optional: RAG functionality
 try:
@@ -46,8 +48,8 @@ def get_innovator_prompt(features: dict, trace: list, rag_docs: list, focused_sc
 页面特征:
 {json.dumps(features, indent=2, ensure_ascii=False)}
 
-已失败的攻击尝试 (部分):
-{json.dumps([t.get('type') for t in trace[-5:]], ensure_ascii=False)}
+已失败的攻击尝试 (最近10次):
+{json.dumps(trace, ensure_ascii=False)}
 {scene_hint}
 2. 知识库参考 (RAG 检索出的相似题目 Writeups)
 仔细阅读以下历史成功案例，寻找可以迁移到当前环境的技术：
@@ -77,29 +79,34 @@ def innovator_node(state: CTFState) -> Dict:
     """
     [头脑风暴] (RAG增强 + LLM推理)
     """
-    print("[Innovator] Starting RAG brainstorming...")
+    logger.info("Starting RAG brainstorming...")
     features = state.get("page_features", {})
-    trace = state.get("success_trace", []) # 借用 trace 记录，这里其实是全量历史，为了精简用近期即可
+    # [修复] 使用 attack_results 获取失败的攻击历史，而不是 success_trace
+    # success_trace 只在找到flag后才填充，而 innovator 在攻击失败时调用
+    attack_results = state.get("attack_results", [])
+    # 提取攻击类型用于分析失败原因
+    trace = [{"type": r.get("tool", "unknown"), "target": r.get("target", "")}
+             for r in attack_results[-10:]] if attack_results else []
     focused_scene = state.get("focused_scene", "")
 
     # 1. 查询 RAG 知识库
     rag_results = []
     if RAG_AVAILABLE:
-        print("   Searching for similar Writeups...")
+        logger.info("   Searching for similar Writeups...")
         try:
             retriever = get_retriever()
             rag_results = retriever.search_by_features(features, top_k=3)
-            print(f"   Found {len(rag_results)} highly relevant historical references")
+            logger.info(f"   Found {len(rag_results)} highly relevant historical references")
         except Exception as e:
-            print(f"   [Warning] RAG search failed: {e}")
+            logger.warning(f"   RAG search failed: {e}")
     else:
-        print("   [Info] RAG not available, proceeding without historical references")
+        logger.info("   RAG not available, proceeding without historical references")
 
     # 2. 构建 Prompt
     prompt = get_innovator_prompt(features, trace, rag_results, focused_scene)
     
     # 3. 调用 LLM
-    print("   🧠 LLM 正在进行创新推演...")
+    logger.info("   🧠 LLM 正在进行创新推演...")
     response_text = llm_client.call_chat_completion(
         model=config.INNOVATOR_MODEL,
         messages=[{"role": "user", "content": prompt}],
@@ -108,7 +115,7 @@ def innovator_node(state: CTFState) -> Dict:
     )
     
     if not response_text:
-        print("⚠️ [Innovator] LLM 调用失败，无法生成新规则")
+        logger.warning("⚠️ LLM 调用失败，无法生成新规则")
         return {}
 
     # 4. 解析结果
@@ -122,13 +129,13 @@ def innovator_node(state: CTFState) -> Dict:
         temp_rules = result.get("temp_rules", [])
         analysis = result.get("analysis", "")
 
-        print(f"✅ [Innovator] 思考结论: {analysis[:100]}...")
-        print(f"✅ [Innovator] 生成了 {len(temp_rules)} 条临时规则")
+        logger.info(f"✅ 思考结论: {analysis[:100]}...")
+        logger.info(f"✅ 生成了 {len(temp_rules)} 条临时规则")
 
         # AI过滤低质量规则
         if temp_rules and len(temp_rules) > 0:
             temp_rules = _ai_filter_rules(temp_rules, features)
-            print(f"   过滤后保留 {len(temp_rules)} 条有效规则")
+            logger.info(f"   过滤后保留 {len(temp_rules)} 条有效规则")
 
         # 将 RAG 上下文简要保存，供后续追溯
         rag_context = [doc['metadata'].get('filename', 'Unknown WP') for doc in rag_results]
@@ -139,7 +146,7 @@ def innovator_node(state: CTFState) -> Dict:
         }
         
     except json.JSONDecodeError:
-        print(f"❌ [Innovator] JSON 解析失败: {response_text[:100]}...")
+        logger.warning(f"❌ JSON 解析失败: {response_text[:100]}...")
         return {}
 
 
@@ -197,6 +204,6 @@ def _ai_filter_rules(rules: List[Dict], features: Dict) -> List[Dict]:
             return result.get("filtered_rules", rules)
 
     except Exception as e:
-        print(f"   [Innovator] AI过滤失败: {e}")
+        logger.warning(f"   AI过滤失败: {e}")
 
     return rules

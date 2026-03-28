@@ -15,9 +15,13 @@ import time
 import json
 import signal
 import subprocess
+import threading
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional, Any, Generic, TypeVar
 from dataclasses import dataclass, field
+from logger import get_logger
+
+logger = get_logger("Tool")
 
 # ==========================================
 # 0. 统一结果类型 (新增 - 任务1.1)
@@ -295,9 +299,9 @@ class CommandLineTool(CTFTool):
                         stream_type, line = output_queue.get(timeout=0.1)
                         # 打印到控制台，带工具名前缀
                         if stream_type == 'stdout':
-                            print(f"[{self.name()}] {line}")
+                            logger.info(f"[{self.name()}] {line}")
                         else:
-                            print(f"[{self.name()}][ERR] {line}")
+                            logger.warning(f"[{self.name()}][ERR] {line}")
                     except queue.Empty:
                         # 进程结束后，继续读取队列直到为空
                         if process.poll() is not None:
@@ -306,9 +310,9 @@ class CommandLineTool(CTFTool):
                                 try:
                                     stream_type, line = output_queue.get(timeout=0.05)
                                     if stream_type == 'stdout':
-                                        print(f"[{self.name()}] {line}")
+                                        logger.info(f"[{self.name()}] {line}")
                                     else:
-                                        print(f"[{self.name()}][ERR] {line}")
+                                        logger.warning(f"[{self.name()}][ERR] {line}")
                                 except queue.Empty:
                                     break
                             # 队列排空后退出
@@ -325,7 +329,7 @@ class CommandLineTool(CTFTool):
                         except:
                             pass
                         process.wait()
-                    print(f"[{self.name()}] 执行超时 ({run_timeout}秒)，已终止")
+                    logger.warning(f"[{self.name()}] 执行超时 ({run_timeout}秒)，已终止")
 
                 # 等待线程结束
                 stdout_thread.join(timeout=1)
@@ -629,7 +633,7 @@ class DockerTool(CTFTool):
             try:
                 self.client.images.get(self.image)
             except docker.errors.ImageNotFound:
-                print(f"🐳 正在拉取镜像 {self.image}，请稍候...")
+                logger.info(f"🐳 正在拉取镜像 {self.image}，请稍候...")
                 self.client.images.pull(self.image)
 
             # 运行容器 (使用 host 网络以便访问本地靶机)
@@ -661,6 +665,7 @@ class ToolRegistry:
     _tools: Dict[str, List['CTFTool']] = {}
     _cache: Dict[str, Dict] = {}
     _enabled_tools: Dict[str, bool] = {}  # 工具启用状态
+    _lock = threading.Lock()  # 线程安全锁
 
     # 缓存配置
     CACHE_MAX_SIZE = 1000  # 最大缓存条目数
@@ -714,7 +719,7 @@ class ToolRegistry:
         # 只在第一次注册时打印
         if not already_registered:
             status = "✅" if available else "❌"
-            print(f"[ToolRegistry] {status} {tool.name()} (supports: {', '.join(tool.supported_vulns())}) - {'available' if available else 'unavailable'}")
+            logger.info(f"[ToolRegistry] {status} {tool.name()} (supports: {', '.join(tool.supported_vulns())}) - {'available' if available else 'unavailable'}")
 
     @classmethod
     def get_tools(cls, vuln_type: str) -> List['CTFTool']:
@@ -925,10 +930,11 @@ class ToolRegistry:
         - 错误恢复机制入口
         - 工具启用状态检查
         - 自动会话注入 (新增)
+        - 线程安全缓存操作 (新增)
         """
         # 0. 检查工具是否被禁用
         if not cls.is_tool_enabled(tool_name):
-            print(f"[ToolRegistry] Tool '{tool_name}' is disabled, skipping execution")
+            logger.info(f"[ToolRegistry] Tool '{tool_name}' is disabled, skipping execution")
             return ensure_result_format({
                 "success": False,
                 "error": f"Tool '{tool_name}' is disabled",
@@ -938,19 +944,16 @@ class ToolRegistry:
 
         cache_key = f"{tool_name}:{target}:{json.dumps(params, sort_keys=True)}"
 
-        # 1. 清理过期缓存（每次调用时检查）
-        cls._cleanup_cache()
-
-        # 2. 查缓存
-        if cache_key in cls._cache:
-            cached_entry = cls._cache[cache_key]
-            # 检查缓存是否过期
-            if time.time() - cached_entry.get("timestamp", 0) < cls.CACHE_MAX_AGE:
-                print(f"[ToolCache] Hit: {tool_name} -> {target}")
-                return {"cached": True, "result": cached_entry["result"], "duration": 0.0}
-            else:
-                # 缓存过期，删除
-                del cls._cache[cache_key]
+        # 1. 缓存操作加锁（读+清理）
+        with cls._lock:
+            cls._cleanup_cache()
+            if cache_key in cls._cache:
+                cached_entry = cls._cache[cache_key]
+                if time.time() - cached_entry.get("timestamp", 0) < cls.CACHE_MAX_AGE:
+                    logger.info(f"[ToolCache] Hit: {tool_name} -> {target}")
+                    return {"cached": True, "result": cached_entry["result"], "duration": 0.0}
+                else:
+                    del cls._cache[cache_key]
 
         # 3. 找工具
         target_tool: Optional['CTFTool'] = None
@@ -978,7 +981,7 @@ class ToolRegistry:
         params = cls._inject_session_if_needed(target_tool, params, state)
 
         # 5. 跑工具
-        print(f"[ToolRegistry] Executing: {tool_name} -> {target}")
+        logger.info(f"[ToolRegistry] Executing: {tool_name} -> {target}")
         start_time = time.time()
         try:
             result = target_tool.execute(target, params)
@@ -1011,7 +1014,7 @@ class ToolRegistry:
                         result["summary"] = parsed.get("summary", "")
                         result["domain_info"] = parsed.get("domain_info", {})
                 except Exception as e:
-                    print(f"[ToolRegistry] AI parse failed: {e}")
+                    logger.warning(f"[ToolRegistry] AI parse failed: {e}")
 
             # 3. 内存精简：删除原始大型字段
             for field_name in ["stdout", "stderr", "raw_output"]:
@@ -1039,9 +1042,10 @@ class ToolRegistry:
         except ImportError:
             pass
 
-        # 4. 写缓存（只缓存成功的结果）
+        # 4. 写缓存（只缓存成功的结果）- 加锁保护
         if result.get("success"):
-            cls._cache[cache_key] = {"result": result, "timestamp": time.time()}
+            with cls._lock:
+                cls._cache[cache_key] = {"result": result, "timestamp": time.time()}
 
         return {"cached": False, "result": result, "duration": duration}
 
@@ -1073,7 +1077,7 @@ class ToolRegistry:
     def clear_cache(cls):
         """清空所有缓存"""
         cls._cache.clear()
-        print("[ToolRegistry] Cache cleared")
+        logger.info("[ToolRegistry] Cache cleared")
 
     # ==================== 会话自动注入 ====================
 
@@ -1101,7 +1105,7 @@ class ToolRegistry:
 
         # 没有 state，无法注入
         if not state:
-            print(f"[ToolRegistry] Warning: Tool '{tool.name()}' requires session but no state provided")
+            logger.warning(f"[ToolRegistry] Warning: Tool '{tool.name()}' requires session but no state provided")
             return params
 
         # 尝试获取可用会话
@@ -1110,7 +1114,7 @@ class ToolRegistry:
             params = params.copy()  # 不修改原始参数
             params['session'] = session_info.get('session_id') or session_info.get('id')
             params['shell_session'] = session_info
-            print(f"[ToolRegistry] Auto-injected session {params['session']} for tool '{tool.name()}'")
+            logger.info(f"[ToolRegistry] Auto-injected session {params['session']} for tool '{tool.name()}'")
 
         return params
 
@@ -1172,7 +1176,7 @@ class ToolRegistry:
                 }
 
         except Exception as e:
-            print(f"[ToolRegistry] Failed to get session from manager: {e}")
+            logger.warning(f"[ToolRegistry] Failed to get session from manager: {e}")
 
         return None
 

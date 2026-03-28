@@ -180,9 +180,6 @@ def _ai_estimate_expected_flags(state: CTFState) -> Dict:
             "confidence": 0.5
         }
 
-# 拓扑分析器实例（延迟导入避免循环依赖）
-_topology_analyzer = None
-
 class RouteGuard:
     """路由守卫 - 防止死循环和异常跳转"""
 

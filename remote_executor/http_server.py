@@ -17,6 +17,9 @@ import threading
 import http.server
 import socketserver
 from typing import Optional
+from logger import get_logger
+
+logger = get_logger("HTTPServer")
 
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
@@ -51,7 +54,7 @@ def start_http_server(
         └── linux/         -> http://server/linux/fscan (符号链接到/usr/local/bin/)
     """
     if not os.path.exists(directory):
-        print(f"[HTTPServer] 警告: 目录不存在 {directory}")
+        logger.warning(f"目录不存在 {directory}")
         os.makedirs(directory, exist_ok=True)
 
     # 保存当前目录
@@ -69,21 +72,21 @@ def start_http_server(
         # 恢复原目录
         os.chdir(original_dir)
 
-        print(f"[HTTPServer] 启动成功: http://0.0.0.0:{port}")
-        print(f"[HTTPServer] 服务目录: {directory}")
+        logger.info(f"启动成功: http://0.0.0.0:{port}")
+        logger.info(f"服务目录: {directory}")
 
         return server_thread
 
     except OSError as e:
         os.chdir(original_dir)
         if "Address already in use" in str(e) or e.errno == 98:
-            print(f"[HTTPServer] 端口 {port} 已被占用")
+            logger.warning(f"端口 {port} 已被占用")
         else:
-            print(f"[HTTPServer] 启动失败: {e}")
+            logger.warning(f"启动失败: {e}")
         return None
     except Exception as e:
         os.chdir(original_dir)
-        print(f"[HTTPServer] 启动失败: {e}")
+        logger.warning(f"启动失败: {e}")
         return None
 
 
@@ -139,5 +142,5 @@ def ensure_tools_directories():
     for d in dirs:
         os.makedirs(d, exist_ok=True)
 
-    print(f"[HTTPServer] 确保工具目录存在: {len(dirs)} 个")
+    logger.info(f"确保工具目录存在: {len(dirs)} 个")
     return dirs

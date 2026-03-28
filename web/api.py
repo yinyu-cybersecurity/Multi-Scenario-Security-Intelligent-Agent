@@ -140,8 +140,18 @@ except ImportError:
 
 # 初始化自我纠错管理器
 self_correction_manager = None
+ErrorSeverity = None
+ErrorType = None
+classify_error = None
+enrich_error_context = None
 try:
-    from self_correction import self_correction_manager as scm
+    from self_correction import (
+        self_correction_manager as scm,
+        ErrorSeverity,
+        ErrorType,
+        classify_error,
+        enrich_error_context
+    )
     self_correction_manager = scm
 except ImportError:
     pass
@@ -163,6 +173,164 @@ system_status = {
 }
 
 
+# =============================================================================
+# 统一错误处理机制
+# =============================================================================
+
+def handle_api_error(func):
+    """
+    API 错误处理装饰器
+
+    功能:
+    - 自动捕获异常
+    - 记录错误到 self_correction_manager
+    - 返回标准化错误响应
+    - 支持错误分类和严重度评估
+    """
+    from functools import wraps
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            # 获取函数名作为节点标识
+            node_name = func.__name__
+
+            # 分类错误
+            error_type = "EXECUTION_ERROR"
+            severity_name = "MEDIUM"
+
+            if classify_error and ErrorSeverity:
+                error_type, severity = classify_error(e, {})
+                severity_name = severity.name
+            else:
+                # 简单分类
+                error_msg = str(e).lower()
+                if 'timeout' in error_msg:
+                    error_type = "NETWORK_TIMEOUT"
+                elif 'connection' in error_msg:
+                    error_type = "CONNECTION_REFUSED"
+                elif 'not found' in error_msg:
+                    error_type = "RESOURCE_NOT_FOUND"
+
+            # 记录错误
+            if self_correction_manager and ErrorSeverity:
+                try:
+                    self_correction_manager.record_error(
+                        node=node_name,
+                        error_type=error_type,
+                        error_message=str(e),
+                        severity=ErrorSeverity.MEDIUM if ErrorSeverity else None
+                    )
+                except Exception:
+                    pass  # 防止错误记录失败导致二次异常
+
+            # 构建错误响应
+            error_response = {
+                "error": str(e),
+                "error_type": error_type,
+                "severity": severity_name,
+                "node": node_name,
+                "timestamp": datetime.now().isoformat()
+            }
+
+            # 根据错误类型选择 HTTP 状态码
+            status_code = 500
+            if 'not found' in str(e).lower() or error_type == "RESOURCE_NOT_FOUND":
+                status_code = 404
+            elif 'invalid' in str(e).lower() or 'required' in str(e).lower():
+                status_code = 400
+
+            return jsonify(error_response), status_code
+
+    return wrapper
+
+
+def record_task_error(task_id: str, node: str, error: Exception, state: dict = None) -> dict:
+    """
+    记录任务错误并尝试分析
+
+    Args:
+        task_id: 任务ID
+        node: 发生错误的节点
+        error: 异常对象
+        state: 当前状态（用于 AI 分析）
+
+    Returns:
+        错误分析结果
+    """
+    result = {
+        "error": str(error),
+        "error_type": "EXECUTION_ERROR",
+        "severity": "MEDIUM",
+        "analysis": None,
+        "recovery_attempted": False
+    }
+
+    # 分类错误
+    if classify_error:
+        try:
+            error_type, severity = classify_error(error, {"task_id": task_id})
+            result["error_type"] = error_type
+            result["severity"] = severity.name
+        except Exception:
+            pass
+
+    # 记录到 self_correction_manager
+    if self_correction_manager:
+        try:
+            record = self_correction_manager.record_error(
+                node=node,
+                error_type=result["error_type"],
+                error_message=str(error),
+                severity=ErrorSeverity[result["severity"]] if ErrorSeverity else None
+            )
+            result["recorded"] = True
+        except Exception as e:
+            result["record_error"] = str(e)
+
+    # AI 分析错误（如果可用）
+    if self_correction_manager and state:
+        try:
+            analysis = self_correction_manager.analyze_failure_with_ai(
+                error_record=record if 'record' in dir() else None,
+                context={
+                    "task_id": task_id,
+                    "target_url": state.get("target_url", ""),
+                    "recent_actions": state.get("attack_results", [])[-5:],
+                    "attempts": state.get("execution_steps", 0)
+                }
+            )
+            result["analysis"] = analysis
+        except Exception as e:
+            result["analysis_error"] = str(e)
+
+    return result
+
+
+def attempt_task_recovery(task_id: str, state: dict, analysis: dict) -> tuple:
+    """
+    尝试任务恢复
+
+    Args:
+        task_id: 任务ID
+        state: 当前状态
+        analysis: AI 分析结果
+
+    Returns:
+        (recovered: bool, updates: dict)
+    """
+    if not self_correction_manager:
+        return False, {}
+
+    try:
+        updates, recovered = self_correction_manager.attempt_ai_recovery(state, analysis)
+        return recovered, updates
+    except Exception as e:
+        return False, {"recovery_error": str(e)}
+
+
 def get_graph_structure():
     """获取LangGraph图结构"""
     groups = {
@@ -174,6 +342,8 @@ def get_graph_structure():
         "pwn": {"name": "二进制", "color": "#FF5722"},
         "reverse": {"name": "逆向", "color": "#00BCD4"},
         "misc": {"name": "杂项", "color": "#8BC34A"},
+        "cloud": {"name": "云安全", "color": "#FF9800"},
+        "ai": {"name": "AI安全", "color": "#E91E63"},
         "end": {"name": "结束", "color": "#95a5a6"}
     }
 
@@ -208,6 +378,16 @@ def get_graph_structure():
         {"id": "reverse_decompiler", "name": "反编译", "group": "reverse", "description": "反编译分析", "order": 250},
         {"id": "misc_analyst", "name": "杂项分析", "group": "misc", "description": "文件分析隐写检测", "order": 260},
         {"id": "misc_extractor", "name": "数据提取", "group": "misc", "description": "提取隐藏数据", "order": 270},
+        # 云安全分支
+        {"id": "cloud_recon", "name": "云侦察", "group": "cloud", "description": "识别云服务商", "order": 280},
+        {"id": "cloud_enum", "name": "云枚举", "group": "cloud", "description": "枚举云资源", "order": 281},
+        {"id": "cloud_exploit", "name": "云攻击", "group": "cloud", "description": "攻击云资源", "order": 282},
+        {"id": "cloud_escalate", "name": "云提权", "group": "cloud", "description": "权限提升分析", "order": 283},
+        # AI安全分支
+        {"id": "ai_detect", "name": "AI检测", "group": "ai", "description": "识别AI服务", "order": 290},
+        {"id": "ai_probe", "name": "AI探测", "group": "ai", "description": "Prompt注入测试", "order": 291},
+        {"id": "ai_exploit", "name": "AI攻击", "group": "ai", "description": "越狱攻击", "order": 292},
+        {"id": "ai_exfiltrate", "name": "AI窃取", "group": "ai", "description": "数据窃取", "order": 293},
         # 结束
         {"id": "evolution", "name": "进化", "group": "end", "description": "学习总结", "order": 300},
     ]
@@ -258,6 +438,18 @@ def get_graph_structure():
         {"source": "challenge_type_detector", "target": "misc_analyst", "label": "misc"},
         {"source": "misc_analyst", "target": "misc_extractor"},
         {"source": "misc_extractor", "target": "evolution"},
+        # 云安全分支
+        {"source": "challenge_type_detector", "target": "cloud_recon", "label": "cloud"},
+        {"source": "cloud_recon", "target": "cloud_enum"},
+        {"source": "cloud_enum", "target": "cloud_exploit"},
+        {"source": "cloud_exploit", "target": "cloud_escalate"},
+        {"source": "cloud_escalate", "target": "evolution"},
+        # AI安全分支
+        {"source": "challenge_type_detector", "target": "ai_detect", "label": "ai"},
+        {"source": "ai_detect", "target": "ai_probe"},
+        {"source": "ai_probe", "target": "ai_exploit"},
+        {"source": "ai_exploit", "target": "ai_exfiltrate"},
+        {"source": "ai_exfiltrate", "target": "evolution"},
     ]
 
     # 返回所有边，但标记禁用状态（前端负责淡化显示）
@@ -410,7 +602,16 @@ def run_task(task_id, target_url):
                     "execution_steps": state.get("execution_steps", 0),
                     "site_topology": state.get("site_topology", {}),
                     "critical_nodes": state.get("critical_nodes", []),
-                    "topology_priority": state.get("topology_priority", [])
+                    "topology_priority": state.get("topology_priority", []),
+                    # 云安全状态
+                    "cloud_provider": state.get("cloud_provider", ""),
+                    "cloud_phase": state.get("cloud_phase", ""),
+                    "buckets_found": state.get("buckets_found", []),
+                    # AI安全状态
+                    "target_model": state.get("target_model", ""),
+                    "ai_phase": state.get("ai_phase", ""),
+                    "prompt_injection_success": state.get("prompt_injection_success", False),
+                    "jailbreak_success": state.get("jailbreak_success", False),
                 }
 
         if not hasattr(ctf_app, '_node_callbacks'):
@@ -447,9 +648,30 @@ def run_task(task_id, target_url):
         import traceback
         log_callback(task_id, f"[Error] Task exception: {e}")
         log_callback(task_id, traceback.format_exc())
+
+        # 使用增强的错误处理机制
+        error_result = record_task_error(
+            task_id=task_id,
+            node="run_task",
+            error=e,
+            state=task_results.get(task_id, {})
+        )
+
+        # 记录错误分析结果
+        if error_result.get("analysis"):
+            analysis = error_result["analysis"]
+            log_callback(task_id, f"[AI Analysis] {analysis.get('root_cause', 'Unknown cause')}")
+
+            # 如果 AI 建议恢复策略
+            if analysis.get("is_recoverable") and analysis.get("recovery_strategies"):
+                log_callback(task_id, f"[Recovery] Suggested: {analysis['recovery_strategies'][0].get('strategy', 'N/A')}")
+
         tasks[task_id]["status"] = "error"
         tasks[task_id]["error"] = str(e)
-        task_completion_times[task_id] = time.time()  # 记录完成时间
+        tasks[task_id]["error_type"] = error_result.get("error_type", "EXECUTION_ERROR")
+        tasks[task_id]["error_severity"] = error_result.get("severity", "MEDIUM")
+        tasks[task_id]["error_analysis"] = error_result.get("analysis")
+        task_completion_times[task_id] = time.time()
 
 
 def run_simulated_task(task_id, target_url):
@@ -791,7 +1013,16 @@ def api_task_status(task_id):
         "credentials": result.get("credentials", []),
         "internal_hosts": result.get("internal_hosts", []),
         "current_mode": result.get("current_mode", ""),
-        "execution_steps": result.get("execution_steps", 0)
+        "execution_steps": result.get("execution_steps", 0),
+        # 云安全状态
+        "cloud_provider": result.get("cloud_provider", ""),
+        "cloud_phase": result.get("cloud_phase", ""),
+        "buckets_found": result.get("buckets_found", []),
+        # AI安全状态
+        "target_model": result.get("target_model", ""),
+        "ai_phase": result.get("ai_phase", ""),
+        "prompt_injection_success": result.get("prompt_injection_success", False),
+        "jailbreak_success": result.get("jailbreak_success", False),
     })
 
 
@@ -901,13 +1132,20 @@ def api_persistence_tasks():
         return jsonify({"error": "Persistence module not available"}), 503
 
     status = request.args.get('status', '')
+    limit = request.args.get('limit', 50, type=int)
+
     if status:
         records = task_persistence.get_tasks_by_status(status)
     else:
-        records = task_persistence.get_active_tasks()
+        # 获取所有任务（不只是活跃任务）
+        try:
+            records = task_persistence.get_all_tasks(limit=limit)
+        except AttributeError:
+            # 如果没有 get_all_tasks 方法，使用 get_active_tasks
+            records = task_persistence.get_active_tasks()
 
     return jsonify({
-        "tasks": [r.to_dict() for r in records],
+        "tasks": [r.to_dict() if hasattr(r, 'to_dict') else r for r in records],
         "total": len(records)
     })
 
@@ -926,11 +1164,23 @@ def api_persistence_task(task_id):
     history = task_persistence.get_execution_history(task_id)
     discoveries = task_persistence.get_discoveries(task_id)
 
-    return jsonify({
-        "task": record.to_dict(),
-        "execution_history": history[:50],
-        "discoveries": discoveries
-    })
+    # 获取任务记录字典
+    task_dict = record.to_dict() if hasattr(record, 'to_dict') else record
+
+    # 合并到返回结果
+    result = {
+        "task_id": task_dict.get("task_id", task_id),
+        "target": task_dict.get("target", ""),
+        "status": task_dict.get("status", "unknown"),
+        "created_at": task_dict.get("created_at", ""),
+        "completed_at": task_dict.get("completed_at", ""),
+        "found_flag": task_dict.get("found_flag", False),
+        "final_flag": task_dict.get("final_flag", ""),
+        "execution_history": history[:50] if history else [],
+        "discoveries": discoveries if discoveries else []
+    }
+
+    return jsonify(result)
 
 
 @bp.route('/api/persistence/statistics')
@@ -990,6 +1240,118 @@ def api_recovery_history():
             }
             for e in self_correction_manager.error_history[-20:]
         ]
+    })
+
+
+@bp.route('/api/errors/statistics')
+def api_error_statistics():
+    """获取错误统计信息"""
+    if not self_correction_manager:
+        return jsonify({"error": "Self-correction module not available"}), 503
+
+    # 按错误类型统计
+    error_type_counts = {}
+    for e in self_correction_manager.error_history:
+        error_type_counts[e.error_type] = error_type_counts.get(e.error_type, 0) + 1
+
+    # 按节点统计
+    node_error_counts = {}
+    for e in self_correction_manager.error_history:
+        node_error_counts[e.node] = node_error_counts.get(e.node, 0) + 1
+
+    # 按严重程度统计
+    severity_counts = {}
+    for e in self_correction_manager.error_history:
+        severity_name = e.severity.name if hasattr(e.severity, 'name') else str(e.severity)
+        severity_counts[severity_name] = severity_counts.get(severity_name, 0) + 1
+
+    # 恢复率
+    total_errors = len(self_correction_manager.error_history)
+    recovered_count = sum(1 for e in self_correction_manager.error_history if e.recovered)
+
+    return jsonify({
+        "total_errors": total_errors,
+        "recovered_count": recovered_count,
+        "recovery_rate": recovered_count / total_errors if total_errors > 0 else 0,
+        "by_type": error_type_counts,
+        "by_node": node_error_counts,
+        "by_severity": severity_counts,
+        "is_healthy": self_correction_manager.health_status.is_healthy,
+        "consecutive_failures": self_correction_manager.health_status.consecutive_failures
+    })
+
+
+@bp.route('/api/errors/recent')
+def api_recent_errors():
+    """获取最近错误列表（带分页）"""
+    if not self_correction_manager:
+        return jsonify({"error": "Self-correction module not available"}), 503
+
+    limit = request.args.get('limit', 50, type=int)
+    offset = request.args.get('offset', 0, type=int)
+    error_type = request.args.get('type', '')
+    severity = request.args.get('severity', '')
+
+    # 过滤错误
+    filtered = self_correction_manager.error_history
+    if error_type:
+        filtered = [e for e in filtered if e.error_type == error_type]
+    if severity:
+        filtered = [e for e in filtered if hasattr(e.severity, 'name') and e.severity.name == severity]
+
+    # 分页
+    total = len(filtered)
+    paginated = filtered[offset:offset + limit]
+
+    return jsonify({
+        "total": total,
+        "errors": [
+            {
+                "timestamp": e.timestamp,
+                "datetime": datetime.fromtimestamp(e.timestamp).isoformat() if e.timestamp else None,
+                "node": e.node,
+                "error_type": e.error_type,
+                "error_message": e.error_message,
+                "severity": e.severity.name if hasattr(e.severity, 'name') else str(e.severity),
+                "recovered": e.recovered,
+                "recovery_action": e.recovery_action,
+                "stack_trace": e.stack_trace[:500] if e.stack_trace else None
+            }
+            for e in paginated
+        ]
+    })
+
+
+@bp.route('/api/errors/analyze', methods=['POST'])
+def api_analyze_error():
+    """AI 分析错误"""
+    if not self_correction_manager:
+        return jsonify({"error": "Self-correction module not available"}), 503
+
+    data = request.json
+    error_message = data.get('error_message', '')
+    node = data.get('node', '')
+    context = data.get('context', {})
+
+    if not error_message:
+        return jsonify({"error": "error_message required"}), 400
+
+    # 创建临时错误记录
+    from self_correction import ErrorRecord, ErrorSeverity
+
+    temp_record = ErrorRecord(
+        timestamp=time.time(),
+        node=node or "unknown",
+        error_type="MANUAL_ANALYSIS",
+        error_message=error_message,
+        severity=ErrorSeverity.MEDIUM
+    )
+
+    # AI 分析
+    analysis = self_correction_manager.analyze_failure_with_ai(temp_record, context)
+
+    return jsonify({
+        "analysis": analysis
     })
 
 

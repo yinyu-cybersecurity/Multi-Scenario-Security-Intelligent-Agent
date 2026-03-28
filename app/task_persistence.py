@@ -21,6 +21,9 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from contextlib import contextmanager
+from logger import get_logger
+
+logger = get_logger("TaskPersistence")
 
 
 @dataclass
@@ -39,7 +42,25 @@ class TaskRecord:
     metadata: Dict = field(default_factory=dict)
 
     def to_dict(self) -> Dict:
-        return asdict(self)
+        result = asdict(self)
+        # 添加格式化的时间
+        from datetime import datetime
+        result["created_at"] = datetime.fromtimestamp(self.created_at).strftime("%Y-%m-%d %H:%M:%S")
+        result["updated_at"] = datetime.fromtimestamp(self.updated_at).strftime("%Y-%m-%d %H:%M:%S")
+        # 从findings中提取flag信息
+        result["found_flag"] = False
+        result["final_flag"] = ""
+        for finding in self.findings:
+            if finding.get("type") == "flag" or "flag" in str(finding.get("content", "")).lower():
+                result["found_flag"] = True
+                result["final_flag"] = finding.get("content", "")
+                break
+        # 添加completed_at字段
+        if self.status in ["completed", "failed"]:
+            result["completed_at"] = result["updated_at"]
+        else:
+            result["completed_at"] = None
+        return result
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'TaskRecord':
@@ -169,7 +190,7 @@ class TaskPersistenceManager:
                 ))
                 conn.commit()
 
-        print(f"[TaskPersistence] 创建任务: {task_id} -> {target}")
+        logger.info(f"创建任务: {task_id} -> {target}")
         return record
 
     def update_task(self, task_id: str, **updates) -> bool:
@@ -243,6 +264,17 @@ class TaskPersistenceManager:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT * FROM tasks WHERE status IN ('pending', 'running', 'paused') ORDER BY created_at DESC"
+            )
+            rows = cursor.fetchall()
+            return [self._row_to_record(row) for row in rows]
+
+    def get_all_tasks(self, limit: int = 100) -> List[TaskRecord]:
+        """获取所有任务（包括已完成的历史任务）"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?",
+                (limit,)
             )
             rows = cursor.fetchall()
             return [self._row_to_record(row) for row in rows]

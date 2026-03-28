@@ -23,6 +23,9 @@
 from typing import Dict, Any, Callable, Optional
 from functools import wraps
 import threading
+from logger import get_logger
+
+logger = get_logger("NodeControl")
 
 
 class NodeControl:
@@ -46,6 +49,10 @@ class NodeControl:
         "pwn_analyst", "pwn_exploiter",
         "reverse_analyst", "reverse_decompiler",
         "misc_analyst", "misc_extractor",
+        # 云安全节点
+        "cloud_recon", "cloud_enum", "cloud_exploit", "cloud_escalate",
+        # AI安全节点
+        "ai_detect", "ai_probe", "ai_exploit", "ai_exfiltrate",
     ]
 
     # 节点分组 - 用于批量禁用
@@ -59,6 +66,8 @@ class NodeControl:
         "pwn": ["pwn_analyst", "pwn_exploiter"],
         "reverse": ["reverse_analyst", "reverse_decompiler"],
         "misc": ["misc_analyst", "misc_extractor"],
+        "cloud": ["cloud_recon", "cloud_enum", "cloud_exploit", "cloud_escalate"],
+        "ai": ["ai_detect", "ai_probe", "ai_exploit", "ai_exfiltrate"],
     }
 
     # 节点内存占用估算 (MB) - 用于显示禁用后的内存节省
@@ -80,6 +89,14 @@ class NodeControl:
         "reverse_decompiler": 35,
         "misc_analyst": 20,
         "misc_extractor": 25,
+        "cloud_recon": 20,
+        "cloud_enum": 15,
+        "cloud_exploit": 25,
+        "cloud_escalate": 15,
+        "ai_detect": 15,
+        "ai_probe": 20,
+        "ai_exploit": 25,
+        "ai_exfiltrate": 15,
     }
 
     def __init__(self):
@@ -219,7 +236,7 @@ def skip_if_disabled(node_func: Callable) -> Callable:
                 from logger import node_log
                 node_log(node_name, f"节点已禁用，跳过执行", "info")
             except:
-                print(f"[{node_name}] 节点已禁用，跳过执行")
+                logger.info(f"[{node_name}] 节点已禁用，跳过执行")
 
             # 返回空修改，不执行实际逻辑
             return {
@@ -230,8 +247,14 @@ def skip_if_disabled(node_func: Callable) -> Callable:
                 }]
             }
 
-        # 节点启用，执行实际逻辑
-        return node_func(state)
+        # 使用性能监控跟踪节点执行
+        try:
+            from performance import performance_monitor
+            with performance_monitor.track_node(node_name):
+                return node_func(state)
+        except ImportError:
+            # 性能监控不可用时直接执行
+            return node_func(state)
 
     return wrapper
 
@@ -256,7 +279,7 @@ def create_disabled_wrapper(node_name: str, node_func: Callable) -> Callable:
                 from logger import node_log
                 node_log(node_name, f"节点已禁用，跳过执行", "info")
             except:
-                print(f"[{node_name}] 节点已禁用，跳过执行")
+                logger.info(f"[{node_name}] 节点已禁用，跳过执行")
 
             return {
                 "node_messages": [{

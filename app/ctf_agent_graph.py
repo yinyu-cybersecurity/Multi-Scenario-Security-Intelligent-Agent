@@ -225,6 +225,8 @@ PWN_AVAILABLE = ModuleRegistry.is_available('pwn')
 REVERSE_AVAILABLE = ModuleRegistry.is_available('reverse')
 MISC_AVAILABLE = ModuleRegistry.is_available('misc')
 PERFORMANCE_AVAILABLE = ModuleRegistry.is_available('performance')
+CLOUD_SECURITY_AVAILABLE = ModuleRegistry.is_available('cloud_security')
+AI_SECURITY_AVAILABLE = ModuleRegistry.is_available('ai_security')
 
 # 导入可用模块的节点函数
 if SELF_CORRECTION_AVAILABLE:
@@ -263,6 +265,18 @@ if REVERSE_AVAILABLE:
 if MISC_AVAILABLE:
     misc_analyst_node = ModuleRegistry.get_node('misc', 'misc_analyst')
     misc_extractor_node = ModuleRegistry.get_node('misc', 'misc_extractor')
+
+if CLOUD_SECURITY_AVAILABLE:
+    cloud_recon_node = ModuleRegistry.get_node('cloud_security', 'cloud_recon')
+    cloud_enum_node = ModuleRegistry.get_node('cloud_security', 'cloud_enum')
+    cloud_exploit_node = ModuleRegistry.get_node('cloud_security', 'cloud_exploit')
+    cloud_escalate_node = ModuleRegistry.get_node('cloud_security', 'cloud_escalate')
+
+if AI_SECURITY_AVAILABLE:
+    ai_detect_node = ModuleRegistry.get_node('ai_security', 'ai_detect')
+    ai_probe_node = ModuleRegistry.get_node('ai_security', 'ai_probe')
+    ai_exploit_node = ModuleRegistry.get_node('ai_security', 'ai_exploit')
+    ai_exfiltrate_node = ModuleRegistry.get_node('ai_security', 'ai_exfiltrate')
 
 if PERFORMANCE_AVAILABLE:
     performance_monitor = ModuleRegistry.get_node('performance', 'performance_monitor')
@@ -402,6 +416,23 @@ def challenge_type_detector_node(state: CTFState) -> Dict:
     # 策略2: HTTP服务可访问性检测 + 内网模式判断
     # =========================================================================
     if not result and target_url:
+        # 检查云服务特征
+        cloud_patterns = [".amazonaws.com", ".s3.amazonaws", ".cloudfront.net",
+                          ".azurewebsites.net", ".blob.core.windows.net",
+                          ".appspot.com", ".storage.googleapis.com",
+                          ".aliyuncs.com", ".myqcloud.com"]
+        if any(p in target_url.lower() for p in cloud_patterns):
+            log(f"   [Signal:Cloud] 云服务特征检测")
+            result = {"cloud_mode": True}
+
+        # 检查AI服务特征
+        ai_patterns = ["openai.com", "chatgpt", "anthropic.com", "claude",
+                       "deepseek", "gemini", "bard", "llm-api"]
+        task_desc = state.get("task_description", "") if isinstance(state, dict) else ""
+        if any(p in target_url.lower() or p in task_desc.lower() for p in ai_patterns):
+            log(f"   [Signal:AI] AI服务特征检测")
+            result = {"ai_mode": True}
+
         # 检查是否是纯IP地址（可能是内网目标）
         ip_match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', target_url)
         is_pure_ip = bool(re.match(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$', target_url.strip()))
@@ -563,6 +594,9 @@ def _llm_detect_challenge_type(task_name: str, task_desc: str,
 4. **Crypto**: Cryptography (RSA, AES, hash cracking, encoding)
 5. **Misc**: Steganography, forensics, traffic analysis, encoding
 6. **Internal**: Internal network penetration (AD, lateral movement)
+7. **Cloud**: Cloud security (AWS/Azure/GCP, Lambda, IAM, S3)
+8. **AI**: AI security (LLM, prompt injection, jailbreak, model extraction)
+6. **Internal**: Internal network penetration (AD, lateral movement)
 
 ## Output Format (JSON)
 {{
@@ -600,6 +634,10 @@ def _llm_detect_challenge_type(task_name: str, task_desc: str,
             return {"misc_mode": True}
         elif detected_type == "internal":
             return {"internal_mode": True}
+        elif detected_type == "cloud":
+            return {"cloud_mode": True}
+        elif detected_type == "ai":
+            return {"ai_mode": True}
         else:
             return {}  # Web is default
 
@@ -1038,13 +1076,35 @@ def recon_node(state: CTFState) -> Dict:
         elif vuln_type == "port":
             confidence = 0.5  # 仅端口开放，置信度较低
 
+        # [核心修复] 确定 URL 绑定
+        # Web 端口列表
+        web_ports = [80, 443, 8080, 8443, 8000, 8888, 3000, 5000, 9000]
+        port_num = port if isinstance(port, int) else (int(port) if str(port).isdigit() else 0)
+
+        if port_num in web_ports or vuln_type in ["sqli", "xss", "lfi", "rce", "ssrf", "xxe"]:
+            # Web 漏洞，绑定到 http_url
+            vuln_url = http_url
+        elif target:
+            # 非 Web 漏洞，构造协议 URL
+            if port_num == 22:
+                vuln_url = f"ssh://{target}:{port}" if port else f"ssh://{target}"
+            elif port_num in [3306, 1433, 5432, 27017, 6379]:
+                vuln_url = f"db://{target}:{port}"
+            elif port_num in [21, 25, 110, 993, 995]:
+                vuln_url = f"tcp://{target}:{port}"
+            else:
+                vuln_url = f"http://{target}:{port}" if port else f"http://{target}"
+        else:
+            vuln_url = http_url
+
         fscan_vuln_candidates.append({
             "type": vuln_type,
             "location": f"{target}:{port}" if port else target,
             "description": info,
             "confidence": confidence,
             "source": "fscan",
-            "evidence": info
+            "evidence": info,
+            "url": vuln_url
         })
 
     # [核心修复] 合并 fscan 发现和并行扫描发现的漏洞候选
@@ -1081,10 +1141,7 @@ def recon_node(state: CTFState) -> Dict:
     # [关键修复] 如果发现了漏洞，直接添加攻击动作
     if all_vuln_candidates:
         log(f"   🎯 发现 {len(all_vuln_candidates)} 个漏洞候选，优先处理")
-        # 将高置信度的漏洞直接加入状态
-        high_confidence_vulns = [v for v in all_vuln_candidates if v.get("confidence", 0) > 0.7]
-        if high_confidence_vulns:
-            res["high_priority_vulns"] = high_confidence_vulns
+        # 高置信度漏洞已在 all_vuln_candidates 中，会被传递给 analyst_node
 
     log_node_data("recon", {"url": url}, res)
     return res
@@ -2753,6 +2810,20 @@ if MISC_AVAILABLE:
     workflow.add_node("misc_analyst", wrap_node("misc_analyst", misc_analyst_node))  # type: ignore # Misc分析
     workflow.add_node("misc_extractor", wrap_node("misc_extractor", misc_extractor_node))  # type: ignore # Misc提取
 
+# Cloud Security节点 (可选启用)
+if CLOUD_SECURITY_AVAILABLE:
+    workflow.add_node("cloud_recon", wrap_node("cloud_recon", cloud_recon_node))  # type: ignore
+    workflow.add_node("cloud_enum", wrap_node("cloud_enum", cloud_enum_node))  # type: ignore
+    workflow.add_node("cloud_exploit", wrap_node("cloud_exploit", cloud_exploit_node))  # type: ignore
+    workflow.add_node("cloud_escalate", wrap_node("cloud_escalate", cloud_escalate_node))  # type: ignore
+
+# AI Security节点 (可选启用)
+if AI_SECURITY_AVAILABLE:
+    workflow.add_node("ai_detect", wrap_node("ai_detect", ai_detect_node))  # type: ignore
+    workflow.add_node("ai_probe", wrap_node("ai_probe", ai_probe_node))  # type: ignore
+    workflow.add_node("ai_exploit", wrap_node("ai_exploit", ai_exploit_node))  # type: ignore
+    workflow.add_node("ai_exfiltrate", wrap_node("ai_exfiltrate", ai_exfiltrate_node))  # type: ignore
+
 # 0. CTF类型检测路由
 def _route_from_challenge_detector(state: CTFState) -> str:
     """根据检测到的CTF类型路由到对应的入口节点"""
@@ -2767,6 +2838,10 @@ def _route_from_challenge_detector(state: CTFState) -> str:
         return "crypto_analyst"
     if state.get("misc_mode", False) and MISC_AVAILABLE:
         return "misc_analyst"
+    if state.get("cloud_mode", False) and CLOUD_SECURITY_AVAILABLE:
+        return "cloud_recon"
+    if state.get("ai_mode", False) and AI_SECURITY_AVAILABLE:
+        return "ai_detect"
     # 默认走Web流程
     return "recon"
 
@@ -2785,6 +2860,10 @@ if CRYPTO_AVAILABLE:
     _detector_routes["crypto_analyst"] = "crypto_analyst"
 if MISC_AVAILABLE:
     _detector_routes["misc_analyst"] = "misc_analyst"
+if CLOUD_SECURITY_AVAILABLE:
+    _detector_routes["cloud_recon"] = "cloud_recon"
+if AI_SECURITY_AVAILABLE:
+    _detector_routes["ai_detect"] = "ai_detect"
 
 workflow.add_edge(START, "challenge_type_detector")  # type: ignore
 workflow.add_conditional_edges(
@@ -3081,6 +3160,70 @@ if MISC_AVAILABLE:
         }
     )
 
+# Cloud Security路由
+if CLOUD_SECURITY_AVAILABLE:
+    def _route_cloud_recon(state: CTFState) -> str:
+        if state.get("cloud_phase") == "enum":
+            return "cloud_enum"
+        return "mode_manager"
+
+    workflow.add_conditional_edges("cloud_recon", _route_cloud_recon,
+        {"cloud_enum": "cloud_enum", "mode_manager": "mode_manager"})
+
+    def _route_cloud_enum(state: CTFState) -> str:
+        if state.get("cloud_phase") == "exploit":
+            return "cloud_exploit"
+        return "mode_manager"
+
+    workflow.add_conditional_edges("cloud_enum", _route_cloud_enum,
+        {"cloud_exploit": "cloud_exploit", "mode_manager": "mode_manager"})
+
+    def _route_cloud_exploit(state: CTFState) -> str:
+        if state.get("cloud_phase") == "escalate":
+            return "cloud_escalate"
+        if state.get("potential_flags"):
+            return "verifier"
+        return "mode_manager"
+
+    workflow.add_conditional_edges("cloud_exploit", _route_cloud_exploit,
+        {"cloud_escalate": "cloud_escalate", "verifier": "verifier", "mode_manager": "mode_manager"})
+
+    workflow.add_conditional_edges("cloud_escalate",
+        lambda s: "verifier" if s.get("potential_flags") else "mode_manager",
+        {"verifier": "verifier", "mode_manager": "mode_manager"})
+
+# AI Security路由
+if AI_SECURITY_AVAILABLE:
+    def _route_ai_detect(state: CTFState) -> str:
+        if state.get("ai_phase") == "probe":
+            return "ai_probe"
+        return "mode_manager"
+
+    workflow.add_conditional_edges("ai_detect", _route_ai_detect,
+        {"ai_probe": "ai_probe", "mode_manager": "mode_manager"})
+
+    def _route_ai_probe(state: CTFState) -> str:
+        if state.get("ai_phase") == "exploit":
+            return "ai_exploit"
+        return "mode_manager"
+
+    workflow.add_conditional_edges("ai_probe", _route_ai_probe,
+        {"ai_exploit": "ai_exploit", "mode_manager": "mode_manager"})
+
+    def _route_ai_exploit(state: CTFState) -> str:
+        if state.get("ai_phase") == "exfiltrate":
+            return "ai_exfiltrate"
+        if state.get("potential_flags"):
+            return "verifier"
+        return "mode_manager"
+
+    workflow.add_conditional_edges("ai_exploit", _route_ai_exploit,
+        {"ai_exfiltrate": "ai_exfiltrate", "verifier": "verifier", "mode_manager": "mode_manager"})
+
+    workflow.add_conditional_edges("ai_exfiltrate",
+        lambda s: "verifier" if s.get("potential_flags") else "mode_manager",
+        {"verifier": "verifier", "mode_manager": "mode_manager"})
+
 # 编译图 - 启用内存检查点用于状态持久化
 checkpointer = MemorySaver()
 app = workflow.compile(checkpointer=checkpointer)
@@ -3330,147 +3473,9 @@ def run_single_task(task_name: str, task_description: str, target_url: str) -> d
     from router import reset_route_guard
     reset_route_guard()
 
-    # 初始化状态
-    initial_state: CTFState = {
-        # 基础上下文
-        "task_name": task_name,
-        "task_description": task_description,
-        "target_url": target_url,
-        "current_url": target_url,
-        "start_time": time.time(),
-        "current_round": 0,
-        "found_flag": False,
-
-        # 页面感知
-        "page_features": {},
-        "raw_html_snippet": "",
-        "baseline_response": {},
-        "page_history": {},
-        "detected_scenes": {},
-
-        # 拓扑结构
-        "site_topology": {},
-        "node_metadata": {},
-        "critical_nodes": [],
-        "attack_paths": [],
-        "topology_priority": [],  # 拓扑优先级列表: [(url, score), ...]
-
-        # 记忆与知识
-        "visited_fingerprints": [],
-        "visited_urls": [],
-        "vuln_candidates": [],
-        "permanent_rules": [],
-        "tool_cache": {},
-
-        # 执行流
-        "attack_batch": [],
-        "attack_results": [],
-        "tool_calls": [],
-        "latest_tactical_guidance": "",
-        "analyst_intel": "",
-
-        # 决策状态
-        "failure_weighted_score": 0.0,
-        "exploration_rounds": 0,
-        "rule_miss_count": 0,
-        "execution_steps": 0,
-        "current_mode": "exploit",
-        "node_attack_status": {},
-
-        # 分级介入
-        "hint_level": 0,
-        "hint_history": [],
-        "last_intervention_step": 0,
-
-        # RAG与进化
-        "rag_context": [],
-        "temp_rules": [],
-        "success_trace": [],
-
-        # 已知事实追踪 [P2简化] 改为自由文本
-        "known_facts": "",
-        "failed_payloads": [],  # 失败payload追踪
-
-        # ==============================================================================
-        # 内网渗透初始状态 (Internal Network Initial State)
-        # ==============================================================================
-        "internal_hosts": [],
-        "internal_network_range": "",
-        "domain_controller": "",
-        "credentials": [],
-        "active_sessions": [],
-        "ad_domain": "",
-        "ad_users": [],
-        "ad_groups": [],
-        "ad_computers": [],
-        "ad_trusts": [],
-        "lateral_movement_paths": [],
-        "internal_mode": False,
-        "current_internal_target": "",
-        "pivot_host": "",
-        "shell_session": {},  # Shell会话信息
-        "upload_status": "",  # 工具上传状态
-        "tunnel_status": "",  # 隧道状态
-        "proxy_info": {},  # 代理信息
-
-        # --- 扫描去重 ---
-        "scanned_ips": [],
-        "scanned_urls": [],
-
-        # ==============================================================================
-        # Crypto初始状态 (Crypto Initial State)
-        # ==============================================================================
-        "crypto_mode": False,
-        "crypto_analysis": {},
-        "identified_ciphertexts": [],
-        "decrypted_data": [],
-        "potential_flags": [],
-        "rsa_params": {},
-        "classical_cipher_hints": [],
-
-        # ==============================================================================
-        # Pwn初始状态 (Pwn Initial State)
-        # ==============================================================================
-        "pwn_mode": False,
-        "binary_path": "",
-        "binary_info": {},
-        "vulnerabilities": [],
-        "exploit_script": "",
-        "exploit_info": {},
-        "pwn_analysis": {},  # 添加缺失字段
-
-        # ==============================================================================
-        # Reverse初始状态 (Reverse Initial State)
-        # ==============================================================================
-        "reverse_mode": False,
-        "reverse_info": {},
-        "decompiled_code": "",
-        "algorithm_type": "",
-        "key_findings": "",
-        "functions": [],
-        "extracted_strings": [],
-
-        # ==============================================================================
-        # Misc初始状态 (Misc Initial State)
-        # ==============================================================================
-        "misc_mode": False,
-        "misc_file": "",
-        "file_info": {},
-        "steg_results": {},
-        "media_analysis": {},
-        "misc_analysis": {},  # 添加缺失字段
-        "extracted_data": [],
-        "embedded_files": [],
-        "attachments": []
-    }
-
-    # 验证所有必需字段都已初始化
-    from state import CTFState
-    required_fields = list(CTFState.__annotations__.keys())
-    for field in required_fields:
-        if field not in initial_state:
-            log(f"[Warning] 初始状态缺少字段: {field}，设置为默认值")
-            initial_state[field] = None  # 设置默认值
+    # 使用统一的默认状态生成器，确保字段同步
+    from state_v2 import get_default_state
+    initial_state: CTFState = get_default_state(task_name, task_description, target_url)
 
     # 运行工作流
     log("\n⏳ 开始攻击...")

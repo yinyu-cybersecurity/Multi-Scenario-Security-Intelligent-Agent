@@ -1,8 +1,10 @@
 # strategy_filter.py - 策略过滤器
 # 作用：根据技术栈过滤漏洞候选，防止LLM生成不匹配的攻击
 
-from state import CTFState
 from typing import Dict
+from logger import get_logger
+
+logger = get_logger("Strategy")
 
 
 class TechStackRules:
@@ -186,7 +188,7 @@ def strategy_filter_node(state: CTFState) -> Dict:
     Returns:
         更新后的漏洞候选列表
     """
-    print(" [StrategyFilter] 过滤策略...")
+    logger.info(" [StrategyFilter] 过滤策略...")
 
     # 获取漏洞候选列表
     candidates = state.get("vuln_candidates", [])
@@ -235,7 +237,7 @@ def strategy_filter_node(state: CTFState) -> Dict:
         for mw, vulns in middleware_vuln_map.items():
             if mw in tech_str and cand_type in vulns:
                 cand["confidence"] = min(1.0, cand.get("confidence", 0) + 0.2)
-                print(f"  检测到中间件 {mw} 特征，保留并提升 {cand_type}")
+                logger.info(f"  检测到中间件 {mw} 特征，保留并提升 {cand_type}")
                 keep = True
 
         # 3. Payload原语提示
@@ -286,10 +288,10 @@ def strategy_filter_node(state: CTFState) -> Dict:
 
             if cand.get("confidence", 0) >= TechStackRules.UNKNOWN_VULN_THRESHOLD:
                 if has_evidence or is_specific_loc:
-                    print(f"  检测到高置信度未知漏洞 {cand_type} (Confidence: {cand.get('confidence')}) - 证据确凿，强制保留！")
+                    logger.info(f"  检测到高置信度未知漏洞 {cand_type} (Confidence: {cand.get('confidence')}) - 证据确凿，强制保留！")
                     pass # keep = True
                 else:
-                    print(f"  未知漏洞 {cand_type} 置信度高但缺乏证据 - 降权保留")
+                    logger.info(f"  未知漏洞 {cand_type} 置信度高但缺乏证据 - 降权保留")
                     cand["confidence"] *= 0.6
                     pass
             else:
@@ -307,16 +309,16 @@ def strategy_filter_node(state: CTFState) -> Dict:
         else:
             # 语言级严格过滤
             if "php" in tech_str and cand_type in TechStackRules.PHP_BLOCKED:
-                print(f"  过滤PHP环境下的 {cand_type}")
+                logger.info(f"  过滤PHP环境下的 {cand_type}")
                 keep = False
             elif "java" in tech_str and cand_type in TechStackRules.JAVA_BLOCKED:
-                print(f"  过滤Java环境下的 {cand_type}")
+                logger.info(f"  过滤Java环境下的 {cand_type}")
                 keep = False
             elif ("node" in tech_str or "javascript" in tech_str) and cand_type in TechStackRules.NODE_BLOCKED:
-                print(f"  过滤Node环境下的 {cand_type}")
+                logger.info(f"  过滤Node环境下的 {cand_type}")
                 keep = False
             elif "python" in tech_str and cand_type in TechStackRules.PYTHON_BLOCKED:
-                print(f"  过滤Python环境下的 {cand_type}")
+                logger.info(f"  过滤Python环境下的 {cand_type}")
                 keep = False
 
         # 临时规则优先级提升
@@ -325,7 +327,7 @@ def strategy_filter_node(state: CTFState) -> Dict:
             if rule_condition in cand_type or rule_condition in tech_str:
                 # 提升置信度，但不超过1.0
                 cand["confidence"] = min(1.0, cand.get("confidence", 0) + 0.2)
-                print(f"  临时规则提升 {cand_type} 优先级")
+                logger.info(f"  临时规则提升 {cand_type} 优先级")
 
         if keep:
             filtered.append(cand)
@@ -333,6 +335,6 @@ def strategy_filter_node(state: CTFState) -> Dict:
     # 按置信度从高到低排序
     filtered.sort(key=lambda x: x.get("confidence", 0), reverse=True)
 
-    print(f"[StrategyFilter] 过滤前 {len(candidates)} 个，过滤后 {len(filtered)} 个")
+    logger.info(f"[StrategyFilter] 过滤前 {len(candidates)} 个，过滤后 {len(filtered)} 个")
 
     return {"vuln_candidates": filtered}

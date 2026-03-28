@@ -3,23 +3,48 @@ import hashlib
 import time
 import json
 import re
+import traceback
 from typing import Dict, Any, Optional
 from config import config
 from llm_client import llm_client
+from logger import get_logger
+
+logger = get_logger("PageDiff")
+
+# 导入自我纠错模块
+try:
+    from app.self_correction import self_correction_manager, ErrorSeverity, ErrorType
+except ImportError:
+    from self_correction import self_correction_manager, ErrorSeverity, ErrorType
+
 
 class PageDiffManager:
     """页面变化检测管理器
-    
+
     负责处理页面响应的快照存储、基线对比以及基于LLM的变化分析。
+    支持任务隔离，每个任务ID拥有独立的缓存目录。
     """
 
-    def __init__(self):
-        self.cache_dir = config.CACHE_DIR
+    def __init__(self, task_id: str = "default"):
+        """
+        初始化页面差异管理器
+
+        Args:
+            task_id: 任务ID，用于隔离不同任务的缓存
+        """
+        self.task_id = task_id
+        self.cache_dir = os.path.join(config.CACHE_DIR, task_id)
         if not os.path.exists(self.cache_dir):
             try:
                 os.makedirs(self.cache_dir)
             except Exception as e:
-                print(f"⚠️ [页面差异检测] 创建缓存目录失败: {e}")
+                logger.warning(f"⚠️ 创建缓存目录失败: {e}")
+                self_correction_manager.record_error(
+                    node="PageDiffManager.__init__",
+                    error_type=ErrorType.EXECUTION_ERROR,
+                    error_message=f"创建缓存目录失败: {str(e)}",
+                    severity=ErrorSeverity.MEDIUM
+                )
             
     def _is_static_resource(self, url: str) -> bool:
         """判断是否为静态资源（无需对比）"""
@@ -44,7 +69,7 @@ class PageDiffManager:
         if not os.path.exists(self.cache_dir):
             return
         
-        print("🧹 [Cleanup] 开始清理过期缓存...")
+        logger.info("🧹 开始清理过期缓存...")
         for filename in os.listdir(self.cache_dir):
             file_path = os.path.join(self.cache_dir, filename)
             try:
@@ -53,10 +78,10 @@ class PageDiffManager:
                         os.remove(file_path)
                         count += 1
             except Exception as e:
-                print(f"⚠️ [Cleanup] 删除失败 {filename}: {e}")
+                logger.warning(f"⚠️ 删除失败 {filename}: {e}")
         
         if count > 0:
-            print(f"🧹 [Cleanup] 已清理 {count} 个旧缓存文件")
+            logger.info(f"🧹 已清理 {count} 个旧缓存文件")
 
     def save_page(self, url: str, content: bytes, page_history: Dict[str, Any]) -> Dict[str, Any]:
         """保存页面响应并更新历史记录
@@ -80,7 +105,7 @@ class PageDiffManager:
             with open(file_path, 'wb') as f:
                 f.write(content)
         except Exception as e:
-            print(f"❌ [页面差异检测] 保存文件失败: {e}")
+            logger.warning(f"❌ 保存文件失败: {e}")
             return {}
 
         # 更新该URL的历史记录
@@ -165,7 +190,7 @@ class PageDiffManager:
         flag_match = re.search(flag_pattern, current_str, re.IGNORECASE)
         if flag_match:
             extracted_flag = flag_match.group(0)
-            print(f"🎯 [PageDiff] 捕获到Flag: {extracted_flag}")
+            logger.info(f"🎯 捕获到Flag: {extracted_flag}")
             return {
                 "changed": True,
                 "is_exploit": True,
@@ -194,17 +219,31 @@ class PageDiffManager:
         }
 
     def _analyze_change_with_llm(self, current_content: str, last_content: str, url: str, size_diff: int = 0) -> Dict[str, Any]:
-        """使用LLM分析差异的具体含义"""
+        """使用LLM分析差异的具体含义
 
-        def truncate(content):
-            if len(content) > 4000:
-                return content[:2000] + "\n...[中间内容已省略]...\n" + content[-2000:]
-            return content
+        Args:
+            current_content: 当前响应内容
+            last_content: 上次响应内容（基线）
+            url: 请求的URL
+            size_diff: 内容大小差异
 
-        snippet_curr = truncate(current_content)
-        snippet_last = truncate(last_content) if last_content else "(首次访问，无基线)"
+        Returns:
+            Dict: 包含 is_exploit, confidence, reason 的分析结果
+        """
+        max_retries = 3
+        base_delay = 1.0
 
-        prompt = f"""分析响应内容，判断是否为漏洞利用成功。
+        for attempt in range(max_retries + 1):
+            try:
+                def truncate(content):
+                    if len(content) > 4000:
+                        return content[:2000] + "\n...[中间内容已省略]...\n" + content[-2000:]
+                    return content
+
+                snippet_curr = truncate(current_content)
+                snippet_last = truncate(last_content) if last_content else "(首次访问，无基线)"
+
+                prompt = f"""分析响应内容，判断是否为漏洞利用成功。
 
 URL: {url}
 变化大小: {size_diff} 字节
@@ -237,19 +276,94 @@ URL: {url}
     "reason": "简短理由"
 }}"""
 
-        response = llm_client.call_chat_completion(
-            model=config.CHANGE_DETECTION_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            json_mode=True
-        )
+                response = llm_client.call_chat_completion(
+                    model=config.CHANGE_DETECTION_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    json_mode=True
+                )
 
-        try:
-            if "```json" in response:
-                response = response.split("```json")[1].split("```")[0]
-            elif "```" in response:
-                response = response.split("```")[1].split("```")[0]
-            return json.loads(response)
-        except Exception:
-            return {"is_exploit": False, "confidence": 0.0, "reason": "模型解析失败"}
+                if "```json" in response:
+                    response = response.split("```json")[1].split("```")[0]
+                elif "```" in response:
+                    response = response.split("```")[1].split("```")[0]
+                return json.loads(response)
 
+            except json.JSONDecodeError as e:
+                if attempt < max_retries:
+                    delay = base_delay * (2 ** attempt)
+                    time.sleep(delay)
+                    continue
+                # 记录错误
+                self_correction_manager.record_error(
+                    node="PageDiffManager._analyze_change_with_llm",
+                    error_type=ErrorType.EXECUTION_ERROR,
+                    error_message=f"LLM响应JSON解析失败: {str(e)}",
+                    severity=ErrorSeverity.LOW
+                )
+                return {"is_exploit": False, "confidence": 0.0, "reason": "模型解析失败"}
+
+            except Exception as e:
+                if attempt < max_retries:
+                    delay = base_delay * (2 ** attempt)
+                    time.sleep(delay)
+                    continue
+                # 记录错误
+                self_correction_manager.record_error(
+                    node="PageDiffManager._analyze_change_with_llm",
+                    error_type=ErrorType.LLM_TIMEOUT if "timeout" in str(e).lower() else ErrorType.EXECUTION_ERROR,
+                    error_message=f"LLM调用失败: {str(e)}",
+                    severity=ErrorSeverity.MEDIUM
+                )
+                return {"is_exploit": False, "confidence": 0.0, "reason": f"模型调用失败: {str(e)}"}
+
+        return {"is_exploit": False, "confidence": 0.0, "reason": "重试次数耗尽"}
+
+# 默认全局实例（用于无任务ID的场景）
 page_diff_manager = PageDiffManager()
+
+# 任务实例缓存字典
+_task_managers: Dict[str, PageDiffManager] = {}
+
+
+def get_page_diff_manager(task_id: str = "default") -> PageDiffManager:
+    """
+    获取指定任务的页面差异管理器
+
+    Args:
+        task_id: 任务ID，用于隔离缓存
+
+    Returns:
+        PageDiffManager: 该任务的页面差异管理器实例
+    """
+    if task_id not in _task_managers:
+        _task_managers[task_id] = PageDiffManager(task_id)
+    return _task_managers[task_id]
+
+
+def clear_task_manager(task_id: str) -> bool:
+    """
+    清理指定任务的页面差异管理器
+
+    Args:
+        task_id: 任务ID
+
+    Returns:
+        bool: 是否成功清理
+    """
+    if task_id in _task_managers:
+        manager = _task_managers[task_id]
+        try:
+            # 清理该任务的缓存目录
+            if os.path.exists(manager.cache_dir):
+                import shutil
+                shutil.rmtree(manager.cache_dir)
+        except Exception as e:
+            self_correction_manager.record_error(
+                node="page_diff.clear_task_manager",
+                error_type=ErrorType.EXECUTION_ERROR,
+                error_message=f"清理任务缓存失败: {str(e)}",
+                severity=ErrorSeverity.LOW
+            )
+        del _task_managers[task_id]
+        return True
+    return False

@@ -9,7 +9,6 @@ Crypto分析节点
 
 import json
 from typing import Dict, List, Any
-from state import CTFState
 from llm_client import llm_client
 from config import config
 from logger import get_logger

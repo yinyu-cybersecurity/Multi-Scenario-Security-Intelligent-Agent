@@ -7,6 +7,9 @@ Tool Selector - 智能工具选择器
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
+from logger import get_logger
+
+logger = get_logger("ToolSelector")
 
 
 class VulnCategory(Enum):
@@ -881,11 +884,11 @@ def ai_select_tools(vuln_info: Dict, context: Dict = None,
 
         result = json.loads(response.strip())
         tools = result.get("tools", ["requests", "python-exec"])
-        print(f"[AI工具选择] 选择: {tools} - {result.get('reasoning', '')}")
+        logger.info(f"[AI工具选择] 选择: {tools} - {result.get('reasoning', '')}")
         return tools
 
     except Exception as e:
-        print(f"[AI工具选择] 降级到规则选择: {e}")
+        logger.info(f"[AI工具选择] 降级到规则选择: {e}")
         # 降级到规则选择
         return tool_selector.get_recommended_tools(
             vuln_info.get("type", ""),
@@ -944,7 +947,7 @@ def ai_generate_exploit_strategy(vuln_info: Dict, binary_info: Dict = None) -> D
         return json.loads(response.strip())
 
     except Exception as e:
-        print(f"[AI Exploit生成] 失败: {e}")
+        logger.warning(f"[AI Exploit生成] 失败: {e}")
         return {"exploit_method": "manual", "commands": [], "error": str(e)}
 
 

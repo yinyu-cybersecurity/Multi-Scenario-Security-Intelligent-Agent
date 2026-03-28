@@ -864,7 +864,7 @@ run -j
             output = client.session_read(session_id)
         else:
             # Shell命令
-            client.session_shell(session_id, command)
+            client.session_shell_write(session_id, command)
             time.sleep(1)
             output = client.session_shell_read(session_id)
 

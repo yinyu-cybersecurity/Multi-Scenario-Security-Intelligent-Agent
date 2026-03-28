@@ -23,6 +23,10 @@ from contextlib import contextmanager
 import psutil
 import os
 
+from logger import get_logger
+
+logger = get_logger("Performance")
+
 # 尝试导入持久化模块
 try:
     from memory.performance_persistence import get_performance_persistence
@@ -142,9 +146,9 @@ class PerformanceMonitor:
                         cache_misses=stats.get("cache_misses", 0),
                         timeout_count=stats.get("timeout_count", 0)
                     )
-                print(f"[Performance] 已加载历史数据: {len(self._node_stats)} 节点, {len(self._llm_stats)} LLM, {len(self._metrics)} 工具")
+                logger.info(f"已加载历史数据: {len(self._node_stats)} 节点, {len(self._llm_stats)} LLM, {len(self._metrics)} 工具")
         except Exception as e:
-            print(f"[Performance] 加载历史数据失败: {e}")
+            logger.warning(f"加载历史数据失败: {e}")
 
     def _save_persistence(self):
         """保存统计数据到持久化存储"""
@@ -165,7 +169,7 @@ class PerformanceMonitor:
             })
             self._last_save_time = time.time()
         except Exception as e:
-            print(f"[Performance] 保存数据失败: {e}")
+            logger.warning(f"保存数据失败: {e}")
 
     def _trim_records(self):
         """清理旧记录，保持内存安全"""
@@ -365,7 +369,7 @@ class PerformanceMonitor:
                     persistence = get_performance_persistence()
                     persistence.clear()
                 except Exception as e:
-                    print(f"[Performance] 清除持久化数据失败: {e}")
+                    logger.warning(f"清除持久化数据失败: {e}")
 
 
 class ParallelExecutor:

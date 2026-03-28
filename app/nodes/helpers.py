@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 
 def log(message: str):
     """统一日志输出"""
-    print(message)
+    logger.info(message)
 
 
 def log_node_data(node_name: str, input_data: Dict, output_data: Dict):

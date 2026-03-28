@@ -16,11 +16,12 @@
 
 import json
 import time
-import logging
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field
 
-logger = logging.getLogger(__name__)
+from logger import get_logger
+
+logger = get_logger("Compressor")
 from llm_client import llm_client
 from config import config
 
@@ -280,14 +281,14 @@ class ContextCompressor:
             return state, False
 
         before_tokens = self.estimate_state_tokens(state)
-        print(f"[Compressor] 状态过大 ({before_tokens} tokens)，执行压缩...")
+        logger.info(f"状态过大 ({before_tokens} tokens)，执行压缩...")
 
         compressed = self.compress(state)
 
         after_tokens = self.estimate_state_tokens(compressed)
         ratio = self._compression_stats.get("last_compression_ratio", 0)
 
-        print(f"[Compressor] 压缩完成: {before_tokens} -> {after_tokens} tokens (节省 {ratio:.1f}%)")
+        logger.info(f"压缩完成: {before_tokens} -> {after_tokens} tokens (节省 {ratio:.1f}%)")
 
         return compressed, True
 

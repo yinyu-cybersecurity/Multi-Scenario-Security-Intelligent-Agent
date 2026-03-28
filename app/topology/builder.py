@@ -4,7 +4,15 @@ import networkx as nx
 import os
 import json
 import time
+import hashlib
+import traceback
 from typing import Dict, List, Optional
+
+# 导入自我纠错模块
+try:
+    from app.self_correction import self_correction_manager, ErrorSeverity, ErrorType
+except ImportError:
+    from self_correction import self_correction_manager, ErrorSeverity, ErrorType
 
 
 class TopologyBuilder:
@@ -13,6 +21,8 @@ class TopologyBuilder:
     def __init__(self):
         self.node_attrs = {}  # 存储节点属性的临时字典
         self.graph = None     # 缓存的图对象
+        self._cache_version = 0  # 缓存版本号
+        self._last_adj_hash = None  # 上次邻接表的哈希
 
     def add_node_attr(self, url: str, **attrs):
         """
@@ -34,6 +44,16 @@ class TopologyBuilder:
             adj: 邻接表字典
             metadata: 节点属性字典 {url: {attr: val}}
         """
+        # 计算邻接表哈希，检测变化
+        try:
+            adj_hash = hashlib.md5(str(sorted(adj.items())).encode()).hexdigest()
+        except Exception:
+            adj_hash = None
+
+        if self.graph is not None and adj_hash is not None and adj_hash == self._last_adj_hash:
+            # 邻接表未变化，返回缓存
+            return self.graph
+
         G = nx.DiGraph()
 
         for src, targets in adj.items():
@@ -49,6 +69,8 @@ class TopologyBuilder:
             nx.set_node_attributes(G, metadata)
 
         self.graph = G
+        self._last_adj_hash = adj_hash
+        self._cache_version += 1
         return G
 
     def update_from_explorer(self, state: Dict, new_paths: Dict[str, List[str]]) -> Dict:
@@ -79,8 +101,9 @@ class TopologyBuilder:
                     "last_seen": time.time()
                 })
 
-        # 清除缓存的图
+        # 清除缓存的图和哈希
         self.graph = None
+        self._last_adj_hash = None
 
         return {
             "site_topology": adj,
@@ -100,30 +123,40 @@ class TopologyBuilder:
             adj: 邻接表
             metadata: 节点元数据
         """
-        # 确保目录存在
-        os.makedirs(os.path.dirname(path) if os.path.dirname(path) else '.', exist_ok=True)
+        try:
+            # 确保目录存在
+            os.makedirs(os.path.dirname(path) if os.path.dirname(path) else '.', exist_ok=True)
 
-        # 构建图
-        G = self.build_from_adjacency(adj, metadata)
+            # 构建图
+            G = self.build_from_adjacency(adj, metadata)
 
-        if path.endswith('.gpickle'):
-            # 二进制格式，效率更高
-            nx.write_gpickle(G, path)
-        elif path.endswith('.json'):
-            # JSON格式，可读性好
-            data = {
-                "adjacency": adj,
-                "metadata": metadata or {},
-                "stats": {
-                    "nodes": G.number_of_nodes(),
-                    "edges": G.number_of_edges(),
-                    "saved_at": time.time()
+            if path.endswith('.gpickle'):
+                # 二进制格式，效率更高
+                nx.write_gpickle(G, path)
+            elif path.endswith('.json'):
+                # JSON格式，可读性好
+                data = {
+                    "adjacency": adj,
+                    "metadata": metadata or {},
+                    "stats": {
+                        "nodes": G.number_of_nodes(),
+                        "edges": G.number_of_edges(),
+                        "saved_at": time.time()
+                    }
                 }
-            }
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-        else:
-            raise ValueError("Unsupported format. Use .gpickle or .json")
+                with open(path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+            else:
+                raise ValueError("Unsupported format. Use .gpickle or .json")
+        except Exception as e:
+            # 记录错误
+            self_correction_manager.record_error(
+                node="TopologyBuilder.save",
+                error_type=ErrorType.EXECUTION_ERROR,
+                error_message=f"保存拓扑文件失败: {str(e)}",
+                severity=ErrorSeverity.MEDIUM
+            )
+            raise
 
     def load(self, path: str) -> Dict:
         """
@@ -135,32 +168,54 @@ class TopologyBuilder:
         Returns:
             {"adjacency": dict, "metadata": dict}
         """
-        if not os.path.exists(path):
-            return {"adjacency": {}, "metadata": {}}
+        try:
+            if not os.path.exists(path):
+                return {"adjacency": {}, "metadata": {}}
 
-        if path.endswith('.gpickle'):
-            G = nx.read_gpickle(path)
-            # 转换为邻接表
-            adj = {n: list(G.successors(n)) for n in G.nodes()}
-            metadata = dict(G.nodes(data=True))
-            self.graph = G
-            return {"adjacency": adj, "metadata": metadata}
+            if path.endswith('.gpickle'):
+                G = nx.read_gpickle(path)
+                # 转换为邻接表
+                adj = {n: list(G.successors(n)) for n in G.nodes()}
+                metadata = dict(G.nodes(data=True))
+                self.graph = G
+                # 更新缓存哈希
+                try:
+                    self._last_adj_hash = hashlib.md5(str(sorted(adj.items())).encode()).hexdigest()
+                except Exception:
+                    pass
+                self._cache_version += 1
+                return {"adjacency": adj, "metadata": metadata}
 
-        elif path.endswith('.json'):
-            with open(path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            return {
-                "adjacency": data.get("adjacency", {}),
-                "metadata": data.get("metadata", {})
-            }
+            elif path.endswith('.json'):
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                return {
+                    "adjacency": data.get("adjacency", {}),
+                    "metadata": data.get("metadata", {})
+                }
 
-        raise ValueError("Unsupported format. Use .gpickle or .json")
+            raise ValueError("Unsupported format. Use .gpickle or .json")
+        except Exception as e:
+            # 记录错误
+            self_correction_manager.record_error(
+                node="TopologyBuilder.load",
+                error_type=ErrorType.EXECUTION_ERROR,
+                error_message=f"加载拓扑文件失败: {str(e)}",
+                severity=ErrorSeverity.MEDIUM
+            )
+            raise
 
     def get_or_build_graph(self, adj: Dict[str, List[str]], metadata: Dict[str, Dict] = None) -> nx.DiGraph:
-        """获取或构建图对象（带缓存）"""
-        if self.graph is None:
-            self.graph = self.build_from_adjacency(adj, metadata)
-        return self.graph
+        """获取或构建图对象（带缓存和哈希验证）"""
+        if self.graph is not None:
+            # 验证邻接表是否变化
+            try:
+                adj_hash = hashlib.md5(str(sorted(adj.items())).encode()).hexdigest()
+                if adj_hash == self._last_adj_hash:
+                    return self.graph
+            except Exception:
+                pass
+        return self.build_from_adjacency(adj, metadata)
 
     def set_edge_weights(self, weight_func=None):
         """

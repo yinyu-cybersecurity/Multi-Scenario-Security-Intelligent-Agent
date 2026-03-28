@@ -7,6 +7,8 @@
 - SSH执行器: 通过SSH执行命令
 - Impacket执行器: 通过psexec/wmiexec执行
 - 代理执行器: 通过SOCKS5代理执行命令
+
+更新时间: 2026-03-27 - 集成日志系统
 """
 import os
 import re
@@ -18,12 +20,17 @@ import requests
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 from urllib.parse import urljoin
+from logger import get_logger
+
+# 模块日志器
+logger = get_logger("RemoteExecutor")
 
 try:
     import paramiko
     PARAMIKO_AVAILABLE = True
 except ImportError:
     PARAMIKO_AVAILABLE = False
+    logger.debug("paramiko未安装，SSH执行器不可用")
 
 
 @dataclass
@@ -205,7 +212,7 @@ class SSHExecutor:
     def connect(self) -> bool:
         """建立SSH连接"""
         if not PARAMIKO_AVAILABLE:
-            print("[SSHExecutor] paramiko未安装")
+            logger.warning("paramiko未安装，SSH连接不可用")
             return False
 
         try:
@@ -227,9 +234,10 @@ class SSHExecutor:
                     self.host, self.port, self.username,
                     self.password, timeout=10
                 )
+            logger.debug(f"SSH连接成功: {self.username}@{self.host}:{self.port}")
             return True
         except Exception as e:
-            print(f"[SSHExecutor] 连接失败: {e}")
+            logger.warning(f"SSH连接失败: {self.username}@{self.host}:{self.port} - {e}")
             return False
 
     def disconnect(self):
@@ -284,7 +292,7 @@ class SSHExecutor:
             sftp.close()
             return True
         except Exception as e:
-            print(f"[SSHExecutor] 上传失败: {e}")
+            logger.warning(f"[SSHExecutor] 上传失败: {e}")
             return False
 
     def download_file(self, remote_path: str, local_path: str) -> bool:
@@ -299,7 +307,7 @@ class SSHExecutor:
             sftp.close()
             return True
         except Exception as e:
-            print(f"[SSHExecutor] 下载失败: {e}")
+            logger.warning(f"[SSHExecutor] 下载失败: {e}")
             return False
 
 
@@ -506,7 +514,7 @@ class ProxyExecutor:
             with open(self.proxychains_conf, 'a') as f:
                 f.write(f"\n{self.proxy_type} {self.proxy_host} {self.proxy_port}\n")
         except Exception as e:
-            print(f"[ProxyExecutor] 配置proxychains失败: {e}")
+            logger.warning(f"[ProxyExecutor] 配置proxychains失败: {e}")
 
 
 # ==================== 便捷函数 ====================
@@ -535,7 +543,7 @@ class MeterpreterExecutor:
                 self._token = resp.json().get("token")
                 return True
         except Exception as e:
-            print(f"[MeterpreterExecutor] 连接msfrpc失败: {e}")
+            logger.warning(f"[MeterpreterExecutor] 连接msfrpc失败: {e}")
         return False
 
     def execute(self, command: str, timeout: int = 60) -> ExecutionResult:

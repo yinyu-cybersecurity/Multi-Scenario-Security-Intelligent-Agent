@@ -9,7 +9,6 @@
 
 import json
 from typing import Dict, List, Any
-from state import CTFState
 from llm_client import llm_client
 from config import config
 from logger import get_logger
@@ -43,7 +42,7 @@ def reverse_analyst_node(state: Dict) -> Dict:
         2. 分析函数
         3. 检测算法模式
     """
-    print("[ReverseAnalyst] Starting reverse analysis...")
+    logger.info("[ReverseAnalyst] Starting reverse analysis...")
 
     binary_path = state.get("binary_path", "")
 
@@ -56,7 +55,7 @@ def reverse_analyst_node(state: Dict) -> Dict:
             binary_path = path_match.group(1)
 
     if not binary_path:
-        print("[ReverseAnalyst] No binary path found")
+        logger.info("[ReverseAnalyst] No binary path found")
         return {
             "reverse_info": {"status": "no_binary"},
             "execution_steps": state.get("execution_steps", 0) + 1
@@ -78,7 +77,7 @@ def reverse_analyst_node(state: Dict) -> Dict:
         # 分析main函数
         main_addr = FunctionAnalyzer.find_main_function(binary_path)
 
-        print(f"[ReverseAnalyst] Found {len(strings)} strings, {len(functions)} functions")
+        logger.info(f"[ReverseAnalyst] Found {len(strings)} strings, {len(functions)} functions")
 
         return {
             "reverse_info": {
@@ -96,7 +95,7 @@ def reverse_analyst_node(state: Dict) -> Dict:
         }
 
     except Exception as e:
-        print(f"[ReverseAnalyst] Analysis failed: {e}")
+        logger.warning(f"[ReverseAnalyst] Analysis failed: {e}")
         return {
             "reverse_info": {"status": "error", "error": str(e)},
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
@@ -123,7 +122,7 @@ def reverse_decompiler_node(state: Dict) -> Dict:
         3. 识别算法
         4. LLM深度分析
     """
-    print("[ReverseDeompiler] Decompiling and analyzing...")
+    logger.info("[ReverseDeompiler] Decompiling and analyzing...")
 
     reverse_info = state.get("reverse_info", {})
     if reverse_info.get("status") != "analyzed":
@@ -157,7 +156,7 @@ def reverse_decompiler_node(state: Dict) -> Dict:
         # 识别算法
         algorithm = PatternMatcher.identify_algorithm(analysis)
 
-        print(f"[ReverseDeompiler] Decompiled {len(decompiled)} chars, found {len(patterns)} patterns")
+        logger.info(f"[ReverseDeompiler] Decompiled {len(decompiled)} chars, found {len(patterns)} patterns")
 
         return {
             "decompiled_code": decompiled[:2000],  # 限制长度
@@ -170,7 +169,7 @@ def reverse_decompiler_node(state: Dict) -> Dict:
         }
 
     except Exception as e:
-        print(f"[ReverseDeompiler] Decompilation failed: {e}")
+        logger.warning(f"[ReverseDeompiler] Decompilation failed: {e}")
         return {
             "error": str(e),
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,

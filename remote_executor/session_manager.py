@@ -15,6 +15,8 @@ Shell会话管理器
 - 自动重连机制
 - MSF RPC 集成
 - 会话存活检查
+
+更新时间: 2026-03-27 - 集成日志系统
 """
 import os
 import json
@@ -28,6 +30,10 @@ from enum import Enum
 from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass, field, asdict
 from threading import Lock
+from logger import get_logger
+
+# 模块日志器
+logger = get_logger("SessionManager")
 
 # MSF RPC 集成
 try:
@@ -35,6 +41,7 @@ try:
     MSGPACK_AVAILABLE = True
 except ImportError:
     MSGPACK_AVAILABLE = False
+    logger.debug("msgpack未安装，MSF RPC不可用")
 
 
 class ShellType(Enum):
@@ -131,7 +138,7 @@ class MSFRPCClient:
     def connect(self) -> bool:
         """连接并获取Token"""
         if not MSGPACK_AVAILABLE:
-            print("[MSFRPC] msgpack 未安装，无法使用 RPC")
+            logger.warning("msgpack未安装，MSF RPC不可用")
             return False
 
         try:
@@ -140,7 +147,7 @@ class MSFRPCClient:
                 self.token = response['token']
                 return True
         except Exception as e:
-            print(f"[MSFRPC] 连接失败: {e}")
+            logger.warning(f"MSF RPC连接失败: {e}")
         return False
 
     def login(self) -> bool:
@@ -161,7 +168,7 @@ class MSFRPCClient:
             if resp.status_code == 200:
                 return msgpack.unpackb(resp.content, raw=False)
         except Exception as e:
-            print(f"[MSFRPC] 调用错误: {e}")
+            logger.debug(f"MSF RPC调用错误: {e}")
         return None
 
     def call(self, method: str, args: list = None) -> Optional[Dict]:
@@ -264,7 +271,7 @@ class ShellSessionManager:
                     for sid, sdata in data.items():
                         self.sessions[sid] = ShellSession.from_dict(sdata)
             except Exception as e:
-                print(f"[SessionManager] 加载会话失败: {e}")
+                logger.warning(f"加载会话失败: {e}")
 
     def _save_sessions(self):
         """保存会话到文件"""
@@ -273,7 +280,7 @@ class ShellSessionManager:
             with open(self.session_file, 'w') as f:
                 json.dump({sid: s.to_dict() for sid, s in self.sessions.items()}, f)
         except Exception as e:
-            print(f"[SessionManager] 保存会话失败: {e}")
+            logger.warning(f"保存会话失败: {e}")
 
     def create_webshell_session(
         self,
@@ -313,7 +320,7 @@ class ShellSessionManager:
             self.sessions[session_id] = session
             self._save_sessions()
 
-        print(f"[SessionManager] 创建WebShell会话: {session_id} -> {url}")
+        logger.debug(f"创建WebShell会话: {session_id} -> {url}")
         return session
 
     def create_ssh_session(
@@ -339,7 +346,7 @@ class ShellSessionManager:
         """
         # 测试连接
         if not self._test_ssh_connection(host, username, password, private_key, port):
-            print(f"[SessionManager] SSH连接失败: {username}@{host}:{port}")
+            logger.warning(f"SSH连接失败: {username}@{host}:{port}")
             return None
 
         session_id = str(uuid.uuid4())[:8]
@@ -378,7 +385,7 @@ class ShellSessionManager:
             self.sessions[session_id] = session
             self._save_sessions()
 
-        print(f"[SessionManager] 创建SSH会话: {session_id} -> {username}@{host}:{port}")
+        logger.debug(f"创建SSH会话: {session_id} -> {username}@{host}:{port}")
         return session
 
     def create_impacket_session(
@@ -429,7 +436,7 @@ class ShellSessionManager:
             self.sessions[session_id] = session
             self._save_sessions()
 
-        print(f"[SessionManager] 创建Impacket会话: {session_id} -> {username}@{host} ({method})")
+        logger.debug(f"创建Impacket会话: {session_id} -> {username}@{host} ({method})")
         return session
 
     def get_session(self, session_id: str) -> Optional[ShellSession]:
@@ -501,7 +508,7 @@ class ShellSessionManager:
             client.close()
             return True
         except Exception as e:
-            print(f"[SessionManager] SSH测试失败: {e}")
+            logger.debug(f"SSH测试失败: {e}")
             return False
 
     def _execute_ssh_command(
@@ -978,7 +985,7 @@ class ShellSessionManager:
             if not health.get("alive") and not health.get("can_reconnect"):
                 self.remove_session(session_id)
                 removed.append(session_id)
-                print(f"[SessionManager] 清理已断开会话: {session_id}")
+                logger.debug(f"清理已断开会话: {session_id}")
 
         return removed
 

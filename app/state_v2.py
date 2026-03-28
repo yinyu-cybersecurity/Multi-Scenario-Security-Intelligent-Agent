@@ -106,6 +106,14 @@ class CTFStateV2(TypedDict):
     successful_exploits: List[Dict]
 
     # =====================================================
+    # [W] 场景聚焦字段 (用于深度攻击)
+    # =====================================================
+    known_facts: str  # 已知事实，由 verifier 积累
+    focused_scene: str  # 当前聚焦场景，如 "Spring", "Tomcat/9.0.30"
+    scene_attack_attempts: int  # 当前场景攻击尝试次数
+    scene_exhausted: bool  # 当前场景是否已穷尽
+
+    # =====================================================
     # [I] 内网渗透字段
     # =====================================================
     internal_mode: bool  # 是否处于内网渗透模式
@@ -128,6 +136,15 @@ class CTFStateV2(TypedDict):
     post_exploit_status: str  # 后渗透状态: no_shell/ready_for_internal/web_only
     current_internal_target: str  # 当前内网目标IP
 
+    # [I] 内网渗透 - AD域字段
+    domain_controller: str  # 域控IP
+    ad_domain: str  # AD域名
+    ad_users: Annotated[List[str], dedupe_list_reducer]
+    ad_groups: Annotated[List[str], dedupe_list_reducer]
+    ad_computers: Annotated[List[str], dedupe_list_reducer]
+    ad_trusts: Annotated[List[Dict], dedupe_list_reducer]
+    lateral_movement_paths: Annotated[List[Dict], dedupe_list_reducer]
+
     # =====================================================
     # [W] 漏洞利用增强字段
     # =====================================================
@@ -144,6 +161,76 @@ class CTFStateV2(TypedDict):
     current_compromise_phase: str  # 当前阶段: flag_search/lateral_move/complete
     persistence_established: bool  # 是否已建立持久化
     persistence_results: List[Dict[str, Any]]  # 持久化结果记录
+
+    # =====================================================
+    # [C] 云安全字段
+    # =====================================================
+    cloud_mode: bool
+    cloud_provider: str  # aws/azure/gcp/alibaba/tencent
+    metadata_leaked: Dict[str, Any]
+    iam_roles: Annotated[List[str], dedupe_list_reducer]
+    temp_credentials: Annotated[List[Dict], dedupe_list_reducer]
+    buckets_found: Annotated[List[str], dedupe_list_reducer]
+    escalation_paths: Annotated[List[str], dedupe_list_reducer]
+    cloud_phase: str  # recon/enum/exploit/escalate/complete
+
+    # =====================================================
+    # [A] AI安全字段
+    # =====================================================
+    ai_mode: bool
+    target_model: str  # openai/anthropic/deepseek
+    target_endpoint: str
+    detected_ai_type: str
+    prompt_injection_success: bool
+    jailbreak_success: bool
+    successful_payloads: Annotated[List[str], dedupe_list_reducer]
+    leaked_system_prompt: str
+    ai_phase: str  # detect/probe/exploit/exfiltrate/complete
+
+    # =====================================================
+    # [Crypto] 密码学 CTF 字段
+    # =====================================================
+    crypto_mode: bool
+    crypto_analysis: Dict[str, Any]
+    identified_ciphertexts: List[Dict[str, Any]]
+    decrypted_data: List[str]
+    potential_flags: List[str]
+    rsa_params: Dict[str, Any]
+    classical_cipher_hints: List[str]
+
+    # =====================================================
+    # [Pwn] 二进制漏洞利用字段
+    # =====================================================
+    pwn_mode: bool
+    binary_path: str
+    binary_info: Dict[str, Any]
+    vulnerabilities: List[Dict[str, Any]]
+    exploit_script: str
+    exploit_info: Dict[str, Any]
+    pwn_analysis: Dict[str, Any]
+
+    # =====================================================
+    # [Reverse] 逆向工程字段
+    # =====================================================
+    reverse_mode: bool
+    reverse_info: Dict[str, Any]
+    decompiled_code: str
+    algorithm_type: str
+    key_findings: str
+    functions: List[Dict[str, Any]]
+    extracted_strings: List[str]
+
+    # =====================================================
+    # [Misc] 杂项 CTF 字段
+    # =====================================================
+    misc_mode: bool
+    misc_file: str
+    file_info: Dict[str, Any]
+    steg_results: Dict[str, Any]
+    media_analysis: Dict[str, Any]
+    misc_analysis: Dict[str, Any]
+    extracted_data: List[Any]
+    embedded_files: List[str]
 
 
 # 向后兼容别名

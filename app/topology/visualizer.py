@@ -5,6 +5,9 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from typing import Optional
 import tempfile
+from logger import get_logger
+
+logger = get_logger("Visualizer")
 
 
 
@@ -37,12 +40,12 @@ class TopologyVisualizer:
 
         if output_file:
             plt.savefig(output_file, dpi=150, bbox_inches='tight')
-            print(f"📊 拓扑图已保存至 {output_file}")
+            logger.info(f"📊 拓扑图已保存至 {output_file}")
         else:
             # 默认保存到临时文件，防止阻塞
             tmp = tempfile.mktemp(suffix='.png')
             plt.savefig(tmp, dpi=150, bbox_inches='tight')
-            print(f"📊 拓扑图已保存至临时文件: {tmp}")
+            logger.info(f"📊 拓扑图已保存至临时文件: {tmp}")
         
         plt.close() # 释放内存
 
@@ -59,6 +62,6 @@ class TopologyVisualizer:
                 net.add_edge(edge[0], edge[1])
 
             net.show(output_file)
-            print(f"📊 交互式拓扑图已保存至 {output_file}")
+            logger.info(f"📊 交互式拓扑图已保存至 {output_file}")
         except ImportError:
-            print("⚠️ 需要安装pyvis: pip install pyvis")
+            logger.warning("⚠️ 需要安装pyvis: pip install pyvis")

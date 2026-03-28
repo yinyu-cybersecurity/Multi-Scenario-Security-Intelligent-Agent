@@ -15,22 +15,25 @@ from typing import List, Dict, Any, TypeVar, Callable
 T = TypeVar('T')
 
 
-def cap_list_reducer(x: List[T], y: List[T]) -> List[T]:
+def cap_list_reducer(x: List[T], y: List[T], cap: int = 20) -> List[T]:
     """
     带上限的列表追加规约器
 
     Args:
         x: 现有状态列表
         y: 新增数据列表
+        cap: 上限值，默认20
 
     Returns:
-        合并后的列表（不超过 20 条）
+        合并后的列表（不超过 cap 条）
 
     Example:
         >>> cap_list_reducer([1, 2], [3, 4])
         [1, 2, 3, 4]
-        >>> cap_list_reducer(list(range(15)), [15, 16])
+        >>> cap_list_reducer(list(range(15)), [15, 16], cap=10)
         [7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        >>> cap_list_reducer([1, 2], [3, 4], cap=100)
+        [1, 2, 3, 4]
     """
     if x is None:
         x = []
@@ -40,7 +43,6 @@ def cap_list_reducer(x: List[T], y: List[T]) -> List[T]:
         return x
 
     new_list = x + y
-    cap = 20  # 固定上限
     if len(new_list) > cap:
         return new_list[-cap:]
     return new_list

@@ -96,7 +96,7 @@ def internal_recon_node(state: Dict) -> Dict:
 
     # AI决策扫描策略
     scan_strategy = _ai_decide_scan_strategy(state, network_range)
-    print(f"[InternalRecon] AI决策: {scan_strategy.get('strategy', 'quick')}")
+    logger.info(f"AI决策: {scan_strategy.get('strategy', 'quick')}")
 
     # 检查是否需要通过SOCKS5代理扫描
     use_proxy = False
@@ -107,7 +107,7 @@ def internal_recon_node(state: Dict) -> Dict:
         socks_port = proxy_info.get("socks5_port", 10800)
 
         if socks_addr:
-            print(f"[InternalRecon] 通过SOCKS5代理扫描: {socks_addr}:{socks_port}")
+            logger.info(f"通过SOCKS5代理扫描: {socks_addr}:{socks_port}")
             use_proxy = True
 
             if REMOTE_EXEC_AVAILABLE:
@@ -122,25 +122,26 @@ def internal_recon_node(state: Dict) -> Dict:
         # 方式1: 通过跳板机上的工具扫描 (推荐)
         session_id = shell_session.get("session_id", "")
         if session_id and REMOTE_EXEC_AVAILABLE:
-            print(f"[InternalRecon] 通过跳板机扫描...")
+            logger.info(f"通过跳板机扫描...")
             result = _scan_via_pivot(state, network_range, scan_strategy)
 
         # 方式2: 通过本地SOCKS5代理扫描
         elif use_proxy and proxy_executor:
-            print(f"[InternalRecon] 通过本地代理扫描...")
+            logger.info(f"通过本地代理扫描...")
             result = _scan_via_proxy(proxy_executor, network_range, scan_strategy)
 
         # 方式3: 直接本地扫描 (外网可达)
         else:
-            print(f"[InternalRecon] 本地直接扫描: {network_range}")
+            logger.info(f"本地直接扫描: {network_range}")
             result = _scan_local(network_range, scan_strategy)
 
         # 处理扫描结果
         if result.get("success"):
             hosts = result.get("hosts", [])
+            discovered_credentials = result.get("credentials", [])
 
             if hosts:
-                print(f"[InternalRecon] 发现 {len(hosts)} 台主机")
+                logger.info(f"发现 {len(hosts)} 台主机")
 
                 # AI分析发现
                 analysis = _analyze_internal_hosts(hosts, state)
@@ -149,7 +150,7 @@ def internal_recon_node(state: Dict) -> Dict:
                 first_target = _ai_select_next_target(hosts, state)
 
                 # AI决策：是否用发现的凭据建立SSH连接
-                ssh_updates = _ai_try_connect_with_credentials(state)
+                ssh_updates = _ai_try_connect_with_credentials(state, discovered_credentials)
 
                 return {
                     "internal_hosts": hosts,
@@ -169,7 +170,7 @@ def internal_recon_node(state: Dict) -> Dict:
         }
 
     except Exception as e:
-        print(f"[InternalRecon] 扫描异常: {e}")
+        logger.warning(f"扫描异常: {e}")
         return {
             "error": f"扫描异常: {str(e)}",
             "internal_mode": False,
@@ -231,7 +232,7 @@ def _ai_decide_scan_strategy(state: Dict, network_range: str) -> Dict:
         return strategy
 
     except Exception as e:
-        print(f"[InternalRecon] AI决策失败: {e}")
+        logger.warning(f"AI决策失败: {e}")
         return {"strategy": "quick", "ports": "1-1000", "timeout": 300}
 
 
@@ -286,14 +287,18 @@ def _scan_via_pivot(state: Dict, network_range: str, strategy: Dict) -> Dict:
             temperature=0.1
         ).strip()
 
-        print(f"[InternalRecon] 执行: {cmd}")
+        logger.info(f"执行: {cmd}")
 
         result = execute_on_session(session, cmd, timeout=strategy.get("timeout", 300))
 
         if result.success:
             # 解析fscan输出
-            hosts = _parse_fscan_output(result.output)
-            return {"success": True, "hosts": hosts}
+            parsed = _parse_fscan_output(result.output)
+            return {
+                "success": True,
+                "hosts": parsed.get("hosts", []),
+                "credentials": parsed.get("credentials", [])
+            }
         else:
             return {"success": False, "error": result.error}
 
@@ -315,8 +320,12 @@ def _scan_via_proxy(proxy_executor, network_range: str, strategy: Dict) -> Dict:
         result = proxy_executor.execute_via_proxychains(cmd, timeout=strategy.get("timeout", 300))
 
         if result.success:
-            hosts = _parse_fscan_output(result.output)
-            return {"success": True, "hosts": hosts}
+            parsed = _parse_fscan_output(result.output)
+            return {
+                "success": True,
+                "hosts": parsed.get("hosts", []),
+                "credentials": parsed.get("credentials", [])
+            }
         else:
             return {"success": False, "error": result.error}
 
@@ -382,16 +391,18 @@ def _scan_local(network_range: str, strategy: Dict) -> Dict:
         return {"success": False, "error": str(e)}
 
 
-def _parse_fscan_output(output: str) -> List[Dict]:
+def _parse_fscan_output(output: str) -> Dict:
     """
     AI解析fscan输出
 
     让AI分析输出，提取:
     1. 开放端口
     2. 暴力破解成功的凭据
+
+    返回格式: {"hosts": [...], "credentials": [...]}
     """
     if not output or len(output) < 10:
-        return []
+        return {"hosts": [], "credentials": []}
 
     prompt = f"""分析fscan扫描输出，提取关键信息。
 
@@ -425,10 +436,6 @@ def _parse_fscan_output(output: str) -> List[Dict]:
 
         result = json.loads(response.strip())
 
-        # 存储凭据供后续使用
-        global _discovered_credentials
-        _discovered_credentials = result.get("credentials", [])
-
         # 转换为主机格式
         hosts = []
         for h in result.get("hosts", []):
@@ -446,7 +453,9 @@ def _parse_fscan_output(output: str) -> List[Dict]:
             except ValueError:
                 continue
 
-        return hosts
+        credentials = result.get("credentials", [])
+
+        return {"hosts": hosts, "credentials": credentials}
 
     except Exception as e:
         logger.warning(f"AI解析fscan输出失败: {e}")
@@ -459,18 +468,18 @@ def _parse_fscan_output(output: str) -> List[Dict]:
                 if ip not in hosts:
                     hosts[ip] = {"ip": ip, "hostname": "", "os": "", "ports": []}
                 hosts[ip]["ports"].append({"port": port, "protocol": "tcp", "service": "", "version": ""})
-        return list(hosts.values())
+        return {"hosts": list(hosts.values()), "credentials": []}
 
 
-# 存储AI提取的凭据
-_discovered_credentials = []
-
-
-def _ai_try_connect_with_credentials(state: Dict) -> Dict:
+def _ai_try_connect_with_credentials(state: Dict, discovered_credentials: List[Dict] = None) -> Dict:
     """
     AI决策是否用发现的凭据建立连接
+
+    Args:
+        state: 当前状态
+        discovered_credentials: 扫描发现的凭据列表
     """
-    credentials = _discovered_credentials
+    credentials = discovered_credentials or []
     if not credentials:
         return {}
 
@@ -587,7 +596,7 @@ def _ai_select_next_target(hosts: List[Dict], state: Dict) -> str:
             response = response.split("```json")[1].split("```")[0]
 
         result = json.loads(response.strip())
-        print(f"[InternalRecon] AI选择目标: {result.get('target')} - {result.get('reason')}")
+        logger.info(f"AI选择目标: {result.get('target')} - {result.get('reason')}")
         return result.get("target", "")
 
     except Exception:
@@ -725,7 +734,7 @@ def lateral_move_node(state: Dict) -> Dict:
     # AI决策横向移动策略
     move_strategy = _ai_decide_lateral_strategy(target, target_host, credentials, state)
 
-    print(f"[LateralMove] AI决策: {move_strategy.get('method')} -> {target}")
+    logger.info(f"AI决策: {move_strategy.get('method')} -> {target}")
 
     # 执行横向移动
     result = None
@@ -784,7 +793,7 @@ def lateral_move_node(state: Dict) -> Dict:
                 "credential_used": f"{cred.get('username')}@{cred.get('domain', 'WORKGROUP')}"
             }
 
-            print(f"[LateralMove] 成功获取 {target} 的shell")
+            logger.info(f"成功获取 {target} 的shell")
 
             return {
                 "active_sessions": [session],
@@ -800,7 +809,7 @@ def lateral_move_node(state: Dict) -> Dict:
             elif result.get("result", {}).get("error"):
                 error_msg = result["result"]["error"]
 
-        print(f"[LateralMove] 失败: {error_msg}")
+        logger.warning(f"失败: {error_msg}")
 
         return {
             "error": error_msg,
@@ -809,7 +818,7 @@ def lateral_move_node(state: Dict) -> Dict:
         }
 
     except Exception as e:
-        print(f"[LateralMove] 异常: {e}")
+        logger.warning(f"异常: {e}")
         return {
             "error": f"横向移动异常: {str(e)}",
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.0
@@ -892,7 +901,7 @@ def _ai_decide_lateral_strategy(
         return result
 
     except Exception as e:
-        print(f"[LateralMove] AI决策失败: {e}")
+        logger.warning(f"AI决策失败: {e}")
         # 降级: 基于规则选择
         method = _select_lateral_method(ports)
         return {
@@ -1036,58 +1045,6 @@ def _select_best_credential(
     return credentials[0] if credentials else {}
 
 
-def _analyze_internal_hosts(hosts: List[Dict]) -> str:
-    """AI分析内网主机发现"""
-    if not hosts:
-        return "未发现内网主机"
-
-    # 构建摘要
-    summary_lines = []
-    for host in hosts[:10]:
-        ports = host.get("ports") or []
-        ports_str = ", ".join([f"{p['port']}/{p.get('service', '?')}" for p in ports[:5] if isinstance(p, dict) and 'port' in p])
-        summary_lines.append(f"{host.get('ip', 'unknown')}: [{ports_str}]")
-
-    summary = "\n".join(summary_lines)
-
-    prompt = f"""
-分析内网扫描结果，识别高价值目标和潜在攻击路径。
-
-## 发现的主机
-{summary}
-
-## 分析要求
-1. 识别可能存在漏洞的服务
-2. 推荐优先攻击的目标
-3. 建议攻击方法
-
-## 输出格式 (JSON)
-{{
-  "high_value_targets": ["IP列表"],
-  "vulnerable_services": ["服务列表"],
-  "recommended_approach": "一句话建议",
-  "priority_order": ["IP顺序"]
-}}
-"""
-
-    try:
-        analysis = llm_client.call_chat_completion(
-            model=config.ANALYST_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            json_mode=True
-        )
-
-        if "```json" in analysis:
-            analysis = analysis.split("```json")[1].split("```")[0]
-
-        result = json.loads(analysis.strip())
-        return f"高价值目标: {', '.join(result.get('high_value_targets', []))}\n建议: {result.get('recommended_approach', '')}"
-
-    except Exception:
-        return f"发现 {len(hosts)} 台主机，建议优先测试开放445/3389端口的主机"
-
-
 def _select_lateral_method(ports: List[Dict]) -> str:
     """根据端口选择横向移动方法"""
     port_numbers = [p.get("port") for p in ports]
@@ -1139,17 +1096,17 @@ def privilege_escalation_node(state: Dict) -> Dict:
     os_type = session.get("os_type", shell_session.get("os_type", "linux"))
     is_admin = session.get("is_admin", False)
 
-    print(f"[PrivEsc] AI分析 {target} ({os_type}) 的提权路径...")
+    logger.info(f"AI分析 {target} ({os_type}) 的提权路径...")
 
     # 如果已经有管理员权限，直接尝试凭据转储
     if is_admin:
-        print(f"[PrivEsc] 已有管理员权限，尝试凭据转储")
+        logger.info(f"已有管理员权限，尝试凭据转储")
         return _ai_credential_dump(state, session, active_sessions, credentials, shell_session)
 
     # AI决策提权策略
     priv_strategy = _ai_decide_privesc_strategy(target, os_type, session, state)
 
-    print(f"[PrivEsc] AI决策: {priv_strategy.get('method')} - {priv_strategy.get('reason', '')}")
+    logger.info(f"AI决策: {priv_strategy.get('method')} - {priv_strategy.get('reason', '')}")
 
     # 执行提权
     if REMOTE_EXEC_AVAILABLE and shell_session.get("session_id"):
@@ -1165,14 +1122,14 @@ def privilege_escalation_node(state: Dict) -> Dict:
             }
 
     if result.get("success"):
-        print(f"[PrivEsc] 提权成功！")
+        logger.info(f"提权成功！")
         session["is_admin"] = True
         session["is_system"] = result.get("is_system", False)
 
         # 尝试凭据转储
         return _ai_credential_dump(state, session, active_sessions, credentials, shell_session)
     else:
-        print(f"[PrivEsc] 提权失败: {result.get('error', '')}")
+        logger.warning(f"提权失败: {result.get('error', '')}")
 
         # AI决策下一步
         next_step = priv_strategy.get("on_failure", "retry")
@@ -1256,7 +1213,7 @@ def _ai_decide_privesc_strategy(target: str, os_type: str, session: Dict, state:
         return json.loads(response.strip())
 
     except Exception as e:
-        print(f"[PrivEsc] AI决策失败: {e}")
+        logger.warning(f"AI决策失败: {e}")
         # 降级策略
         if os_type == "windows":
             return {
@@ -1290,7 +1247,7 @@ def _execute_privesc_via_session(shell_session: Dict, strategy: Dict, os_type: s
     results = []
 
     for cmd in commands:
-        print(f"[PrivEsc] 执行: {cmd[:50]}...")
+        logger.info(f"执行: {cmd[:50]}...")
         result = execute_on_session(session, cmd, timeout=60)
         results.append({
             "cmd": cmd,
@@ -1336,7 +1293,7 @@ def _ai_credential_dump(state: Dict, session: Dict,
     target = session.get("host", "")
     os_type = session.get("os_type", shell_session.get("os_type", "linux"))
 
-    print(f"[CredDump] AI决策凭据收集策略...")
+    logger.info(f"AI决策凭据收集策略...")
 
     # AI决策凭据收集方法
     prompt = f"""
@@ -1369,7 +1326,7 @@ def _ai_credential_dump(state: Dict, session: Dict,
             response = response.split("```json")[1].split("```")[0]
 
         strategy = json.loads(response.strip())
-        print(f"[CredDump] AI选择: {', '.join(strategy.get('methods', []))}")
+        logger.info(f"AI选择: {', '.join(strategy.get('methods', []))}")
 
     except Exception:
         strategy = {"methods": ["默认"], "commands": []}
@@ -1396,7 +1353,7 @@ def _ai_credential_dump(state: Dict, session: Dict,
             if os_type == "windows":
                 result = CredentialDumper.dump_lsass(session)
                 if result.status == OperationStatus.SUCCESS:
-                    print(f"[CredDump] LSASS转储成功")
+                    logger.info(f"LSASS转储成功")
             else:
                 result = CredentialDumper.dump_linux_hashes(session)
                 if result.status == OperationStatus.SUCCESS:
@@ -1409,7 +1366,7 @@ def _ai_credential_dump(state: Dict, session: Dict,
                             "cred_type": "password_hash"
                         })
         except Exception as e:
-            print(f"[CredDump] 失败: {e}")
+            logger.warning(f"失败: {e}")
 
     return {
         "active_sessions": active_sessions,
@@ -1456,19 +1413,19 @@ def _attempt_credential_dump(state: Dict, session: Dict,
             # 尝试LSASS转储
             result = CredentialDumper.dump_lsass(session)
             if result.status == OperationStatus.SUCCESS:
-                print(f"[CredDump] LSASS转储成功")
+                logger.info(f"LSASS转储成功")
                 # 解析获取的凭据（这里简化处理）
                 # 实际应该解析result.data中的凭据
 
             # 尝试SAM转储
             result = CredentialDumper.dump_sam_system(session)
             if result.status in [OperationStatus.SUCCESS, OperationStatus.PARTIAL]:
-                print(f"[CredDump] SAM/SYSTEM转储成功")
+                logger.info(f"SAM/SYSTEM转储成功")
         else:
             # Linux 凭据转储
             result = CredentialDumper.dump_linux_hashes(session)
             if result.status == OperationStatus.SUCCESS:
-                print(f"[CredDump] 获取到Linux密码哈希")
+                logger.info(f"获取到Linux密码哈希")
                 hashes = result.data.get("hashes", [])
                 for h in hashes:
                     new_credentials.append({
@@ -1479,7 +1436,7 @@ def _attempt_credential_dump(state: Dict, session: Dict,
                     })
 
     except Exception as e:
-        print(f"[CredDump] 凭据转储失败: {e}")
+        logger.warning(f"凭据转储失败: {e}")
 
     return {
         "active_sessions": active_sessions,
@@ -1531,12 +1488,12 @@ def credential_gather_node(state: Dict) -> Dict:
 
     credentials = state.get("credentials") or []
 
-    print(f"[CredGather] AI分析 {target} 的凭据收集策略...")
+    logger.info(f"AI分析 {target} 的凭据收集策略...")
 
     # AI决策凭据收集策略
     gather_strategy = _ai_decide_cred_gather_strategy(target, target_host, credentials, state)
 
-    print(f"[CredGather] AI决策: {gather_strategy.get('method')} - {gather_strategy.get('reason', '')}")
+    logger.info(f"AI决策: {gather_strategy.get('method')} - {gather_strategy.get('reason', '')}")
 
     new_credentials = []
 
@@ -1576,12 +1533,12 @@ def credential_gather_node(state: Dict) -> Dict:
                 new_credentials.extend(result.get("credentials", []))
 
     except Exception as e:
-        print(f"[CredGather] 执行失败: {e}")
+        logger.warning(f"执行失败: {e}")
 
     if new_credentials:
-        print(f"[CredGather] 收集到 {len(new_credentials)} 条凭据")
+        logger.info(f"收集到 {len(new_credentials)} 条凭据")
     else:
-        print(f"[CredGather] 未收集到新凭据")
+        logger.info(f"未收集到新凭据")
 
     return {
         "credentials": credentials + new_credentials,
@@ -1639,7 +1596,7 @@ def _ai_decide_cred_gather_strategy(target: str, target_host: Dict, credentials:
         return json.loads(response.strip())
 
     except Exception as e:
-        print(f"[CredGather] AI决策失败: {e}")
+        logger.warning(f"AI决策失败: {e}")
         # 降级: 基于端口选择
         if 445 in port_numbers:
             return {"method": "smb_anonymous", "reason": "SMB开放"}
@@ -1851,13 +1808,25 @@ def flag_search_node(state: Dict) -> Dict:
     found_flags = state.get("found_flags") or []
     internal_hosts = state.get("internal_hosts") or []
 
+    # ========== 终止条件1：时间限制检查 ==========
+    start_time = state.get("start_time", 0)
+    elapsed = time.time() - start_time
+    INTERNAL_TASK_TIMEOUT = getattr(config, 'INTERNAL_TASK_TIMEOUT', 3600)  # 默认1小时
+
+    if elapsed > INTERNAL_TASK_TIMEOUT:
+        logger.info(f"[FlagSearch] 内网渗透超时 ({elapsed:.0f}秒)，结束搜索")
+        return {
+            "current_compromise_phase": "complete",
+            "execution_steps": state.get("execution_steps", 0) + 1
+        }
+
     if not active_sessions and not shell_session:
         return {
             "error": "没有可用的会话进行Flag搜索",
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5
         }
 
-    print(f"[FlagSearch] 开始在已攻陷主机中搜索Flag...")
+    logger.info(f"开始在已攻陷主机中搜索Flag...")
 
     # 收集新发现的flag
     new_flags = []
@@ -1905,15 +1874,30 @@ def flag_search_node(state: Dict) -> Dict:
     newly_compromised = list(set(newly_compromised))
 
     if new_flags:
-        print(f"[FlagSearch] 发现 {len(new_flags)} 个Flag!")
+        logger.info(f"发现 {len(new_flags)} 个Flag!")
         for flag in new_flags:
-            print(f"   🚩 {flag}")
+            logger.info(f"   🚩 {flag}")
 
-    # ========== 改进：AI完成验证 ==========
+    # ========== 终止条件2：所有主机攻陷且每台都有flag ==========
     all_compromised = compromised_hosts + newly_compromised
     total_flags = found_flags + new_flags
     unexplored = [h.get("ip") for h in internal_hosts
                   if isinstance(h, dict) and h.get("ip") not in all_compromised]
+
+    # 检查是否所有主机都已攻陷且找到flag
+    if len(internal_hosts) > 0 and len(all_compromised) >= len(internal_hosts):
+        if len(total_flags) >= len(all_compromised):
+            logger.info(f"[FlagSearch] 所有主机已攻陷且每台都有flag，任务完成")
+            logger.info(f"任务完成: {len(all_compromised)}台主机攻陷, {len(total_flags)}个flag")
+            return {
+                "found_flags": new_flags,
+                "compromised_hosts": newly_compromised,
+                "current_compromise_phase": "complete",
+                "execution_steps": state.get("execution_steps", 0) + 1
+            }
+
+    # ========== 改进：AI完成验证 ==========
+    # 如果所有主机都已攻陷但flag数量不足，进行AI验证
 
     # 改进：不再简单地根据unexplored判断
     if not unexplored:
@@ -1923,18 +1907,18 @@ def flag_search_node(state: Dict) -> Dict:
         if completion.get("should_continue"):
             # AI判断还需要继续搜索
             next_phase = "flag_search"  # 继续在已攻陷主机深度搜索
-            print(f"[FlagSearch] AI判断需要继续搜索: {completion.get('reason')}")
+            logger.info(f"AI判断需要继续搜索: {completion.get('reason')}")
 
             # 执行深度搜索建议的操作
             suggested = completion.get("suggested_actions", [])
             if suggested:
-                print(f"[FlagSearch] 建议操作: {suggested[:3]}")
+                logger.info(f"建议操作: {suggested[:3]}")
         else:
             next_phase = "complete"
-            print(f"[FlagSearch] AI验证完成，内网渗透结束")
+            logger.info(f"AI验证完成，内网渗透结束")
     else:
         next_phase = "lateral_move"
-        print(f"[FlagSearch] 还有 {len(unexplored)} 台主机未攻陷，继续横向移动")
+        logger.info(f"还有 {len(unexplored)} 台主机未攻陷，继续横向移动")
 
     return {
         "found_flags": new_flags,

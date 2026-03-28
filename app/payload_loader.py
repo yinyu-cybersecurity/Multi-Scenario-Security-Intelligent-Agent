@@ -12,6 +12,9 @@ import json
 import random
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
+from logger import get_logger
+
+logger = get_logger("PayloadLoader")
 
 
 def _get_resource_paths() -> Tuple[str, str]:
@@ -150,7 +153,7 @@ class PayloadLoader:
                 with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
                     words = [line.strip() for line in f if line.strip() and not line.startswith('#')]
         except Exception as e:
-            print(f"[PayloadLoader] 加载字典失败 {wordlist_type}: {e}")
+            logger.warning(f"加载字典失败 {wordlist_type}: {e}")
 
         self._cache[cache_key] = words
         return words
@@ -276,7 +279,7 @@ class PayloadLoader:
                                         payloads.append(line)
 
                     except Exception as e:
-                        print(f"[PayloadLoader] 读取文件失败 {filepath}: {e}")
+                        logger.warning(f"读取文件失败 {filepath}: {e}")
 
         # 去重
         return list(dict.fromkeys(payloads))

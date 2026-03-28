@@ -15,6 +15,9 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from logger import get_logger
+
+logger = get_logger("Credential")
 
 
 class CredentialType(Enum):
@@ -128,7 +131,7 @@ class CredentialManager:
                         Credential.from_dict(c) for c in data
                     ]
             except Exception as e:
-                print(f"[CredentialManager] 加载凭据失败: {e}")
+                logger.warning(f"加载凭据失败: {e}")
 
     def _save_credentials(self):
         """保存凭据到文件"""
@@ -142,7 +145,7 @@ class CredentialManager:
                     indent=2
                 )
         except Exception as e:
-            print(f"[CredentialManager] 保存凭据失败: {e}")
+            logger.warning(f"保存凭据失败: {e}")
 
     # =========================================================================
     # 添加凭据
@@ -238,7 +241,7 @@ class CredentialManager:
         # 添加新凭据
         self.credentials.append(cred)
         self._save_credentials()
-        print(f"[CredentialManager] 添加凭据: {cred.username}@{cred.host}")
+        logger.info(f"添加凭据: {cred.username}@{cred.host}")
         return True
 
     # =========================================================================

@@ -129,6 +129,8 @@
                 <span>运行: {{ systemStatus.tasks_running || 0 }}</span>
                 <span>完成: {{ systemStatus.tasks_completed || 0 }}</span>
                 <span>LLM调用: {{ llmStatus.requests_today || 0 }}</span>
+                <span v-if="sseConnected" style="color: #52c41a;">● 已连接</span>
+                <span v-else style="color: #ff4d4f;">○ 未连接</span>
             </div>
         </div>
 
@@ -182,7 +184,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="log-area">
+                <div class="log-area" ref="logArea">
                     <div v-for="(log, i) in logs" :key="i" class="log-entry" :class="log.type"><span class="log-time">{{ log.time }}</span><span class="log-msg">{{ log.msg }}</span></div>
                     <div v-if="logs.length === 0" class="empty-text">等待任务执行...</div>
                 </div>
@@ -191,6 +193,7 @@
             <div class="right-panel">
                 <div class="tabs">
                     <div class="tab" :class="{ active: tab === 'results' }" @click="tab = 'results'">结果</div>
+                    <div class="tab" :class="{ active: tab === 'history' }" @click="tab = 'history'; fetchPersistenceTasks()">历史</div>
                     <div class="tab" :class="{ active: tab === 'monitor' }" @click="tab = 'monitor'">监控</div>
                     <div class="tab" :class="{ active: tab === 'tools' }" @click="tab = 'tools'">工具</div>
                 </div>
@@ -217,6 +220,49 @@
                         </div>
                         <div v-if="!currentTask" class="empty-text">选择任务查看结果</div>
                     </div>
+                    <!-- 历史任务标签页 -->
+                    <div v-show="tab === 'history'" style="padding: 0;">
+                        <div class="panel-title">持久性任务记录</div>
+                        <div class="info-card" style="max-height: 400px; overflow-y: auto;">
+                            <div v-for="ptask in persistenceTasks" :key="ptask.task_id" class="info-card" style="margin-bottom: 8px; cursor: pointer;" @click="showPersistenceDetail(ptask.task_id)">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <div style="font-weight: 500; color: #333;">{{ ptask.target || ptask.task_id }}</div>
+                                        <div style="font-size: 11px; color: #999;">{{ ptask.created_at }}</div>
+                                    </div>
+                                    <div style="text-align: right;">
+                                        <span :style="{ color: ptask.status === 'completed' ? '#52c41a' : ptask.status === 'running' ? '#1890ff' : '#ff4d4f', fontWeight: 500 }">{{ ptask.status }}</span>
+                                        <div v-if="ptask.found_flag" style="color: #52c41a; font-size: 11px;">FLAG已找到</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div v-if="persistenceTasks.length === 0" class="empty-text">暂无历史任务</div>
+                        </div>
+                        <!-- 任务详情弹窗 -->
+                        <div v-if="selectedPersistenceTask" class="panel-title" style="margin-top: 12px;">任务详情</div>
+                        <div v-if="selectedPersistenceTask" class="info-card">
+                            <div class="info-row"><span class="info-label">任务ID</span><span class="info-value" style="font-family: monospace; font-size: 11px;">{{ selectedPersistenceTask.task_id }}</span></div>
+                            <div class="info-row"><span class="info-label">目标</span><span class="info-value">{{ selectedPersistenceTask.target }}</span></div>
+                            <div class="info-row"><span class="info-label">状态</span><span class="info-value">{{ selectedPersistenceTask.status }}</span></div>
+                            <div class="info-row"><span class="info-label">创建时间</span><span class="info-value">{{ selectedPersistenceTask.created_at }}</span></div>
+                            <div v-if="selectedPersistenceTask.completed_at" class="info-row"><span class="info-label">完成时间</span><span class="info-value">{{ selectedPersistenceTask.completed_at }}</span></div>
+                            <div v-if="selectedPersistenceTask.final_flag" class="info-row"><span class="info-label">FLAG</span><span class="info-value" style="color: #52c41a; font-family: monospace;">{{ selectedPersistenceTask.final_flag }}</span></div>
+                            <div v-if="selectedPersistenceTask.execution_history && selectedPersistenceTask.execution_history.length > 0" style="margin-top: 8px;">
+                                <div class="section-title">执行历史 ({{ selectedPersistenceTask.execution_history.length }} 步)</div>
+                                <div style="max-height: 150px; overflow-y: auto;">
+                                    <div v-for="h in selectedPersistenceTask.execution_history.slice(-10)" :key="h.step" style="font-size: 11px; padding: 4px 0; border-bottom: 1px solid #f0f0f0;">
+                                        <span style="color: #1890ff;">[{{ h.node }}]</span> {{ h.status }} {{ h.duration_ms ? '(' + h.duration_ms + 'ms)' : '' }}
+                                    </div>
+                                </div>
+                            </div>
+                            <div v-if="selectedPersistenceTask.discoveries && selectedPersistenceTask.discoveries.length > 0" style="margin-top: 8px;">
+                                <div class="section-title">发现内容</div>
+                                <div v-for="d in selectedPersistenceTask.discoveries" :key="d.type" style="font-size: 11px; padding: 2px 0;">
+                                    <span style="color: #faad14;">[{{ d.type }}]</span> {{ d.value }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     <div v-show="tab === 'monitor'">
                         <div class="panel-title">执行统计</div>
                         <div class="info-card">
@@ -226,13 +272,63 @@
                             <div class="info-row"><span class="info-label">平均耗时</span><span class="info-value">{{ (perfSummary.avg_duration_ms || 0).toFixed(1) }} ms</span></div>
                             <div class="info-row"><span class="info-label">慢操作</span><span class="info-value" :style="{ color: (perfSummary.slow_ops_count || 0) > 5 ? '#ff4d4f' : '#52c41a' }">{{ perfSummary.slow_ops_count || 0 }} 个</span></div>
                         </div>
-                        <div class="panel-title">LLM使用统计</div>
+
+                        <!-- 节点执行详情 -->
+                        <div v-if="Object.keys(perfDetails.nodes).length > 0" class="panel-title" style="margin-top: 12px;">节点执行详情</div>
+                        <div v-if="Object.keys(perfDetails.nodes).length > 0" class="info-card" style="max-height: 150px; overflow-y: auto;">
+                            <div v-for="(stats, name) in perfDetails.nodes" :key="name" class="info-row">
+                                <span class="info-label" style="font-family: monospace;">{{ name }}</span>
+                                <span class="info-value">
+                                    <span style="color: #1890ff;">{{ stats.count }}次</span>
+                                    <span style="color: #999; margin-left: 8px;">avg: {{ stats.avg_ms }}ms</span>
+                                    <span v-if="stats.errors > 0" style="color: #ff4d4f; margin-left: 8px;">err: {{ stats.errors }}</span>
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- 工具执行详情 -->
+                        <div v-if="Object.keys(perfDetails.tools).length > 0" class="panel-title" style="margin-top: 12px;">工具执行详情</div>
+                        <div v-if="Object.keys(perfDetails.tools).length > 0" class="info-card" style="max-height: 150px; overflow-y: auto;">
+                            <div v-for="(stats, name) in perfDetails.tools" :key="name" class="info-row">
+                                <span class="info-label" style="font-family: monospace;">{{ name }}</span>
+                                <span class="info-value">
+                                    <span style="color: #52c41a;">{{ stats.total_executions }}次</span>
+                                    <span style="color: #999; margin-left: 8px;">avg: {{ (stats.avg_duration * 1000).toFixed(0) }}ms</span>
+                                    <span v-if="stats.cache_hits > 0" style="color: #faad14; margin-left: 8px;">cache: {{ stats.cache_hits }}</span>
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- 慢操作列表 -->
+                        <div v-if="slowOps.length > 0" class="panel-title" style="margin-top: 12px;">慢操作 (>5s)</div>
+                        <div v-if="slowOps.length > 0" class="info-card" style="max-height: 120px; overflow-y: auto;">
+                            <div v-for="op in slowOps.slice(0, 10)" :key="op.name + op.time" class="info-row">
+                                <span class="info-label">
+                                    <span :style="{ color: op.category === 'node' ? '#1890ff' : op.category === 'llm' ? '#722ed1' : '#52c41a' }">[{{ op.category }}]</span>
+                                    {{ op.name }}
+                                </span>
+                                <span class="info-value" style="color: #ff4d4f;">{{ (op.duration_ms / 1000).toFixed(2) }}s</span>
+                            </div>
+                        </div>
+
+                        <div class="panel-title" style="margin-top: 12px;">LLM使用统计</div>
                         <div class="info-card">
                             <div class="info-row"><span class="info-label">请求次数</span><span class="info-value">{{ llmStatus.request_count || 0 }}</span></div>
                             <div class="info-row"><span class="info-label">总Token消耗</span><span class="info-value">{{ formatTokens(llmStatus.total_tokens) }}</span></div>
                             <div class="info-row"><span class="info-label">输入Token</span><span class="info-value">{{ formatTokens(llmStatus.prompt_tokens) }}</span></div>
                             <div class="info-row"><span class="info-label">输出Token</span><span class="info-value">{{ formatTokens(llmStatus.completion_tokens) }}</span></div>
                             <div class="info-row"><span class="info-label">当前并发</span><span class="info-value">{{ llmStatus.active_requests || 0 }} / {{ llmStatus.max_concurrent || 5 }}</span></div>
+                        </div>
+                        <!-- LLM 模型详细统计 -->
+                        <div v-if="Object.keys(perfDetails.llm).length > 0" class="info-card" style="margin-top: 8px; max-height: 120px; overflow-y: auto;">
+                            <div v-for="(stats, model) in perfDetails.llm" :key="model" class="info-row">
+                                <span class="info-label" style="font-family: monospace; font-size: 11px;">{{ model }}</span>
+                                <span class="info-value">
+                                    <span style="color: #722ed1;">{{ stats.count }}次</span>
+                                    <span style="color: #999; margin-left: 8px;">avg: {{ stats.avg_ms }}ms</span>
+                                    <span v-if="stats.tokens > 0" style="color: #faad14; margin-left: 8px;">{{ formatTokens(stats.tokens) }} tok</span>
+                                </span>
+                            </div>
                         </div>
                         <div class="panel-title">系统资源</div>
                         <div class="monitor-chart">
@@ -303,6 +399,8 @@
                 const systemMetrics = ref({});
                 const metricsHistory = ref({ cpu: [], memory: [], network_rates: [] });
                 const perfSummary = ref({});
+                const perfDetails = ref({ nodes: {}, tools: {}, llm: {} });
+                const slowOps = ref([]);
                 const tooltipNode = ref(null);
                 const tooltipX = ref(0);
                 const tooltipY = ref(0);
@@ -310,6 +408,12 @@
                 const memoryChart = ref(null);
                 const networkChart = ref(null);
                 let currentZoom = null;
+                // SSE相关
+                let eventSource = null;
+                const sseConnected = ref(false);
+                // 持久性任务
+                const persistenceTasks = ref([]);
+                const selectedPersistenceTask = ref(null);
 
                 const taskList = computed(() => Object.values(tasks.value).sort((a, b) => b.created_at.localeCompare(a.created_at)));
                 const currentTask = computed(() => tasks.value[currentTaskId.value]);
@@ -343,7 +447,26 @@
                 async function fetchLLMStatus() { try { llmStatus.value = await (await fetch('/fisher_ctf_agent/api/llm/status')).json(); } catch (e) {} }
                 async function fetchCompressionStats() { try { compressionStats.value = await (await fetch('/fisher_ctf_agent/api/compression/status')).json(); } catch (e) {} }
                 async function fetchRecoveryStats() { try { const d = await (await fetch('/fisher_ctf_agent/api/system/recovery')).json(); recoveryStats.value = d.recovery_stats || {}; } catch (e) {} }
-                async function fetchPerfSummary() { try { perfSummary.value = await (await fetch('/fisher_ctf_agent/api/performance/summary')).json(); } catch (e) {} }
+                async function fetchPerfSummary() {
+                    try {
+                        perfSummary.value = await (await fetch('/fisher_ctf_agent/api/performance/summary')).json();
+                    } catch (e) {}
+                }
+                async function fetchPerfDetails() {
+                    try {
+                        const data = await (await fetch('/fisher_ctf_agent/api/performance/stats')).json();
+                        perfDetails.value = {
+                            nodes: data.nodes || {},
+                            tools: data.tools || {},
+                            llm: data.llm || {}
+                        };
+                    } catch (e) {}
+                }
+                async function fetchSlowOps() {
+                    try {
+                        slowOps.value = await (await fetch('/fisher_ctf_agent/api/performance/slow')).json();
+                    } catch (e) {}
+                }
                 async function fetchSystemMetrics() {
                     try {
                         systemMetrics.value = await (await fetch('/fisher_ctf_agent/api/system/metrics')).json();
@@ -460,26 +583,109 @@
                 async function selectTask(id) {
                     currentTaskId.value = id; logs.value = []; taskResult.value = {};
                     try { currentTask.value = tasks.value[id] = await (await fetch(`/fisher_ctf_agent/api/task/${id}`)).json(); taskResult.value = currentTask.value; logs.value = (await (await fetch(`/fisher_ctf_agent/api/task/${id}/logs`)).json()).logs || []; } catch (e) {}
-                    pollTaskStatus();
+                    // 连接SSE实时日志流
+                    connectSSE(id);
+                    // 如果任务正在运行，也启动轮询更新状态
+                    if (tasks.value[id]?.status === 'running') {
+                        pollTaskStatus();
+                    }
                 }
 
                 async function startTask() {
                     if (!targetUrl.value) return;
                     starting.value = true;
-                    try { const d = await (await fetch('/fisher_ctf_agent/api/task/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target_url: targetUrl.value }) })).json(); currentTaskId.value = d.task_id; targetUrl.value = ''; tab.value = 'results'; await fetchTasks(); pollTaskStatus(); } catch (e) {}
+                    try { const d = await (await fetch('/fisher_ctf_agent/api/task/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target_url: targetUrl.value }) })).json(); currentTaskId.value = d.task_id; targetUrl.value = ''; tab.value = 'results'; await fetchTasks(); connectSSE(d.task_id); pollTaskStatus(); } catch (e) {}
                     starting.value = false;
+                }
+
+                // SSE实时日志连接
+                function connectSSE(taskId) {
+                    // 断开之前的连接
+                    disconnectSSE();
+                    if (!taskId) return;
+
+                    try {
+                        eventSource = new EventSource(`/fisher_ctf_agent/api/task/${taskId}/stream`);
+                        sseConnected.value = true;
+
+                        eventSource.onmessage = (event) => {
+                            try {
+                                const data = JSON.parse(event.data);
+                                if (data.type === 'end') {
+                                    disconnectSSE();
+                                    fetchTasks();
+                                    fetchSystemStatus();
+                                    return;
+                                }
+                                // 添加日志
+                                logs.value.push(data);
+                                // 限制日志数量，保留最新500条
+                                if (logs.value.length > 500) {
+                                    logs.value = logs.value.slice(-500);
+                                }
+                                // 自动滚动到底部
+                                scrollToLogBottom();
+                            } catch (e) {}
+                        };
+
+                        eventSource.onerror = () => {
+                            sseConnected.value = false;
+                            // 尝试重连
+                            setTimeout(() => {
+                                if (currentTaskId.value && tasks.value[currentTaskId.value]?.status === 'running') {
+                                    connectSSE(currentTaskId.value);
+                                }
+                            }, 3000);
+                        };
+                    } catch (e) {
+                        sseConnected.value = false;
+                    }
+                }
+
+                function disconnectSSE() {
+                    if (eventSource) {
+                        eventSource.close();
+                        eventSource = null;
+                    }
+                    sseConnected.value = false;
+                }
+
+                function scrollToLogBottom() {
+                    const logArea = document.querySelector('.log-area');
+                    if (logArea) {
+                        logArea.scrollTop = logArea.scrollHeight;
+                    }
+                }
+
+                // 持久性任务相关函数
+                async function fetchPersistenceTasks() {
+                    try {
+                        const data = await (await fetch('/fisher_ctf_agent/api/persistence/tasks')).json();
+                        persistenceTasks.value = data.tasks || [];
+                    } catch (e) {
+                        persistenceTasks.value = [];
+                    }
+                }
+
+                async function showPersistenceDetail(taskId) {
+                    try {
+                        const data = await (await fetch(`/fisher_ctf_agent/api/persistence/task/${taskId}`)).json();
+                        selectedPersistenceTask.value = data;
+                    } catch (e) {
+                        selectedPersistenceTask.value = null;
+                    }
                 }
 
                 let pollTimer = null;
                 async function pollTaskStatus() {
                     if (pollTimer) clearTimeout(pollTimer);
                     if (!currentTaskId.value) return;
-                    try { currentTask.value = tasks.value[currentTaskId.value] = await (await fetch(`/fisher_ctf_agent/api/task/${currentTaskId.value}`)).json(); taskResult.value = currentTask.value; logs.value = (await (await fetch(`/fisher_ctf_agent/api/task/${currentTaskId.value}/logs`)).json()).logs || []; } catch (e) {}
+                    try { currentTask.value = tasks.value[currentTaskId.value] = await (await fetch(`/fisher_ctf_agent/api/task/${currentTaskId.value}`)).json(); taskResult.value = currentTask.value; } catch (e) {}
                     await fetchSystemStatus();
                     if (tasks.value[currentTaskId.value]?.status === 'running') pollTimer = setTimeout(pollTaskStatus, 2000);
                 }
 
-                function refreshAll() { fetchGraph(); fetchTasks(); fetchSystemStatus(); fetchTools(); fetchLLMStatus(); fetchCompressionStats(); fetchRecoveryStats(); fetchPerfSummary(); }
+                function refreshAll() { fetchGraph(); fetchTasks(); fetchSystemStatus(); fetchTools(); fetchLLMStatus(); fetchCompressionStats(); fetchRecoveryStats(); fetchPerfSummary(); fetchPerfDetails(); fetchSlowOps(); }
 
                 function zoomIn() { if (currentZoom) currentZoom.scaleBy(d3.select('#graph-svg'), 1.3); }
                 function zoomOut() { if (currentZoom) currentZoom.scaleBy(d3.select('#graph-svg'), 0.7); }
@@ -595,17 +801,21 @@
                         fetchLLMStatus();
                         fetchRecoveryStats();
                         fetchSystemMetrics();
+                        fetchPerfSummary();
+                        fetchPerfDetails();
+                        fetchSlowOps();
                     }, 3000);
                     window.addEventListener('resize', () => { renderGraph(); renderCharts(); });
                 });
                 return {
                     tasks, taskList, currentTaskId, currentTask, targetUrl, logs, starting, graphData, tab, taskResult,
                     systemStatus, toolCategories, toolStats, llmStatus, compressionStats, recoveryStats,
-                    systemMetrics, metricsHistory, perfSummary,
+                    systemMetrics, metricsHistory, perfSummary, perfDetails, slowOps,
                     tooltipNode, tooltipX, tooltipY,
                     cpuChart, memoryChart, networkChart,
+                    sseConnected, persistenceTasks, selectedPersistenceTask,
                     selectTask, startTask, refreshAll, statusText, zoomIn, zoomOut, zoomReset,
-                    formatBytes, formatTokens
+                    formatBytes, formatTokens, fetchPersistenceTasks, showPersistenceDetail, disconnectSSE
                 };
             }
         });

@@ -5,6 +5,21 @@ from typing import List, Optional, Dict, Set, Tuple
 from datetime import datetime
 import heapq
 import json
+import os
+
+# 导入错误处理模块
+try:
+    from self_correction import (
+        with_self_correction, self_correction_manager,
+        ErrorSeverity, ErrorType
+    )
+    SELF_CORRECTION_AVAILABLE = True
+except ImportError:
+    SELF_CORRECTION_AVAILABLE = False
+    def with_self_correction(node_name):
+        def decorator(func):
+            return func
+        return decorator
 
 
 class TopologyAnalyzer:
@@ -107,6 +122,7 @@ class TopologyAnalyzer:
     # 关键节点识别
     # =========================================================================
 
+    @with_self_correction("topology_analyzer")
     def find_critical_nodes(self, top_k: int = 3) -> List[str]:
         """
         识别关键节点（PageRank中心性）
@@ -124,7 +140,14 @@ class TopologyAnalyzer:
             pagerank = nx.pagerank(self.graph)
             critical = heapq.nlargest(top_k, pagerank.items(), key=lambda x: x[1])
             return [node for node, score in critical]
-        except Exception:
+        except Exception as e:
+            if SELF_CORRECTION_AVAILABLE:
+                self_correction_manager.record_error(
+                    node="topology_analyzer",
+                    error_type=ErrorType.EXECUTION_ERROR,
+                    error_message=f"识别关键节点失败: {e}",
+                    severity=ErrorSeverity.LOW
+                )
             return []
 
     def find_hubs(self) -> List[str]:
@@ -161,6 +184,7 @@ class TopologyAnalyzer:
     # 决策支持方法
     # =========================================================================
 
+    @with_self_correction("topology_analyzer")
     def prioritize_attack_targets(self, visited: List[str], top_k: int = 5) -> List[Tuple[str, float]]:
         """
         计算攻击优先级
@@ -182,32 +206,49 @@ class TopologyAnalyzer:
 
         try:
             pagerank = nx.pagerank(self.graph)
-        except Exception:
+        except Exception as e:
+            if SELF_CORRECTION_AVAILABLE:
+                self_correction_manager.record_error(
+                    node="topology_analyzer",
+                    error_type=ErrorType.EXECUTION_ERROR,
+                    error_message=f"计算PageRank失败: {e}",
+                    severity=ErrorSeverity.LOW
+                )
             pagerank = {n: 1.0 for n in self.graph.nodes()}
 
-        # 敏感关键词
-        sensitive_keywords = ['login', 'admin', 'upload', 'api', 'config', 'backup', 'test', 'dev']
+        try:
+            # 敏感关键词
+            sensitive_keywords = ['login', 'admin', 'upload', 'api', 'config', 'backup', 'test', 'dev']
 
-        for node in self.graph.nodes():
-            if node in visited_set:
-                continue
+            for node in self.graph.nodes():
+                if node in visited_set:
+                    continue
 
-            score = pagerank.get(node, 0.5)
+                score = pagerank.get(node, 0.5)
 
-            # 敏感路径加分
-            for kw in sensitive_keywords:
-                if kw in node.lower():
-                    score *= 1.5
-                    break
+                # 敏感路径加分
+                for kw in sensitive_keywords:
+                    if kw in node.lower():
+                        score *= 1.5
+                        break
 
-            # 枢纽节点加分
-            out_degree = self.graph.out_degree(node)
-            if out_degree > 2:
-                score *= 1.2
+                # 枢纽节点加分
+                out_degree = self.graph.out_degree(node)
+                if out_degree > 2:
+                    score *= 1.2
 
-            priorities[node] = score
+                priorities[node] = score
 
-        return heapq.nlargest(top_k, priorities.items(), key=lambda x: x[1])
+            return heapq.nlargest(top_k, priorities.items(), key=lambda x: x[1])
+        except Exception as e:
+            if SELF_CORRECTION_AVAILABLE:
+                self_correction_manager.record_error(
+                    node="topology_analyzer",
+                    error_type=ErrorType.EXECUTION_ERROR,
+                    error_message=f"计算攻击优先级失败: {e}",
+                    severity=ErrorSeverity.LOW
+                )
+            return []
 
     def find_unvisited_high_value_nodes(self, visited: List[str], top_k: int = 5) -> List[str]:
         """
@@ -253,6 +294,7 @@ class TopologyAnalyzer:
     # 循环检测
     # =========================================================================
 
+    @with_self_correction("topology_analyzer")
     def detect_cycles(self) -> List[List[str]]:
         """
         检测循环路径（防止死循环）
@@ -263,7 +305,14 @@ class TopologyAnalyzer:
         try:
             cycles = list(nx.simple_cycles(self.graph))
             return cycles
-        except Exception:
+        except Exception as e:
+            if SELF_CORRECTION_AVAILABLE:
+                self_correction_manager.record_error(
+                    node="topology_analyzer",
+                    error_type=ErrorType.EXECUTION_ERROR,
+                    error_message=f"检测循环路径失败: {e}",
+                    severity=ErrorSeverity.LOW
+                )
             return []
 
     def has_cycle(self) -> bool:
@@ -391,6 +440,7 @@ class TopologyAnalyzer:
         # 按优先级排序
         return sorted(candidates, key=lambda x: -x[1])
 
+    @with_self_correction("topology_analyzer")
     def get_priority_queue(self, visited: List[str]) -> List[Tuple[str, float]]:
         """
         获取优先级队列（整合现有方法）
@@ -406,32 +456,42 @@ class TopologyAnalyzer:
         Returns:
             [(node, score), ...] 按优先级排序
         """
-        visited_set = set(visited)
-        candidates = []
+        try:
+            visited_set = set(visited)
+            candidates = []
 
-        # 1. 未访问的高价值节点
-        for node, score in self.prioritize_attack_targets(visited, top_k=20):
-            status = self.node_status.get(node)
-            if status not in ["success", "failed"]:
-                # 根据节点状态调整优先级
-                if status == "deprioritized":
-                    score *= 0.5  # 降权节点降低优先级
-                candidates.append((node, score))
+            # 1. 未访问的高价值节点
+            for node, score in self.prioritize_attack_targets(visited, top_k=20):
+                status = self.node_status.get(node)
+                if status not in ["success", "failed"]:
+                    # 根据节点状态调整优先级
+                    if status == "deprioritized":
+                        score *= 0.5  # 降权节点降低优先级
+                    candidates.append((node, score))
 
-        # 2. 可回退的降权节点
-        for node, priority in self.get_backtrack_candidates():
-            if node not in visited_set:
-                candidates.append((node, priority * 0.8))  # 回退节点更低优先级
+            # 2. 可回退的降权节点
+            for node, priority in self.get_backtrack_candidates():
+                if node not in visited_set:
+                    candidates.append((node, priority * 0.8))  # 回退节点更低优先级
 
-        # 去重并排序
-        seen = set()
-        unique_candidates = []
-        for node, score in candidates:
-            if node not in seen:
-                seen.add(node)
-                unique_candidates.append((node, score))
+            # 去重并排序
+            seen = set()
+            unique_candidates = []
+            for node, score in candidates:
+                if node not in seen:
+                    seen.add(node)
+                    unique_candidates.append((node, score))
 
-        return sorted(unique_candidates, key=lambda x: -x[1])
+            return sorted(unique_candidates, key=lambda x: -x[1])
+        except Exception as e:
+            if SELF_CORRECTION_AVAILABLE:
+                self_correction_manager.record_error(
+                    node="topology_analyzer",
+                    error_type=ErrorType.EXECUTION_ERROR,
+                    error_message=f"获取优先级队列失败: {e}",
+                    severity=ErrorSeverity.LOW
+                )
+            return []
 
     def evaluate_completion(self, found_flags: int, visited: List[str]) -> Dict:
         """
@@ -540,3 +600,73 @@ class TopologyAnalyzer:
         self.node_last_result = data.get("node_last_result", {})
         self.node_priority = data.get("node_priority", {})
         self.node_metadata = data.get("node_metadata", {})
+
+    # =========================================================================
+    # 状态持久化方法
+    # =========================================================================
+
+    def save_state(self, filepath: str) -> bool:
+        """
+        保存状态到文件
+
+        Args:
+            filepath: 状态文件路径
+
+        Returns:
+            保存是否成功
+        """
+        try:
+            data = self.to_dict()
+            # 转换 datetime 为字符串
+            data["node_last_updated"] = {
+                k: v.isoformat() if hasattr(v, 'isoformat') else v
+                for k, v in self.node_last_updated.items()
+            }
+            # 确保目录存在
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as e:
+            if SELF_CORRECTION_AVAILABLE:
+                self_correction_manager.record_error(
+                    node="topology_analyzer",
+                    error_type=ErrorType.EXECUTION_ERROR,
+                    error_message=f"保存状态失败: {e}",
+                    severity=ErrorSeverity.LOW
+                )
+            return False
+
+    def load_state(self, filepath: str) -> bool:
+        """
+        从文件加载状态
+
+        Args:
+            filepath: 状态文件路径
+
+        Returns:
+            加载是否成功
+        """
+        try:
+            if not os.path.exists(filepath):
+                return False
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            self.from_dict(data)
+            # 恢复 datetime
+            for k, v in data.get("node_last_updated", {}).items():
+                if isinstance(v, str):
+                    try:
+                        self.node_last_updated[k] = datetime.fromisoformat(v)
+                    except ValueError:
+                        pass
+            return True
+        except Exception as e:
+            if SELF_CORRECTION_AVAILABLE:
+                self_correction_manager.record_error(
+                    node="topology_analyzer",
+                    error_type=ErrorType.EXECUTION_ERROR,
+                    error_message=f"加载状态失败: {e}",
+                    severity=ErrorSeverity.LOW
+                )
+            return False

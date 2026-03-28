@@ -17,6 +17,9 @@ from dataclasses import dataclass
 from enum import Enum
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from config import config
+from logger import get_logger
+
+logger = get_logger("LLM")
 
 # 导入Token统计持久化模块
 try:
@@ -24,7 +27,7 @@ try:
     TOKEN_PERSISTENCE_AVAILABLE = True
 except ImportError:
     TOKEN_PERSISTENCE_AVAILABLE = False
-    print("[LLM] Token持久化模块不可用，使用内存存储")
+    logger.info("Token持久化模块不可用，使用内存存储")
 
 
 class LLMErrorType(Enum):
@@ -97,7 +100,7 @@ class LLMRateLimiter:
                 stats_manager = get_token_stats_manager()
                 stats_manager.record_usage(prompt_tokens, completion_tokens)
             except Exception as e:
-                print(f"[LLM] Token持久化失败: {e}")
+                logger.warning(f"Token持久化失败: {e}")
 
     def get_status(self) -> Dict:
         """获取当前状态"""
@@ -121,7 +124,7 @@ class LLMRateLimiter:
                 status["today_tokens"] = persistent_stats["today"]["total_tokens"]
                 status["today_requests"] = persistent_stats["today"]["request_count"]
             except Exception as e:
-                print(f"[LLM] 获取持久化统计失败: {e}")
+                logger.warning(f"获取持久化统计失败: {e}")
 
         return status
 
@@ -139,9 +142,9 @@ if TOKEN_PERSISTENCE_AVAILABLE:
         _rate_limiter._prompt_tokens = stats["prompt_tokens"]
         _rate_limiter._completion_tokens = stats["completion_tokens"]
         _rate_limiter._request_count = stats["request_count"]
-        print(f"[LLM] 已恢复历史Token统计: {stats['total_tokens']} tokens, {stats['request_count']} requests")
+        logger.info(f"已恢复历史Token统计: {stats['total_tokens']} tokens, {stats['request_count']} requests")
     except Exception as e:
-        print(f"[LLM] 加载历史Token统计失败: {e}")
+        logger.warning(f"加载历史Token统计失败: {e}")
 
 
 class LLMClient:
@@ -269,7 +272,7 @@ class LLMClient:
                     last_error_msg = "Rate limit exceeded"
                     if attempt < retry_count - 1:
                         wait_time = min(2 ** (attempt + 1), 60)  # 最大60秒
-                        print(f"[LLM] Rate limited, waiting {wait_time}s (attempt {attempt+1}/{retry_count})...")
+                        logger.info(f"Rate limited, waiting {wait_time}s (attempt {attempt+1}/{retry_count})...")
                         time.sleep(wait_time)
                     continue
 
@@ -306,7 +309,7 @@ class LLMClient:
                 last_error_type = LLMErrorType.TIMEOUT
                 last_error_msg = "Request timed out"
                 if attempt < retry_count - 1:
-                    print(f"[LLM] Timeout, retry {attempt+1}/{retry_count}...")
+                    logger.info(f"Timeout, retry {attempt+1}/{retry_count}...")
                     time.sleep(2)
 
             except requests.exceptions.RequestException as e:
@@ -321,7 +324,7 @@ class LLMClient:
                 break
 
         # 所有重试失败
-        print(f"[LLM] All retries failed: {last_error_type.value} - {last_error_msg}")
+        logger.warning(f"All retries failed: {last_error_type.value} - {last_error_msg}")
         return LLMResult("", last_error_type, last_error_msg, retry_count)
 
     def call_batch(

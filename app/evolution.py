@@ -1,4 +1,4 @@
-# evolution.py - 进化闭环 
+# evolution.py - 进化闭环
 # 作用：成功时触发，将经验沉淀为永久规则，实现"越用越强"
 # 核心机制：LLM归纳 + 结构化去重 + 动态置信度 + 优胜劣汰 + 老化机制
 
@@ -10,7 +10,9 @@ import hashlib
 
 from typing import Dict, List
 
-from state import CTFState
+from logger import get_logger
+
+logger = get_logger("Evolution")
 
 
 # 规则文件路径
@@ -37,7 +39,7 @@ class EvolutionManager:
                 with open(self.rules_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except Exception as e:
-                print(f"[Evolution] 加载规则失败: {e}")
+                logger.warning(f"加载规则失败: {e}")
                 return []
         return []
 
@@ -57,7 +59,7 @@ class EvolutionManager:
             self._cleanup_backups()
 
         except Exception as e:
-            print(f"[Evolution] 保存规则失败: {e}")
+            logger.warning(f"保存规则失败: {e}")
 
     def _cleanup_backups(self, keep: int = 10):
         """清理旧备份"""
@@ -78,7 +80,7 @@ class EvolutionManager:
         after = len(self.rules)
 
         if before > after:
-            print(f"[Evolution] 规则老化: 删除 {before - after} 条过期规则")
+            logger.info(f"规则老化: 删除 {before - after} 条过期规则")
 
     def calculate_fingerprint(self, rule: Dict) -> str:
         """
@@ -136,7 +138,7 @@ class EvolutionManager:
 
     def _reinforce_rule(self, old_rule: Dict, new_rule: Dict):
         """强化已有规则 - 提升置信度"""
-        print(f"  🔄 规则强化: {old_rule.get('type')} (ID: {old_rule.get('id')})")
+        logger.info(f"  🔄 规则强化: {old_rule.get('type')} (ID: {old_rule.get('id')})")
         
         # 提升置信度 (上限 0.95)
         old_rule["confidence"] = min(0.95, old_rule.get("confidence", 0.5) + 0.05)
@@ -146,7 +148,7 @@ class EvolutionManager:
         # 如果是归档/孵化状态且再次命中，复活/转正
         if old_rule.get("status") in ["incubating", "archived"]:
             old_rule["status"] = "active"
-            print(f"  🎉 规则激活: {old_rule.get('id')} 状态变更为 active")
+            logger.info(f"  🎉 规则激活: {old_rule.get('id')} 状态变更为 active")
             
         # 如果是归档规则复活，重置老化时间
         if old_rule.get("status") == "archived":
@@ -173,7 +175,7 @@ class EvolutionManager:
                     # 优胜劣汰逻辑优化
                     if rule.get("confidence") < 0.2 and rule.get("hit_count") == 0:
                         rule["status"] = "archived"
-                        print(f"  🗑️ 规则归档: {rule_id} (低置信度且无成功记录)")
+                        logger.info(f"  🗑️ 规则归档: {rule_id} (低置信度且无成功记录)")
 
                 self._save_rules()
                 break
@@ -252,7 +254,7 @@ def evolution_node(state: CTFState) -> Dict:
     """
     进化闭环 - 深度优化版 (支持全链条学习)
     """
-    print("🧬 [Evolution] 启动进化引擎...")
+    logger.info("🧬 启动进化引擎...")
 
     # 1. 严格验证成功
     if not state.get("found_flag"):
@@ -260,7 +262,7 @@ def evolution_node(state: CTFState) -> Dict:
 
     trace = state.get("success_trace", [])
     if not trace:
-        print("  ⚠️ 缺少成功回溯信息，无法进化")
+        logger.warning("  ⚠️ 缺少成功回溯信息，无法进化")
         return {}
 
     manager = EvolutionManager()
@@ -283,10 +285,10 @@ def evolution_node(state: CTFState) -> Dict:
 
     if not significant_steps:
         # 兜底：确实没有任何显著步骤时，不进行任何学习，直接退出
-        print("  ⚠️ [Evolution] 未发现有效攻击路径，跳过本次学习")
+        logger.warning("  ⚠️ 未发现有效攻击路径，跳过本次学习")
         return {}
 
-    print(f"  🔗 正在从 {len(significant_steps)} 个关键步骤中提取攻击链条...")
+    logger.info(f"  🔗 正在从 {len(significant_steps)} 个关键步骤中提取攻击链条...")
 
     for step in significant_steps:
         # 跳过信息不足的步骤
@@ -300,10 +302,10 @@ def evolution_node(state: CTFState) -> Dict:
             # 检查是否是错误页面或无意义回显（通过关键词判断）
             noise_keywords = ["not defined", "undefined", "error", "invalid", "forbidden", "denied"]
             if any(kw in output_text.lower() for kw in noise_keywords):
-                print(f"  ⏭️ 跳过噪声步骤: {step.get('tool')} (output含'flag'但为无意义噪声)")
+                logger.info(f"  ⏭️ 跳过噪声步骤: {step.get('tool')} (output含'flag'但为无意义噪声)")
                 continue
 
-        print(f"  🧪 分析动作: {step.get('tool')} -> {step.get('target', 'unknown')}")
+        logger.info(f"  🧪 分析动作: {step.get('tool')} -> {step.get('target', 'unknown')}")
 
         # 3. 规则提取与合并
         rule_candidate = manager.extract_rule_via_heuristics(step)
@@ -317,13 +319,13 @@ def evolution_node(state: CTFState) -> Dict:
         if step.get("extracted_flag"):
             rule_candidate["is_success_case"] = True
             rule_candidate["extracted_flag"] = step["extracted_flag"]
-            print(f"  🏆 成功案例: {step.get('tool')} -> Flag: {step['extracted_flag']}")
+            logger.info(f"  🏆 成功案例: {step.get('tool')} -> Flag: {step['extracted_flag']}")
 
         is_new = manager.merge_rule(rule_candidate)
         
         if is_new:
             new_rules_count += 1
-            print(f"  ✨ 习得新技能: {rule_candidate.get('type')}")
+            logger.info(f"  ✨ 习得新技能: {rule_candidate.get('type')}")
         else:
             reinforced_count += 1
 
@@ -331,7 +333,7 @@ def evolution_node(state: CTFState) -> Dict:
     manager._age_rules()
     manager._save_rules()
 
-    print(f"🧬 [Evolution] 进化完成: 新增 {new_rules_count} 条规则, 强化 {reinforced_count} 条规则")
-    print(f"               规则库总规模: {len(manager.rules)} 条")
+    logger.info(f"🧬 进化完成: 新增 {new_rules_count} 条规则, 强化 {reinforced_count} 条规则")
+    logger.info(f"               规则库总规模: {len(manager.rules)} 条")
 
     return {"permanent_rules": manager.rules}

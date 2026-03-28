@@ -13,6 +13,17 @@
 - 统一接口：所有模块通过统一方式访问
 """
 
+import os
+import sys
+
+# 确保项目根目录和 app 目录在 sys.path 中
+_current_dir = os.path.dirname(__file__)
+_project_root = os.path.dirname(_current_dir)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+if _current_dir not in sys.path:
+    sys.path.insert(0, _current_dir)
+
 from typing import Callable, Dict, Any, Optional, List
 from dataclasses import dataclass, field
 import importlib

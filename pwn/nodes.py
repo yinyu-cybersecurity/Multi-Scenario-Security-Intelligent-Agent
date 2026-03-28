@@ -9,7 +9,6 @@ Pwn分析节点
 
 import json
 from typing import Dict, List, Any
-from state import CTFState
 from llm_client import llm_client
 from config import config
 from logger import get_logger
@@ -46,7 +45,7 @@ def pwn_analyst_node(state: Dict) -> Dict:
         3. 检测保护机制
         4. 查找潜在漏洞
     """
-    print("[PwnAnalyst] Starting binary analysis...")
+    logger.info("[PwnAnalyst] Starting binary analysis...")
 
     # 获取二进制路径
     binary_path = state.get("binary_path", "")
@@ -69,7 +68,7 @@ def pwn_analyst_node(state: Dict) -> Dict:
                 break
 
     if not binary_path:
-        print("[PwnAnalyst] No binary path found")
+        logger.info("[PwnAnalyst] No binary path found")
         return {
             "pwn_analysis": {"status": "no_binary"},
             "execution_steps": state.get("execution_steps", 0) + 1
@@ -107,7 +106,7 @@ def pwn_analyst_node(state: Dict) -> Dict:
         # LLM深度分析
         llm_analysis = _llm_pwn_analysis(binary_info_dict, vulns_list, state)
 
-        print(f"[PwnAnalyst] Analysis complete: {binary_info.arch}, {len(vulns_list)} vulnerabilities found")
+        logger.info(f"[PwnAnalyst] Analysis complete: {binary_info.arch}, {len(vulns_list)} vulnerabilities found")
 
         return {
             "binary_info": binary_info_dict,
@@ -122,14 +121,14 @@ def pwn_analyst_node(state: Dict) -> Dict:
         }
 
     except FileNotFoundError as e:
-        print(f"[PwnAnalyst] Binary not found: {e}")
+        logger.info(f"[PwnAnalyst] Binary not found: {e}")
         return {
             "pwn_analysis": {"status": "error", "error": str(e)},
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
             "execution_steps": state.get("execution_steps", 0) + 1
         }
     except Exception as e:
-        print(f"[PwnAnalyst] Analysis failed: {e}")
+        logger.warning(f"[PwnAnalyst] Analysis failed: {e}")
         return {
             "pwn_analysis": {"status": "error", "error": str(e)},
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
@@ -155,7 +154,7 @@ def pwn_exploiter_node(state: Dict) -> Dict:
         3. AI生成exploit脚本
         4. 尝试执行
     """
-    print("[PwnExploiter] Building exploit with AI...")
+    logger.info("[PwnExploiter] Building exploit with AI...")
 
     binary_info_dict = state.get("binary_info", {})
     vulnerabilities = state.get("vulnerabilities", [])
@@ -177,13 +176,13 @@ def pwn_exploiter_node(state: Dict) -> Dict:
     # AI决策exploit策略
     exploit_strategy = _ai_decide_exploit_strategy(binary_info_dict, target_vuln, state)
 
-    print(f"[PwnExploiter] AI策略: {exploit_strategy.get('exploit_method', 'unknown')}")
+    logger.info(f"[PwnExploiter] AI策略: {exploit_strategy.get('exploit_method', 'unknown')}")
 
     # AI生成exploit脚本
     if exploit_strategy.get("exploit_method") != "manual_required":
         script = _ai_generate_exploit_script(binary_info_dict, target_vuln, exploit_strategy)
 
-        print(f"[PwnExploiter] AI生成脚本 ({len(script)} bytes)")
+        logger.info(f"[PwnExploiter] AI生成脚本 ({len(script)} bytes)")
 
         return {
             "exploit_script": script,
@@ -191,7 +190,7 @@ def pwn_exploiter_node(state: Dict) -> Dict:
             "execution_steps": state.get("execution_steps", 0) + 1
         }
 
-    print(f"[PwnExploiter] 需要手动exploit: {exploit_strategy.get('reason', '')}")
+    logger.info(f"[PwnExploiter] 需要手动exploit: {exploit_strategy.get('reason', '')}")
 
     return {
         "exploit_info": exploit_strategy,
@@ -489,11 +488,11 @@ def _ai_decide_exploit_strategy(binary_info: Dict, vuln: Dict, state: Dict) -> D
             response = response.split("```json")[1].split("```")[0]
 
         result = json.loads(response.strip())
-        print(f"[AI Exploit策略] {result.get('exploit_method')} - {result.get('reason', '')}")
+        logger.info(f"[AI Exploit策略] {result.get('exploit_method')} - {result.get('reason', '')}")
         return result
 
     except Exception as e:
-        print(f"[AI Exploit策略] 失败: {e}")
+        logger.warning(f"[AI Exploit策略] 失败: {e}")
         # 降级到硬编码策略
         if protections.get("Canary"):
             return {"exploit_method": "blocked", "status": "blocked", "reason": "Stack canary enabled"}
@@ -545,6 +544,6 @@ def _ai_generate_exploit_script(binary_info: Dict, vuln: Dict, strategy: Dict) -
         return script.strip()
 
     except Exception as e:
-        print(f"[AI脚本生成] 失败: {e}")
+        logger.warning(f"[AI脚本生成] 失败: {e}")
         # 降级到模板
         return _generate_exploit_script(binary_info, strategy)

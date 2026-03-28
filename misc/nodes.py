@@ -9,8 +9,8 @@ Misc分析节点
 
 import json
 import os
+import re
 from typing import Dict, List, Any
-from state import CTFState
 from llm_client import llm_client
 from config import config
 from logger import get_logger
@@ -45,7 +45,7 @@ def misc_analyst_node(state: Dict) -> Dict:
         2. 检测隐写术
         3. 分析元数据
     """
-    print("[MiscAnalyst] Starting file analysis...")
+    logger.info("[MiscAnalyst] Starting file analysis...")
 
     # 获取文件路径
     file_path = state.get("file_path", "") or state.get("misc_file", "")
@@ -59,7 +59,7 @@ def misc_analyst_node(state: Dict) -> Dict:
                 break
 
     if not file_path or not os.path.exists(file_path):
-        print("[MiscAnalyst] No valid file path found")
+        logger.info("[MiscAnalyst] No valid file path found")
         return {
             "misc_analysis": {"status": "no_file"},
             "execution_steps": state.get("execution_steps", 0) + 1
@@ -108,7 +108,7 @@ def misc_analyst_node(state: Dict) -> Dict:
         # LLM分析
         llm_insight = _llm_misc_analysis(file_info, steg_results, embedded, state)
 
-        print(f"[MiscAnalyst] Analysis complete: {file_info.file_type.value}")
+        logger.info(f"[MiscAnalyst] Analysis complete: {file_info.file_type.value}")
 
         return {
             "file_info": {
@@ -130,7 +130,7 @@ def misc_analyst_node(state: Dict) -> Dict:
         }
 
     except Exception as e:
-        print(f"[MiscAnalyst] Analysis failed: {e}")
+        logger.warning(f"[MiscAnalyst] Analysis failed: {e}")
         return {
             "misc_analysis": {"status": "error", "error": str(e)},
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
@@ -155,7 +155,7 @@ def misc_extractor_node(state: Dict) -> Dict:
         2. 尝试各种解码
         3. 验证提取结果
     """
-    print("[MiscExtractor] Extracting hidden data...")
+    logger.info("[MiscExtractor] Extracting hidden data...")
 
     misc_analysis = state.get("misc_analysis", {})
     if misc_analysis.get("status") != "analyzed":
@@ -228,7 +228,7 @@ def misc_extractor_node(state: Dict) -> Dict:
     # 去重
     potential_flags = list(set(potential_flags))
 
-    print(f"[MiscExtractor] Extracted {len(extracted)} items, {len(potential_flags)} potential flags")
+    logger.info(f"[MiscExtractor] Extracted {len(extracted)} items, {len(potential_flags)} potential flags")
 
     return {
         "extracted_data": extracted,
@@ -305,4 +305,3 @@ Analyze this file for CTF miscellaneous challenges.
         return f"LLM analysis failed: {str(e)}"
 
 
-import re  # Add this import at the top

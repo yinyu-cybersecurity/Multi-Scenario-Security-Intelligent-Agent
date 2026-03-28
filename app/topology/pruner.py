@@ -1,9 +1,27 @@
 # topology/pruner.py - 剪枝引擎
 
 
+import os
 import networkx as nx
 from typing import Dict, List, Set, Optional
 from datetime import datetime
+from logger import get_logger
+
+logger = get_logger("Pruner")
+
+# 导入错误处理模块
+try:
+    from self_correction import (
+        with_self_correction, self_correction_manager,
+        ErrorSeverity, ErrorType
+    )
+    SELF_CORRECTION_AVAILABLE = True
+except ImportError:
+    SELF_CORRECTION_AVAILABLE = False
+    def with_self_correction(node_name):
+        def decorator(func):
+            return func
+        return decorator
 
 
 class TopologyPruner:
@@ -48,52 +66,64 @@ class TopologyPruner:
         """
         G = graph.copy()
 
-        for node, status in node_status.items():
-            if status in self.config["dead_status_codes"]:
-                # 记录到降权列表
-                self.deprioritized_nodes[node] = {
-                    "status": status,
-                    "reason": f"HTTP {status}",
-                    "timestamp": datetime.now().isoformat(),
-                    "can_backtrack": True
-                }
+        try:
+            for node, status in node_status.items():
+                if status in self.config["dead_status_codes"]:
+                    # 记录到降权列表
+                    self.deprioritized_nodes[node] = {
+                        "status": status,
+                        "reason": f"HTTP {status}",
+                        "timestamp": datetime.now().isoformat(),
+                        "can_backtrack": True
+                    }
 
-                # 同步到分析器
-                if analyzer:
-                    analyzer.mark_node_deprioritized(node, f"HTTP {status}")
+                    # 同步到分析器
+                    if analyzer:
+                        analyzer.mark_node_deprioritized(node, f"HTTP {status}")
 
-                # 检查尝试次数，决定是否真正删除
-                attempts = analyzer.node_attempts.get(node, 0) if analyzer else 0
-                if attempts >= self.config["max_attempts"]:
-                    # 超过最大尝试次数，从图中移除
-                    if node in G:
-                        try:
-                            descendants = list(nx.descendants(G, node))
-                            G.remove_nodes_from([node] + descendants)
-                            self.removed_nodes[node] = {
-                                "status": status,
-                                "descendants": descendants,
-                                "timestamp": datetime.now().isoformat()
-                            }
-                            print(f"[Pruner] 删除节点 {node} (status={status}, attempts={attempts}) 及其 {len(descendants)} 个子节点")
-                        except nx.NetworkXError:
-                            pass
+                    # 检查尝试次数，决定是否真正删除
+                    attempts = 0
+                    if analyzer and hasattr(analyzer, 'node_attempts'):
+                        attempts = analyzer.node_attempts.get(node, 0)
+                    if attempts >= self.config["max_attempts"]:
+                        # 超过最大尝试次数，从图中移除
+                        if node in G:
+                            try:
+                                descendants = list(nx.descendants(G, node))
+                                G.remove_nodes_from([node] + descendants)
+                                self.removed_nodes[node] = {
+                                    "status": status,
+                                    "descendants": descendants,
+                                    "timestamp": datetime.now().isoformat()
+                                }
+                                logger.info(f"删除节点 {node} (status={status}, attempts={attempts}) 及其 {len(descendants)} 个子节点")
+                            except nx.NetworkXError:
+                                pass
+                    else:
+                        # 降权但保留
+                        logger.info(f"降权节点 {node} (status={status}, attempts={attempts})")
                 else:
-                    # 降权但保留
-                    print(f"[Pruner] 降权节点 {node} (status={status}, attempts={attempts})")
-            else:
-                # 状态码正常（如200），但有攻击失败的情况
-                # 检查分析器中是否有攻击失败的记录
-                if analyzer and analyzer.node_status.get(node) == "deprioritized":
-                    # 节点可访问但攻击失败 -> 降权保留
-                    if node not in self.deprioritized_nodes:
-                        self.deprioritized_nodes[node] = {
-                            "status": status,
-                            "reason": "attack_failed_but_accessible",
-                            "timestamp": datetime.now().isoformat(),
-                            "can_backtrack": True,
-                            "has_attack_point": True  # 标记有疑似攻击点
-                        }
+                    # 状态码正常（如200），但有攻击失败的情况
+                    # 检查分析器中是否有攻击失败的记录
+                    if analyzer and hasattr(analyzer, 'node_status') and analyzer.node_status.get(node) == "deprioritized":
+                        # 节点可访问但攻击失败 -> 降权保留
+                        if node not in self.deprioritized_nodes:
+                            self.deprioritized_nodes[node] = {
+                                "status": status,
+                                "reason": "attack_failed_but_accessible",
+                                "timestamp": datetime.now().isoformat(),
+                                "can_backtrack": True,
+                                "has_attack_point": True  # 标记有疑似攻击点
+                            }
+        except Exception as e:
+            if SELF_CORRECTION_AVAILABLE:
+                self_correction_manager.record_error(
+                    node="topology_pruner",
+                    error_type=ErrorType.EXECUTION_ERROR,
+                    error_message=f"prune_by_status 失败: {e}",
+                    severity=ErrorSeverity.MEDIUM
+                )
+            logger.warning(f"prune_by_status 异常: {e}")
 
         return G
 
@@ -103,10 +133,17 @@ class TopologyPruner:
         """
         G = graph.copy()
 
-        # 计算所有节点到根节点的距离
         try:
+            # 计算所有节点到根节点的距离
             lengths = nx.shortest_path_length(G, root)
-        except Exception:
+        except Exception as e:
+            if SELF_CORRECTION_AVAILABLE:
+                self_correction_manager.record_error(
+                    node="topology_pruner",
+                    error_type=ErrorType.EXECUTION_ERROR,
+                    error_message=f"prune_by_depth 计算距离失败: {e}",
+                    severity=ErrorSeverity.LOW
+                )
             return G
 
         too_deep = []
@@ -114,8 +151,18 @@ class TopologyPruner:
             if dist > self.config["max_depth"]:
                 too_deep.append(node)
 
-        G.remove_nodes_from(too_deep)
-        print(f"✂️ [Pruner] 剪枝 {len(too_deep)} 个超深节点 (>{self.config['max_depth']})")
+        try:
+            G.remove_nodes_from(too_deep)
+            logger.info(f"剪枝 {len(too_deep)} 个超深节点 (>{self.config['max_depth']})")
+        except Exception as e:
+            if SELF_CORRECTION_AVAILABLE:
+                self_correction_manager.record_error(
+                    node="topology_pruner",
+                    error_type=ErrorType.EXECUTION_ERROR,
+                    error_message=f"prune_by_depth 删除节点失败: {e}",
+                    severity=ErrorSeverity.LOW
+                )
+
         return G
 
     def prune_by_age(self, graph: nx.DiGraph, node_last_seen: Dict[str, datetime]) -> nx.DiGraph:
@@ -132,7 +179,7 @@ class TopologyPruner:
                 expired.append(node)
 
         G.remove_nodes_from(expired)
-        print(f"[Pruner] 剪枝 {len(expired)} 个过期节点")
+        logger.info(f"剪枝 {len(expired)} 个过期节点")
         return G
 
     def prune_dead_ends(self, graph: nx.DiGraph) -> nx.DiGraph:
@@ -155,6 +202,7 @@ class TopologyPruner:
 
         return G
 
+    @with_self_correction("prune_all")
     def prune_all(self, graph: nx.DiGraph, metadata: Dict,
                   analyzer: Optional['TopologyAnalyzer'] = None) -> nx.DiGraph:
         """
@@ -166,22 +214,57 @@ class TopologyPruner:
         """
         G = graph.copy()
 
-        # 1. 按状态码剪枝（降权）
-        if "node_status" in metadata:
-            G = self.prune_by_status(G, metadata["node_status"], analyzer)
+        try:
+            # 1. 按状态码剪枝（降权）
+            if "node_status" in metadata:
+                G = self.prune_by_status(G, metadata["node_status"], analyzer)
 
-        # 2. 按深度剪枝
-        if "root" in metadata:
-            G = self.prune_by_depth(G, metadata["root"])
+            # 2. 按深度剪枝
+            if "root" in metadata:
+                G = self.prune_by_depth(G, metadata["root"])
 
-        # 3. 按时间剪枝
-        if "node_last_seen" in metadata:
-            G = self.prune_by_age(G, metadata["node_last_seen"])
+            # 3. 按时间剪枝
+            if "node_last_seen" in metadata:
+                G = self.prune_by_age(G, metadata["node_last_seen"])
 
-        # 4. 剪枝死胡同
-        G = self.prune_dead_ends(G)
+            # 4. 剪枝死胡同
+            G = self.prune_dead_ends(G)
+
+            # 5. 同步状态到分析器
+            self.sync_with_analyzer(analyzer)
+
+        except Exception as e:
+            if SELF_CORRECTION_AVAILABLE:
+                self_correction_manager.record_error(
+                    node="topology_pruner",
+                    error_type=ErrorType.EXECUTION_ERROR,
+                    error_message=f"prune_all 失败: {e}",
+                    severity=ErrorSeverity.MEDIUM
+                )
+            logger.warning(f"prune_all 异常: {e}")
 
         return G
+
+    def sync_with_analyzer(self, analyzer: Optional['TopologyAnalyzer'] = None):
+        """同步降权节点状态到分析器"""
+        if not analyzer:
+            return
+
+        try:
+            for node, info in self.deprioritized_nodes.items():
+                if info.get("can_backtrack", False):
+                    if hasattr(analyzer, 'node_status'):
+                        analyzer.node_status[node] = "deprioritized"
+                    if hasattr(analyzer, 'node_priority'):
+                        analyzer.node_priority[node] = 0.3  # 降权但保留
+        except Exception as e:
+            if SELF_CORRECTION_AVAILABLE:
+                self_correction_manager.record_error(
+                    node="topology_pruner",
+                    error_type=ErrorType.EXECUTION_ERROR,
+                    error_message=f"同步状态失败: {e}",
+                    severity=ErrorSeverity.LOW
+                )
 
     # =========================================================================
     # 回退机制
@@ -204,7 +287,9 @@ class TopologyPruner:
         for node, info in self.deprioritized_nodes.items():
             if info.get("can_backtrack", False):
                 # 检查尝试次数
-                attempts = analyzer.node_attempts.get(node, 0) if analyzer else 0
+                attempts = 0
+                if analyzer and hasattr(analyzer, 'node_attempts'):
+                    attempts = analyzer.node_attempts.get(node, 0)
                 if attempts < self.config["max_attempts"]:
                     candidates.append(node)
 
@@ -235,10 +320,12 @@ class TopologyPruner:
 
             # 同步分析器状态
             if analyzer:
-                analyzer.node_status[node] = "pending"
-                analyzer.node_priority[node] = 0.5  # 恢复默认优先级
+                if hasattr(analyzer, 'node_status'):
+                    analyzer.node_status[node] = "pending"
+                if hasattr(analyzer, 'node_priority'):
+                    analyzer.node_priority[node] = 0.5  # 恢复默认优先级
 
-            print(f"[Pruner] 回退节点 {node}，原因: {info.get('reason', 'unknown')}")
+            logger.info(f"回退节点 {node}，原因: {info.get('reason', 'unknown')}")
             return True
 
         return False
