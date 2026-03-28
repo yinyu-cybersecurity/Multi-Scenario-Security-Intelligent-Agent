@@ -140,10 +140,89 @@ class InternalNetworkOrchestrator:
         return result
 
     def _run_privilege_escalation(self, state: Dict) -> Dict:
-        """权限提升"""
-        # TODO: 实现权限提升逻辑
+        """
+        权限提升 - AI驱动的提权策略
+
+        工作流程:
+        1. 检查当前权限状态
+        2. AI分析系统信息选择提权方法
+        3. 执行提权尝试
+        4. 提权成功后进行凭据转储
+        """
+        from .nodes import privilege_escalation_node
+        from logger import get_logger
+
+        logger = get_logger("InternalNetwork")
+
+        # 获取会话信息
+        active_sessions = state.get("active_sessions", [])
+        shell_session = state.get("shell_session", {})
+        credentials = state.get("credentials", [])
+
+        if not active_sessions and not shell_session.get("session_id"):
+            logger.warning("[PrivEsc] 无可用会话进行提权")
+            self.phase = InternalPhase.COMPLETE
+            return {
+                "error": "无可用会话进行提权",
+                "current_compromise_phase": "complete"
+            }
+
+        # 检查是否已有管理员权限
+        session = active_sessions[0] if active_sessions else shell_session
+        is_admin = session.get("is_admin", False)
+
+        if is_admin:
+            logger.info("[PrivEsc] 已有管理员权限，跳过提权")
+            # 尝试凭据转储
+            from .nodes import _ai_credential_dump
+            result = _ai_credential_dump(state, session, active_sessions, credentials, shell_session)
+
+            self.phase = InternalPhase.COMPLETE
+            return {
+                **result,
+                "current_compromise_phase": "complete"
+            }
+
+        # 调用AI驱动的提权节点
+        logger.info("[PrivEsc] 执行AI驱动的权限提升...")
+        result = privilege_escalation_node(state)
+
+        if result.get("error"):
+            logger.warning(f"[PrivEsc] 提权失败: {result.get('error')}")
+
+            # AI决策下一步
+            failure_weighted_score = state.get("failure_weighted_score", 0) + 1.0
+            if failure_weighted_score > 3:
+                # 失败次数过多，放弃提权
+                self.phase = InternalPhase.COMPLETE
+                return {
+                    "error": "提权尝试次数过多，跳过此阶段",
+                    "failure_weighted_score": failure_weighted_score,
+                    "current_compromise_phase": "complete"
+                }
+
+            # 保留失败结果，等待重试
+            return {
+                "error": result.get("error"),
+                "failure_weighted_score": failure_weighted_score
+            }
+
+        # 提权成功
+        logger.info("[PrivEsc] 权限提升成功！")
+
+        # 更新会话状态
+        if active_sessions:
+            active_sessions[0]["is_admin"] = True
+            active_sessions[0]["is_system"] = result.get("is_system", False)
+
         self.phase = InternalPhase.COMPLETE
-        return {"message": "权限提升阶段待实现"}
+
+        return {
+            "active_sessions": result.get("active_sessions", active_sessions),
+            "credentials": result.get("credentials", credentials),
+            "current_compromise_phase": "complete",
+            "execution_steps": state.get("execution_steps", 0) + 1
+        }
 
     def get_context(self, state: Dict) -> InternalNetworkContext:
         """获取当前上下文"""

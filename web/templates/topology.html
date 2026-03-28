@@ -4,10 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CTF-Agent 拓扑图</title>
-    <link href="https://cdn.jsdelivr.net/npm/element-plus@2.4.0/dist/index.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.prod.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/element-plus@2.4.0/dist/index.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <!-- 使用国内 CDN 加速 -->
+    <link href="https://cdn.bootcdn.net/ajax/libs/element-plus/2.4.0/index.css" rel="stylesheet">
+    <script src="https://cdn.bootcdn.net/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/element-plus/2.4.0/index.full.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/d3/7.8.5/d3.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, 'Microsoft YaHei', sans-serif; background: #f0f2f5; color: #333; min-height: 100vh; padding-top: 56px; }
@@ -238,7 +239,8 @@
                 }
 
                 function getNodeColor(node) {
-                    const status = nodeStatuses.value[node.id];
+                    const statusInfo = nodeStatuses.value[node.id];
+                    const status = statusInfo?.status || 'pending';
                     if (status === 'success') return '#52c41a';
                     if (status === 'failed') return '#ff7875';
                     if (status === 'deprioritized') return '#d9d9d9';

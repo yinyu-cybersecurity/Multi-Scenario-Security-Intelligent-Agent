@@ -151,7 +151,7 @@ docs/IMPLEMENTATION_PLAN.md
 docs/TOOL_OUTPUT_PLAN.md
 docs/TOOL_OUTPUT_FIX_PLAN.md
 靶机wp/
-writeups/
+# writeups/  # 已注释，data/writeups 需要上传
 solutions/
 *.wp.md
 

@@ -60,7 +60,7 @@ class FFUFTool(CommandLineTool):
                 "type": "str",
                 "description": "字典文件路径",
                 "required": False,
-                "default": "/app/thirdparty/SecLists/Discovery/Web-Content/common.txt"
+                "default": "/app/data/security_resources/SecLists-master/Discovery/Web-Content/common.txt"
             },
             "mode": {
                 "type": "str",
@@ -100,7 +100,7 @@ class FFUFTool(CommandLineTool):
         cmd = [
             "ffuf",
             "-u", url,
-            "-w", params.get("wordlist", "/app/thirdparty/SecLists/Discovery/Web-Content/common.txt"),
+            "-w", params.get("wordlist", "/app/data/security_resources/SecLists-master/Discovery/Web-Content/common.txt"),
             "-t", str(params.get("threads", 40)),
             "-mc", params.get("match_status", "200,301,302,403"),
             "-fs", "0",  # 过滤大小为 0 的响应

@@ -4,10 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CTF-Agent 控制台</title>
-    <link href="https://cdn.jsdelivr.net/npm/element-plus@2.4.0/dist/index.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.prod.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/element-plus@2.4.0/dist/index.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <!-- 使用国内 CDN 加速 -->
+    <link href="https://cdn.bootcdn.net/ajax/libs/element-plus/2.4.0/index.css" rel="stylesheet">
+    <script src="https://cdn.bootcdn.net/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/element-plus/2.4.0/index.full.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/d3/7.8.5/d3.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, 'Microsoft YaHei', sans-serif; background: #f0f2f5; color: #333; min-height: 100vh; padding-top: 56px; }
@@ -662,12 +663,14 @@
                                 }
                                 // 添加日志
                                 logs.value.push(data);
-                                // 限制日志数量，保留最新500条
-                                if (logs.value.length > 500) {
-                                    logs.value = logs.value.slice(-500);
+                                // 限制日志数量，保留最新300条（减少内存和渲染压力）
+                                if (logs.value.length > 300) {
+                                    logs.value = logs.value.slice(-300);
                                 }
-                                // 自动滚动到底部
-                                scrollToLogBottom();
+                                // 自动滚动到底部（节流）
+                                if (autoScroll.value) {
+                                    requestAnimationFrame(() => scrollToLogBottom());
+                                }
                             } catch (e) {}
                         };
 
@@ -756,7 +759,21 @@
                     if (tasks.value[currentTaskId.value]?.status === 'running') pollTimer = setTimeout(pollTaskStatus, 2000);
                 }
 
-                function refreshAll() { fetchGraph(); fetchTasks(); fetchSystemStatus(); fetchTools(); fetchLLMStatus(); fetchCompressionStats(); fetchRecoveryStats(); fetchPerfSummary(); fetchPerfDetails(); fetchSlowOps(); }
+                async function refreshAll() {
+                    // 并行请求所有数据，减少总等待时间
+                    await Promise.all([
+                        fetchGraph(),
+                        fetchTasks(),
+                        fetchSystemStatus(),
+                        fetchTools(),
+                        fetchLLMStatus(),
+                        fetchCompressionStats(),
+                        fetchRecoveryStats(),
+                        fetchPerfSummary(),
+                        fetchPerfDetails(),
+                        fetchSlowOps()
+                    ]);
+                }
 
                 // 任务操作函数
                 async function cancelTask(id) {
@@ -929,16 +946,29 @@
                 }
 
                 onMounted(() => {
+                    // 初始加载（并行请求）
                     refreshAll();
+
+                    // 轮询优化：分优先级，不同频率
+                    // 高优先级：系统状态、任务状态（5秒）
                     setInterval(() => {
                         fetchSystemStatus();
                         fetchLLMStatus();
-                        fetchRecoveryStats();
-                        fetchSystemMetrics();
+                    }, 5000);
+
+                    // 中优先级：性能指标（10秒）
+                    setInterval(() => {
                         fetchPerfSummary();
                         fetchPerfDetails();
+                    }, 10000);
+
+                    // 低优先级：系统指标、慢操作（30秒）
+                    setInterval(() => {
+                        fetchSystemMetrics();
                         fetchSlowOps();
-                    }, 3000);
+                        fetchRecoveryStats();
+                    }, 30000);
+
                     window.addEventListener('resize', () => { renderGraph(); renderCharts(); });
                 });
                 return {

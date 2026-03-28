@@ -22,15 +22,15 @@ def _get_resource_paths() -> Tuple[str, str]:
     # 尝试从配置读取
     try:
         from config import config
-        payloads_path = getattr(config, 'PAYLOADS_PATH', '/app/thirdparty/PayloadsAllTheThings')
-        seclists_path = getattr(config, 'SECLISTS_PATH', '/app/thirdparty/SecLists')
+        payloads_path = getattr(config, 'PAYLOADS_PATH', '/app/data/security_resources/PayloadsAllTheThings-4.2')
+        seclists_path = getattr(config, 'SECLISTS_PATH', '/app/data/security_resources/SecLists-master')
         return payloads_path, seclists_path
     except ImportError:
         pass
 
     # 环境变量
-    payloads_path = os.environ.get('PAYLOADS_PATH', '/app/thirdparty/PayloadsAllTheThings')
-    seclists_path = os.environ.get('SECLISTS_PATH', '/app/thirdparty/SecLists')
+    payloads_path = os.environ.get('PAYLOADS_PATH', '/app/data/security_resources/PayloadsAllTheThings-4.2')
+    seclists_path = os.environ.get('SECLISTS_PATH', '/app/data/security_resources/SecLists-master')
 
     return payloads_path, seclists_path
 

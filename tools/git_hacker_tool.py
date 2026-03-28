@@ -24,8 +24,8 @@ class GitHackerTool(CommandLineTool):
         super().__init__(cmd)
 
         # 直接复制模式：设置脚本路径
-        docker_path = "/app/thirdparty/Githacker/GitHack.py"
-        local_path = os.path.join(os.getcwd(), "thirdparty", "Githacker", "GitHack.py")
+        docker_path = "/app/data/security_resources/Githacker/GitHack.py"
+        local_path = os.path.join(os.getcwd(), "data", "security_resources", "Githacker", "GitHack.py")
         self.script_path = docker_path if os.path.exists(docker_path) else local_path
         self.timeout = 120
 

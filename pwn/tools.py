@@ -644,7 +644,7 @@ context(arch=arch, os='linux', log_level='debug')
 protections = {protections}
 print("[*] Protections:", protections)
 
-# Offset (to be calculated)
+# Offset (calculated from analysis or cyclic pattern)
 offset = {offset}
 print("[*] Offset:", offset)
 
@@ -652,8 +652,19 @@ print("[*] Offset:", offset)
 elf = ELF(binary_path)
 p = process(binary_path)
 
-# TODO: Add exploit payload here
+# Exploit payload based on vulnerability type: {vuln_type}
+# For buffer_overflow: overflow buffer + return address
+# For format_string: use fmtstr_payload(offset, writes)
+# For ROP: use ROP(elf) to find gadgets
+
+# Basic payload template
 payload = b'A' * offset
+
+# Add return address or shellcode based on analysis
+# Example for ret2win: payload += p32(elf.symbols['win'])
+# Example for ROP: rop = ROP(elf); rop.call(system, [bin_sh])
+
+print("[*] Payload length:", len(payload))
 
 # Send payload
 p.sendline(payload)

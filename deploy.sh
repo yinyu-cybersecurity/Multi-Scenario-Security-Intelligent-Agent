@@ -70,7 +70,7 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 # Create necessary directories
-mkdir -p data/tool_outputs data/tool_raw_logs .memory log thirdparty
+mkdir -p data/tool_outputs data/tool_raw_logs data/security_resources .memory log thirdparty
 
 # Create tool directories (镜像路径，本地部署也需要)
 mkdir -p /opt/tools/potato /opt/tools/ad /opt/tools/linux /opt/tools/windows /opt/frp
@@ -96,8 +96,8 @@ wget -q -O thirdparty/JNDIExploit.jar https://github.com/exploitblizzard/JNDIExp
 git clone --depth 1 https://github.com/ambionics/phpggc.git thirdparty/phpggc 2>/dev/null || true
 
 # Payload集合
-git clone --depth 1 https://github.com/swisskyrepo/PayloadsAllTheThings.git thirdparty/PayloadsAllTheThings 2>/dev/null || true
-git clone --depth 1 https://github.com/danielmiessler/SecLists.git thirdparty/SecLists 2>/dev/null || true
+git clone --depth 1 https://github.com/swisskyrepo/PayloadsAllTheThings.git data/security_resources/PayloadsAllTheThings 2>/dev/null || true
+git clone --depth 1 https://github.com/danielmiessler/SecLists.git data/security_resources/SecLists 2>/dev/null || true
 
 # JWT工具
 git clone --depth 1 https://github.com/ticarpi/jwt_tool.git thirdparty/jwt_tool 2>/dev/null || true

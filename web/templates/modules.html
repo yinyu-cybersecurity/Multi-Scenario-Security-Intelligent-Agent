@@ -4,9 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CTF-Agent 模块管理</title>
-    <link href="https://cdn.jsdelivr.net/npm/element-plus@2.4.0/dist/index.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.prod.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/element-plus@2.4.0/dist/index.full.min.js"></script>
+    <!-- 使用国内 CDN 加速 -->
+    <link href="https://cdn.bootcdn.net/ajax/libs/element-plus/2.4.0/index.css" rel="stylesheet">
+    <script src="https://cdn.bootcdn.net/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/element-plus/2.4.0/index.full.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, 'Microsoft YaHei', sans-serif; background: #f0f2f5; color: #333; min-height: 100vh; padding-top: 56px; }
@@ -181,7 +182,11 @@
                                 </div>
                                 <div class="config-item">
                                     <div class="config-label">LLM API 密钥</div>
-                                    <el-input v-model="config.LLM_API_KEY" size="small" type="password" show-password />
+                                    <div style="display: flex; gap: 8px; align-items: center;">
+                                        <el-input v-model="config.LLM_API_KEY" size="small" type="password" show-password style="flex: 1;" :placeholder="apiKeyPlaceholder" />
+                                        <el-button size="small" @click="clearApiKey" v-if="hasApiKey">清除</el-button>
+                                    </div>
+                                    <div style="font-size: 11px; color: #999; margin-top: 4px;" v-if="hasApiKey">当前已设置密钥（显示为脱敏值，仅输入新值时更新）</div>
                                 </div>
                                 <div class="config-item">
                                     <div class="config-label">分析模型</div>
@@ -263,6 +268,8 @@
                 const modules = ref({});
                 const tools = ref([]);
                 const config = ref({ LLM_BASE_URL: '', LLM_API_KEY: '', ANALYST_MODEL: '', LOCAL_PUBLIC_IP: '', HTTP_SERVER_PORT: 8000, FRP_SERVER_PORT: 7000 });
+                const originalApiKey = ref('');  // 存储原始脱敏值
+                const hasApiKey = ref(false);    // 是否已设置 API key
                 const graphNodes = ref([]);
                 const detailNode = ref(null);
                 const memorySavings = ref(0);
@@ -277,6 +284,10 @@
                         nodes: mods.reduce((sum, m) => sum + (m.nodes?.length || 0), 0),
                         memorySavings: memorySavings.value
                     };
+                });
+
+                const apiKeyPlaceholder = computed(() => {
+                    return hasApiKey.value ? '输入新密钥以更新' : '输入 API 密钥';
                 });
 
                 async function fetchModules() {
@@ -294,6 +305,13 @@
                 async function fetchConfig() {
                     try {
                         const data = await (await fetch('/fisher_ctf_agent/api/system/config')).json();
+                        // 保存原始脱敏 API key
+                        originalApiKey.value = data.LLM_API_KEY || '';
+                        hasApiKey.value = !!(data.LLM_API_KEY && data.LLM_API_KEY.startsWith('***'));
+                        // 如果是脱敏值，清空输入框，让用户输入新值
+                        if (hasApiKey.value) {
+                            data.LLM_API_KEY = '';
+                        }
                         Object.assign(config.value, data);
                     } catch (e) { console.error(e); }
                 }
@@ -366,15 +384,36 @@
                 }
                 async function saveConfig() {
                     try {
-                        await fetch('/fisher_ctf_agent/api/system/config', {
+                        const dataToSend = { ...config.value };
+
+                        // 处理 API Key：如果用户没有输入新值，不发送（保留原值）
+                        if (!dataToSend.LLM_API_KEY || dataToSend.LLM_API_KEY.trim() === '') {
+                            delete dataToSend.LLM_API_KEY;
+                        }
+
+                        const resp = await fetch('/fisher_ctf_agent/api/system/config', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(config.value)
+                            body: JSON.stringify(dataToSend)
                         });
-                        ElementPlus.ElMessage.success('配置已保存');
+                        const result = await resp.json();
+
+                        if (result.success) {
+                            ElementPlus.ElMessage.success('配置已保存');
+                            // 重新加载配置
+                            fetchConfig();
+                        } else {
+                            ElementPlus.ElMessage.error(result.error || '保存失败');
+                        }
                     } catch (e) {
                         ElementPlus.ElMessage.error('保存失败');
                     }
+                }
+
+                function clearApiKey() {
+                    // 发送空字符串清除 API key
+                    config.value.LLM_API_KEY = '';
+                    hasApiKey.value = false;
                 }
 
                 function showNodeDetail(node) {
@@ -396,7 +435,7 @@
                     fetchNodeGroups();
                 });
 
-                return { view, modules, tools, config, graphNodes, stats, detailNode, memorySavings, nodeGroups, toggleModule, toggleTool, toggleNode, toggleAllNodes, toggleAllTools, saveConfig, showNodeDetail };
+                return { view, modules, tools, config, graphNodes, stats, detailNode, memorySavings, nodeGroups, toggleModule, toggleTool, toggleNode, toggleAllNodes, toggleAllTools, saveConfig, showNodeDetail, hasApiKey, clearApiKey, apiKeyPlaceholder };
             }
         });
         app.use(ElementPlus).mount('#app');

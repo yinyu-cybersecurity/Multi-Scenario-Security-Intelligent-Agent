@@ -651,6 +651,10 @@ def run_task(task_id, target_url):
                     "site_topology": state.get("site_topology", {}),
                     "critical_nodes": state.get("critical_nodes", []),
                     "topology_priority": state.get("topology_priority", []),
+                    # 节点状态信息（用于拓扑图显示）
+                    "node_statuses": state.get("node_attack_status", {}),
+                    # 已访问的URL列表（用于拓扑图显示）
+                    "visited_urls": state.get("visited_urls", []),
                     # 云安全状态
                     "cloud_provider": state.get("cloud_provider", ""),
                     "cloud_phase": state.get("cloud_phase", ""),
@@ -813,8 +817,24 @@ def api_system_status():
         print(f"[API] Failed to get session count: {e}")
         active_sessions = 0
 
+    # 检测LLM连接状态
+    llm_connected = False
+    try:
+        from llm_client import llm_client
+        from config import config
+        # 尝试简单的连接测试
+        if hasattr(llm_client, 'test_connection'):
+            llm_connected = llm_client.test_connection()
+        elif hasattr(config, 'OPENAI_API_KEY') and config.OPENAI_API_KEY:
+            llm_connected = True  # 有API key就认为连接可用
+        else:
+            llm_connected = bool(config.ANTHROPIC_API_KEY or config.OPENAI_API_KEY)
+    except Exception as e:
+        print(f"[API] LLM connection check failed: {e}")
+        llm_connected = False
+
     return jsonify({
-        "llm_connected": True,  # TODO: 实际检测
+        "llm_connected": llm_connected,
         "tools_loaded": tools_loaded,
         "active_sessions": active_sessions,
         "start_time": system_status["start_time"],
@@ -1933,7 +1953,43 @@ def api_topology_statuses(task_id):
         return jsonify({"error": "Task not found"}), 404
 
     result = task_results.get(task_id, {})
-    node_statuses = result.get("node_statuses", {})
+
+    # 获取拓扑数据
+    topology = result.get("site_topology", {})
+    node_attack_status = result.get("node_statuses", {})
+    visited_urls = result.get("visited_urls", [])
+
+    # 构建节点状态信息
+    # 将 node_attack_status 的格式转换为前端期望的格式
+    node_statuses = {}
+    all_nodes = set(topology.keys())
+    for targets in topology.values():
+        all_nodes.update(targets)
+
+    for node in all_nodes:
+        # 检查节点是否有攻击状态
+        attack_status = node_attack_status.get(node, {})
+
+        # 转换状态值
+        raw_status = attack_status.get("status", "")
+        if raw_status == "success":
+            status = "success"
+        elif raw_status == "abandoned":
+            status = "failed"
+        elif raw_status == "active":
+            status = "visited"
+        elif node in visited_urls:
+            status = "visited"
+        else:
+            status = "pending"
+
+        node_statuses[node] = {
+            "status": status,
+            "attempts": attack_status.get("attempt_count", 0),
+            "priority": 0.5,
+            "last_result": "",
+            "metadata": {}
+        }
 
     return jsonify({
         "statuses": node_statuses,
@@ -2006,7 +2062,11 @@ def api_update_config():
         if 'LLM_BASE_URL' in data:
             config.LLM_BASE_URL = data['LLM_BASE_URL']
         if 'LLM_API_KEY' in data:
-            config.LLM_API_KEY = data['LLM_API_KEY']
+            # 空字符串表示清除
+            if data['LLM_API_KEY'] == '':
+                config.LLM_API_KEY = ''
+            else:
+                config.LLM_API_KEY = data['LLM_API_KEY']
         if 'ANALYST_MODEL' in data:
             config.ANALYST_MODEL = data['ANALYST_MODEL']
         if 'LOCAL_PUBLIC_IP' in data:
