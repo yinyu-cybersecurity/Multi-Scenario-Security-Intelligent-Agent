@@ -118,7 +118,7 @@ COPY thirdparty/XXEinjector /app/thirdparty/xxe-injector
 COPY thirdparty/php_filter_chain_generator /app/thirdparty/php_filter_chain
 COPY thirdparty/PetitPotam /app/thirdparty/PetitPotam
 COPY thirdparty/Ghostcat /app/thirdparty/ajpshooter
-COPY data/security_resources/Githacker /app/data/security_resources/Githacker
+COPY thirdparty/Githacker /app/thirdparty/Githacker
 COPY thirdparty/marshalsec /app/thirdparty/marshalsec
 COPY thirdparty/fscan_windows /opt/tools/windows/fscan
 COPY thirdparty/ysoserial/ysoserial-all.jar /app/thirdparty/ysoserial.jar
