@@ -41,6 +41,13 @@ try:
 except ImportError:
     node_control = None
 
+# 导入任务取消管理器
+try:
+    from task_cancel_manager import cancel_manager, TaskCancelledError
+except ImportError:
+    cancel_manager = None
+    TaskCancelledError = None
+
 # =============================================================================
 # Flask 应用配置
 # =============================================================================
@@ -627,6 +634,10 @@ def run_task(task_id, target_url):
         # 使用线程局部存储设置当前任务ID（线程安全）
         set_current_task_id(task_id)
 
+        # 设置取消管理器的当前任务ID
+        if cancel_manager:
+            cancel_manager.set_current_task(task_id)
+
         # 初始化全局日志捕获器（如果还没初始化）
         init_log_capture()
 
@@ -670,25 +681,46 @@ def run_task(task_id, target_url):
             ctf_app._node_callbacks = {}
         ctf_app._node_callbacks[task_id] = node_callback
 
-        try:
-            result = run_single_task(task_name, task_description, target_url)
+        # 取消检查函数
+        def cancel_check():
+            return cancel_manager and cancel_manager.is_cancelled(task_id)
 
-            if result.get('found_flag'):
+        try:
+            # 传入task_id和取消检查函数
+            result = run_single_task(task_name, task_description, target_url,
+                                     task_id=task_id, cancel_check=cancel_check)
+
+            # 检查是否被取消
+            if result.get('cancelled'):
+                tasks[task_id]["status"] = "cancelled"
+                log_callback(task_id, "[CANCELLED] Task stopped by user")
+                task_completion_times[task_id] = time.time()
+            elif result.get('found_flag'):
                 tasks[task_id]["status"] = "completed"
                 tasks[task_id]["found_flag"] = True
                 tasks[task_id]["final_flag"] = result.get('final_flag', result.get('found_flag'))
                 log_callback(task_id, f"[SUCCESS] FLAG: {tasks[task_id]['final_flag']}")
+                task_completion_times[task_id] = time.time()
             else:
                 tasks[task_id]["status"] = "completed"
                 log_callback(task_id, "[END] Task completed, no FLAG found")
+                task_completion_times[task_id] = time.time()
 
             tasks[task_id]["progress"] = 100
             task_results[task_id] = result
-            task_completion_times[task_id] = time.time()  # 记录完成时间
+
+        except TaskCancelledError as e:
+            # 处理取消异常
+            tasks[task_id]["status"] = "cancelled"
+            log_callback(task_id, f"[CANCELLED] Task stopped: {e}")
+            task_completion_times[task_id] = time.time()
 
         finally:
             # 清除当前线程的任务ID
             set_current_task_id(None)
+            if cancel_manager:
+                cancel_manager.set_current_task(None)
+                cancel_manager.clear_cancel(task_id)
             if hasattr(ctf_app, '_node_callbacks') and task_id in ctf_app._node_callbacks:
                 del ctf_app._node_callbacks[task_id]
 
@@ -696,10 +728,22 @@ def run_task(task_id, target_url):
         log_callback(task_id, f"[Error] Import failed: {e}")
         log_callback(task_id, "[Info] Running in simulation mode...")
         run_simulated_task(task_id, target_url)
+    except TaskCancelledError as e:
+        # 处理取消异常（从run_single_task内部抛出）
+        tasks[task_id]["status"] = "cancelled"
+        log_callback(task_id, f"[CANCELLED] Task stopped by user")
+        task_completion_times[task_id] = time.time()
     except Exception as e:
         import traceback
         log_callback(task_id, f"[Error] Task exception: {e}")
         log_callback(task_id, traceback.format_exc())
+
+        # 检查是否是取消异常
+        if TaskCancelledError and isinstance(e, TaskCancelledError):
+            tasks[task_id]["status"] = "cancelled"
+            log_callback(task_id, "[CANCELLED] Task stopped by user")
+            task_completion_times[task_id] = time.time()
+            return
 
         # 使用增强的错误处理机制
         error_result = record_task_error(
@@ -731,7 +775,12 @@ def run_simulated_task(task_id, target_url):
     nodes = ["challenge_type_detector", "recon", "analyst", "attacker", "verifier"]
 
     for node in nodes:
+        # 检查取消状态
         if tasks[task_id]["status"] == "cancelled":
+            break
+        if cancel_manager and cancel_manager.is_cancelled(task_id):
+            tasks[task_id]["status"] = "cancelled"
+            log_callback(task_id, "[CANCELLED] Task stopped by user")
             break
 
         tasks[task_id]["current_node"] = node
@@ -1111,15 +1160,22 @@ def api_task_logs(task_id):
 
 @bp.route('/api/task/<task_id>/cancel', methods=['POST'])
 def api_task_cancel(task_id):
-    """取消/终止任务"""
+    """取消/终止任务 - 真正中断执行"""
     if task_id not in tasks:
         return jsonify({"error": "Task not found"}), 404
 
     task = tasks[task_id]
     if task["status"] == "running":
-        task["status"] = "cancelled"
-        log_callback(task_id, "[System] Task cancelled by user")
-        return jsonify({"status": "cancelled", "message": "Task cancelled"})
+        # 使用取消管理器标记任务为取消
+        if cancel_manager:
+            cancel_manager.request_cancel(task_id)
+            log_callback(task_id, "[System] Task cancelled by user - interrupting execution")
+        else:
+            # 降级处理：仅设置状态
+            task["status"] = "cancelled"
+            log_callback(task_id, "[System] Task cancelled by user")
+
+        return jsonify({"status": "cancelled", "message": "Task cancellation requested"})
     else:
         return jsonify({"error": "Task is not running", "status": task["status"]}), 400
 

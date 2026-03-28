@@ -265,6 +265,7 @@ def create_disabled_wrapper(node_name: str, node_func: Callable) -> Callable:
     创建禁用检查包装器（用于无法使用装饰器的场景）
 
     集成性能监控，自动跟踪节点执行时间
+    集成任务取消检查，支持真正中断工作流
 
     Args:
         node_name: 节点名称
@@ -275,6 +276,7 @@ def create_disabled_wrapper(node_name: str, node_func: Callable) -> Callable:
     """
     @wraps(node_func)
     def wrapper(state: Dict[str, Any]) -> Dict[str, Any]:
+        # 1. 检查节点是否被禁用
         if not node_control.is_enabled(node_name):
             try:
                 from logger import node_log
@@ -290,7 +292,17 @@ def create_disabled_wrapper(node_name: str, node_func: Callable) -> Callable:
                 }]
             }
 
-        # 使用性能监控跟踪节点执行
+        # 2. 检查任务是否被取消
+        try:
+            from task_cancel_manager import cancel_manager, TaskCancelledError
+            task_id = cancel_manager.get_current_task()
+            if task_id and cancel_manager.is_cancelled(task_id):
+                logger.info(f"[{node_name}] 任务 {task_id} 已取消，跳过执行")
+                raise TaskCancelledError(task_id)
+        except ImportError:
+            pass  # 取消管理器不可用时跳过检查
+
+        # 3. 使用性能监控跟踪节点执行
         try:
             from performance import performance_monitor
             with performance_monitor.track_node(node_name):
@@ -298,6 +310,15 @@ def create_disabled_wrapper(node_name: str, node_func: Callable) -> Callable:
         except ImportError:
             # 性能监控不可用时直接执行
             return node_func(state)
+        except Exception as e:
+            # 捕获 TaskCancelledError 并向上传递
+            try:
+                from task_cancel_manager import TaskCancelledError
+                if isinstance(e, TaskCancelledError):
+                    raise  # 向上传递取消异常
+            except ImportError:
+                pass
+            raise
 
     return wrapper
 

@@ -3467,8 +3467,21 @@ def main():
                 return
 
 
-def run_single_task(task_name: str, task_description: str, target_url: str) -> dict:
-    """运行单个CTF任务"""
+def run_single_task(task_name: str, task_description: str, target_url: str,
+                    task_id: str = None, cancel_check: Callable = None) -> dict:
+    """
+    运行单个CTF任务
+
+    Args:
+        task_name: 任务名称
+        task_description: 任务描述
+        target_url: 目标URL
+        task_id: 任务ID（用于取消检查）
+        cancel_check: 取消检查函数（可选）
+
+    Returns:
+        任务结果字典
+    """
     # 重置路由守卫，避免上一个任务的状态影响
     from router import reset_route_guard
     reset_route_guard()
@@ -3476,6 +3489,14 @@ def run_single_task(task_name: str, task_description: str, target_url: str) -> d
     # 使用统一的默认状态生成器，确保字段同步
     from state_v2 import get_default_state
     initial_state: CTFState = get_default_state(task_name, task_description, target_url)
+
+    # 设置当前任务ID（用于取消检查）
+    if task_id:
+        try:
+            from task_cancel_manager import cancel_manager
+            cancel_manager.set_current_task(task_id)
+        except ImportError:
+            pass
 
     # 运行工作流
     log("\n⏳ 开始攻击...")
@@ -3485,13 +3506,66 @@ def run_single_task(task_name: str, task_description: str, target_url: str) -> d
     }
 
     try:
-        result = app.invoke(initial_state, config=config_params)
-        return result
+        # 使用 stream() 替代 invoke() 以支持取消检查
+        result = None
+        for event in app.stream(initial_state, config=config_params):
+            # 检查取消状态
+            if cancel_check and cancel_check():
+                log("⚠️ 任务被取消，停止执行")
+                return {"current_mode": "end", "found_flag": False, "cancelled": True}
+
+            if task_id:
+                try:
+                    from task_cancel_manager import cancel_manager, TaskCancelledError
+                    cancel_manager.check_and_raise(task_id)
+                except ImportError:
+                    pass
+                except TaskCancelledError as e:
+                    log(f"⚠️ 任务被取消: {e}")
+                    return {"current_mode": "end", "found_flag": False, "cancelled": True}
+
+            # 处理事件
+            if event:
+                # 提取最新状态（LangGraph stream 返回的是节点输出）
+                for node_name, node_output in event.items():
+                    if isinstance(node_output, dict):
+                        result = node_output
+
+                        # 触发节点回调（如果有）
+                        if hasattr(app, '_node_callbacks') and task_id in app._node_callbacks:
+                            try:
+                                app._node_callbacks[task_id](node_name, result)
+                            except Exception as cb_e:
+                                log(f"回调错误: {cb_e}")
+
+        # 返回最终结果
+        return result if result else {"current_mode": "end", "found_flag": False}
+
     except Exception as e:
         import traceback
+
+        # 检查是否是取消异常
+        try:
+            from task_cancel_manager import TaskCancelledError
+            if isinstance(e, TaskCancelledError):
+                log(f"⚠️ 任务被取消: {e}")
+                return {"current_mode": "end", "found_flag": False, "cancelled": True}
+        except ImportError:
+            pass
+
         log(f"❌ 工作流执行异常: {e}")
         traceback.print_exc()
         return {"current_mode": "end", "found_flag": False}
+
+    finally:
+        # 清除当前任务ID
+        if task_id:
+            try:
+                from task_cancel_manager import cancel_manager
+                cancel_manager.set_current_task(None)
+                cancel_manager.clear_cancel(task_id)
+            except ImportError:
+                pass
 
 
 if __name__ == "__main__":
