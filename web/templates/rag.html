@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG 知识库管理</title>
+    <!-- 使用国内 CDN 加速 -->
+    <link href="https://cdn.bootcdn.net/ajax/libs/element-plus/2.4.0/index.css" rel="stylesheet">
+    <script src="https://cdn.bootcdn.net/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/element-plus/2.4.0/index.full.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, 'Microsoft YaHei', sans-serif; background: #f0f2f5; color: #333; min-height: 100vh; padding-top: 56px; }
+        .header { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: linear-gradient(135deg, #722ed1 0%, #531dab 100%); color: #fff; padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+        .header h1 { font-size: 18px; }
+        .nav-links { display: flex; gap: 8px; }
+        .nav-link { padding: 6px 16px; color: rgba(255,255,255,0.85); text-decoration: none; border-radius: 4px; font-size: 14px; }
+        .nav-link:hover, .nav-link.active { background: rgba(255,255,255,0.2); color: #fff; }
+        .header-stats { display: flex; gap: 24px; font-size: 13px; }
+        .header-stats span { opacity: 0.9; }
+
+        .main-layout { display: flex; height: calc(100vh - 56px); }
+
+        .sidebar { width: 280px; background: #fff; border-right: 1px solid #e8e8e8; display: flex; flex-direction: column; }
+        .sidebar-section { padding: 16px; border-bottom: 1px solid #e8e8e8; }
+        .section-title { font-size: 13px; color: #666; margin-bottom: 12px; font-weight: 500; }
+        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        .stat-item { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; padding: 12px; text-align: center; cursor: pointer; transition: all 0.2s; }
+        .stat-item:hover { border-color: #722ed1; background: #f9f0ff; }
+        .stat-item.active { border-color: #722ed1; background: #f9f0ff; }
+        .stat-value { font-size: 20px; font-weight: 600; color: #722ed1; }
+        .stat-value.success { color: #52c41a; }
+        .stat-value.warning { color: #faad14; }
+        .stat-label { font-size: 11px; color: #999; margin-top: 4px; }
+
+        .collection-list { flex: 1; overflow-y: auto; padding: 8px; }
+        .collection-item { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; padding: 12px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s; }
+        .collection-item:hover { border-color: #722ed1; }
+        .collection-item.active { border-color: #722ed1; background: #f9f0ff; }
+        .collection-name { font-size: 14px; color: #333; font-weight: 500; margin-bottom: 4px; }
+        .collection-desc { font-size: 12px; color: #999; margin-bottom: 8px; }
+        .collection-count { font-size: 12px; color: #722ed1; }
+        .collection-icon { display: inline-block; width: 20px; height: 20px; border-radius: 4px; margin-right: 8px; vertical-align: middle; }
+        .collection-icon.writeups { background: #1890ff; }
+        .collection-icon.nuclei { background: #52c41a; }
+        .collection-icon.payloads { background: #faad14; }
+        .collection-icon.security_resources { background: #eb2f96; }
+
+        .center-area { flex: 1; display: flex; flex-direction: column; background: #fff; }
+        .search-area { padding: 16px; border-bottom: 1px solid #e8e8e8; }
+        .search-input-row { display: flex; gap: 8px; margin-bottom: 12px; }
+        .search-options { display: flex; gap: 16px; align-items: center; font-size: 13px; color: #666; }
+        .source-filter { display: flex; gap: 4px; margin-bottom: 12px; }
+        .source-filter-btn { padding: 4px 12px; font-size: 12px; border-radius: 3px; border: 1px solid #d9d9d9; background: #fff; color: #666; cursor: pointer; }
+        .source-filter-btn:hover { border-color: #722ed1; color: #722ed1; }
+        .source-filter-btn.active { background: #722ed1; border-color: #722ed1; color: #fff; }
+
+        .results-area { flex: 1; overflow-y: auto; padding: 12px; }
+        .result-item { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; padding: 12px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s; }
+        .result-item:hover { border-color: #722ed1; }
+        .result-item.active { border-color: #722ed1; background: #f9f0ff; }
+        .result-source { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; margin-right: 8px; }
+        .result-source.writeups { background: #e6f7ff; color: #1890ff; }
+        .result-source.nuclei { background: #f6ffed; color: #52c41a; }
+        .result-source.payloads { background: #fff7e6; color: #faad14; }
+        .result-source.security_resources { background: #fff0f6; color: #eb2f96; }
+        .result-title { font-size: 14px; color: #333; margin-bottom: 6px; font-weight: 500; }
+        .result-content { font-size: 12px; color: #666; line-height: 1.5; max-height: 60px; overflow: hidden; text-overflow: ellipsis; }
+        .result-meta { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; color: #999; }
+        .result-similarity { color: #722ed1; font-weight: 500; }
+
+        .right-panel { width: 380px; background: #fff; border-left: 1px solid #e8e8e8; display: flex; flex-direction: column; }
+        .panel-header { padding: 12px 16px; border-bottom: 1px solid #e8e8e8; font-size: 14px; font-weight: 500; color: #333; }
+        .panel-content { flex: 1; overflow-y: auto; padding: 16px; }
+        .doc-title { font-size: 16px; color: #333; margin-bottom: 12px; font-weight: 500; }
+        .doc-meta-card { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; padding: 12px; margin-bottom: 12px; }
+        .doc-meta-row { display: flex; justify-content: space-between; padding: 4px 0; }
+        .doc-meta-label { color: #666; font-size: 12px; }
+        .doc-meta-value { color: #333; font-size: 12px; word-break: break-all; }
+
+        .doc-content-area { background: #f5f5f5; border: 1px solid #e8e8e8; border-radius: 4px; padding: 12px; font-family: Consolas, 'Courier New', monospace; font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-height: 500px; overflow-y: auto; }
+        .doc-tabs { display: flex; background: #fafafa; border-bottom: 1px solid #e8e8e8; }
+        .doc-tab { flex: 1; padding: 10px; text-align: center; font-size: 13px; cursor: pointer; color: #666; border-bottom: 2px solid transparent; }
+        .doc-tab:hover { color: #722ed1; }
+        .doc-tab.active { color: #722ed1; border-bottom-color: #722ed1; }
+
+        .empty-text { color: #999; font-size: 13px; text-align: center; padding: 40px 20px; }
+        .loading-text { color: #999; font-size: 13px; text-align: center; padding: 20px; }
+
+        .btn { padding: 8px 16px; border-radius: 4px; font-size: 13px; cursor: pointer; border: 1px solid #d9d9d9; background: #fff; color: #333; transition: all 0.2s; }
+        .btn:hover { border-color: #722ed1; color: #722ed1; }
+        .btn-primary { background: #722ed1; border-color: #722ed1; color: #fff; }
+        .btn-primary:hover { background: #9254de; border-color: #9254de; color: #fff; }
+        .btn-small { padding: 4px 12px; font-size: 12px; }
+
+        /* 搜索历史样式 */
+        .search-history { margin-top: 12px; }
+        .history-item { display: inline-block; padding: 4px 12px; background: #f0f0f0; border-radius: 3px; font-size: 12px; color: #666; margin-right: 8px; margin-bottom: 4px; cursor: pointer; }
+        .history-item:hover { background: #e6e6e6; color: #333; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="header">
+            <h1>RAG 知识库管理</h1>
+            <div class="nav-links">
+                <a href="/fisher_ctf_agent/monitor" class="nav-link" onclick="SPA&&SPA.navigateTo('/fisher_ctf_agent/monitor');return false;">控制台</a>
+                <a href="/fisher_ctf_agent/modules" class="nav-link" onclick="SPA&&SPA.navigateTo('/fisher_ctf_agent/modules');return false;">模块</a>
+                <a href="/fisher_ctf_agent/topology" class="nav-link" onclick="SPA&&SPA.navigateTo('/fisher_ctf_agent/topology');return false;">拓扑</a>
+                <a href="/fisher_ctf_agent/rag" class="nav-link active" onclick="SPA&&SPA.navigateTo('/fisher_ctf_agent/rag');return false;">RAG知识库</a>
+            </div>
+            <div class="header-stats">
+                <span v-if="ragStatus.available">索引总计: [[ ragStatus.total || 0 ]] 条</span>
+                <span v-else style="color: #ff4d4f;">RAG 未就绪</span>
+            </div>
+        </div>
+
+        <div class="main-layout">
+            <!-- 左侧栏：Collection索引状态 -->
+            <div class="sidebar">
+                <div class="sidebar-section">
+                    <div class="section-title">索引状态概览</div>
+                    <div class="stats-grid">
+                        <div class="stat-item" :class="{ active: selectedCollection === 'writeups' }" @click="selectCollection('writeups')">
+                            <div class="stat-value success">[[ ragStatus.writeups || 0 ]]</div>
+                            <div class="stat-label">Writeups</div>
+                        </div>
+                        <div class="stat-item" :class="{ active: selectedCollection === 'nuclei' }" @click="selectCollection('nuclei')">
+                            <div class="stat-value">[[ ragStatus.nuclei || 0 ]]</div>
+                            <div class="stat-label">Nuclei</div>
+                        </div>
+                        <div class="stat-item" :class="{ active: selectedCollection === 'payloads' }" @click="selectCollection('payloads')">
+                            <div class="stat-value warning">[[ ragStatus.payloads || 0 ]]</div>
+                            <div class="stat-label">Payloads</div>
+                        </div>
+                        <div class="stat-item" :class="{ active: selectedCollection === 'security_resources' }" @click="selectCollection('security_resources')">
+                            <div class="stat-value">[[ ragStatus.security_resources || 0 ]]</div>
+                            <div class="stat-label">SecResources</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section-title" style="padding: 12px 16px;">知识库列表</div>
+                <div class="collection-list">
+                    <div v-for="(info, key) in collections" :key="key"
+                         class="collection-item"
+                         :class="{ active: selectedCollection === key }"
+                         @click="selectCollection(key)">
+                        <div class="collection-name">
+                            <span class="collection-icon" :class="key"></span>
+                            [[ info.name ]]
+                        </div>
+                        <div class="collection-desc">[[ info.description ]]</div>
+                        <div class="collection-count">[[ info.count ]] 条记录</div>
+                    </div>
+                    <div v-if="Object.keys(collections).length === 0" class="empty-text">暂无知识库</div>
+                </div>
+
+                <!-- 最近搜索历史 -->
+                <div class="sidebar-section" v-if="searchHistory.length > 0">
+                    <div class="section-title">最近搜索</div>
+                    <div class="search-history">
+                        <span v-for="h in searchHistory.slice(0, 5)" :key="h"
+                              class="history-item"
+                              @click="quickSearch(h)">
+                            [[ h ]]
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 中间区域：搜索 + 结果列表 -->
+            <div class="center-area">
+                <div class="search-area">
+                    <div class="search-input-row">
+                        <el-input v-model="searchQuery"
+                                  placeholder="输入关键词搜索知识库 (如: SQL injection, XSS, CVE-2023...)"
+                                  size="large"
+                                  clearable
+                                  @keyup.enter="performSearch">
+                            <template #prefix>
+                                <span style="color: #999;">&#128269;</span>
+                            </template>
+                        </el-input>
+                        <button class="btn btn-primary" @click="performSearch" :disabled="searching">
+                            [[ searching ? '搜索中...' : '搜索' ]]
+                        </button>
+                        <button class="btn" @click="clearSearch">清空</button>
+                    </div>
+
+                    <!-- 来源筛选 -->
+                    <div class="source-filter">
+                        <button class="source-filter-btn" :class="{ active: searchSources.includes('writeups') }" @click="toggleSource('writeups')">Writeups</button>
+                        <button class="source-filter-btn" :class="{ active: searchSources.includes('nuclei') }" @click="toggleSource('nuclei')">Nuclei</button>
+                        <button class="source-filter-btn" :class="{ active: searchSources.includes('payloads') }" @click="toggleSource('payloads')">Payloads</button>
+                        <button class="source-filter-btn" :class="{ active: searchSources.includes('security_resources') }" @click="toggleSource('security_resources')">SecResources</button>
+                    </div>
+
+                    <div class="search-options">
+                        <span>返回数量:</span>
+                        <el-select v-model="searchTopK" size="small" style="width: 80px;">
+                            <el-option label="5" value="5"></el-option>
+                            <el-option label="10" value="10"></el-option>
+                            <el-option label="20" value="20"></el-option>
+                            <el-option label="50" value="50"></el-option>
+                        </el-select>
+                    </div>
+                </div>
+
+                <!-- 搜索结果 -->
+                <div class="results-area" ref="resultsArea">
+                    <div v-if="searching" class="loading-text">
+                        <el-icon class="is-loading"><loading /></el-icon>
+                        正在搜索...
+                    </div>
+
+                    <div v-else-if="searchResults.length > 0">
+                        <div style="padding: 8px 0; font-size: 13px; color: #666;">
+                            找到 [[ totalResults ]] 条相关结果
+                        </div>
+
+                        <!-- 分组显示结果 -->
+                        <div v-for="source in ['writeups', 'nuclei', 'payloads', 'security_resources']" :key="source">
+                            <div v-if="getResultsBySource(source).length > 0" style="margin-bottom: 16px;">
+                                <div style="font-size: 12px; color: #999; padding: 4px 0; margin-bottom: 8px;">
+                                    <span class="result-source" :class="source">[[ getSourceLabel(source) ]]</span>
+                                    [[ getResultsBySource(source).length ]] 条
+                                </div>
+                                <div v-for="item in getResultsBySource(source)"
+                                     :key="item.id"
+                                     class="result-item"
+                                     :class="{ active: selectedDoc && selectedDoc.id === item.id }"
+                                     @click="selectDocument(item, source)">
+                                    <div class="result-title">[[ item.metadata.filename || item.metadata.name || item.id ]]</div>
+                                    <div class="result-content">[[ truncateContent(item.content, 150) ]]</div>
+                                    <div class="result-meta">
+                                        <span>[[ item.metadata.path || '' ]]</span>
+                                        <span class="result-similarity">相似度: [[ (item.similarity * 100).toFixed(1) ]]%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-else-if="searchQuery && !searching" class="empty-text">
+                        未找到相关结果，请尝试其他关键词
+                    </div>
+
+                    <div v-else class="empty-text">
+                        输入关键词开始搜索知识库
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧面板：文档详情 -->
+            <div class="right-panel">
+                <div class="panel-header">
+                    [[ selectedDoc ? '文档详情' : '选择文档查看详情' ]]
+                </div>
+
+                <div class="panel-content" v-if="selectedDoc">
+                    <!-- 文档基本信息 -->
+                    <div class="doc-title">[[ selectedDoc.metadata.filename || selectedDoc.metadata.name || selectedDoc.id ]]</div>
+
+                    <div class="doc-meta-card">
+                        <div class="doc-meta-row">
+                            <span class="doc-meta-label">来源</span>
+                            <span class="doc-meta-value">
+                                <span class="result-source" :class="selectedSource">[[ getSourceLabel(selectedSource) ]]</span>
+                            </span>
+                        </div>
+                        <div class="doc-meta-row">
+                            <span class="doc-meta-label">ID</span>
+                            <span class="doc-meta-value" style="font-family: monospace;">[[ selectedDoc.id ]]</span>
+                        </div>
+                        <div class="doc-meta-row">
+                            <span class="doc-meta-label">相似度</span>
+                            <span class="doc-meta-value" style="color: #722ed1;">[[ (selectedDoc.similarity * 100).toFixed(2) ]]%</span>
+                        </div>
+                        <div class="doc-meta-row" v-if="selectedDoc.metadata.path">
+                            <span class="doc-meta-label">路径</span>
+                            <span class="doc-meta-value" style="font-family: monospace; font-size: 11px;">[[ selectedDoc.metadata.path ]]</span>
+                        </div>
+                        <div class="doc-meta-row" v-if="selectedDoc.metadata.size">
+                            <span class="doc-meta-label">大小</span>
+                            <span class="doc-meta-value">[[ formatBytes(selectedDoc.metadata.size) ]]</span>
+                        </div>
+                        <div class="doc-meta-row" v-if="selectedDoc.metadata.vuln_type">
+                            <span class="doc-meta-label">漏洞类型</span>
+                            <span class="doc-meta-value">[[ selectedDoc.metadata.vuln_type ]]</span>
+                        </div>
+                        <div class="doc-meta-row" v-if="selectedDoc.metadata.severity">
+                            <span class="doc-meta-label">严重程度</span>
+                            <span class="doc-meta-value">[[ selectedDoc.metadata.severity ]]</span>
+                        </div>
+                    </div>
+
+                    <!-- 文档内容标签页 -->
+                    <div class="doc-tabs">
+                        <div class="doc-tab" :class="{ active: docTab === 'summary' }" @click="docTab = 'summary'">摘要</div>
+                        <div class="doc-tab" :class="{ active: docTab === 'full' }" @click="docTab = 'full'; loadFullDocument()">完整内容</div>
+                    </div>
+
+                    <div v-show="docTab === 'summary'" class="doc-content-area">
+                        [[ selectedDoc.content || '无内容' ]]
+                    </div>
+                    <div v-show="docTab === 'full'" class="doc-content-area">
+                        <div v-if="loadingFullDoc" class="loading-text">加载中...</div>
+                        <div v-else>[[ fullDocContent || selectedDoc.content || '无内容' ]]</div>
+                    </div>
+
+                    <!-- 操作按钮 -->
+                    <div style="margin-top: 16px; display: flex; gap: 8px;">
+                        <button class="btn-small btn" @click="copyContent">复制内容</button>
+                        <button class="btn-small btn" v-if="selectedDoc.metadata.path" @click="openFile">查看原文件</button>
+                    </div>
+                </div>
+
+                <div class="panel-content" v-else>
+                    <div class="empty-text">
+                        点击搜索结果查看文档详情
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted } = Vue;
+        const app = createApp({
+            setup() {
+                const ragStatus = ref({ available: false, total: 0 });
+                const collections = ref({});
+                const selectedCollection = ref(null);
+                const searchQuery = ref('');
+                const searchSources = ref(['writeups', 'security_resources']);
+                const searchTopK = ref('10');
+                const searching = ref(false);
+                const searchResults = ref([]);
+                const totalResults = ref(0);
+                const selectedDoc = ref(null);
+                const selectedSource = ref(null);
+                const docTab = ref('summary');
+                const fullDocContent = ref(null);
+                const loadingFullDoc = ref(false);
+                const searchHistory = ref([]);
+
+                const getSourceLabel = (source) => {
+                    const labels = {
+                        'writeups': 'CTF Writeups',
+                        'nuclei': 'Nuclei Templates',
+                        'payloads': 'Payloads',
+                        'security_resources': 'Security Resources'
+                    };
+                    return labels[source] || source;
+                };
+
+                const getResultsBySource = (source) => {
+                    return searchResults.value.filter(r => r.source === source);
+                };
+
+                const truncateContent = (content, maxLen) => {
+                    if (!content) return '';
+                    content = content.replace(/\s+/g, ' ').trim();
+                    if (content.length <= maxLen) return content;
+                    return content.substring(0, maxLen) + '...';
+                };
+
+                const formatBytes = (bytes) => {
+                    if (!bytes) return '0 B';
+                    const k = 1024;
+                    const sizes = ['B', 'KB', 'MB', 'GB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+                };
+
+                async function fetchRagStatus() {
+                    try {
+                        const data = await (await fetch('/fisher_ctf_agent/api/rag/status')).json();
+                        ragStatus.value = data;
+                    } catch (e) {
+                        ragStatus.value = { available: false, error: String(e) };
+                    }
+                }
+
+                async function fetchCollections() {
+                    try {
+                        const data = await (await fetch('/fisher_ctf_agent/api/rag/collections')).json();
+                        collections.value = data.collections || {};
+                    } catch (e) {
+                        collections.value = {};
+                    }
+                }
+
+                function selectCollection(key) {
+                    selectedCollection.value = key;
+                    if (!searchSources.value.includes(key)) {
+                        searchSources.value = [key];
+                    }
+                }
+
+                function toggleSource(source) {
+                    const idx = searchSources.value.indexOf(source);
+                    if (idx >= 0) {
+                        searchSources.value.splice(idx, 1);
+                    } else {
+                        searchSources.value.push(source);
+                    }
+                    if (searchSources.value.length === 0) {
+                        searchSources.value = ['writeups'];
+                    }
+                }
+
+                async function performSearch() {
+                    if (!searchQuery.value.trim()) return;
+
+                    searching.value = true;
+                    searchResults.value = [];
+                    selectedDoc.value = null;
+
+                    // 添加到搜索历史
+                    const query = searchQuery.value.trim();
+                    if (!searchHistory.value.includes(query)) {
+                        searchHistory.value.unshift(query);
+                        if (searchHistory.value.length > 10) {
+                            searchHistory.value = searchHistory.value.slice(0, 10);
+                        }
+                    }
+
+                    try {
+                        const res = await fetch('/fisher_ctf_agent/api/rag/search', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                query: query,
+                                top_k: parseInt(searchTopK.value),
+                                sources: searchSources.value
+                            })
+                        });
+                        const data = await res.json();
+
+                        // 合并各来源的结果，并标记来源
+                        const allResults = [];
+                        for (const source of ['writeups', 'nuclei', 'payloads', 'security_resources']) {
+                            if (data.results && data.results[source]) {
+                                for (const item of data.results[source]) {
+                                    item.source = source;
+                                    allResults.push(item);
+                                }
+                            }
+                        }
+
+                        // 按相似度排序
+                        allResults.sort((a, b) => b.similarity - a.similarity);
+                        searchResults.value = allResults;
+                        totalResults.value = data.total || allResults.length;
+
+                    } catch (e) {
+                        ElementPlus.ElMessage.error('搜索失败: ' + String(e));
+                    }
+
+                    searching.value = false;
+                }
+
+                function clearSearch() {
+                    searchQuery.value = '';
+                    searchResults.value = [];
+                    totalResults.value = 0;
+                    selectedDoc.value = null;
+                    fullDocContent.value = null;
+                }
+
+                function quickSearch(query) {
+                    searchQuery.value = query;
+                    performSearch();
+                }
+
+                function selectDocument(item, source) {
+                    selectedDoc.value = item;
+                    selectedSource.value = source;
+                    docTab.value = 'summary';
+                    fullDocContent.value = null;
+                }
+
+                async function loadFullDocument() {
+                    if (!selectedDoc.value || fullDocContent.value) return;
+
+                    loadingFullDoc.value = true;
+                    try {
+                        const res = await fetch(`/fisher_ctf_agent/api/rag/document/${selectedSource.value}/${selectedDoc.value.id}`);
+                        const data = await res.json();
+                        fullDocContent.value = data.original_content || data.content || selectedDoc.value.content;
+                    } catch (e) {
+                        fullDocContent.value = selectedDoc.value.content;
+                    }
+                    loadingFullDoc.value = false;
+                }
+
+                function copyContent() {
+                    const content = docTab.value === 'full' ? fullDocContent.value : selectedDoc.value.content;
+                    if (!content) {
+                        ElementPlus.ElMessage.warning('无内容可复制');
+                        return;
+                    }
+                    navigator.clipboard.writeText(content).then(() => {
+                        ElementPlus.ElMessage.success('内容已复制到剪贴板');
+                    }).catch(() => {
+                        ElementPlus.ElMessage.error('复制失败');
+                    });
+                }
+
+                function openFile() {
+                    if (selectedDoc.value && selectedDoc.value.metadata && selectedDoc.value.metadata.path) {
+                        ElementPlus.ElMessage.info('文件路径: ' + selectedDoc.value.metadata.path);
+                    }
+                }
+
+                onMounted(() => {
+                    fetchRagStatus();
+                    fetchCollections();
+                });
+
+                return {
+                    ragStatus,
+                    collections,
+                    selectedCollection,
+                    searchQuery,
+                    searchSources,
+                    searchTopK,
+                    searching,
+                    searchResults,
+                    totalResults,
+                    selectedDoc,
+                    selectedSource,
+                    docTab,
+                    fullDocContent,
+                    loadingFullDoc,
+                    searchHistory,
+                    getSourceLabel,
+                    getResultsBySource,
+                    truncateContent,
+                    formatBytes,
+                    fetchRagStatus,
+                    fetchCollections,
+                    selectCollection,
+                    toggleSource,
+                    performSearch,
+                    clearSearch,
+                    quickSearch,
+                    selectDocument,
+                    loadFullDocument,
+                    copyContent,
+                    openFile
+                };
+            }
+        });
+        app.use(ElementPlus).mount('#app');
+    </script>
+    <!-- SPA 页面切换脚本 -->
+    <script src="/fisher_ctf_agent/static/js/spa-loader.js"></script>
+</body>
+</html>

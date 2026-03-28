@@ -835,6 +835,12 @@ def topology():
     return render_template('topology.html')
 
 
+@bp.route('/rag')
+def rag_page():
+    """RAG知识库管理页面"""
+    return render_template('rag.html')
+
+
 @bp.route('/api/graph')
 def api_graph():
     """获取图结构"""
@@ -2381,6 +2387,167 @@ def api_logs_node(task_id, node_name):
         return jsonify({"error": str(e)}), 500
 
 
+# =============================================================================
+# RAG 知识库管理 API
+# =============================================================================
+
+@bp.route('/api/rag/status')
+def api_rag_status():
+    """获取RAG索引状态"""
+    try:
+        from rag_builder.unified_vector_store import get_unified_retriever
+        retriever = get_unified_retriever()
+        status = {
+            "writeups": retriever.writeups_collection.count() if retriever.writeups_collection else 0,
+            "nuclei": retriever.nuclei_collection.count() if retriever.nuclei_collection else 0,
+            "payloads": retriever.payloads_collection.count() if retriever.payloads_collection else 0,
+            "security_resources": retriever.security_resources_collection.count() if retriever.security_resources_collection else 0,
+            "available": True
+        }
+        status["total"] = sum([status["writeups"], status["nuclei"], status["payloads"], status["security_resources"]])
+        return jsonify(status)
+    except Exception as e:
+        return jsonify({"error": str(e), "available": False})
+
+
+@bp.route('/api/rag/search', methods=['POST'])
+def api_rag_search():
+    """搜索知识库"""
+    try:
+        from rag_builder.unified_vector_store import get_unified_retriever
+        retriever = get_unified_retriever()
+        data = request.json
+        query = data.get('query', '')
+        top_k = data.get('top_k', 10)
+        sources = data.get('sources', ['writeups', 'security_resources'])
+
+        results = retriever.search(query, top_k=top_k, sources=sources)
+        return jsonify({"results": results, "total": results.get("total", 0)})
+    except Exception as e:
+        return jsonify({"error": str(e), "results": []})
+
+
+@bp.route('/api/rag/collections')
+def api_rag_collections():
+    """获取所有Collection的详细信息"""
+    try:
+        from rag_builder.unified_vector_store import get_unified_retriever
+        retriever = get_unified_retriever()
+
+        collections = {}
+
+        # Writeups
+        if retriever.writeups_collection:
+            try:
+                sample = retriever.writeups_collection.peek(limit=5)
+                collections["writeups"] = {
+                    "name": "CTF Writeups",
+                    "count": retriever.writeups_collection.count(),
+                    "description": "CTF题目解题思路和技术文章",
+                    "sample_ids": sample.get("ids", [])[:3],
+                    "sample_metadata": sample.get("metadatas", [])[:3]
+                }
+            except Exception as e:
+                collections["writeups"] = {"name": "CTF Writeups", "count": 0, "error": str(e)}
+
+        # Nuclei
+        if retriever.nuclei_collection:
+            try:
+                sample = retriever.nuclei_collection.peek(limit=5)
+                collections["nuclei"] = {
+                    "name": "Nuclei Templates",
+                    "count": retriever.nuclei_collection.count(),
+                    "description": "漏洞检测模板和CVE利用方法",
+                    "sample_ids": sample.get("ids", [])[:3],
+                    "sample_metadata": sample.get("metadatas", [])[:3]
+                }
+            except Exception as e:
+                collections["nuclei"] = {"name": "Nuclei Templates", "count": 0, "error": str(e)}
+
+        # Payloads
+        if retriever.payloads_collection:
+            try:
+                sample = retriever.payloads_collection.peek(limit=5)
+                collections["payloads"] = {
+                    "name": "Payloads",
+                    "count": retriever.payloads_collection.count(),
+                    "description": "各类漏洞Payload和攻击载荷",
+                    "sample_ids": sample.get("ids", [])[:3],
+                    "sample_metadata": sample.get("metadatas", [])[:3]
+                }
+            except Exception as e:
+                collections["payloads"] = {"name": "Payloads", "count": 0, "error": str(e)}
+
+        # Security Resources
+        if retriever.security_resources_collection:
+            try:
+                sample = retriever.security_resources_collection.peek(limit=5)
+                collections["security_resources"] = {
+                    "name": "Security Resources",
+                    "count": retriever.security_resources_collection.count(),
+                    "description": "PayloadsAllTheThings和SecLists等安全资源",
+                    "sample_ids": sample.get("ids", [])[:3],
+                    "sample_metadata": sample.get("metadatas", [])[:3]
+                }
+            except Exception as e:
+                collections["security_resources"] = {"name": "Security Resources", "count": 0, "error": str(e)}
+
+        return jsonify({"collections": collections, "available": True})
+    except Exception as e:
+        return jsonify({"error": str(e), "available": False})
+
+
+@bp.route('/api/rag/document/<collection>/<doc_id>')
+def api_rag_document(collection, doc_id):
+    """获取指定文档的完整内容"""
+    try:
+        from rag_builder.unified_vector_store import get_unified_retriever
+        retriever = get_unified_retriever()
+
+        # 获取对应的collection
+        target_collection = None
+        if collection == "writeups" and retriever.writeups_collection:
+            target_collection = retriever.writeups_collection
+        elif collection == "nuclei" and retriever.nuclei_collection:
+            target_collection = retriever.nuclei_collection
+        elif collection == "payloads" and retriever.payloads_collection:
+            target_collection = retriever.payloads_collection
+        elif collection == "security_resources" and retriever.security_resources_collection:
+            target_collection = retriever.security_resources_collection
+
+        if not target_collection:
+            return jsonify({"error": "Collection not found"}), 404
+
+        # 获取文档
+        result = target_collection.get(ids=[doc_id], include=["documents", "metadatas"])
+
+        if not result.get("ids") or len(result["ids"]) == 0:
+            return jsonify({"error": "Document not found"}), 404
+
+        doc_content = result["documents"][0] if result.get("documents") else ""
+        doc_metadata = result["metadatas"][0] if result.get("metadatas") else {}
+
+        # 尝试读取原始文件内容
+        original_content = None
+        file_path = doc_metadata.get("path", "")
+        if file_path and os.path.exists(file_path):
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    original_content = f.read()
+            except Exception:
+                pass
+
+        return jsonify({
+            "id": doc_id,
+            "collection": collection,
+            "content": doc_content,
+            "original_content": original_content,
+            "metadata": doc_metadata
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == '__main__':
     # 注册 Blueprint（确保所有路由已定义）
     app.register_blueprint(bp)
@@ -2396,6 +2563,7 @@ if __name__ == '__main__':
     print(f"Access URL: http://<SERVER_IP>:{PORT}{URL_PREFIX}/monitor")
     print(f"Modules:    http://<SERVER_IP>:{PORT}{URL_PREFIX}/modules")
     print(f"Topology:   http://<SERVER_IP>:{PORT}{URL_PREFIX}/topology")
+    print(f"RAG:        http://<SERVER_IP>:{PORT}{URL_PREFIX}/rag")
     print("=" * 60)
     print("[Security] No default index page. Use full URL path.")
     print("=" * 60)

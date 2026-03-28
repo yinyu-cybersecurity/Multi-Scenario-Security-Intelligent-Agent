@@ -1081,8 +1081,8 @@ def recon_node(state: CTFState) -> Dict:
         "scene_attack_attempts": scene_attack_attempts,
         "scene_exhausted": scene_exhausted,
         "vuln_candidates": all_vuln_candidates,  # 合并所有漏洞候选
-        # 拓扑初始化 - 添加入口URL
-        "site_topology": {http_url: dirsearch_paths[:20]} if dirsearch_paths else {},
+        # 拓扑初始化 - 添加入口URL（即使没有dirsearch路径也初始化入口节点）
+        "site_topology": {http_url: dirsearch_paths[:20] if dirsearch_paths else []},
         "node_metadata": {
             http_url: {
                 "status": baseline.get("status_code", 200),
@@ -3525,6 +3525,7 @@ def run_single_task(task_name: str, task_description: str, target_url: str,
     try:
         # 使用 stream() 替代 invoke() 以支持取消检查
         result = None
+        accumulated_state = dict(initial_state)  # 维护完整状态
         for event in app.stream(initial_state, config=config_params):
             # 检查取消状态
             if cancel_check and cancel_check():
@@ -3547,11 +3548,14 @@ def run_single_task(task_name: str, task_description: str, target_url: str,
                 for node_name, node_output in event.items():
                     if isinstance(node_output, dict):
                         result = node_output
+                        # 合并节点输出到完整状态
+                        for key, value in node_output.items():
+                            accumulated_state[key] = value
 
-                        # 触发节点回调（如果有）
+                        # 触发节点回调（如果有）- 传递完整状态
                         if hasattr(app, '_node_callbacks') and task_id in app._node_callbacks:
                             try:
-                                app._node_callbacks[task_id](node_name, result)
+                                app._node_callbacks[task_id](node_name, accumulated_state)
                             except Exception as cb_e:
                                 log(f"回调错误: {cb_e}")
 

@@ -90,9 +90,10 @@
         <div class="header">
             <h1>CTF-Agent 模块管理</h1>
             <div class="nav-links">
-                <a href="/fisher_ctf_agent/monitor" class="nav-link">控制台</a>
-                <a href="/fisher_ctf_agent/modules" class="nav-link active">模块</a>
-                <a href="/fisher_ctf_agent/topology" class="nav-link">拓扑</a>
+                <a href="/fisher_ctf_agent/monitor" class="nav-link" onclick="SPA&&SPA.navigateTo('/fisher_ctf_agent/monitor');return false;">控制台</a>
+                <a href="/fisher_ctf_agent/modules" class="nav-link active" onclick="SPA&&SPA.navigateTo('/fisher_ctf_agent/modules');return false;">模块</a>
+                <a href="/fisher_ctf_agent/topology" class="nav-link" onclick="SPA&&SPA.navigateTo('/fisher_ctf_agent/topology');return false;">拓扑</a>
+                <a href="/fisher_ctf_agent/rag" class="nav-link" onclick="SPA&&SPA.navigateTo('/fisher_ctf_agent/rag');return false;">RAG知识库</a>
             </div>
         </div>
 
@@ -440,5 +441,7 @@
         });
         app.use(ElementPlus).mount('#app');
     </script>
+    <!-- SPA 页面切换脚本 -->
+    <script src="/fisher_ctf_agent/static/js/spa-loader.js"></script>
 </body>
 </html>
