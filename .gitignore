@@ -201,3 +201,12 @@ tools/linux/fscan
 tools/linux/frpc
 tools/linux/frps
 tools/windows/*.exe
+
+# =============================================================================
+# Thirdparty - 标注进度与大文件库
+# =============================================================================
+thirdparty/ANNOTATION_*.md
+thirdparty/PayloadsAllTheThings-4.2/
+thirdparty/SecLists-master/
+thirdparty/nuclei-templates-10.4.0/
+thirdparty/chatgpt-prompts-library/
