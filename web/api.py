@@ -835,6 +835,88 @@ def topology():
     return render_template('topology.html')
 
 
+@bp.route('/rag')
+def rag_page():
+    """RAG知识库检索页面"""
+    return render_template('rag.html')
+
+
+# =============================================================================
+# RAG 知识库检索 API
+# =============================================================================
+
+@bp.route('/api/rag/status')
+def api_rag_status():
+    """获取RAG索引状态"""
+    try:
+        from rag_builder.unified_vector_store import get_unified_retriever
+        retriever = get_unified_retriever()
+        status = {
+            "writeups": retriever.writeups_collection.count() if retriever.writeups_collection else 0,
+            "nuclei": retriever.nuclei_collection.count() if retriever.nuclei_collection else 0,
+            "payloads": retriever.payloads_collection.count() if retriever.payloads_collection else 0,
+            "security_resources": retriever.security_resources_collection.count() if retriever.security_resources_collection else 0,
+            "available": True
+        }
+        status["total"] = sum([status["writeups"], status["nuclei"], status["payloads"], status["security_resources"]])
+        return jsonify(status)
+    except Exception as e:
+        return jsonify({"error": str(e), "available": False, "total": 0,
+                        "writeups": 0, "nuclei": 0, "payloads": 0, "security_resources": 0})
+
+
+@bp.route('/api/rag/search', methods=['POST'])
+def api_rag_search():
+    """搜索知识库 - 支持分板块检索"""
+    try:
+        from rag_builder.unified_vector_store import get_unified_retriever
+        data = request.json or {}
+        query = data.get('query', '')
+        top_k = data.get('top_k', 5)
+        sources = data.get('sources', ['writeups', 'nuclei', 'payloads', 'security_resources'])
+
+        if not query:
+            return jsonify({"error": "Query is required", "results": {}, "total": 0})
+
+        retriever = get_unified_retriever()
+        results = retriever.search(query, top_k=top_k, sources=sources)
+
+        return jsonify({"results": results, "total": results.get("total", 0)})
+    except Exception as e:
+        return jsonify({"error": str(e), "results": {}, "total": 0})
+
+
+@bp.route('/api/rag/collections')
+def api_rag_collections():
+    """获取所有知识库集合信息"""
+    try:
+        from rag_builder.unified_vector_store import get_unified_retriever
+        retriever = get_unified_retriever()
+
+        collections = []
+        collection_info = [
+            ("writeups", "CTF Writeups", "CTF比赛题解和技术分析", "#1890ff"),
+            ("nuclei", "Nuclei Templates", "Nuclei漏洞扫描模板", "#52c41a"),
+            ("payloads", "Payloads", "各种攻击载荷和利用代码", "#faad14"),
+            ("security_resources", "Security Resources", "安全资源和参考资料", "#eb2f96")
+        ]
+
+        for key, name, desc, color in collection_info:
+            collection = getattr(retriever, f'{key}_collection', None)
+            count = collection.count() if collection else 0
+            collections.append({
+                "key": key,
+                "name": name,
+                "description": desc,
+                "color": color,
+                "count": count
+            })
+
+        return jsonify({"collections": collections})
+    except Exception as e:
+        return jsonify({"error": str(e), "collections": []})
+
+
 @bp.route('/api/graph')
 def api_graph():
     """获取图结构"""
