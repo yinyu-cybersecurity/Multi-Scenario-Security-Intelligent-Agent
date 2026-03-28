@@ -167,7 +167,7 @@ RUN mkdir -p /opt/linux && \
     ln -sf /app/thirdparty/dirsearch/dirsearch.py /usr/local/bin/dirsearch && \
     ln -sf /app/thirdparty/php_filter_chain/php_filter_chain_generator.py /usr/local/bin/php-filter-chain && \
     chmod +x /usr/local/bin/dirsearch /usr/local/bin/php-filter-chain && \
-    chmod +x /app/data/security_resources/Githacker/GitHack.py
+    chmod +x /app/thirdparty/Githacker/GitHack.py
 
 COPY requirements.txt .
 RUN python3.11 -m venv /opt/venv
