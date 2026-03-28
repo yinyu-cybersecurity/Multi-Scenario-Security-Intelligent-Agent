@@ -26,15 +26,15 @@ import random
 import traceback
 from typing import Dict, List
 
-from llm_client import llm_client
-from config import config
-from logger import get_logger
+from app.llm_client import llm_client
+from app.config import config
+from app.logger import get_logger
 
 logger = get_logger("AISecurity")
 
 # 可选模块导入
 try:
-    from self_correction import self_correction_manager, ErrorSeverity, ErrorType
+    from app.self_correction import self_correction_manager, ErrorSeverity, ErrorType
     SELF_CORRECTION_AVAILABLE = True
 except ImportError:
     SELF_CORRECTION_AVAILABLE = False
