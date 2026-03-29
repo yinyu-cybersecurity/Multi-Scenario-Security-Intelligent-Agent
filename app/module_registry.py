@@ -17,17 +17,28 @@ import os
 import sys
 
 # 确保项目根目录和 app 目录在 sys.path 中
-# 使用绝对路径以确保在不同运行目录下都能正确工作
+# 在 Docker 容器中，所有文件都在 /app 下，WORKDIR 是 /app
+# 在本地开发时，app 目录是 deploy/app
 _current_dir = os.path.dirname(os.path.abspath(__file__))
-_project_root = os.path.dirname(_current_dir)
 
-# 添加项目根目录（deploy 目录），用于导入 ai_security, cloud_security 等
+# 判断是否在 Docker 环境中：如果当前目录是 /app，则 _project_root 也应该是 /app
+# Docker 中：WORKDIR=/app, 所有模块都在 /app 下
+# 本地开发：当前目录是 deploy/app, _project_root 是 deploy
+if _current_dir == '/app':
+    # Docker 环境：项目根目录就是 /app
+    _project_root = '/app'
+else:
+    # 本地开发环境
+    _project_root = os.path.dirname(_current_dir)
+
+# 添加项目根目录，用于导入 ai_security, cloud_security 等
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
     print(f"[ModuleRegistry] Added to sys.path: {_project_root}")
 
 # 添加 app 目录，用于导入 llm_client, config, logger 等
-if _current_dir not in sys.path:
+# Docker 中 app 目录和项目根目录相同，本地开发时需要单独添加
+if _current_dir not in sys.path and _current_dir != _project_root:
     sys.path.insert(0, _current_dir)
     print(f"[ModuleRegistry] Added to sys.path: {_current_dir}")
 
