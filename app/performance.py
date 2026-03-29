@@ -15,6 +15,7 @@
 import time
 import threading
 import concurrent.futures
+import atexit
 from typing import Dict, List, Any, Callable, Optional
 from dataclasses import dataclass, field
 from collections import defaultdict
@@ -383,6 +384,9 @@ class ParallelExecutor:
         self.max_workers = max_workers
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
         self.monitor = PerformanceMonitor()
+        self._shutdown_done = False
+        # 注册退出清理
+        atexit.register(self.shutdown)
 
     def execute_parallel(self, tasks: List[Dict]) -> List[Dict]:
         """
@@ -441,7 +445,13 @@ class ParallelExecutor:
 
     def shutdown(self):
         """关闭执行器"""
-        self.executor.shutdown(wait=True)
+        if self._shutdown_done:
+            return
+        self._shutdown_done = True
+        try:
+            self.executor.shutdown(wait=False)
+        except Exception:
+            pass
 
 
 class ResourceLimiter:
