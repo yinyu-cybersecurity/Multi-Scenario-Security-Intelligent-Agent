@@ -24,8 +24,8 @@ CTF-Agent 是一个智能化的渗透测试代理，能够自主完成从信息�
 | Pwn | pwn/nodes.py | pwn_analyst, pwn_exploiter |
 | Reverse | reverse/nodes.py | reverse_analyst, reverse_decompiler |
 | Misc | misc/nodes.py | misc_analyst, misc_extractor |
-| AI Security | ai_security/nodes.py | ai_analyst, model_attacker |
-| Cloud Security | cloud_security/nodes.py | cloud_recon, cloud_exploit |
+| AI Security | ai_security/nodes.py | ai_detect, ai_probe, ai_exploit, ai_exfiltrate |
+| Cloud Security | cloud_security/nodes.py | cloud_recon, cloud_enum, cloud_exploit, cloud_escalate |
 
 #### 🔧 49 模块化安全工具
 | 分类 | 工具列表 |
@@ -354,9 +354,21 @@ def my_node(state: CTFState) -> Dict:
 
 ## 安全注意
 
-1. **API Key保护**: 不要上传 `config.yaml`
+1. **API Key保护**:
+   - `config.yaml` 已加入 `.gitignore`，不会被上传
+   - 请确保不要将真实 API Key 提交到代码库
+   - 使用 `config.yaml.example` 作为配置模板
+
 2. **授权使用**: 仅在授权CTF环境使用
-3. **攻击结果敏感**: 已添加到 `.gitignore`
+
+3. **敏感文件**: 以下文件/目录已加入 `.gitignore`：
+   - `config.yaml` - 包含 API Key
+   - `.env` - 环境变量
+   - `secrets/` - 密钥目录
+   - `*.pem`, `*.key` - 证书文件
+   - `data/tasks.db` - 任务数据库
+   - `logs/` - 日志文件
+   - `attack_results/` - 攻击结果
 
 ---
 
