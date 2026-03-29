@@ -188,6 +188,8 @@ COPY crypto/ ./crypto/
 COPY pwn/ ./pwn/
 COPY reverse/ ./reverse/
 COPY misc/ ./misc/
+COPY ai_security/ ./ai_security/
+COPY cloud_security/ ./cloud_security/
 COPY memory/ ./memory/
 COPY rag_builder/ ./rag_builder/
 COPY config.yaml.example /app/config.yaml.example
