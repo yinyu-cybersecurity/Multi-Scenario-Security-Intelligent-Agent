@@ -45,11 +45,14 @@
         .result-title { font-size: 15px; font-weight: 600; }
         .result-count { font-size: 12px; color: #999; }
 
-        .result-item { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; padding: 12px; margin-bottom: 8px; }
+        .result-item { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; padding: 12px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s; }
         .result-item:hover { border-color: #1890ff; }
         .result-meta { display: flex; gap: 12px; margin-bottom: 8px; font-size: 12px; color: #666; }
         .result-content { font-size: 13px; line-height: 1.6; color: #333; white-space: pre-wrap; word-break: break-all; max-height: 150px; overflow: hidden; }
+        .result-content.full { max-height: none; }
         .result-score { font-size: 11px; color: #1890ff; }
+        .result-toggle { font-size: 12px; color: #1890ff; margin-top: 8px; cursor: pointer; }
+        .result-toggle:hover { text-decoration: underline; }
 
         .empty-state { text-align: center; padding: 60px 20px; color: #999; }
         .empty-icon { font-size: 48px; margin-bottom: 16px; }
@@ -147,13 +150,14 @@
                                 <span class="result-title">CTF Writeups</span>
                                 <span class="result-count">{{ results.writeups.length }} 条</span>
                             </div>
-                            <div v-for="(item, idx) in results.writeups" :key="idx" class="result-item">
+                            <div v-for="(item, idx) in results.writeups" :key="idx" class="result-item" @click="toggleContent('writeups', idx)">
                                 <div class="result-meta">
                                     <span class="tag tag-writeups">Writeup</span>
                                     <span v-if="item.metadata?.source">来源: {{ item.metadata.source }}</span>
-                                    <span class="result-score">相似度: {{ (item.distance * 100).toFixed(1) }}%</span>
+                                    <span class="result-score">相似度: {{ formatSimilarity(item.similarity) }}</span>
                                 </div>
-                                <div class="result-content">{{ item.content?.substring(0, 500) }}...</div>
+                                <div class="result-content" :class="{ full: expandedItems['writeups_' + idx] }">{{ item.content }}</div>
+                                <div class="result-toggle">{{ expandedItems['writeups_' + idx] ? '收起' : '点击查看完整内容' }}</div>
                             </div>
                         </div>
 
@@ -164,13 +168,14 @@
                                 <span class="result-title">Nuclei Templates</span>
                                 <span class="result-count">{{ results.nuclei.length }} 条</span>
                             </div>
-                            <div v-for="(item, idx) in results.nuclei" :key="idx" class="result-item">
+                            <div v-for="(item, idx) in results.nuclei" :key="idx" class="result-item" @click="toggleContent('nuclei', idx)">
                                 <div class="result-meta">
                                     <span class="tag tag-nuclei">Nuclei</span>
                                     <span v-if="item.metadata?.severity">严重程度: {{ item.metadata.severity }}</span>
-                                    <span class="result-score">相似度: {{ (item.distance * 100).toFixed(1) }}%</span>
+                                    <span class="result-score">相似度: {{ formatSimilarity(item.similarity) }}</span>
                                 </div>
-                                <div class="result-content">{{ item.content?.substring(0, 500) }}...</div>
+                                <div class="result-content" :class="{ full: expandedItems['nuclei_' + idx] }">{{ item.content }}</div>
+                                <div class="result-toggle">{{ expandedItems['nuclei_' + idx] ? '收起' : '点击查看完整内容' }}</div>
                             </div>
                         </div>
 
@@ -181,13 +186,14 @@
                                 <span class="result-title">Payloads</span>
                                 <span class="result-count">{{ results.payloads.length }} 条</span>
                             </div>
-                            <div v-for="(item, idx) in results.payloads" :key="idx" class="result-item">
+                            <div v-for="(item, idx) in results.payloads" :key="idx" class="result-item" @click="toggleContent('payloads', idx)">
                                 <div class="result-meta">
                                     <span class="tag tag-payloads">Payload</span>
                                     <span v-if="item.metadata?.category">分类: {{ item.metadata.category }}</span>
-                                    <span class="result-score">相似度: {{ (item.distance * 100).toFixed(1) }}%</span>
+                                    <span class="result-score">相似度: {{ formatSimilarity(item.similarity) }}</span>
                                 </div>
-                                <div class="result-content">{{ item.content?.substring(0, 500) }}...</div>
+                                <div class="result-content" :class="{ full: expandedItems['payloads_' + idx] }">{{ item.content }}</div>
+                                <div class="result-toggle">{{ expandedItems['payloads_' + idx] ? '收起' : '点击查看完整内容' }}</div>
                             </div>
                         </div>
 
@@ -198,13 +204,14 @@
                                 <span class="result-title">Security Resources</span>
                                 <span class="result-count">{{ results.security_resources.length }} 条</span>
                             </div>
-                            <div v-for="(item, idx) in results.security_resources" :key="idx" class="result-item">
+                            <div v-for="(item, idx) in results.security_resources" :key="idx" class="result-item" @click="toggleContent('security_resources', idx)">
                                 <div class="result-meta">
                                     <span class="tag tag-security_resources">资源</span>
                                     <span v-if="item.metadata?.source">来源: {{ item.metadata.source }}</span>
-                                    <span class="result-score">相似度: {{ (item.distance * 100).toFixed(1) }}%</span>
+                                    <span class="result-score">相似度: {{ formatSimilarity(item.similarity) }}</span>
                                 </div>
-                                <div class="result-content">{{ item.content?.substring(0, 500) }}...</div>
+                                <div class="result-content" :class="{ full: expandedItems['security_resources_' + idx] }">{{ item.content }}</div>
+                                <div class="result-toggle">{{ expandedItems['security_resources_' + idx] ? '收起' : '点击查看完整内容' }}</div>
                             </div>
                         </div>
                     </template>
@@ -223,6 +230,7 @@
                 const hasSearched = ref(false);
                 const topK = ref(5);
                 const selectedSources = ref(['writeups', 'nuclei', 'payloads', 'security_resources']);
+                const expandedItems = ref({});
                 const collections = ref([
                     { key: 'writeups', name: 'CTF Writeups', description: 'CTF比赛题解和技术分析', color: '#1890ff', count: 0 },
                     { key: 'nuclei', name: 'Nuclei Templates', description: 'Nuclei漏洞扫描模板', color: '#52c41a', count: 0 },
@@ -307,6 +315,18 @@
                     }
                 }
 
+                function toggleContent(source, idx) {
+                    const key = source + '_' + idx;
+                    expandedItems.value[key] = !expandedItems.value[key];
+                }
+
+                function formatSimilarity(similarity) {
+                    if (similarity === undefined || similarity === null || isNaN(similarity)) {
+                        return 'N/A';
+                    }
+                    return (similarity * 100).toFixed(1) + '%';
+                }
+
                 onMounted(() => {
                     fetchStatus();
                     fetchCollections();
@@ -314,8 +334,8 @@
 
                 return {
                     searchQuery, loading, hasSearched, topK, selectedSources,
-                    collections, results, totalResults,
-                    doSearch, toggleSource
+                    collections, results, totalResults, expandedItems,
+                    doSearch, toggleSource, toggleContent, formatSimilarity
                 };
             }
         });
