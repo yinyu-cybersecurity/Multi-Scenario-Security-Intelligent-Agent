@@ -167,14 +167,24 @@ class ModuleRegistry:
     def _import_node(cls, module_path: str, node_name: str) -> Optional[Callable]:
         """导入节点函数"""
         try:
+            # 先确保 sys.path 正确
+            if _project_root not in sys.path:
+                sys.path.insert(0, _project_root)
+
             module = importlib.import_module(module_path)
             node = getattr(module, node_name, None)
             if node is None:
                 print(f"[ModuleRegistry] Warning: Node '{node_name}' not found in module '{module_path}'")
             return node
         except Exception as e:
-            # 捕获所有异常，记录错误信息
-            print(f"[ModuleRegistry] Failed to import '{node_name}' from '{module_path}': {type(e).__name__}: {e}")
+            # 捕获所有异常，记录完整错误信息
+            import traceback
+            print(f"[ModuleRegistry] Failed to import '{node_name}' from '{module_path}':")
+            print(f"[ModuleRegistry] Error type: {type(e).__name__}")
+            print(f"[ModuleRegistry] Error message: {e}")
+            print(f"[ModuleRegistry] Traceback:")
+            traceback.print_exc()
+            print(f"[ModuleRegistry] Current sys.path: {sys.path[:3]}")
             return None
 
     @classmethod
