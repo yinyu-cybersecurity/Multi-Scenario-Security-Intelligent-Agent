@@ -16,9 +16,10 @@ import operator
 
 # 从 state_types 导入类型定义
 from state_types.base import BaseCTFState
+from state_types.strategic import StrategicContext
 from state_types.web import (
     WebCTFState, VulnerabilityCandidate, AttackAction,
-    PageFeatures, Hint, ToolCall, NodeAttackStatus
+    PageFeatures, Hint, ToolCall, NodeAttackStatus, HtmlExtraction
 )
 from state_types.internal_network import (
     InternalNetworkState, InternalHost, Credential, LateralMove
@@ -74,6 +75,13 @@ class CTFStateV2(TypedDict):
     attachments: List[Dict[str, Any]]
 
     # =====================================================
+    # [S] 战略上下文字段 - AI思维框架
+    # =====================================================
+    strategic_context: Dict[str, Any]  # StrategicContext结构
+    active_modules: List[str]  # 当前激活的模块列表
+    memory_mode: str  # 当前内存模式: "minimal"/"web"/"internal"/"cloud"/"ai"
+
+    # =====================================================
     # [W] Web CTF 字段
     # =====================================================
     page_features: PageFeatures
@@ -92,18 +100,20 @@ class CTFStateV2(TypedDict):
     tool_cache: Annotated[Dict[str, Any], merge_dict_reducer]
     attack_batch: List[AttackAction]
     attack_results: Annotated[List[Dict], attack_results_reducer]
+    attack_summary: str  # [断点4修复] 攻击历史摘要（关键发现压缩，防止截断丢失）
     tool_calls: Annotated[List[ToolCall], tool_calls_reducer]
     latest_tactical_guidance: Optional[str]
+    # [断点1修复] 结构化战术指导字段
+    guidance_type: str  # switch_scene/continue/deepen/abort
+    enforce_change: bool  # 是否强制执行指导
     analyst_intel: Optional[str]
     failed_payloads: Annotated[List[str], failed_payloads_reducer]
     hint_level: int
     hint_history: Annotated[List[Hint], operator.add]
-    last_intervention_step: int
     rag_context: List[str]
     temp_rules: List[Dict]
     success_trace: List[Dict]
     node_attack_status: Dict[str, NodeAttackStatus]
-    successful_exploits: List[Dict]
 
     # =====================================================
     # [W] 场景聚焦字段 (用于深度攻击)
@@ -117,18 +127,14 @@ class CTFStateV2(TypedDict):
     # [I] 内网渗透字段
     # =====================================================
     internal_mode: bool  # 是否处于内网渗透模式
-    internal_network_detected: bool
     internal_network_range: str
     internal_hosts: Annotated[List[InternalHost], internal_hosts_reducer]
     credentials: Annotated[List[Credential], credentials_reducer]
-    lateral_moves: List[LateralMove]
     domain_info: Dict[str, Any]
     shell_session: Optional[Dict[str, Any]]
     active_sessions: List[Dict[str, Any]]
-    tunnel_established: bool
     socks5_port: int
     uploaded_tools: List[str]
-    privilege_level: str
     pivot_host: str  # 跳板机IP
     proxy_info: Optional[Dict[str, Any]]  # SOCKS5代理信息
     upload_status: str  # 工具上传状态: pending/completed/commands_generated/failed
@@ -149,7 +155,6 @@ class CTFStateV2(TypedDict):
     # [W] 漏洞利用增强字段
     # =====================================================
     exploit_keywords: Dict[str, Any]  # 检索关键词: {cve_ids, framework, version, tags}
-    tried_payloads: Annotated[List[str], dedupe_list_reducer]  # 已尝试的payload
     continue_attack: bool  # 是否继续攻击
     remaining_payloads: List[Dict[str, Any]]  # 待尝试的payload列表
 
@@ -195,8 +200,6 @@ class CTFStateV2(TypedDict):
     identified_ciphertexts: List[Dict[str, Any]]
     decrypted_data: List[str]
     potential_flags: List[str]
-    rsa_params: Dict[str, Any]
-    classical_cipher_hints: List[str]
 
     # =====================================================
     # [Pwn] 二进制漏洞利用字段
@@ -288,6 +291,10 @@ def get_default_state(task_name: str, task_description: str, target_url: str) ->
         "current_url": target_url,
         "start_time": time.time(),
         "current_mode": "exploit",
+        # 战略上下文字段默认值
+        "strategic_context": {},
+        "active_modules": ["app.llm_client", "app.logger", "app.config"],
+        "memory_mode": "minimal",
     })
 
     return state

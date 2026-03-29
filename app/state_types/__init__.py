@@ -41,6 +41,7 @@ from .web import (
     Hint,
     ToolCall,
     NodeAttackStatus,
+    HtmlExtraction,
 )
 
 from .internal_network import (
@@ -96,6 +97,7 @@ __all__ = [
     'Hint',
     'ToolCall',
     'NodeAttackStatus',
+    'HtmlExtraction',
 
     # 内网渗透状态
     'InternalNetworkState',

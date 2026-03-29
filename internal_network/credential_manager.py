@@ -15,7 +15,11 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from logger import get_logger
+from collections import defaultdict
+try:
+    from app.logger import get_logger
+except ImportError:
+    from logger import get_logger
 
 logger = get_logger("Credential")
 
@@ -458,6 +462,475 @@ class CredentialManager:
                 lines.append(f"{cred.username}:{cred.ntlm_hash}")
         return lines
 
+    # =========================================================================
+    # 凭据-主机映射（新增功能）
+    # =========================================================================
+
+    def get_credential_host_mapping(self) -> Dict[str, List[str]]:
+        """
+        构建凭据到主机的映射
+
+        Returns:
+            {credential_id: [host1, host2, ...]}
+        """
+        mapping = defaultdict(list)
+
+        for cred in self.credentials:
+            cred_id = f"{cred.username}@{cred.domain or 'local'}"
+
+            # 直接关联的主机
+            if cred.host:
+                mapping[cred_id].append(cred.host)
+
+            # 域凭据可能适用于所有域主机
+            if cred.domain and cred.privilege in [PrivilegeLevel.DOMAIN_ADMIN, PrivilegeLevel.LOCAL_ADMIN]:
+                # 标记为域范围凭据
+                mapping[cred_id].append(f"domain:{cred.domain}")
+
+        return dict(mapping)
+
+    def infer_credential_scope(self, cred: Credential, known_hosts: List[str]) -> List[str]:
+        """
+        推断凭据的适用范围
+
+        Args:
+            cred: 凭据对象
+            known_hosts: 已知主机列表
+
+        Returns:
+            可能适用该凭据的主机列表
+        """
+        applicable_hosts = []
+
+        # 域管凭据适用于所有域主机
+        if cred.privilege == PrivilegeLevel.DOMAIN_ADMIN and cred.domain:
+            # 返回所有同域主机
+            applicable_hosts = [h for h in known_hosts]
+            logger.info(f"[CredentialManager] 域管凭据 {cred.username} 可能适用于 {len(applicable_hosts)} 台主机")
+
+        # 本地管理员凭据可能复用
+        elif cred.privilege == PrivilegeLevel.LOCAL_ADMIN:
+            # 检查是否是常见本地管理员账户
+            common_admins = ["administrator", "admin", "root"]
+            if cred.username.lower() in common_admins:
+                logger.info(f"[CredentialManager] 常见管理员账户 {cred.username} 可能可在其他主机复用")
+                applicable_hosts = [h for h in known_hosts if h != cred.host]
+
+        # 服务账户可能在多台主机有效
+        elif cred.privilege == PrivilegeLevel.SERVICE_ACCOUNT:
+            # 服务账户通常在特定服务相关主机有效
+            if cred.domain:
+                applicable_hosts = [h for h in known_hosts]
+
+        return applicable_hosts
+
+    def suggest_credential_reuse(self, target_host: str, known_hosts: List[str]) -> List[Dict]:
+        """
+        建议可用于目标主机的凭据
+
+        Args:
+            target_host: 目标主机IP
+            known_hosts: 已知所有主机列表
+
+        Returns:
+            建议的凭据列表，包含复用可能性
+        """
+        suggestions = []
+
+        # 1. 直接匹配的凭据
+        direct_creds = self.get_by_host(target_host)
+        for cred in direct_creds:
+            suggestions.append({
+                "credential": cred.to_dict(),
+                "confidence": 1.0,
+                "reason": "凭据直接关联此主机"
+            })
+
+        # 2. 域凭据
+        domain_creds = [c for c in self.credentials if c.domain]
+        for cred in domain_creds:
+            if cred not in direct_creds:
+                confidence = 0.9 if cred.privilege == PrivilegeLevel.DOMAIN_ADMIN else 0.7
+                suggestions.append({
+                    "credential": cred.to_dict(),
+                    "confidence": confidence,
+                    "reason": f"域凭据，权限: {cred.privilege.value}"
+                })
+
+        # 3. 可能复用的本地凭据
+        local_admins = self.get_local_admins()
+        for cred in local_admins:
+            if cred.host != target_host:
+                suggestions.append({
+                    "credential": cred.to_dict(),
+                    "confidence": 0.5,
+                    "reason": "本地管理员凭据，可能可复用"
+                })
+
+        # 按置信度排序
+        suggestions.sort(key=lambda x: x["confidence"], reverse=True)
+        return suggestions
+
+    def get_attack_paths_with_credentials(self, target_hosts: List[str]) -> List[Dict]:
+        """
+        基于凭据生成攻击路径
+
+        Args:
+            target_hosts: 目标主机列表
+
+        Returns:
+            攻击路径列表，每条路径包含使用的凭据
+        """
+        paths = []
+
+        for target in target_hosts:
+            suggestions = self.suggest_credential_reuse(target, target_hosts)
+
+            if suggestions:
+                best = suggestions[0]
+                paths.append({
+                    "target": target,
+                    "credential": best["credential"],
+                    "confidence": best["confidence"],
+                    "reason": best["reason"],
+                    "attack_methods": self._suggest_attack_methods(target, best["credential"])
+                })
+
+        return paths
+
+    def _suggest_attack_methods(self, target: str, cred: Dict) -> List[str]:
+        """根据凭据类型建议攻击方法"""
+        methods = []
+        cred_type = cred.get("cred_type", "plaintext")
+
+        if cred_type in ["plaintext", "ntlm"]:
+            methods.extend(["smb", "winrm", "wmi", "psexec"])
+
+        if cred_type == "kerberos":
+            methods.append("kerberos")
+
+        if cred_type == "ssh_key":
+            methods.append("ssh")
+
+        return methods
+
+    def export_for_attack_graph(self, known_hosts: List[str]) -> Dict:
+        """
+        导出供攻击图使用的数据
+
+        Args:
+            known_hosts: 已知主机列表
+
+        Returns:
+            攻击图友好的凭据数据
+        """
+        edges = []
+
+        for cred in self.credentials:
+            scope = self.infer_credential_scope(cred, known_hosts)
+
+            for target in scope:
+                edges.append({
+                    "source": cred.host,
+                    "target": target,
+                    "credential": f"{cred.username}@{cred.domain or 'local'}",
+                    "credential_type": cred.cred_type.value,
+                    "privilege": cred.privilege.value,
+                    "methods": self._suggest_attack_methods(target, cred.to_dict())
+                })
+
+        return {
+            "credentials": [c.to_dict() for c in self.credentials],
+            "attack_edges": edges
+        }
+
+    # =========================================================================
+    # 凭据验证
+    # =========================================================================
+
+    def verify_credential(self, cred: Credential, service: str = "smb") -> Dict:
+        """
+        验证凭据有效性
+
+        Args:
+            cred: 凭据对象
+            service: 验证服务类型 (smb/winrm/ssh/rdp)
+
+        Returns:
+            {
+                "valid": bool,
+                "privilege": str,
+                "error": str
+            }
+        """
+        import socket
+
+        result = {
+            "valid": False,
+            "privilege": cred.privilege.value,
+            "error": None
+        }
+
+        # 根据服务类型验证
+        if service == "smb":
+            return self._verify_smb_credential(cred)
+        elif service == "winrm":
+            return self._verify_winrm_credential(cred)
+        elif service == "ssh":
+            return self._verify_ssh_credential(cred)
+        elif service == "rdp":
+            return self._verify_rdp_credential(cred)
+        else:
+            result["error"] = f"不支持的服务类型: {service}"
+            return result
+
+    def _verify_smb_credential(self, cred: Credential) -> Dict:
+        """验证SMB凭据"""
+        result = {"valid": False, "privilege": cred.privilege.value, "error": None}
+
+        try:
+            # 尝试使用impacket或crackmapexec验证
+            from tool_framework import ToolRegistry
+
+            if cred.password:
+                # 明文凭据
+                cmd_result = ToolRegistry.execute_cached(
+                    "crackmapexec",
+                    cred.host,
+                    {
+                        "protocol": "smb",
+                        "target": cred.host,
+                        "username": cred.username,
+                        "password": cred.password,
+                        "domain": cred.domain
+                    }
+                )
+            elif cred.ntlm_hash:
+                # NTLM哈希
+                cmd_result = ToolRegistry.execute_cached(
+                    "crackmapexec",
+                    cred.host,
+                    {
+                        "protocol": "smb",
+                        "target": cred.host,
+                        "username": cred.username,
+                        "hash": cred.ntlm_hash,
+                        "domain": cred.domain
+                    }
+                )
+            else:
+                result["error"] = "无可用凭据数据"
+                return result
+
+            # 解析结果
+            if cmd_result.get("success"):
+                output = str(cmd_result.get("result", ""))
+
+                # 检查是否成功
+                if "[+]" in output or "Pwn3d!" in output:
+                    result["valid"] = True
+
+                    # 检查权限
+                    if "Pwn3d!" in output or "ADMIN" in output:
+                        result["privilege"] = "local_admin"
+                        cred.privilege = PrivilegeLevel.LOCAL_ADMIN
+                    elif "DOMAIN ADMIN" in output.upper():
+                        result["privilege"] = "domain_admin"
+                        cred.privilege = PrivilegeLevel.DOMAIN_ADMIN
+
+                    self.mark_verified(cred.host, cred.username, True)
+                else:
+                    result["error"] = "凭据无效"
+                    self.mark_verified(cred.host, cred.username, False)
+            else:
+                result["error"] = cmd_result.get("error", "验证失败")
+
+        except ImportError:
+            result["error"] = "crackmapexec工具不可用"
+        except Exception as e:
+            result["error"] = str(e)
+
+        return result
+
+    def _verify_winrm_credential(self, cred: Credential) -> Dict:
+        """验证WinRM凭据"""
+        result = {"valid": False, "privilege": cred.privilege.value, "error": None}
+
+        try:
+            from tool_framework import ToolRegistry
+
+            if cred.password:
+                cmd_result = ToolRegistry.execute_cached(
+                    "crackmapexec",
+                    cred.host,
+                    {
+                        "protocol": "winrm",
+                        "target": cred.host,
+                        "username": cred.username,
+                        "password": cred.password,
+                        "domain": cred.domain
+                    }
+                )
+            else:
+                result["error"] = "WinRM需要明文凭据"
+                return result
+
+            if cmd_result.get("success"):
+                output = str(cmd_result.get("result", ""))
+                if "[+]" in output:
+                    result["valid"] = True
+                    self.mark_verified(cred.host, cred.username, True)
+                else:
+                    result["error"] = "WinRM凭据无效"
+
+        except Exception as e:
+            result["error"] = str(e)
+
+        return result
+
+    def _verify_ssh_credential(self, cred: Credential) -> Dict:
+        """验证SSH凭据"""
+        result = {"valid": False, "privilege": cred.privilege.value, "error": None}
+
+        try:
+            import paramiko
+
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+            port = cred.port or 22
+
+            if cred.password:
+                client.connect(cred.host, port=port,
+                              username=cred.username,
+                              password=cred.password,
+                              timeout=10)
+            elif cred.ssh_key:
+                import io
+                key = paramiko.RSAKey.from_private_key_file(io.StringIO(cred.ssh_key))
+                client.connect(cred.host, port=port,
+                              username=cred.username,
+                              pkey=key,
+                              timeout=10)
+            else:
+                result["error"] = "SSH需要密码或密钥"
+                return result
+
+            # 验证成功，检查权限
+            stdin, stdout, stderr = client.exec_command("id")
+            output = stdout.read().decode()
+
+            result["valid"] = True
+
+            if "root" in output or "wheel" in output:
+                result["privilege"] = "local_admin"
+                cred.privilege = PrivilegeLevel.LOCAL_ADMIN
+
+            client.close()
+            self.mark_verified(cred.host, cred.username, True)
+
+        except ImportError:
+            result["error"] = "paramiko库不可用"
+        except Exception as e:
+            result["error"] = str(e)
+            self.mark_verified(cred.host, cred.username, False)
+
+        return result
+
+    def _verify_rdp_credential(self, cred: Credential) -> Dict:
+        """验证RDP凭据"""
+        result = {"valid": False, "privilege": cred.privilege.value, "error": None}
+
+        # RDP验证需要特殊工具，这里只做简单连接测试
+        try:
+            import socket
+
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            result_code = sock.connect_ex((cred.host, 3389))
+            sock.close()
+
+            if result_code == 0:
+                # 端口开放，但无法直接验证凭据
+                result["valid"] = True  # 保守估计
+                result["error"] = "RDP端口可达，但无法直接验证凭据"
+            else:
+                result["error"] = "RDP端口不可达"
+
+        except Exception as e:
+            result["error"] = str(e)
+
+        return result
+
+    def verify_all_credentials(self, service: str = "smb") -> Dict:
+        """
+        验证所有凭据
+
+        Args:
+            service: 验证服务类型
+
+        Returns:
+            验证结果统计
+        """
+        results = {
+            "total": len(self.credentials),
+            "valid": 0,
+            "invalid": 0,
+            "error": 0,
+            "details": []
+        }
+
+        for cred in self.credentials:
+            verify_result = self.verify_credential(cred, service)
+
+            detail = {
+                "host": cred.host,
+                "username": cred.username,
+                "valid": verify_result["valid"],
+                "privilege": verify_result["privilege"],
+                "error": verify_result.get("error")
+            }
+
+            results["details"].append(detail)
+
+            if verify_result["valid"]:
+                results["valid"] += 1
+            elif verify_result.get("error"):
+                results["error"] += 1
+            else:
+                results["invalid"] += 1
+
+        logger.info(f"[CredentialManager] 验证完成: {results['valid']}/{results['total']} 有效")
+
+        return results
+
+    def get_verified_credentials(self) -> List[Credential]:
+        """获取已验证有效的凭据"""
+        return [c for c in self.credentials if c.verified]
+
+    def cleanup_invalid_credentials(self) -> int:
+        """
+        清理无效凭据
+
+        Returns:
+            删除的凭据数量
+        """
+        initial_count = len(self.credentials)
+
+        # 删除验证失败且过期的凭据
+        self.credentials = [
+            c for c in self.credentials
+            if c.verified or not c.used  # 保留已验证或未使用的
+        ]
+
+        removed = initial_count - len(self.credentials)
+
+        if removed > 0:
+            self._save_credentials()
+            logger.info(f"[CredentialManager] 清理了 {removed} 个无效凭据")
+
+        return removed
+
     def clear(self):
         """清空所有凭据"""
         self.credentials = []
@@ -497,6 +970,33 @@ def add_credential(host: str, username: str, password: str = None,
 def get_best_credential(target: str, service: str) -> Optional[Credential]:
     """获取最佳凭据便捷函数"""
     return get_credential_manager().get_best_for_target(target, service)
+
+
+def get_credential_host_mapping() -> Dict[str, List[str]]:
+    """获取凭据-主机映射的便捷函数"""
+    return get_credential_manager().get_credential_host_mapping()
+
+
+def suggest_credentials_for_target(target: str, known_hosts: List[str]) -> List[Dict]:
+    """为目标主机建议凭据的便捷函数"""
+    return get_credential_manager().suggest_credential_reuse(target, known_hosts)
+
+
+def verify_credential(host: str, username: str, service: str = "smb") -> Dict:
+    """验证凭据的便捷函数"""
+    cm = get_credential_manager()
+    creds = cm.get_by_host(host)
+
+    for cred in creds:
+        if cred.username == username:
+            return cm.verify_credential(cred, service)
+
+    return {"valid": False, "error": "凭据不存在"}
+
+
+def verify_all_credentials(service: str = "smb") -> Dict:
+    """验证所有凭据的便捷函数"""
+    return get_credential_manager().verify_all_credentials(service)
 
 
 def register():

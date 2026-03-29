@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 from typing import List, Dict
 import json
+from prompts.scene_framework import (
+    get_scene_framework_for_attacker,
+    get_encoding_tips,
+    get_new_path_discovery_tips,
+    get_tool_selection_principles
+)
 
 
 def smart_truncate_output(output: str, max_length: int = 800) -> str:
@@ -171,6 +177,12 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
     if include_payloads and vuln_candidates:
         payload_ref = get_relevant_payloads(vuln_candidates)
 
+    # 获取共享的提示模块
+    scene_framework = get_scene_framework_for_attacker()
+    encoding_tips = get_encoding_tips()
+    path_discovery_tips = get_new_path_discovery_tips()
+    tool_principles = get_tool_selection_principles()
+
     return f"""# CTF 攻击手
 
 ## 目标
@@ -197,71 +209,33 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
 
 {payload_ref}
 
-
-
-涉及精确计算的场景必须使用 `python-exec` 工具写脚本执行，不要自己猜测：
-
-1. **编码解码**: base64、URL编码、十六进制、Unicode、ROT13等
-   ```json
-   {{"tool": "python-exec", "params": {{"code": "import base64; result = base64.b64decode('XXXXX').decode()", "description": "base64解码"}}}}
-   ```
-
-2. **加密解密**: MD5、SHA、AES等哈希或加密操作
-
-
-**错误示例** ❌: 看到 base64 就直接脑补解码结果
-**正确示例** ✅: 用 python-exec 写脚本精确解码
-
-## ⚠️ 关键提示：发现新路径立即访问！
-
-当解码或分析结果中**发现新的文件路径**时（如 `/test2222222222222222.php`）：
-1. **立即用 requests 工具直接访问该URL**
-2. URL格式: `http://目标域名/新路径`
-3. **不要继续证明漏洞存在**，去新路径寻找FLAG！
-
-示例：
-```json
-{{"tool": "requests", "params": {{"method": "GET", "url": "http://node7.anna.nssctf.cn:22856/test2222222222222222.php"}}, "reasoning": "访问新发现的路径"}}
-```
+{encoding_tips}
+{path_discovery_tips}
 
 ## 输出要求
 返回 JSON，包含 attack_actions 数组，每个动作包含 tool、params、reasoning 字段。
 
+## 攻击决策推理
+
+### 在生成攻击动作前，必须思考：
+1. **预期结果**: "如果成功，我将获得[具体内容]"
+2. **备选路径**: "如果失败，B计划是[方案]"
+3. **冗余自检**: 检查 failed_payloads 避免重复
+4. **优先级判断**: 当前动作是否是最高效的路径？
+
+### 每个攻击动作应包含：
+- **tool**: 工具名称
+- **params**: 参数配置
+- **reasoning**: 为什么选择这个攻击
+- **expected_outcome**: 预期结果
+- **fallback**: 失败后的备选方案
+- **priority**: high/medium/low
+
 示例:
-{{"attack_actions": [{{"tool": "requests", "params": {{"method": "POST", "url": "..."}}, "reasoning": "原因"}}]}}
+{{"attack_actions": [{{"tool": "requests", "params": {{"method": "POST", "url": "..."}}, "reasoning": "尝试SQL注入获取数据库内容", "expected_outcome": "获取用户表数据", "fallback": "尝试时间盲注", "priority": "high"}}]}}
 
 **重要**: attack_actions 不能为空，必须根据漏洞候选生成攻击动作。
 
-## 场景推理框架
-
-在生成攻击动作前，请判断当前属于哪种场景：
-
-### 1. 代码审计场景
-特征：响应中包含源码、敏感函数调用、过滤逻辑
-策略：理解代码逻辑→精确构造payload
-工具倾向：requests, python-exec
-
-### 2. CVE利用场景
-特征：已知框架版本、已知CVE编号
-策略：匹配利用模板→执行攻击
-工具倾向：nuclei, ysoserial等
-
-### 3. 逻辑绕过场景
-特征：存在验证逻辑、参数过滤、白名单限制
-策略：分析限制→构造绕过
-工具倾向：requests, python-exec
-
-### 4. 黑盒测试场景
-特征：无源码、需要枚举发现
-策略：扩大攻击面→验证利用
-工具倾向：dirsearch, ffuf, sqlmap
-
-## 工具选择原则
-
-1. **最小成本**：低成本低成本工具优先
-   - requests (1秒) < python-exec (1秒) < ffuf (数十秒) < dirsearch (数分钟)
-
-2. **精确优于批量**：有明确目标时，直接精确测试
-
-3. **验证优于假设**：每次攻击后验证，根据结果调整
+{scene_framework}
+{tool_principles}
 """

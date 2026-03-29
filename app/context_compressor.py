@@ -52,7 +52,6 @@ FIELD_PRIORITY = {
     "internal_hosts": Priority.HIGH,
     "domain_info": Priority.HIGH,
     "attack_chain": Priority.HIGH,
-    "successful_exploits": Priority.HIGH,
 
     # MEDIUM - 有价值但可压缩
     "scanned_ips": Priority.MEDIUM,

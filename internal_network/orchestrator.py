@@ -265,7 +265,8 @@ class InternalNetworkOrchestrator:
                 model=config.ANALYST_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                json_mode=True
+                json_mode=True,
+                timeout=30  # 30秒超时
             )
 
             if "```json" in response:

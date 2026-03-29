@@ -15,6 +15,7 @@
 - orchestrator.py: 内网渗透编排器
 - prompts.py: 内网渗透提示词模块
 - advanced_operations.py: 高级操作（提权、文件传输、凭据转储）
+- strategic_planner.py: AI驱动的战略规划器（第三赛区核心改进）
 
 目标:
 1. 外网打点获取初始Flag
@@ -39,6 +40,12 @@ from .prompts import (
     get_privilege_escalation_prompt,
     get_internal_mode_router_prompt
 )
+from .strategic_planner import (
+    strategic_planner_node,
+    StrategicPlanner,
+    AttackPriority,
+    get_strategic_planner
+)
 
 __all__ = [
     # 节点
@@ -57,5 +64,10 @@ __all__ = [
     'get_lateral_move_prompt',
     'get_ad_analysis_prompt',
     'get_privilege_escalation_prompt',
-    'get_internal_mode_router_prompt'
+    'get_internal_mode_router_prompt',
+    # 战略规划器（第三赛区核心改进）
+    'strategic_planner_node',
+    'StrategicPlanner',
+    'AttackPriority',
+    'get_strategic_planner'
 ]

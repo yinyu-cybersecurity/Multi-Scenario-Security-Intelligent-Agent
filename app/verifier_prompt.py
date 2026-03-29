@@ -1,6 +1,11 @@
 # verifier_prompt.py - 核验兵提示词模板 [P3合并版]
 import json
 import re
+from prompts.scene_framework import (
+    get_encoding_tips,
+    get_new_path_discovery_tips,
+    get_success_criteria
+)
 
 # Base64 正则匹配
 BASE64_PATTERN = re.compile(r'[A-Za-z0-9+/]{20,}={0,2}')
@@ -80,6 +85,9 @@ def get_verifier_prompt(attack_batch: list, results: list, analyst_intel: str = 
 请根据以上人工指导调整战术建议和攻击方向。
 """
 
+    # 获取共享的提示模块
+    success_criteria = get_success_criteria()
+
     return f"""# CTF 核验官
 
 ## 任务
@@ -111,35 +119,35 @@ def get_verifier_prompt(attack_batch: list, results: list, analyst_intel: str = 
 2. **不要继续证明漏洞存在**，应该去新路径寻找FLAG
 3. 在 `tactical_guidance` 中明确写出完整的访问URL
 
-错误示例 ❌: 继续用文件包含证明漏洞存在
-正确示例 ✅: 直接访问 `http://node7.anna.nssctf.cn:22856/test2222222222222222.php`
+错误示例: 继续用文件包含证明漏洞存在
+正确示例: 直接访问 `http://node7.anna.nssctf.cn:22856/test2222222222222222.php`
 
 ## 评判标准
 
-### 成功程度 (failure_severity)
-- **0.0**: 找到FLAG或明确成功（如完整读取到/etc/passwd内容、执行命令返回完整结果）
-- **0.3**: 有明显实质进展（上传成功、发现新文件路径、绕过过滤成功且获得有效输出）
-- **0.5**: 有变化但无实质价值（响应变化但只是错误信息、被过滤的回显）
-- **0.8**: 完全失败（403/404/500/被过滤/无变化）
+{success_criteria}
 
-### ⚠️ 重要：is_exploit_successful 判断标准
-**只有满足以下条件之一才能设为true：**
-1. 找到FLAG
-2. 成功读取到敏感文件内容（如flag.php源码、/etc/passwd完整内容）
-3. 命令执行返回完整、有用的输出（不只是"Array"或截断内容）
-4. 发现并成功访问新路径，且新路径有可利用内容
+## 战略评估
 
-**以下情况必须设为false：**
-- 响应只是"Array"或截断输出
-- 只显示"有变化"但没有获取到实际内容
-- 被过滤系统拦截（如"fxck your symbol"）
-- 重复使用相同绕过技术
+### 1. 进度评估
+分析当前攻击相对于目标的位置：
+- 距离FLAG：[更近 / 不变 / 更远]
+- 新获得了什么信息？
+- 剩余障碍是什么？
+
+### 2. 策略调整
+- 当前策略是否有效？
+- 是否需要换方向？
+- 有没有遗漏的攻击面？
+
+### 3. 资源优化
+- 是否有更高效的攻击路径？
+- 当前工具是否最适合？
 
 ### 节点决策 (node_decision)
 - **continue**: 有明确进展，值得继续尝试新方法
 - **abandon**: 连续多次无实质进展、重复相同失败模式、触发热熔断
 
-## 输出 JSON
+## 输出 JSON（必须包含完整结构化字段）
 {{
     "found_flag": true/false,
     "potential_flag": "FLAG或空",
@@ -148,7 +156,29 @@ def get_verifier_prompt(attack_batch: list, results: list, analyst_intel: str = 
     "failure_severity": 0.0-1.0,
     "node_decision": "continue或abandon",
     "failure_analysis": "失败原因分析（如有失败）",
-    "tactical_guidance": "下一步方向性建议。如果发现新路径必须写出完整的访问URL，如：访问 http://目标/test2222222222222222.php",
+    "strategic_progress": {{
+        "closer_to_goal": true/false,
+        "new_discoveries": ["发现1", "发现2"],
+        "remaining_blockers": ["障碍1"],
+        "attack_phase": "信息收集/漏洞确认/利用执行/后渗透"
+    }},
+    "tactical_guidance": {{
+        "action": "具体可执行的战术指导内容",
+        "guidance_type": "switch_scene/continue/deepen/abort",
+        "enforce_change": true/false,
+        "reason": "为什么给出这个指导",
+        "target_url": "建议访问的具体URL（如有）"
+    }},
     "updated_known_facts": "发现的关键信息（如果成功）"
 }}
+
+### guidance_type 说明：
+- **switch_scene**: 切换到新场景/新路径，必须填写target_url
+- **continue**: 继续当前攻击策略，调整参数
+- **deepen**: 深入当前发现，进一步挖掘
+- **abort**: 放弃当前节点，标记为abandoned
+
+### enforce_change 说明：
+- **true**: 强制执行该战术指导，忽略之前的历史攻击
+- **false**: 建议性指导，可与历史攻击结合
 """

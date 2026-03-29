@@ -2636,6 +2636,106 @@ def api_logs_node(task_id, node_name):
         return jsonify({"error": str(e)}), 500
 
 
+# =============================================================================
+# 战略上下文 API
+# =============================================================================
+
+@bp.route('/api/strategic/context/<task_id>')
+def api_strategic_context(task_id):
+    """获取任务的战略上下文"""
+    try:
+        # 从task_results获取完整状态（task_states只存储节点名称字符串）
+        state = task_results.get(task_id)
+        if not state:
+            # 尝试从tasks获取基本信息
+            task = tasks.get(task_id)
+            if not task:
+                return jsonify({"error": "Task not found"}), 404
+            # 返回默认战略上下文
+            return jsonify({
+                "task_id": task_id,
+                "strategic_context": {},
+                "attack_chain": [],
+                "current_step": 0,
+                "total_steps": 0,
+                "primary_goal": "获取FLAG",
+                "blockers": [],
+                "alternate_routes": [],
+                "position_type": "unknown",
+                "position_detail": ""
+            })
+
+        strategic_ctx = state.get("strategic_context", {})
+        attack_chain = strategic_ctx.get("attack_chain", [])
+        current_step = strategic_ctx.get("current_step", 0)
+        total_steps = strategic_ctx.get("total_steps", len(attack_chain))
+        primary_goal = strategic_ctx.get("primary_goal", "")
+        blockers = strategic_ctx.get("blockers", [])
+        alternate_routes = strategic_ctx.get("alternate_routes", [])
+
+        return jsonify({
+            "task_id": task_id,
+            "strategic_context": strategic_ctx,
+            "attack_chain": attack_chain,
+            "current_step": current_step,
+            "total_steps": total_steps,
+            "primary_goal": primary_goal,
+            "blockers": blockers,
+            "alternate_routes": alternate_routes,
+            "position_type": strategic_ctx.get("position_type", "unknown"),
+            "position_detail": strategic_ctx.get("position_detail", "")
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/api/modules/mode')
+def api_get_module_mode():
+    """获取当前内存模式"""
+    try:
+        from module_manager import module_manager
+        return jsonify({
+            "memory_mode": module_manager.memory_mode,
+            "active_modules": list(module_manager.loaded_modules)
+        })
+    except ImportError:
+        return jsonify({
+            "memory_mode": "unknown",
+            "active_modules": [],
+            "note": "module_manager not available"
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route('/api/modules/switch', methods=['POST'])
+def api_switch_module_mode():
+    """切换内存模式"""
+    try:
+        from module_manager import module_manager
+        data = request.json or {}
+        mode = data.get('mode', 'web')
+
+        # 验证模式
+        valid_modes = ['web', 'internal', 'cloud', 'ai', 'crypto', 'pwn', 'reverse', 'misc', 'minimal']
+        if mode not in valid_modes:
+            return jsonify({"error": f"Invalid mode: {mode}"}), 400
+
+        result = module_manager.switch_mode(mode, {})
+        return jsonify({
+            "success": True,
+            "mode": mode,
+            "active_modules": result.get("active_modules", [])
+        })
+    except ImportError:
+        return jsonify({
+            "success": False,
+            "error": "module_manager not available"
+        }), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == '__main__':
     # 注册 Blueprint（确保所有路由已定义）
     app.register_blueprint(bp)

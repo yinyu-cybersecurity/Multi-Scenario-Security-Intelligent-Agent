@@ -20,6 +20,7 @@ from state_types.web import (
     Hint,
     ToolCall,
     NodeAttackStatus,
+    HtmlExtraction,
 )
 
 # 从 state_types 导入内网相关类型
@@ -58,6 +59,7 @@ __all__ = [
     'Hint',
     'ToolCall',
     'NodeAttackStatus',
+    'HtmlExtraction',
 
     # 内网类型
     'InternalHost',

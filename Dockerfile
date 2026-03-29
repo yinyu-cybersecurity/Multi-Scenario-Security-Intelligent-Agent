@@ -69,6 +69,12 @@ RUN pipx install git-hacker || true
 RUN pipx install ldapdomaindump || true
 RUN pipx install bloodhound || true
 
+# AD CS/证书攻击工具 (ESC1-10, Shadow Credentials, ZeroLogon)
+RUN pipx install certipy-ad || true
+
+# pywhisker (Shadow Credentials备选工具)
+RUN pipx install pywhisker || true
+
 # 安装 crackmapexec 依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \

@@ -94,7 +94,8 @@ def _ai_verify_completion(state: CTFState, flag_count: int, host_count: int) -> 
             model=config.ANALYST_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
-            json_mode=True
+            json_mode=True,
+            timeout=30  # 30秒超时
         )
 
         if "```json" in response:
@@ -164,7 +165,8 @@ def _ai_estimate_expected_flags(state: CTFState) -> Dict:
             model=config.ANALYST_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
-            json_mode=True
+            json_mode=True,
+            timeout=30  # 30秒超时
         )
 
         if "```json" in response:
@@ -555,7 +557,8 @@ def _ai_route_internal_decision(context: Dict, state: CTFState) -> str:
             model=config.ANALYST_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
-            json_mode=True
+            json_mode=True,
+            timeout=30  # 30秒超时
         )
 
         if "```json" in response:
@@ -769,3 +772,283 @@ def route_post_exploit(state: CTFState, current_node: str) -> str:
 
     # 如果无结果或失败，回到决策
     return "mode_manager"
+
+
+# ==============================================================================
+# 战略路由扩展 (Strategic Routing Extension)
+# ==============================================================================
+
+def route_with_strategic_context(state: CTFState, current_node: str) -> Dict:
+    """
+    基于战略上下文的智能路由
+
+    集成战略规划器，基于AI分析决定下一步
+
+    Args:
+        state: 当前状态
+        current_node: 当前节点名
+
+    Returns:
+        {
+            "next_node": str,
+            "strategic_context": Dict,
+            "reasoning": str
+        }
+    """
+    # 获取战略上下文
+    strategic_context = state.get("strategic_context", {})
+
+    if not strategic_context:
+        # 如果没有战略上下文，调用规划器生成
+        try:
+            from internal_network.strategic_planner import strategic_planner_node
+            result = strategic_planner_node(dict(state))
+            strategic_context = result.get("strategic_context", {})
+        except ImportError:
+            logger.warning("[StrategicRoute] 战略规划器不可用")
+            return {
+                "next_node": route_mode(state, current_node),
+                "strategic_context": {},
+                "reasoning": "降级到默认路由"
+            }
+
+    # 基于战略上下文决策
+    position_type = strategic_context.get("position_type", "web")
+    current_step = strategic_context.get("current_step", 1)
+    blockers = strategic_context.get("blockers", [])
+
+    # 内网模式路由
+    if position_type == "internal":
+        next_node = _route_internal_with_context(state, strategic_context)
+        reasoning = f"内网渗透阶段 {current_step}"
+
+    # Web模式路由
+    elif position_type == "web":
+        next_node = route_mode(state, current_node)
+        reasoning = f"Web攻击模式"
+
+    # 云/AI模式路由
+    elif position_type in ["cloud", "ai"]:
+        next_node = _route_cloud_ai_with_context(state, strategic_context)
+        reasoning = f"{position_type.upper()}攻击模式"
+
+    else:
+        next_node = route_mode(state, current_node)
+        reasoning = "默认路由"
+
+    # 检查是否有障碍需要规避
+    if blockers:
+        logger.info(f"[StrategicRoute] 检测到障碍: {blockers}")
+        # 尝试使用备选路径
+        alternate_routes = strategic_context.get("alternate_routes", [])
+        if alternate_routes:
+            logger.info(f"[StrategicRoute] 备选路径: {alternate_routes[0]}")
+
+    return {
+        "next_node": next_node,
+        "strategic_context": strategic_context,
+        "reasoning": reasoning
+    }
+
+def _route_internal_with_context(state: CTFState, context: Dict) -> str:
+    """内网模式战略路由"""
+    current_step = context.get("current_step", 1)
+    blockers = context.get("blockers", [])
+
+    # 阶段映射到节点
+    phase_node_map = {
+        1: "internal_recon",      # 立足点/侦察
+        2: "credential_gather",   # 凭据收集
+        3: "lateral_move",        # 横向移动
+        4: "privilege_escalation", # 权限提升
+        5: "flag_search"          # Flag搜索
+    }
+
+    # 检查障碍并调整
+    if "无SOCKS5代理" in blockers or "隧道未建立" in blockers:
+        return "setup_tunnel"
+
+    if "工具未上传" in blockers or state.get("upload_status") not in ["completed", "commands_generated"]:
+        return "upload_tools"
+
+    # 正常阶段路由
+    return phase_node_map.get(current_step, "internal_recon")
+
+def _route_cloud_ai_with_context(state: CTFState, context: Dict) -> str:
+    """云/AI模式战略路由"""
+    current_step = context.get("current_step", 1)
+
+    # 检查模式
+    if state.get("cloud_mode"):
+        phase_node_map = {
+            1: "cloud_recon",      # 元数据泄露
+            2: "cloud_enum",       # 权限枚举
+            3: "cloud_exploit",    # 利用
+            4: "cloud_escalate",   # 提权
+            5: "flag_search"
+        }
+        return phase_node_map.get(current_step, "cloud_recon")
+
+    if state.get("ai_mode"):
+        phase_node_map = {
+            1: "ai_detect",        # 检测
+            2: "ai_probe",         # 探测
+            3: "ai_exploit",       # 注入
+            4: "ai_exfiltrate",    # 泄露
+            5: "flag_search"
+        }
+        return phase_node_map.get(current_step, "ai_detect")
+
+    return "mode_manager"
+
+def update_strategic_context_after_node(state: CTFState, node_name: str, result: Dict) -> Dict:
+    """
+    节点执行后更新战略上下文
+
+    Args:
+        state: 当前状态
+        node_name: 刚执行的节点名
+        result: 节点执行结果
+
+    Returns:
+        更新后的战略上下文
+    """
+    context = state.get("strategic_context", {})
+
+    if not context:
+        return context
+
+    # 更新进度
+    current_step = context.get("current_step", 1)
+
+    # 根据节点成功与否更新
+    success = not result.get("error")
+
+    if success:
+        # 成功，推进到下一阶段
+        context["current_step"] = min(current_step + 1, context.get("total_steps", 5))
+
+        # 清除相关障碍
+        blockers = context.get("blockers", [])
+        if node_name == "setup_tunnel":
+            blockers = [b for b in blockers if "隧道" not in b and "代理" not in b]
+        elif node_name == "upload_tools":
+            blockers = [b for b in blockers if "工具" not in b]
+        context["blockers"] = blockers
+
+    else:
+        # 失败，添加障碍
+        error = result.get("error", "未知错误")
+        if error not in context.get("blockers", []):
+            context["blockers"].append(error[:50])  # 截断错误信息
+
+    return context
+
+def get_strategic_priority_targets(state: CTFState) -> List[Tuple[str, int]]:
+    """
+    获取战略优先级目标列表
+
+    Returns:
+        [(目标IP, 优先级分数), ...]
+    """
+    # 尝试从攻击图获取
+    try:
+        from internal_network.attack_graph import build_attack_graph_from_state
+
+        graph = build_attack_graph_from_state(dict(state))
+
+        sessions = state.get("active_sessions") or []
+        compromised = {s.get("host") for s in sessions if s.get("host")}
+
+        targets = graph.get_recommended_targets(compromised)
+
+        return [(t.id, t.value) for t in targets[:5]]
+
+    except ImportError:
+        # 降级：从状态直接获取
+        internal_hosts = state.get("internal_hosts") or []
+        sessions = state.get("active_sessions") or []
+        compromised = {s.get("host") for s in sessions if s.get("host")}
+
+        priorities = []
+        for host in internal_hosts:
+            if not isinstance(host, dict):
+                continue
+            ip = host.get("ip")
+            if ip and ip not in compromised:
+                ports = [p.get("port") for p in host.get("ports", []) if isinstance(p, dict)]
+                # 简单优先级计算
+                value = 50
+                if any(p in ports for p in [88, 389]):
+                    value = 100
+                elif any(p in ports for p in [1433, 3306]):
+                    value = 80
+                priorities.append((ip, value))
+
+        priorities.sort(key=lambda x: x[1], reverse=True)
+        return priorities[:5]
+
+def should_switch_mode(state: CTFState) -> Tuple[bool, str]:
+    """
+    判断是否需要切换内存模式
+
+    Returns:
+        (是否切换, 目标模式)
+    """
+    try:
+        from app.module_manager import get_module_manager
+        mm = get_module_manager()
+    except ImportError:
+        return False, ""
+
+    current_mode = state.get("memory_mode", "minimal")
+
+    # 检测当前需要的模式
+    if state.get("internal_mode"):
+        target_mode = "internal"
+    elif state.get("cloud_mode") or state.get("ai_mode"):
+        target_mode = "cloud"
+    elif state.get("pwn_mode"):
+        target_mode = "pwn"
+    elif state.get("reverse_mode"):
+        target_mode = "reverse"
+    elif state.get("crypto_mode"):
+        target_mode = "crypto"
+    elif state.get("misc_mode"):
+        target_mode = "misc"
+    else:
+        target_mode = "web"
+
+    # 判断是否需要切换
+    if current_mode != target_mode:
+        logger.info(f"[StrategicRoute] 建议切换模式: {current_mode} -> {target_mode}")
+        return True, target_mode
+
+    return False, ""
+
+def execute_mode_switch(state: CTFState, target_mode: str) -> Dict:
+    """
+    执行模式切换
+
+    Returns:
+        状态更新字典
+    """
+    try:
+        from app.module_manager import get_module_manager
+        mm = get_module_manager()
+
+        result = mm.switch_mode(target_mode, dict(state))
+
+        logger.info(f"[StrategicRoute] 模式切换完成: {target_mode}")
+
+        return {
+            "memory_mode": result.get("memory_mode", target_mode),
+            "active_modules": result.get("active_modules", [])
+        }
+
+    except ImportError as e:
+        logger.warning(f"[StrategicRoute] 模块管理器不可用: {e}")
+        return {"memory_mode": target_mode}
+    except Exception as e:
+        logger.error(f"[StrategicRoute] 模式切换失败: {e}")
+        return {}

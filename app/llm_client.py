@@ -166,13 +166,25 @@ class LLMClient:
         temperature: float = 0.1,
         max_tokens: Optional[int] = None,
         json_mode: bool = False,
-        retry_count: int = 3
+        retry_count: int = 3,
+        timeout: Optional[int] = None
     ) -> str:
         """
-        调用 Chat Completion API (增加重试机制)
-        返回字符串以保持向后兼容
+        调用 Chat Completion API (增加重试机制和超时控制)
+
+        Args:
+            model: 模型名称
+            messages: 消息列表
+            temperature: 温度参数
+            max_tokens: 最大token数
+            json_mode: 是否JSON模式
+            retry_count: 重试次数
+            timeout: 超时秒数 (可选，默认使用config.LLM_TIMEOUT)
+
+        Returns:
+            AI响应字符串
         """
-        result = self.call_with_details(model, messages, temperature, max_tokens, json_mode, retry_count)
+        result = self.call_with_details(model, messages, temperature, max_tokens, json_mode, retry_count, timeout)
         return result.content
 
     def call_with_details(
@@ -182,7 +194,8 @@ class LLMClient:
         temperature: float = 0.1,
         max_tokens: Optional[int] = None,
         json_mode: bool = False,
-        retry_count: int = 3
+        retry_count: int = 3,
+        timeout: Optional[int] = None
     ) -> LLMResult:
         """
         调用 Chat Completion API，返回详细结果
@@ -191,6 +204,19 @@ class LLMClient:
         - 并发控制
         - 智能重试（根据错误类型调整策略）
         - 性能监控
+        - 可配置超时
+
+        Args:
+            model: 模型名称
+            messages: 消息列表
+            temperature: 温度参数
+            max_tokens: 最大token数
+            json_mode: 是否JSON模式
+            retry_count: 重试次数
+            timeout: 超时秒数 (可选，默认使用config.LLM_TIMEOUT)
+
+        Returns:
+            LLMResult 详细结果对象
         """
         start_time = time.time()
         tokens_used = 0
@@ -207,7 +233,7 @@ class LLMClient:
 
         try:
             result = self._call_with_retry(
-                model, messages, temperature, max_tokens, json_mode, retry_count
+                model, messages, temperature, max_tokens, json_mode, retry_count, timeout
             )
             result.duration = time.time() - start_time
 
@@ -235,12 +261,17 @@ class LLMClient:
         temperature: float,
         max_tokens: Optional[int],
         json_mode: bool,
-        retry_count: int
+        retry_count: int,
+        timeout: Optional[int] = None
     ) -> LLMResult:
         """
         内部重试逻辑 - 根据错误类型智能调整
+
+        Args:
+            timeout: 超时秒数 (可选，默认使用config.LLM_TIMEOUT)
         """
         url = f"{self.base_url}/chat/completions"
+        request_timeout = timeout if timeout is not None else config.LLM_TIMEOUT
 
         payload = {
             "model": model,
@@ -259,7 +290,7 @@ class LLMClient:
 
         for attempt in range(retry_count):
             try:
-                response = requests.post(url, headers=self.headers, json=payload, timeout=config.LLM_TIMEOUT)
+                response = requests.post(url, headers=self.headers, json=payload, timeout=request_timeout)
 
                 # 检查HTTP状态码
                 if response.status_code == 401:
@@ -377,3 +408,97 @@ llm_client = LLMClient()
 def get_rate_limiter_status() -> Dict:
     """获取限流器状态（用于监控）"""
     return _rate_limiter.get_status()
+
+
+def safe_call_chat_completion(
+    model: str,
+    messages: List[Dict[str, str]],
+    timeout: int = 30,
+    **kwargs
+) -> Optional[str]:
+    """
+    安全的AI调用（带超时和错误处理）
+
+    Args:
+        model: 模型名称
+        messages: 消息列表
+        timeout: 超时秒数
+        **kwargs: 其他参数 (temperature, json_mode, max_tokens, retry_count)
+
+    Returns:
+        AI响应或None（失败时返回None）
+    """
+    try:
+        response = llm_client.call_chat_completion(
+            model=model,
+            messages=messages,
+            timeout=timeout,
+            **kwargs
+        )
+        return response
+    except Exception as e:
+        logger.warning(f"[LLM] AI调用失败: {e}")
+        return None
+
+
+def call_with_retry(
+    call_func,
+    max_retries: int = 3,
+    base_delay: float = 1.0,
+    **kwargs
+) -> Optional[str]:
+    """
+    带指数退避重试的AI调用
+
+    Args:
+        call_func: 调用函数 (如 safe_call_chat_completion)
+        max_retries: 最大重试次数
+        base_delay: 基础延迟秒数
+        **kwargs: 传递给调用函数的参数
+
+    Returns:
+        AI响应或None（所有重试失败后返回None）
+    """
+    for attempt in range(max_retries):
+        try:
+            result = call_func(**kwargs)
+            if result:
+                return result
+        except Exception as e:
+            delay = base_delay * (2 ** attempt)
+            logger.warning(f"[LLM] 调用失败，{delay}秒后重试 ({attempt+1}/{max_retries}): {e}")
+            time.sleep(delay)
+
+    logger.error(f"[LLM] 所有重试失败 ({max_retries}次)")
+    return None
+
+
+def safe_call_with_details(
+    model: str,
+    messages: List[Dict[str, str]],
+    timeout: int = 30,
+    **kwargs
+) -> Optional[LLMResult]:
+    """
+    安全的AI调用（返回详细结果，带超时和错误处理）
+
+    Args:
+        model: 模型名称
+        messages: 消息列表
+        timeout: 超时秒数
+        **kwargs: 其他参数
+
+    Returns:
+        LLMResult或None（失败时返回None）
+    """
+    try:
+        result = llm_client.call_with_details(
+            model=model,
+            messages=messages,
+            timeout=timeout,
+            **kwargs
+        )
+        return result
+    except Exception as e:
+        logger.warning(f"[LLM] AI调用失败: {e}")
+        return None

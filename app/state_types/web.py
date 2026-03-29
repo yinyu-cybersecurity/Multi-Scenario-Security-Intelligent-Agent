@@ -66,6 +66,30 @@ class AttackAction(TypedDict):
     timeout: int
 
 
+class HtmlExtraction(TypedDict):
+    """
+    结构化HTML提取数据
+
+    在HTML截断之前提取的关键信息，防止丢失攻击面。
+
+    Attributes:
+        hidden_fields: 所有隐藏字段 {'name': 'value'}
+        form_endpoints: 表单端点列表 [{'action': str, 'method': str, 'fields': [str]}]
+        script_endpoints: JavaScript中发现的URL/端点
+        comments: HTML注释内容（可能包含提示）
+        meta_tags: Meta标签内容 {'name': 'content'}
+        data_attributes: data-*属性值
+        api_endpoints: API端点（从JS/fetch/ajax中提取）
+    """
+    hidden_fields: Dict[str, str]
+    form_endpoints: List[Dict[str, Any]]
+    script_endpoints: List[str]
+    comments: List[str]
+    meta_tags: Dict[str, str]
+    data_attributes: Dict[str, str]
+    api_endpoints: List[str]
+
+
 class PageFeatures(TypedDict):
     """
     页面特征向量
@@ -81,6 +105,7 @@ class PageFeatures(TypedDict):
         scripts: JS 文件列表
         cookies: Cookie 信息
         headers: 响应头
+        html_extraction: 结构化HTML提取数据（在截断前提取）
     """
     tech_stack: List[str]
     input_vectors: List[str]
@@ -90,6 +115,7 @@ class PageFeatures(TypedDict):
     scripts: List[str]
     cookies: Dict[str, str]
     headers: Dict[str, str]
+    html_extraction: HtmlExtraction
 
 
 class Hint(TypedDict):
@@ -257,19 +283,6 @@ class WebCTFState(TypedDict):
     focused_scene: str
     scene_attack_attempts: int
     scene_exhausted: bool
-
-    # =========================================================================
-    # 分级介入
-    # =========================================================================
-
-    # 已给的最高提示级别
-    hint_level: int
-
-    # 提示历史
-    hint_history: Annotated[List[Hint], lambda x, y: cap_list_reducer(x, y, 20)]
-
-    # 上次介入时的步数
-    last_intervention_step: int
 
     # =========================================================================
     # RAG 与进化

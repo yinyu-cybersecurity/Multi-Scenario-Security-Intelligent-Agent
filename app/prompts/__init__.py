@@ -13,10 +13,43 @@ Prompt 注册中心
 
     # 列出所有 prompt
     PromptRegistry.list_prompts()
+
+    # 使用共享场景框架
+    from prompts.scene_framework import (
+        get_scene_framework_for_attacker,
+        get_scene_framework_for_analyst,
+        get_encoding_tips,
+        get_new_path_discovery_tips,
+        get_success_criteria,
+        get_tool_selection_principles,
+        get_attack_decision_principles,
+        SCENE_TOOL_MAPPING
+    )
 """
 
 from typing import Dict, List, Optional, Callable
 from dataclasses import dataclass, field
+
+# 导出场景框架模块
+from .scene_framework import (
+    SCENE_FRAMEWORK,
+    SCENE_RECOGNITION_DETAIL,
+    SCENE_STRATEGY_MAPPING,
+    SCENE_TOOL_MAPPING,
+    ENCODING_TIPS,
+    NEW_PATH_DISCOVERY_TIPS,
+    SUCCESS_CRITERIA,
+    TOOL_SELECTION_PRINCIPLES,
+    ATTACK_DECISION_PRINCIPLES,
+    get_scene_framework_for_attacker,
+    get_scene_framework_for_analyst,
+    get_encoding_tips,
+    get_new_path_discovery_tips,
+    get_success_criteria,
+    get_tool_selection_principles,
+    get_attack_decision_principles,
+    get_recommended_tools,
+)
 
 
 @dataclass

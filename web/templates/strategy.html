@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CTF-Agent 战略看板</title>
+    <!-- 使用国内 CDN 加速 -->
+    <link href="https://cdn.bootcdn.net/ajax/libs/element-plus/2.4.0/index.css" rel="stylesheet">
+    <script src="https://cdn.bootcdn.net/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/element-plus/2.4.0/index.full.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, 'Microsoft YaHei', sans-serif; background: #f0f2f5; color: #333; min-height: 100vh; padding-top: 56px; }
+        .header { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: linear-gradient(135deg, #722ed1 0%, #531dab 100%); color: #fff; padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+        .header h1 { font-size: 18px; }
+        .nav-links { display: flex; gap: 8px; }
+        .nav-link { padding: 6px 16px; color: rgba(255,255,255,0.85); text-decoration: none; border-radius: 4px; font-size: 14px; }
+        .nav-link:hover, .nav-link.active { background: rgba(255,255,255,0.2); color: #fff; }
+
+        .main-layout { display: flex; height: calc(100vh - 56px); }
+        .sidebar { width: 280px; background: #fff; border-right: 1px solid #e8e8e8; overflow-y: auto; }
+        .sidebar-section { padding: 16px; border-bottom: 1px solid #e8e8e8; }
+        .sidebar-title { font-size: 13px; color: #666; margin-bottom: 12px; font-weight: 500; }
+        .task-item { padding: 12px; background: #fafafa; border-radius: 4px; margin-bottom: 8px; cursor: pointer; border: 1px solid transparent; }
+        .task-item:hover { border-color: #722ed1; }
+        .task-item.active { border-color: #722ed1; background: #f9f0ff; }
+        .task-url { font-size: 13px; color: #333; word-break: break-all; }
+        .task-meta { font-size: 11px; color: #999; margin-top: 4px; }
+
+        .content-area { flex: 1; overflow-y: auto; padding: 24px; background: #f0f2f5; }
+
+        .card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px; }
+        .card-header { padding: 16px 20px; border-bottom: 1px solid #e8e8e8; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+        .card-body { padding: 16px 20px; }
+
+        .page-title { font-size: 20px; font-weight: 600; margin-bottom: 20px; color: #333; }
+
+        /* 攻击链可视化 */
+        .attack-chain-container { padding: 20px 0; }
+        .attack-chain { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; }
+        .chain-step { display: flex; align-items: center; gap: 8px; }
+        .step-node { padding: 12px 20px; border-radius: 6px; background: #f0f0f0; border: 2px solid #d9d9d9; font-size: 13px; color: #666; position: relative; }
+        .step-node.completed { background: #f6ffed; border-color: #52c41a; color: #52c41a; }
+        .step-node.current { background: #f9f0ff; border-color: #722ed1; color: #722ed1; font-weight: 600; box-shadow: 0 0 0 3px rgba(114,46,209,0.2); }
+        .step-node.pending { background: #fafafa; border-color: #d9d9d9; color: #999; }
+        .step-arrow { color: #d9d9d9; font-size: 18px; }
+        .step-arrow.active { color: #722ed1; }
+
+        /* 进度条 */
+        .progress-bar-container { margin: 20px 0; }
+        .progress-bar { height: 8px; background: #f0f0f0; border-radius: 4px; overflow: hidden; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #52c41a 0%, #722ed1 100%); border-radius: 4px; transition: width 0.3s; }
+        .progress-text { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: #666; }
+
+        /* 战略信息卡片 */
+        .strategic-info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+        .info-block { background: #fafafa; border-radius: 4px; padding: 16px; }
+        .info-block-title { font-size: 12px; color: #666; margin-bottom: 8px; }
+        .info-block-value { font-size: 14px; color: #333; }
+        .info-block-value.goal { color: #722ed1; font-weight: 500; }
+
+        /* 阻碍和备选 */
+        .blockers-list, .alternates-list { margin-top: 8px; }
+        .blocker-item, .alternate-item { padding: 8px 12px; border-radius: 4px; margin-bottom: 6px; font-size: 12px; }
+        .blocker-item { background: #fff2f0; color: #ff4d4f; border-left: 3px solid #ff4d4f; }
+        .alternate-item { background: #f6ffed; color: #52c41a; border-left: 3px solid #52c41a; }
+
+        /* 凭据映射 */
+        .credential-mapping { margin-top: 12px; }
+        .cred-host-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+        .cred-host-item { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 4px; padding: 10px; }
+        .cred-host-name { font-weight: 500; color: #1890ff; font-size: 13px; }
+        .cred-host-detail { font-size: 11px; color: #666; margin-top: 4px; }
+
+        /* 攻击图可视化 */
+        .attack-graph-area { min-height: 300px; background: #fafafa; border-radius: 4px; position: relative; }
+        #attack-graph-svg { width: 100%; height: 300px; }
+        .graph-node circle { stroke-width: 2px; cursor: pointer; }
+        .graph-node.compromised circle { fill: #52c41a; stroke: #389e0d; }
+        .graph-node.target circle { fill: #ff4d4f; stroke: #cf1322; }
+        .graph-node.pivot circle { fill: #1890ff; stroke: #096dd9; }
+        .graph-node.dc circle { fill: #722ed1; stroke: #531dab; }
+        .graph-node.unknown circle { fill: #d9d9d9; stroke: #bfbfbf; }
+        .graph-node text { font-size: 10px; fill: #333; pointer-events: none; }
+        .graph-edge { fill: none; stroke: #d9d9d9; stroke-width: 1.5px; }
+        .graph-edge.active { stroke: #722ed1; stroke-width: 2px; }
+
+        /* 模块状态 */
+        .module-mode-indicator { display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: #f9f0ff; border-radius: 4px; }
+        .mode-badge { padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+        .mode-badge.web { background: #1890ff; color: #fff; }
+        .mode-badge.internal { background: #722ed1; color: #fff; }
+        .mode-badge.cloud { background: #13c2c2; color: #fff; }
+        .mode-badge.ai { background: #eb2f96; color: #fff; }
+        .mode-badge.crypto { background: #faad14; color: #fff; }
+        .mode-badge.minimal { background: #d9d9d9; color: #666; }
+
+        .loaded-modules { margin-top: 12px; }
+        .module-tag { display: inline-block; padding: 4px 8px; background: #f0f0f0; border-radius: 3px; margin: 2px; font-size: 11px; color: #666; }
+
+        /* 空状态 */
+        .empty-state { text-align: center; padding: 40px; color: #999; }
+        .empty-state-icon { font-size: 48px; margin-bottom: 16px; }
+        .empty-state-text { font-size: 14px; }
+
+        .btn { padding: 8px 16px; border-radius: 4px; font-size: 13px; cursor: pointer; border: 1px solid #d9d9d9; background: #fff; color: #333; }
+        .btn:hover { border-color: #722ed1; color: #722ed1; }
+        .btn-primary { background: #722ed1; border-color: #722ed1; color: #fff; }
+        .btn-primary:hover { background: #531dab; border-color: #531dab; color: #fff; }
+        .btn-sm { padding: 4px 10px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="header">
+            <h1>CTF-Agent 战略看板</h1>
+            <div class="nav-links">
+                <a href="/fisher_ctf_agent/monitor" class="nav-link">控制台</a>
+                <a href="/fisher_ctf_agent/modules" class="nav-link">模块</a>
+                <a href="/fisher_ctf_agent/topology" class="nav-link">拓扑</a>
+                <a href="/fisher_ctf_agent/strategy" class="nav-link active">战略</a>
+                <a href="/fisher_ctf_agent/rag" class="nav-link">RAG知识库</a>
+            </div>
+        </div>
+
+        <div class="main-layout">
+            <div class="sidebar">
+                <div class="sidebar-section">
+                    <div class="sidebar-title">当前内存模式</div>
+                    <div class="module-mode-indicator">
+                        <span class="mode-badge" :class="moduleMode">{{ moduleMode }}</span>
+                        <span style="font-size: 12px; color: #666;">已加载 {{ loadedModules.length }} 模块</span>
+                    </div>
+                    <div class="loaded-modules" v-if="loadedModules.length">
+                        <span v-for="mod in loadedModules.slice(0, 15)" :key="mod" class="module-tag">{{ mod.split('.').pop() }}</span>
+                        <span v-if="loadedModules.length > 15" class="module-tag" style="color: #999;">+{{ loadedModules.length - 15 }}</span>
+                    </div>
+                    <div style="margin-top: 12px;">
+                        <button class="btn btn-sm" @click="switchMode('web')">Web模式</button>
+                        <button class="btn btn-sm" style="margin-left: 4px;" @click="switchMode('internal')">内网模式</button>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <div class="sidebar-title">选择任务查看战略</div>
+                    <div v-for="task in recentTasks" :key="task.id" class="task-item" :class="{ active: selectedTaskId === task.id }" @click="selectTask(task.id)">
+                        <div class="task-url">{{ task.target_url }}</div>
+                        <div class="task-meta">{{ task.status }} | {{ task.created_at }}</div>
+                    </div>
+                    <div v-if="recentTasks.length === 0" style="color: #999; font-size: 12px; text-align: center; padding: 20px;">暂无任务</div>
+                </div>
+            </div>
+
+            <div class="content-area">
+                <div class="page-title">战略上下文</div>
+
+                <!-- 未选择任务时的空状态 -->
+                <div v-if="!selectedTaskId" class="empty-state">
+                    <div class="empty-state-icon">🎯</div>
+                    <div class="empty-state-text">请从左侧选择一个任务查看战略分析</div>
+                </div>
+
+                <!-- 战略信息 -->
+                <div v-if="selectedTaskId && strategicContext">
+                    <!-- 攻击链可视化 -->
+                    <div class="card">
+                        <div class="card-header">
+                            <span>攻击链规划</span>
+                            <span style="font-size: 12px; color: #666;">进度: {{ currentStep }}/{{ totalSteps }}</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="attack-chain-container">
+                                <div class="attack-chain">
+                                    <template v-for="(step, idx) in attackChain" :key="idx">
+                                        <div class="chain-step">
+                                            <div class="step-node" :class="getStepClass(idx)">
+                                                {{ step }}
+                                                <span v-if="idx === currentStep" style="position: absolute; top: -8px; right: -8px; background: #722ed1; color: #fff; border-radius: 50%; width: 16px; height: 16px; font-size: 10px; line-height: 16px; text-align: center;">!</span>
+                                            </div>
+                                        </div>
+                                        <span v-if="idx < attackChain.length - 1" class="step-arrow" :class="{ active: idx < currentStep }">→</span>
+                                    </template>
+                                </div>
+                            </div>
+                            <div class="progress-bar-container">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
+                                </div>
+                                <div class="progress-text">
+                                    <span>已完成 {{ currentStep }} 步</span>
+                                    <span>剩余 {{ totalSteps - currentStep }} 步</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 战略信息 -->
+                    <div class="card">
+                        <div class="card-header">战略定位</div>
+                        <div class="card-body">
+                            <div class="strategic-info-grid">
+                                <div class="info-block">
+                                    <div class="info-block-title">空间位置</div>
+                                    <div class="info-block-value">{{ positionType }}</div>
+                                    <div style="font-size: 11px; color: #999; margin-top: 4px;">{{ positionDetail }}</div>
+                                </div>
+                                <div class="info-block">
+                                    <div class="info-block-title">主要目标</div>
+                                    <div class="info-block-value goal">{{ primaryGoal }}</div>
+                                </div>
+                            </div>
+
+                            <!-- 阻碍因素 -->
+                            <div v-if="blockers.length" style="margin-top: 16px;">
+                                <div class="info-block-title">当前阻碍</div>
+                                <div class="blockers-list">
+                                    <div v-for="b in blockers" :key="b" class="blocker-item">{{ b }}</div>
+                                </div>
+                            </div>
+
+                            <!-- 备选路径 -->
+                            <div v-if="alternateRoutes.length" style="margin-top: 16px;">
+                                <div class="info-block-title">备选路径</div>
+                                <div class="alternates-list">
+                                    <div v-for="a in alternateRoutes" :key="a" class="alternate-item">{{ a }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 凭据-主机映射（内网场景） -->
+                    <div v-if="credentialMapping.length" class="card">
+                        <div class="card-header">凭据-主机映射</div>
+                        <div class="card-body">
+                            <div class="cred-host-grid">
+                                <div v-for="mapping in credentialMapping" :key="mapping.host" class="cred-host-item">
+                                    <div class="cred-host-name">{{ mapping.host }}</div>
+                                    <div class="cred-host-detail">
+                                        <span v-if="mapping.username">用户: {{ mapping.username }}</span>
+                                        <span v-if="mapping.access_type" style="margin-left: 8px;">访问: {{ mapping.access_type }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 攻击图可视化（内网场景） -->
+                    <div v-if="showAttackGraph" class="card">
+                        <div class="card-header">
+                            <span>攻击路径图</span>
+                            <button class="btn btn-sm" @click="refreshAttackGraph">刷新</button>
+                        </div>
+                        <div class="card-body">
+                            <div class="attack-graph-area">
+                                <svg id="attack-graph-svg"></svg>
+                            </div>
+                            <div style="display: flex; gap: 16px; margin-top: 12px; font-size: 12px;">
+                                <div><span style="display: inline-block; width: 12px; height: 12px; background: #52c41a; border-radius: 50%;"></span> 已攻陷</div>
+                                <div><span style="display: inline-block; width: 12px; height: 12px; background: #ff4d4f; border-radius: 50%;"></span> 目标</div>
+                                <div><span style="display: inline-block; width: 12px; height: 12px; background: #1890ff; border-radius: 50%;"></span> 跳板</div>
+                                <div><span style="display: inline-block; width: 12px; height: 12px; background: #722ed1; border-radius: 50%;"></span> 域控</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 加载状态 -->
+                <div v-if="selectedTaskId && !strategicContext && loading" style="text-align: center; padding: 40px; color: #999;">
+                    加载中...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted, watch } = Vue;
+        const app = createApp({
+            setup() {
+                const moduleMode = ref('minimal');
+                const loadedModules = ref([]);
+                const recentTasks = ref([]);
+                const selectedTaskId = ref(null);
+                const strategicContext = ref(null);
+                const loading = ref(false);
+
+                const attackChain = computed(() => strategicContext.value?.attack_chain || ['信息收集', '漏洞探测', '漏洞利用', '获取FLAG']);
+                const currentStep = computed(() => strategicContext.value?.current_step || 0);
+                const totalSteps = computed(() => strategicContext.value?.total_steps || attackChain.value.length);
+                const progressPercent = computed(() => (currentStep.value / totalSteps.value) * 100);
+                const primaryGoal = computed(() => strategicContext.value?.primary_goal || '获取FLAG');
+                const positionType = computed(() => strategicContext.value?.position_type || 'web');
+                const positionDetail = computed(() => strategicContext.value?.position_detail || '');
+                const blockers = computed(() => strategicContext.value?.blockers || []);
+                const alternateRoutes = computed(() => strategicContext.value?.alternate_routes || []);
+                const credentialMapping = computed(() => strategicContext.value?.credential_access || []);
+                const showAttackGraph = computed(() => positionType.value === 'internal' && credentialMapping.value.length > 0);
+
+                function getStepClass(idx) {
+                    if (idx < currentStep.value) return 'completed';
+                    if (idx === currentStep.value) return 'current';
+                    return 'pending';
+                }
+
+                async function fetchModuleMode() {
+                    try {
+                        const data = await (await fetch('/fisher_ctf_agent/api/modules/mode')).json();
+                        moduleMode.value = data.memory_mode || 'minimal';
+                        loadedModules.value = data.active_modules || [];
+                    } catch (e) {}
+                }
+
+                async function fetchRecentTasks() {
+                    try {
+                        const data = await (await fetch('/fisher_ctf_agent/api/tasks')).json();
+                        recentTasks.value = (data.tasks || []).slice(0, 10);
+                    } catch (e) {}
+                }
+
+                async function selectTask(taskId) {
+                    selectedTaskId.value = taskId;
+                    strategicContext.value = null;
+                    loading.value = true;
+
+                    try {
+                        const data = await (await fetch(`/fisher_ctf_agent/api/strategic/context/${taskId}`)).json();
+                        strategicContext.value = data;
+
+                        // 如果是内网模式，渲染攻击图
+                        if (data.position_type === 'internal') {
+                            setTimeout(() => renderAttackGraph(), 100);
+                        }
+                    } catch (e) {
+                        strategicContext.value = {
+                            attack_chain: ['信息收集', '漏洞探测', '漏洞利用', '获取FLAG'],
+                            current_step: 0,
+                            total_steps: 4,
+                            primary_goal: '获取FLAG',
+                            position_type: 'web',
+                            blockers: [],
+                            alternate_routes: []
+                        };
+                    }
+                    loading.value = false;
+                }
+
+                async function switchMode(mode) {
+                    try {
+                        await fetch('/fisher_ctf_agent/api/modules/switch', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ mode })
+                        });
+                        await fetchModuleMode();
+                        ElementPlus.ElMessage.success(`已切换到 ${mode} 模式`);
+                    } catch (e) {
+                        ElementPlus.ElMessage.error('切换失败');
+                    }
+                }
+
+                function renderAttackGraph() {
+                    if (!credentialMapping.value.length) return;
+
+                    const svg = d3.select('#attack-graph-svg');
+                    svg.selectAll('*').remove();
+
+                    // 构建节点数据
+                    const nodes = [
+                        { id: 'attacker', name: '攻击者', type: 'compromised' },
+                    ];
+
+                    credentialMapping.value.forEach((m, i) => {
+                        const nodeType = m.is_dc ? 'dc' : (m.is_target ? 'target' : 'pivot');
+                        nodes.push({ id: m.host, name: m.host, type: nodeType });
+                    });
+
+                    // 构建边数据
+                    const edges = [];
+                    for (let i = 0; i < nodes.length - 1; i++) {
+                        edges.push({ source: nodes[i].id, target: nodes[i + 1].id });
+                    }
+
+                    const w = document.querySelector('.attack-graph-area').clientWidth || 600;
+                    const h = 300;
+
+                    const simulation = d3.forceSimulation(nodes)
+                        .force('link', d3.forceLink(edges).id(d => d.id).distance(80))
+                        .force('charge', d3.forceManyBody().strength(-200))
+                        .force('center', d3.forceCenter(w / 2, h / 2));
+
+                    const link = svg.append('g').selectAll('line')
+                        .data(edges).enter().append('line')
+                        .attr('class', 'graph-edge');
+
+                    const node = svg.append('g').selectAll('g')
+                        .data(nodes).enter().append('g')
+                        .attr('class', d => `graph-node ${d.type}`);
+
+                    node.append('circle').attr('r', 16);
+                    node.append('text').attr('dy', 4).attr('text-anchor', 'middle').text(d => d.name.length > 10 ? d.name.slice(0, 10) : d.name);
+
+                    simulation.on('tick', () => {
+                        link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+                            .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+                        node.attr('transform', d => `translate(${d.x},${d.y})`);
+                    });
+                }
+
+                function refreshAttackGraph() {
+                    if (selectedTaskId.value) {
+                        selectTask(selectedTaskId.value);
+                    }
+                }
+
+                onMounted(() => {
+                    fetchModuleMode();
+                    fetchRecentTasks();
+
+                    // 定期刷新
+                    setInterval(fetchModuleMode, 30000);
+                });
+
+                return {
+                    moduleMode, loadedModules, recentTasks, selectedTaskId, strategicContext, loading,
+                    attackChain, currentStep, totalSteps, progressPercent, primaryGoal,
+                    positionType, positionDetail, blockers, alternateRoutes,
+                    credentialMapping, showAttackGraph,
+                    getStepClass, selectTask, switchMode, refreshAttackGraph
+                };
+            }
+        });
+        app.use(ElementPlus).mount('#app');
+    </script>
+    <!-- SPA 页面切换脚本 -->
+    <script src="/fisher_ctf_agent/static/js/spa-loader.js"></script>
+</body>
+</html>

@@ -1,4 +1,9 @@
 import json
+from prompts.scene_framework import (
+    get_scene_framework_for_analyst,
+    get_attack_decision_principles
+)
+
 
 def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list,
                         task_name: str = "Unknown", task_description: str = "None",
@@ -78,25 +83,14 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
     rule_candidates_json = json.dumps(rule_candidates, indent=2, ensure_ascii=False)[:500]
     topology_section = f"## 拓扑分析\n{topology_hint}\n" if topology_hint else ""
 
+    # 获取共享的场景框架和攻击决策原则
+    scene_framework = get_scene_framework_for_analyst()
+    decision_principles = get_attack_decision_principles()
+
     return f"""
 # CTF 分析兵
 
-## 任务
-根据侦察数据识别攻击方向，选择合适的工具。
-
-## 攻击决策原则
-
-1. **场景绑定原则**: 已识别的框架/中间件/技术栈是最高优先级的攻击方向
-   - 即使自动化工具扫描无结果，仍需深入测试该场景的所有攻击面
-   - 一次漏扫失败不代表目标安全，可能是工具模板不覆盖
-
-2. **深度挖掘思维**: 对已识别的场景，系统性思考可能的漏洞：
-   - 该框架/中间件历史上有哪些著名漏洞？
-   - 该技术栈常见的配置错误有哪些？
-   - 该环境暴露了哪些可利用的功能点？
-   - 是否存在绕过检测的可能？
-
-3. **工具是辅助**: 漏扫工具只能发现"有模板的漏洞"，更多漏洞需要手工构造Payload
+{decision_principles}
 
 ## 题目信息
 - 名称: {task_name}
@@ -115,59 +109,31 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
 ## 可用工具
 {tools_info if tools_info else "见工具列表"}
 
-## 场景识别
-
-分析漏洞前，请先判断当前属于哪种场景：
-
-### 代码审计场景
-识别特征：
-- 响应中包含PHP/Java/Python源码
-- 存在敏感函数调用(include, eval, system, exec等)
-- 有过滤逻辑需要绕过
-
-场景特点：需要人工理解代码逻辑，而非批量扫描
-工具选择提示：优先使用灵活的手工测试工具，根据代码逻辑定制攻击方案
-
-### CVE利用场景
-识别特征：
-- 已知框架版本(如Tomcat 7.0.x, Spring 4.x)
-- 已知CVE编号
-- 标准化的漏洞模式
-
-场景特点：有现成的利用模板可用
-工具选择提示：根据目标框架选择对应的扫描和利用工具
-
-### 逻辑绕过场景
-识别特征：
-- 存在Cookie/Session验证逻辑
-- 存在参数过滤或WAF
-- 存在白名单限制
-
-场景特点：需要精确构造绕过payload
-工具选择提示：使用精确控制请求的工具，手工构造绕过逻辑
-
-### 黑盒测试场景
-识别特征：
-- 无源码暴露
-- 无明显漏洞特征
-- 需要枚举发现攻击面
-
-场景特点：需要扩大攻击面
-工具选择提示：使用枚举和扫描工具发现更多攻击路径
-
-## 场景→策略映射
-
-根据识别的场景，在漏洞候选中添加recommended_tools时请遵循：
-- 代码审计场景：优先推荐requests、python-exec
-- CVE利用场景：推荐对应框架的扫描和利用工具
-- 逻辑绕过场景：优先推荐精确构造工具
-- 黑盒测试场景：推荐枚举和扫描工具
+{scene_framework}
 
 ## 决策要求
 
 1. **场景联想**: 根据检测到的框架/版本，联想该环境可能存在的所有漏洞类型
 2. **工具选择**: 选择最适合的工具，如果工具不可用则推荐手工构造
 3. **精准定位**: 每个漏洞候选给出具体的攻击位置、Payload思路、预期效果
+
+## 战略思考要求
+
+### 1. 攻击链规划
+明确攻击路径的每一步：
+- 当前阶段：[信息收集 / 漏洞确认 / 利用执行 / 后渗透]
+- 攻击链：步骤1 → 步骤2 → ... → FLAG
+- 当前处于第几步
+
+### 2. 目标对齐
+- 为什么这个漏洞能获取FLAG？
+- 成功后下一步是什么？
+- 失败备选方案是什么？
+
+### 3. 风险评估
+- 该攻击是否可能被检测/拦截？
+- 是否需要绕过WAF/过滤？
+- 有哪些备选Payload？
 
 ## 输出格式 (JSON)
 ```json
@@ -180,11 +146,18 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
       "reason": "判断依据",
       "attack_approach": "攻击思路：如何构造Payload、预期触发什么行为",
       "recommended_tools": ["工具名"],
-      "context": {{}}
+      "context": {{}},
+      "expected_outcome": "预期结果：成功后获得什么",
+      "fallback_plan": "失败备选方案"
     }}
   ],
   "key_intel": "关键发现",
-  "attack_strategy": "推荐攻击策略：先做什么、后做什么、如果失败如何调整"
+  "attack_strategy": "推荐攻击策略：先做什么、后做什么、如果失败如何调整",
+  "attack_chain": ["步骤1", "步骤2", "步骤3", "获取FLAG"],
+  "current_phase": "信息收集",
+  "primary_goal": "当前主要目标描述",
+  "blockers": ["当前阻碍因素"],
+  "alternatives": ["备选攻击路径"]
 }}
 ```
 

@@ -324,6 +324,170 @@ def calculate_dom_fingerprint(html_content: str) -> str:
     return hashlib.md5(html_content.encode('utf-8', errors='ignore')).hexdigest()
 
 
+def extract_structured_html(html_content: str) -> Dict[str, Any]:
+    """
+    [P0 Critical] 在HTML截断之前提取结构化数据
+
+    提取关键攻击面信息，防止因截断而丢失:
+    - hidden_fields: 隐藏表单字段（可能用于SSRF等攻击）
+    - form_endpoints: 表单端点和字段
+    - script_endpoints: JavaScript中的URL/端点
+    - comments: HTML注释（可能包含提示）
+    - meta_tags: Meta标签内容
+    - data_attributes: data-*属性
+    - api_endpoints: API端点（fetch/ajax调用）
+
+    Args:
+        html_content: 完整的HTML内容（截断前）
+
+    Returns:
+        结构化提取的数据字典
+    """
+    if not html_content:
+        return {
+            "hidden_fields": {},
+            "form_endpoints": [],
+            "script_endpoints": [],
+            "comments": [],
+            "meta_tags": {},
+            "data_attributes": {},
+            "api_endpoints": []
+        }
+
+    result = {
+        "hidden_fields": {},
+        "form_endpoints": [],
+        "script_endpoints": [],
+        "comments": [],
+        "meta_tags": {},
+        "data_attributes": {},
+        "api_endpoints": []
+    }
+
+    # 1. 提取隐藏字段 (input type=hidden)
+    # 匹配各种格式的hidden input
+    hidden_pattern = r'<input[^>]*type=["\']?hidden["\']?[^>]*>'
+    for match in re.finditer(hidden_pattern, html_content, re.IGNORECASE):
+        input_tag = match.group(0)
+        # 提取name和value
+        name_match = re.search(r'name=["\']?([^"\'>\s]+)["\']?', input_tag, re.IGNORECASE)
+        value_match = re.search(r'value=["\']?([^"\'>]*)["\']?', input_tag, re.IGNORECASE)
+        if name_match:
+            name = name_match.group(1)
+            value = value_match.group(1) if value_match else ""
+            result["hidden_fields"][name] = value
+
+    # 2. 提取表单端点和字段
+    form_pattern = r'<form[^>]*>'
+    for match in re.finditer(form_pattern, html_content, re.IGNORECASE):
+        form_tag = match.group(0)
+        # 提取action和method
+        action_match = re.search(r'action=["\']?([^"\'>\s]+)["\']?', form_tag, re.IGNORECASE)
+        method_match = re.search(r'method=["\']?([^"\'>\s]+)["\']?', form_tag, re.IGNORECASE)
+
+        action = action_match.group(1) if action_match else ""
+        method = method_match.group(1).upper() if method_match else "GET"
+
+        # 提取表单内的所有字段
+        form_end = html_content.find('</form>', match.end(), re.IGNORECASE)
+        if form_end == -1:
+            form_end = min(match.end() + 5000, len(html_content))
+        form_content = html_content[match.end():form_end]
+
+        fields = []
+        # 提取所有input字段
+        for input_match in re.finditer(r'<input[^>]*>', form_content, re.IGNORECASE):
+            input_tag = input_match.group(0)
+            input_name = re.search(r'name=["\']?([^"\'>\s]+)["\']?', input_tag, re.IGNORECASE)
+            input_type = re.search(r'type=["\']?([^"\'>\s]+)["\']?', input_tag, re.IGNORECASE)
+            if input_name:
+                fields.append({
+                    "name": input_name.group(1),
+                    "type": input_type.group(1) if input_type else "text"
+                })
+
+        # 提取select和textarea
+        for select_match in re.finditer(r'<select[^>]*name=["\']?([^"\'>\s]+)["\']?', form_content, re.IGNORECASE):
+            fields.append({"name": select_match.group(1), "type": "select"})
+
+        for textarea_match in re.finditer(r'<textarea[^>]*name=["\']?([^"\'>\s]+)["\']?', form_content, re.IGNORECASE):
+            fields.append({"name": textarea_match.group(1), "type": "textarea"})
+
+        result["form_endpoints"].append({
+            "action": action,
+            "method": method,
+            "fields": fields
+        })
+
+    # 3. 提取JavaScript中的URL/端点
+    # 匹配fetch, ajax, axios, XMLHttpRequest等
+    js_url_patterns = [
+        r'fetch\s*\(\s*["\']([^"\']+)["\']',  # fetch('url')
+        r'\.ajax\s*\(\s*\{[^}]*url\s*:\s*["\']([^"\']+)["\']',  # $.ajax({url: 'url'})
+        r'axios\.[get|post]+\s*\(\s*["\']([^"\']+)["\']',  # axios.get('url')
+        r'XMLHttpRequest[^}]*open\s*\([^,]+,\s*["\']([^"\']+)["\']',  # xhr.open('GET', 'url')
+        r'\.load\s*\(\s*["\']([^"\']+)["\']',  # $('#el').load('url')
+        r'window\.location\s*=\s*["\']([^"\']+)["\']',  # window.location = 'url'
+        r'location\.href\s*=\s*["\']([^"\']+)["\']',  # location.href = 'url'
+        r'src\s*=\s*["\']([^"\']*(?:api|endpoint|ajax|fetch)[^"\']*)["\']',  # API-related src
+        r'url\s*:\s*["\']([^"\']+(?:api|endpoint)[^"\']*)["\']',  # url: '/api/...'
+    ]
+
+    script_content = ""
+    # 提取<script>标签内容
+    for script_match in re.finditer(r'<script[^>]*>(.*?)</script>', html_content, re.IGNORECASE | re.DOTALL):
+        script_content += script_match.group(1) + "\n"
+
+    for pattern in js_url_patterns:
+        for match in re.finditer(pattern, script_content, re.IGNORECASE):
+            url = match.group(1)
+            if url and len(url) < 500:  # 过滤掉超长字符串
+                result["script_endpoints"].append(url)
+
+    # 去重
+    result["script_endpoints"] = list(set(result["script_endpoints"]))
+
+    # 4. 提取HTML注释
+    for match in re.finditer(r'<!--(.*?)-->', html_content, re.DOTALL):
+        comment = match.group(1).strip()
+        if comment and len(comment) < 1000:  # 过滤掉超长注释
+            result["comments"].append(comment)
+
+    # 5. 提取meta标签
+    for match in re.finditer(r'<meta[^>]*>', html_content, re.IGNORECASE):
+        meta_tag = match.group(0)
+        # 提取name/property和content
+        name_match = re.search(r'(?:name|property)=["\']?([^"\'>\s]+)["\']?', meta_tag, re.IGNORECASE)
+        content_match = re.search(r'content=["\']([^"\']*)["\']', meta_tag, re.IGNORECASE)
+        if name_match and content_match:
+            result["meta_tags"][name_match.group(1)] = content_match.group(1)
+
+    # 6. 提取data-*属性（可能包含重要信息）
+    for match in re.finditer(r'data-([a-zA-Z0-9_-]+)=["\']([^"\']*)["\']', html_content, re.IGNORECASE):
+        attr_name = f"data-{match.group(1)}"
+        attr_value = match.group(2)
+        if attr_value and len(attr_value) < 500:
+            result["data_attributes"][attr_name] = attr_value
+
+    # 7. 提取API端点（更全面的模式）
+    api_patterns = [
+        r'["\']/(api|v\d+)/[a-zA-Z0-9_/-]+["\']',  # '/api/...', '/v1/...'
+        r'["\'][a-zA-Z0-9_/-]+\.(?:json|xml|php|asp|aspx)["\']',  # '*.json', '*.php'
+        r'["\'][a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+(?:/[a-zA-Z0-9_-]+)*["\']',  # RESTful paths
+    ]
+
+    for pattern in api_patterns:
+        for match in re.finditer(pattern, html_content):
+            endpoint = match.group(0).strip('"\'')
+            if endpoint and endpoint not in result["api_endpoints"] and len(endpoint) < 200:
+                result["api_endpoints"].append(endpoint)
+
+    # 去重api_endpoints
+    result["api_endpoints"] = list(set(result["api_endpoints"]))
+
+    return result
+
+
 
 
 # ==============================================================================
@@ -854,6 +1018,35 @@ def recon_node(state: CTFState) -> Dict:
 
     fingerprint = calculate_dom_fingerprint(raw_html)
 
+    # =========================================================================
+    # [P0 Critical] 结构化HTML提取 - 在截断之前进行
+    # =========================================================================
+    # 提取关键攻击面信息：隐藏字段、表单端点、JS端点、注释、meta标签
+    # 这些信息可能因截断而丢失，必须先提取再存储
+    html_extraction = extract_structured_html(raw_html)
+
+    # 记录提取结果摘要
+    extraction_summary = []
+    if html_extraction["hidden_fields"]:
+        extraction_summary.append(f"隐藏字段: {len(html_extraction['hidden_fields'])}个")
+        for name, value in list(html_extraction["hidden_fields"].items())[:5]:
+            log(f"      📋 hidden[{name}] = '{value[:50]}...'" if len(value) > 50 else f"      📋 hidden[{name}] = '{value}'")
+    if html_extraction["form_endpoints"]:
+        extraction_summary.append(f"表单: {len(html_extraction['form_endpoints'])}个")
+        for form in html_extraction["form_endpoints"][:3]:
+            log(f"      📝 form[{form.get('action', 'N/A')}] method={form.get('method', 'GET')} fields={len(form.get('fields', []))}")
+    if html_extraction["script_endpoints"]:
+        extraction_summary.append(f"JS端点: {len(html_extraction['script_endpoints'])}个")
+    if html_extraction["comments"]:
+        extraction_summary.append(f"注释: {len(html_extraction['comments'])}个")
+        for comment in html_extraction["comments"][:3]:
+            log(f"      💬 <!-- {comment[:100]}... -->" if len(comment) > 100 else f"      💬 <!-- {comment} -->")
+    if html_extraction["api_endpoints"]:
+        extraction_summary.append(f"API端点: {len(html_extraction['api_endpoints'])}个")
+
+    if extraction_summary:
+        log(f"   ✅ 结构化提取: {', '.join(extraction_summary)}")
+
     # 去重检查
     visited_fps = state.get("visited_fingerprints") or []
     if fingerprint in visited_fps:
@@ -887,6 +1080,35 @@ def recon_node(state: CTFState) -> Dict:
         headers_info += f"X-Powered-By: {baseline['x_powered_by']}\n"
 
     # 2. 调用 LLM 进行智能特征提取
+
+    # 构建结构化提取摘要（用于LLM提示）
+    extraction_info = ""
+    if html_extraction["hidden_fields"]:
+        extraction_info += f"\n### 预提取的隐藏字段 ({len(html_extraction['hidden_fields'])}个)\n"
+        for name, value in html_extraction["hidden_fields"].items():
+            extraction_info += f"- hidden[{name}] = \"{value[:100]}...\"\n" if len(value) > 100 else f"- hidden[{name}] = \"{value}\"\n"
+    if html_extraction["form_endpoints"]:
+        extraction_info += f"\n### 预提取的表单信息 ({len(html_extraction['form_endpoints'])}个)\n"
+        for form in html_extraction["form_endpoints"]:
+            fields_str = ", ".join([f"{f['name']}({f['type']})" for f in form.get("fields", [])])
+            extraction_info += f"- form action=\"{form.get('action', '#')}\" method=\"{form.get('method', 'GET')}\" fields=[{fields_str}]\n"
+    if html_extraction["script_endpoints"]:
+        extraction_info += f"\n### 预提取的JS端点 ({len(html_extraction['script_endpoints'])}个)\n"
+        for endpoint in html_extraction["script_endpoints"][:20]:
+            extraction_info += f"- {endpoint}\n"
+    if html_extraction["comments"]:
+        extraction_info += f"\n### HTML注释 ({len(html_extraction['comments'])}个)\n"
+        for comment in html_extraction["comments"][:10]:
+            extraction_info += f"- <!-- {comment[:200]} -->\n" if len(comment) > 200 else f"- <!-- {comment} -->\n"
+    if html_extraction["api_endpoints"]:
+        extraction_info += f"\n### 预提取的API端点 ({len(html_extraction['api_endpoints'])}个)\n"
+        for endpoint in html_extraction["api_endpoints"][:20]:
+            extraction_info += f"- {endpoint}\n"
+    if html_extraction["meta_tags"]:
+        extraction_info += f"\n### Meta标签\n"
+        for name, content in html_extraction["meta_tags"].items():
+            extraction_info += f"- meta[{name}] = \"{content[:100]}\"\n" if len(content) > 100 else f"- meta[{name}] = \"{content}\"\n"
+
     recon_prompt = f"""
 你是一个高级 Web 渗透测试侦察专家。你的任务是从 HTML 源码中提取攻击面。
 特别注意：如果题目名称或描述中提到了特定的参数名，请务必将其包含在 input_vectors 中。
@@ -898,8 +1120,8 @@ def recon_node(state: CTFState) -> Dict:
 ### 响应头信息
 {headers_info if headers_info else "无特殊响应头"}
 {scan_summary}
-
-### 待分析源码
+{extraction_info if extraction_info else ""}
+### 待分析源码（已截断，请结合预提取信息）
 ```html
 {raw_html[:config.HTML_MAX_LENGTH] if config.USE_LARGE_CONTEXT else raw_html[:config.HTML_TRUNCATE_LENGTH]}
 ```
@@ -907,9 +1129,9 @@ def recon_node(state: CTFState) -> Dict:
 ### 输出要求 (JSON ONLY)
 {{
   "tech_stack": ["识别到的技术框架"],
-  "input_vectors": ["格式 type:name, 如 GET:id, POST:username"],
-  "sensitive_paths": ["发现的敏感路径"],
-  "vuln_hints": ["可能的漏洞提示，结合扫描结果"],
+  "input_vectors": ["格式 type:name, 如 GET:id, POST:username，务必包含预提取的隐藏字段"],
+  "sensitive_paths": ["发现的敏感路径，结合预提取的API端点"],
+  "vuln_hints": ["可能的漏洞提示，结合扫描结果和预提取信息"],
   "framework": "识别到的主要框架，如 thinkphp, laravel, spring 等"
 }}
 """
@@ -944,10 +1166,11 @@ def recon_node(state: CTFState) -> Dict:
         "input_vectors": recon_data.get("input_vectors", []),
         "sensitive_paths": discovered_paths[:20],  # 限制数量
         "dom_structure_hash": fingerprint,
-        "form_structure": [],
+        "form_structure": html_extraction["form_endpoints"],  # 使用结构化提取的表单数据
         "scripts": [],
         "cookies": {},
-        "headers": {"server": baseline.get("server", ""), "x_powered_by": baseline.get("x_powered_by", "")}
+        "headers": {"server": baseline.get("server", ""), "x_powered_by": baseline.get("x_powered_by", "")},
+        "html_extraction": html_extraction  # [P0] 存储完整的结构化提取数据
     }
 
     page_history = state.get("page_history", {})
@@ -1932,6 +2155,47 @@ def attacker_node(state: CTFState) -> Dict:
         pass  # 静默失败
 
     # =====================================================
+    # [断点1修复] 处理结构化战术指导
+    # =====================================================
+    guidance_type = state.get("guidance_type", "continue")
+    enforce_change = state.get("enforce_change", False)
+    tactical_guidance = state.get("latest_tactical_guidance", "")
+
+    # 如果有强制切换场景的指导，优先执行
+    if guidance_type == "switch_scene" and enforce_change and tactical_guidance:
+        # 从指导中提取目标URL（如果指导是结构化的dict）
+        guidance_target = None
+        if isinstance(tactical_guidance, dict):
+            guidance_target = tactical_guidance.get("target_url", "")
+        elif isinstance(tactical_guidance, str) and "http" in tactical_guidance:
+            # 尝试从文本中提取URL
+            import re
+            url_match = re.search(r'https?://[^\s<>"]+', tactical_guidance)
+            if url_match:
+                guidance_target = url_match.group()
+
+        if guidance_target:
+            log(f"   🔄 [强制指导] 切换到新目标: {guidance_target}")
+            # 直接生成访问新URL的攻击动作
+            forced_attack = {
+                "tool": "requests",
+                "params": {
+                    "method": "GET",
+                    "url": guidance_target
+                },
+                "reasoning": f"强制执行战术指导: {tactical_guidance[:100]}"
+            }
+            # 返回强制攻击，绕过LLM生成
+            return {
+                "attack_batch": [forced_attack],
+                "attack_results": [],
+                "current_url": guidance_target,  # 更新当前URL
+                "execution_steps": state.get("execution_steps", 0) + 1,
+                "guidance_type": "",  # 清空指导，已执行
+                "enforce_change": False
+            }
+
+    # =====================================================
     # LLM生成攻击Payload
     # =====================================================
 
@@ -2029,42 +2293,55 @@ def attacker_node(state: CTFState) -> Dict:
             else:
                 result = {"attack_actions": []}
 
-        raw_actions = result.get("attack_actions", [])[:max_actions] 
-        
-        # [核心修复] 允许 requests 多次调用，其他工具强制去重
+        raw_actions = result.get("attack_actions", [])[:max_actions]
+
+        # [断点2修复] 按 tool+params hash 去重，保留唯一攻击
+        # 防止同工具不同参数的攻击被忽略
+        import hashlib
         attack_actions = []
-        used_tools = set() 
-        
+        seen_action_hashes = set()
+
+        def _make_action_hash(action: dict) -> str:
+            """生成动作唯一hash：tool + params组合"""
+            tool = action.get("tool", "")
+            params_str = json.dumps(action.get("params", {}), sort_keys=True, ensure_ascii=False)
+            params_hash = hashlib.md5(params_str.encode()).hexdigest()[:8]
+            return f"{tool}:{params_hash}"
+
         for action in raw_actions:
             if not isinstance(action, dict): continue
             tool = action.get("tool")
             if not tool: continue
-            
-            # 策略：requests 作为手工工具，允许并发多个不同 Payload
-            # 其他自动化工具（如 sqlmap）每轮强制唯一
-            if tool != "requests" and tool in used_tools:
-                log(f"⚠️ [Attacker] 忽略重复工具调用: {tool}")
+
+            # 新策略：按 tool+params hash 去重
+            action_hash = _make_action_hash(action)
+            if action_hash in seen_action_hashes:
+                log(f"⚠️ [Attacker] 忽略完全重复的攻击: {tool} (相同params)")
                 continue
-            
+
             attack_actions.append(action)
-            used_tools.add(tool)
-                
+            seen_action_hashes.add(action_hash)
+
     except Exception as e:
         log(f"   ❌ LLM 决策失败: {e}")
         log_node_data("attacker", {"prompt": prompt}, {"error": str(e)})
         attack_actions = []
 
+    # [断点3修复] JSON解析失败或空动作时的降级逻辑
+    # 生成默认探测攻击，防止无攻击执行
     if not attack_actions:
-        log("   ⚠️ LLM 未生成有效攻击动作")
-        # 不硬编码备用攻击，而是增加失败分触发模式切换
-        res = {
-            "attack_batch": [],
-            "attack_results": [],
-            "failure_weighted_score": state.get("failure_weighted_score", 0) + config.HARD_FAILURE_WEIGHT,
-            "execution_steps": state.get("execution_steps", 0) + 1
+        log("   ⚠️ LLM 未生成有效攻击动作，执行降级探测")
+        # 降级：生成默认探测攻击
+        default_probe = {
+            "tool": "requests",
+            "params": {
+                "method": "GET",
+                "url": current_url
+            },
+            "reasoning": "降级探测：JSON解析失败或无有效动作，执行基础GET请求"
         }
-        log_node_data("attacker", {"prompt": prompt}, res)
-        return res
+        attack_actions = [default_probe]
+        log(f"   📌 执行降级探测: GET {current_url}")
 
     # 2. 并发执行
     log(f"   执行 {len(attack_actions)} 个攻击动作...")
@@ -2177,9 +2454,22 @@ def attacker_node(state: CTFState) -> Dict:
     except Exception as e:
         log(f"   ⚠️ 记录攻击链失败: {e}")
 
+    # [断点4修复] 生成攻击历史摘要
+    # 当attack_results达到上限时，生成摘要保留关键信息
+    existing_results = state.get("attack_results", [])
+    total_results = len(existing_results) + len(attack_results)
+    new_attack_summary = ""
+    if total_results > 40:  # 接近上限时生成摘要
+        from state_types.reducers import generate_attack_summary
+        all_results = existing_results + attack_results
+        new_attack_summary = generate_attack_summary(all_results)
+        log(f"   📝 生成攻击摘要: {new_attack_summary[:100]}")
+
     res = {
         "attack_batch": attack_actions,
         "attack_results": attack_results,
+        # [断点4修复] 添加攻击摘要
+        "attack_summary": new_attack_summary,
         "page_history": state.get("page_history", {}),
         "node_attack_status": node_status,
         "execution_steps": state.get("execution_steps", 0) + 1,
@@ -2551,7 +2841,23 @@ def verifier_node(state: CTFState) -> Dict:
         evidence = result.get("exploit_evidence", "")
         failure_severity = result.get("failure_severity", 0.5)
         is_exploit_successful = result.get("is_exploit_successful", False)
-        tactical_guidance = result.get("tactical_guidance", "")
+        # [断点1修复] 处理结构化的tactical_guidance
+        tactical_guidance_raw = result.get("tactical_guidance", "")
+        if isinstance(tactical_guidance_raw, dict):
+            # 新格式：结构化指导
+            tactical_guidance = tactical_guidance_raw.get("action", "")
+            guidance_type = tactical_guidance_raw.get("guidance_type", "continue")
+            enforce_change = tactical_guidance_raw.get("enforce_change", False)
+            guidance_reason = tactical_guidance_raw.get("reason", "")
+            guidance_target_url = tactical_guidance_raw.get("target_url", "")
+            log(f"   📋 战术指导类型: {guidance_type}, 强制执行: {enforce_change}")
+            if guidance_target_url:
+                log(f"   🎯 建议目标URL: {guidance_target_url}")
+        else:
+            # 兼容旧格式：纯文本
+            tactical_guidance = tactical_guidance_raw if isinstance(tactical_guidance_raw, str) else str(tactical_guidance_raw)
+            guidance_type = "continue"
+            enforce_change = False
         updated_known_facts = result.get("updated_known_facts", "")
         node_decision = result.get("node_decision", "continue")
         failure_analysis = result.get("failure_analysis", "")
@@ -2749,6 +3055,9 @@ def verifier_node(state: CTFState) -> Dict:
             "node_attack_status": node_status,
             "vuln_candidates": candidates,
             "latest_tactical_guidance": tactical_guidance,
+            # [断点1修复] 添加结构化指导字段
+            "guidance_type": guidance_type,
+            "enforce_change": enforce_change,
             "scene_attack_attempts": scene_attack_attempts,
             "continue_attack": continue_attack,
             "remaining_payloads": remaining_payloads

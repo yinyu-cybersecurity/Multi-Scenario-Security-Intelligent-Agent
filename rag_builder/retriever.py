@@ -1,8 +1,9 @@
 # rag_builder/retriever.py - 检索接口
 # 作用：供头脑风暴兵调用，返回相似WP和相关知识
 # 更新：支持统一检索器（Writeups + Nuclei + Payloads + Security Resources）
+# 更新：集成RAG缓存机制，减少重复向量查询
 
-from typing import List, Dict
+from typing import List, Dict, Tuple, Optional
 
 # Optional dependencies - RAG functionality requires these
 try:
@@ -15,6 +16,7 @@ except ImportError:
     RAG_AVAILABLE = False
 
 from rag_builder.config import CHROMA_DIR, EMBEDDING_MODEL, TOP_K_RESULTS, SIMILARITY_THRESHOLD
+from rag_builder.cache import get_cache, RAGCache
 
 # 尝试导入统一检索器
 try:
@@ -84,14 +86,38 @@ class WriteupRetriever:
             else:
                 raise
 
-    def search_by_text(self, query: str, top_k: int = TOP_K_RESULTS) -> List[Dict]:
-        """用文本检索相似内容"""
+    def search_by_text(self, query: str, top_k: int = TOP_K_RESULTS,
+                       sources: Tuple[str, ...] = None, use_cache: bool = True) -> List[Dict]:
+        """
+        用文本检索相似内容
+
+        Args:
+            query: 查询文本
+            top_k: 返回结果数量
+            sources: 数据源元组，如 ("writeups", "nuclei")
+            use_cache: 是否使用缓存（默认True）
+
+        Returns:
+            相似内容列表
+        """
+        # 确定数据源
+        if sources is None:
+            sources = ("writeups", "nuclei", "payloads", "security_resources")
+
+        # 尝试从缓存获取
+        if use_cache:
+            cache = get_cache()
+            cached_results = cache.get(query, sources, top_k)
+            if cached_results is not None:
+                return cached_results
+
+        # 执行实际查询
         if self._use_unified:
             # 使用统一检索器（包含所有数据源）
-            results = self._unified.search(query, top_k=top_k, sources=["writeups", "nuclei", "payloads", "security_resources"])
+            results = self._unified.search(query, top_k=top_k, sources=list(sources))
             # 合并所有结果
             all_results = []
-            for source in ["writeups", "nuclei", "payloads", "security_resources"]:
+            for source in sources:
                 if source in results and results[source]:
                     for item in results[source]:
                         item["source"] = source
@@ -99,9 +125,15 @@ class WriteupRetriever:
             # 按相似度排序并过滤
             all_results.sort(key=lambda x: x.get("similarity", 0), reverse=True)
             filtered = [r for r in all_results if r.get("similarity", 0) >= SIMILARITY_THRESHOLD]
-            return filtered[:top_k]
+            result = filtered[:top_k]
         else:
-            return self._legacy_search_by_text(query, top_k)
+            result = self._legacy_search_by_text(query, top_k)
+
+        # 缓存结果
+        if use_cache and result:
+            cache.set(query, result, sources, top_k)
+
+        return result
 
     def _legacy_search_by_text(self, query: str, top_k: int) -> List[Dict]:
         """旧版文本检索"""
@@ -218,6 +250,94 @@ def get_retriever() -> WriteupRetriever:
     if _retriever is None:
         _retriever = WriteupRetriever()
     return _retriever
+
+
+def retrieve_relevant_knowledge(query: str, sources: list = None, top_k: int = 5,
+                                use_cache: bool = True) -> List[Dict]:
+    """
+    Unified knowledge retrieval function for RAG.
+
+    This is the main entry point for retrieving relevant knowledge from the vector database.
+    Used by multiple nodes across the codebase (ai_security, cloud_security, misc, etc.).
+
+    Args:
+        query: The search query string
+        sources: List of sources to search from.
+                 Valid options: ["writeups", "nuclei", "payloads", "security_resources"]
+                 Default: ["writeups", "security_resources"]
+        top_k: Number of results to return per source (default: 5)
+        use_cache: Whether to use cache (default: True)
+
+    Returns:
+        List of dicts with keys: "content", "similarity", "metadata", "source"
+        Returns empty list on failure (graceful degradation)
+    """
+    if sources is None:
+        sources = ["writeups", "security_resources"]
+
+    # Convert sources to tuple for cache key
+    sources_tuple = tuple(sources)
+
+    # Try to get from cache first
+    if use_cache:
+        cache = get_cache()
+        cached_results = cache.get(query, sources_tuple, top_k)
+        if cached_results is not None:
+            return cached_results
+
+    results = []
+
+    try:
+        # Try using the unified retriever first (supports all sources)
+        if UNIFIED_RETRIEVER_AVAILABLE:
+            retriever = get_unified_retriever()
+            raw_results = retriever.search(query, top_k=top_k, sources=sources)
+
+            # Flatten results from all sources into a single list
+            for source in sources:
+                if source in raw_results and raw_results[source]:
+                    for item in raw_results[source]:
+                        results.append({
+                            "content": item.get("content", ""),
+                            "similarity": item.get("similarity", 0),
+                            "metadata": item.get("metadata", {}),
+                            "source": source
+                        })
+
+            # Sort by similarity (highest first)
+            results.sort(key=lambda x: x.get("similarity", 0), reverse=True)
+
+            # Return top_k * len(sources) results max
+            max_results = top_k * len(sources)
+            results = results[:max_results]
+
+        else:
+            # Fallback to legacy retriever (writeups only)
+            retriever = get_retriever()
+            legacy_results = retriever.search_by_text(query, top_k=top_k, use_cache=False)
+
+            for item in legacy_results:
+                results.append({
+                    "content": item.get("content", ""),
+                    "similarity": item.get("similarity", 0),
+                    "metadata": item.get("metadata", {}),
+                    "source": "writeups"
+                })
+
+        # Cache the results
+        if use_cache and results:
+            cache.set(query, results, sources_tuple, top_k)
+
+        return results
+
+    except ImportError as e:
+        # RAG dependencies not available
+        print(f"[RAG] Warning: RAG dependencies not available: {e}")
+        return []
+    except Exception as e:
+        # Any other error - log and return empty list (graceful degradation)
+        print(f"[RAG] Error retrieving knowledge: {e}")
+        return []
 
 
 # 简单测试
