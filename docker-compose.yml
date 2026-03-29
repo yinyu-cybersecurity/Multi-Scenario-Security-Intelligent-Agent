@@ -26,6 +26,8 @@ services:
       - ./pwn:/app/pwn
       - ./reverse:/app/reverse
       - ./misc:/app/misc
+      - ./ai_security:/app/ai_security
+      - ./cloud_security:/app/cloud_security
       - ./memory:/app/memory
       - ./rag_builder:/app/rag_builder
       # 保护thirdparty目录不被覆盖（使用匿名卷）
