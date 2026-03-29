@@ -180,6 +180,96 @@ try:
 except ImportError:
     pass
 
+# =============================================================================
+# RAG 检索器预热 - 解决API超时问题
+# =============================================================================
+# 全局RAG检索器实例（预热后缓存）
+_rag_retriever = None
+_rag_status_cache = None  # 缓存状态避免重复查询
+_rag_init_lock = threading.Lock()  # 防止并发初始化
+
+def prewarm_rag_retriever():
+    """
+    预热RAG检索器 - 在Flask启动时加载模型
+
+    解决问题：
+    - API首次调用需要加载模型，耗时40秒+
+    - 模型下载导致用户等待超时
+    - 预热后API响应时间降至毫秒级
+    """
+    global _rag_retriever, _rag_status_cache
+
+    # 使用锁防止并发初始化
+    with _rag_init_lock:
+        # 已经初始化完成，直接返回
+        if _rag_retriever is not None:
+            return True
+
+        print("[RAG] Pre-warming retriever (loading model)...")
+        try:
+            from rag_builder.unified_vector_store import get_unified_retriever
+            _rag_retriever = get_unified_retriever()
+
+            # 缓存状态信息
+            _rag_status_cache = {
+                "writeups": _rag_retriever.writeups_collection.count() if _rag_retriever.writeups_collection else 0,
+                "nuclei": _rag_retriever.nuclei_collection.count() if _rag_retriever.nuclei_collection else 0,
+                "payloads": _rag_retriever.payloads_collection.count() if _rag_retriever.payloads_collection else 0,
+                "security_resources": _rag_retriever.security_resources_collection.count() if _rag_retriever.security_resources_collection else 0,
+                "available": True
+            }
+            _rag_status_cache["total"] = sum([
+                _rag_status_cache["writeups"],
+                _rag_status_cache["nuclei"],
+                _rag_status_cache["payloads"],
+                _rag_status_cache["security_resources"]
+            ])
+
+            print(f"[RAG] Pre-warming complete! Total records: {_rag_status_cache['total']}")
+            print(f"       - Writeups: {_rag_status_cache['writeups']}")
+            print(f"       - Nuclei: {_rag_status_cache['nuclei']}")
+            print(f"       - Payloads: {_rag_status_cache['payloads']}")
+            print(f"       - Security Resources: {_rag_status_cache['security_resources']}")
+
+            return True
+        except Exception as e:
+            print(f"[RAG] Pre-warming failed: {e}")
+            import traceback
+            traceback.print_exc()
+            _rag_status_cache = {
+                "error": str(e),
+                "available": False,
+                "total": 0,
+                "writeups": 0, "nuclei": 0, "payloads": 0, "security_resources": 0
+            }
+            return False
+
+def get_cached_rag_retriever():
+    """获取缓存中的RAG检索器，如果未预热则尝试初始化"""
+    global _rag_retriever
+
+    if _rag_retriever is not None:
+        return _rag_retriever
+
+    # 未预热，尝试初始化（可能耗时）
+    # 注意：prewarm_rag_retriever会修改_rag_retriever全局变量
+    prewarm_rag_retriever()
+    return _rag_retriever  # 返回检索器对象，而不是布尔值
+
+# Flask启动后自动预热（延迟执行，避免阻塞启动）
+def schedule_rag_prewarm():
+    """延迟预热RAG检索器"""
+    def _prewarm():
+        time.sleep(3)  # 等待Flask完全启动
+        prewarm_rag_retriever()
+
+    thread = threading.Thread(target=_prewarm, daemon=True)
+    thread.start()
+    return thread
+
+# 启动时自动预热
+schedule_rag_prewarm()
+
 # 全局状态
 system_status = {
     "llm_connected": False,
@@ -855,19 +945,29 @@ def rag_page():
 
 @bp.route('/api/rag/status')
 def api_rag_status():
-    """获取RAG索引状态"""
+    """获取RAG索引状态 - 使用预热缓存，毫秒级响应"""
+    global _rag_status_cache
+
+    # 如果已预热，直接返回缓存状态
+    if _rag_status_cache:
+        return jsonify(_rag_status_cache)
+
+    # 未预热，尝试获取（可能超时）
     try:
-        from rag_builder.unified_vector_store import get_unified_retriever
-        retriever = get_unified_retriever()
-        status = {
-            "writeups": retriever.writeups_collection.count() if retriever.writeups_collection else 0,
-            "nuclei": retriever.nuclei_collection.count() if retriever.nuclei_collection else 0,
-            "payloads": retriever.payloads_collection.count() if retriever.payloads_collection else 0,
-            "security_resources": retriever.security_resources_collection.count() if retriever.security_resources_collection else 0,
-            "available": True
-        }
-        status["total"] = sum([status["writeups"], status["nuclei"], status["payloads"], status["security_resources"]])
-        return jsonify(status)
+        retriever = get_cached_rag_retriever()
+        if retriever:
+            status = {
+                "writeups": retriever.writeups_collection.count() if retriever.writeups_collection else 0,
+                "nuclei": retriever.nuclei_collection.count() if retriever.nuclei_collection else 0,
+                "payloads": retriever.payloads_collection.count() if retriever.payloads_collection else 0,
+                "security_resources": retriever.security_resources_collection.count() if retriever.security_resources_collection else 0,
+                "available": True
+            }
+            status["total"] = sum([status["writeups"], status["nuclei"], status["payloads"], status["security_resources"]])
+            return jsonify(status)
+        else:
+            return jsonify({"error": "Retriever not initialized", "available": False, "total": 0,
+                            "writeups": 0, "nuclei": 0, "payloads": 0, "security_resources": 0})
     except Exception as e:
         return jsonify({"error": str(e), "available": False, "total": 0,
                         "writeups": 0, "nuclei": 0, "payloads": 0, "security_resources": 0})
@@ -875,9 +975,8 @@ def api_rag_status():
 
 @bp.route('/api/rag/search', methods=['POST'])
 def api_rag_search():
-    """搜索知识库 - 支持分板块检索"""
+    """搜索知识库 - 使用预热后的检索器，响应快速"""
     try:
-        from rag_builder.unified_vector_store import get_unified_retriever
         data = request.json or {}
         query = data.get('query', '')
         top_k = data.get('top_k', 5)
@@ -886,7 +985,11 @@ def api_rag_search():
         if not query:
             return jsonify({"error": "Query is required", "results": {}, "total": 0})
 
-        retriever = get_unified_retriever()
+        # 使用缓存的检索器（预热后毫秒级响应）
+        retriever = get_cached_rag_retriever()
+        if not retriever:
+            return jsonify({"error": "RAG retriever not initialized", "results": {}, "total": 0})
+
         results = retriever.search(query, top_k=top_k, sources=sources)
 
         return jsonify({"results": results, "total": results.get("total", 0)})
@@ -896,11 +999,11 @@ def api_rag_search():
 
 @bp.route('/api/rag/collections')
 def api_rag_collections():
-    """获取所有知识库集合信息"""
-    try:
-        from rag_builder.unified_vector_store import get_unified_retriever
-        retriever = get_unified_retriever()
+    """获取所有知识库集合信息 - 使用缓存"""
+    global _rag_status_cache
 
+    # 使用缓存状态构建集合信息
+    if _rag_status_cache and _rag_status_cache.get("available"):
         collections = []
         collection_info = [
             ("writeups", "CTF Writeups", "CTF比赛题解和技术分析", "#1890ff"),
@@ -910,8 +1013,7 @@ def api_rag_collections():
         ]
 
         for key, name, desc, color in collection_info:
-            collection = getattr(retriever, f'{key}_collection', None)
-            count = collection.count() if collection else 0
+            count = _rag_status_cache.get(key, 0)
             collections.append({
                 "key": key,
                 "name": name,
@@ -921,8 +1023,9 @@ def api_rag_collections():
             })
 
         return jsonify({"collections": collections})
-    except Exception as e:
-        return jsonify({"error": str(e), "collections": []})
+
+    # 未预热，返回错误
+    return jsonify({"error": _rag_status_cache.get("error", "RAG not initialized"), "collections": []})
 
 
 @bp.route('/api/graph')

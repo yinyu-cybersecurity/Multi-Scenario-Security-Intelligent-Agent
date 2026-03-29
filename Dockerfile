@@ -171,7 +171,8 @@ RUN mkdir -p /opt/linux && \
 
 COPY requirements.txt .
 RUN python3.11 -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+# 保留 pipx 安装路径 (/root/.local/bin) 在 PATH 中，确保 pipx 安装的工具可用
+ENV PATH="/opt/venv/bin:/root/.local/bin:$PATH"
 RUN pip install --upgrade pip && \
     pip install torch --index-url https://download.pytorch.org/whl/cpu && \
     pip install -r requirements.txt && \

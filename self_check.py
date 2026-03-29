@@ -343,6 +343,8 @@ tool_commands = {
     'ffuf': ['ffuf', '-V'],
     'curl': ['curl', '--version'],
     'wget': ['wget', '--version'],
+    'crackmapexec': ['crackmapexec', '--version'],
+    'cme': ['cme', '--version'],  # crackmapexec alias
 }
 
 for tool_name, cmd in tool_commands.items():
