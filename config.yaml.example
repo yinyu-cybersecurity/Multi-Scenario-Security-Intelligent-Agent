@@ -83,3 +83,12 @@ SCORE_CHANGE_EXPLOIT: 0.0
 GRAPH_MAX_DEPTH: 5
 GRAPH_MAX_NODES: 1000
 GRAPH_ENABLE_VISUALIZATION: false
+
+# ===== Memory Optimization =====
+# 启动时最小加载模式（只加载核心工具）
+MINIMAL_STARTUP: true
+# RAG延迟加载（首次使用时才加载模型，节省约200MB内存）
+RAG_LAZY_LOAD: true
+# 预加载模块（留空则按需加载）
+# 可选: crypto, pwn, reverse, misc, ai_security, cloud_security
+PRELOAD_MODULES: []

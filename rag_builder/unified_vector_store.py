@@ -527,8 +527,8 @@ class UnifiedRetriever:
         except:
             self.security_resources_collection = None
 
-        # 加载模型
-        self.model = SentenceTransformer(EMBEDDING_MODEL)
+        # 模型延迟加载（节省内存）
+        self._model = None
 
         # 统计
         total = 0
@@ -542,6 +542,14 @@ class UnifiedRetriever:
             total += self.security_resources_collection.count()
 
         print(f"[RAG] Retriever ready, knowledge base contains {total} records")
+
+    @property
+    def model(self):
+        """延迟加载模型（节省内存）"""
+        if self._model is None:
+            print("[RAG] Loading embedding model (first use)...")
+            self._model = SentenceTransformer(EMBEDDING_MODEL)
+        return self._model
 
     def search(self, query: str, top_k: int = 5, sources: List[str] = None) -> Dict:
         """

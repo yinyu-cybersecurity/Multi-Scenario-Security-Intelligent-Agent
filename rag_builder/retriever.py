@@ -54,8 +54,16 @@ class WriteupRetriever:
         """初始化旧版组件"""
         self._client = chromadb.PersistentClient(path=str(CHROMA_DIR))
         self._collection = self._client.get_or_create_collection("ctf_writeups")
-        self._model = SentenceTransformer(EMBEDDING_MODEL)
+        self._model_instance = None  # 延迟加载
         self.count = self._collection.count()
+
+    @property
+    def _model(self):
+        """延迟加载模型（节省内存）"""
+        if self._model_instance is None:
+            print("[RAG] Loading embedding model (legacy mode, first use)...")
+            self._model_instance = SentenceTransformer(EMBEDDING_MODEL)
+        return self._model_instance
 
     def _get_total_count(self) -> int:
         """获取总记录数"""

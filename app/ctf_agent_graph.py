@@ -187,7 +187,7 @@ def extract_target_info(url: str) -> tuple:
 from config import config
 from llm_client import llm_client
 from analyst_prompt import get_analyst_prompt
-from tools import load_all_tools
+from tools import load_minimal_tools, load_web_tools, load_internal_tools, load_tools_by_category
 from verifier_prompt import get_verifier_prompt
 from attacker_prompt import get_attacker_prompt
 from topology import TopologyBuilder, TopologyAnalyzer, TopologyPruner
@@ -3715,8 +3715,10 @@ def main():
     log("\n🚀 CTF-Agent v2.5 启动")
     log("=" * 50)
 
-    # Register all tools
-    load_all_tools(ToolRegistry())
+    # 加载最小工具集（节省内存）
+    # 工具会在实际使用时按场景动态加载
+    load_minimal_tools(ToolRegistry())
+    log("💡 工具将按需加载（内存优化模式）")
 
     # [清理] 启动时清理过期缓存
     page_diff_manager.cleanup_cache(max_age_seconds=86400) # 保留24小时
@@ -3793,6 +3795,59 @@ def main():
                 return
 
 
+def _load_tools_for_task(task_description: str, target_url: str):
+    """
+    根据任务类型动态加载工具（内存优化）
+
+    只加载当前任务需要的工具，减少内存占用
+
+    Args:
+        task_description: 任务描述
+        target_url: 目标URL
+    """
+    from tools import load_tools_by_category
+
+    # 判断任务类型
+    desc_lower = task_description.lower() if task_description else ""
+    url_lower = target_url.lower() if target_url else ""
+
+    # 内网渗透特征
+    internal_keywords = ["内网", "internal", "ad域", "active directory", "域控",
+                        "lateral", "privilege", "credential", "post-exploit"]
+    is_internal = any(kw in desc_lower or kw in url_lower for kw in internal_keywords)
+
+    # Web安全特征
+    web_keywords = ["web", "http", "https", "sql", "xss", "ssti", "ssrf",
+                   "injection", "upload", "rce", "漏洞"]
+    is_web = any(kw in desc_lower or kw in url_lower for kw in web_keywords)
+
+    # 云安全特征
+    cloud_keywords = ["cloud", "aws", "azure", "gcp", "s3", "bucket", "kubernetes",
+                     "容器", "docker", "云"]
+    is_cloud = any(kw in desc_lower or kw in url_lower for kw in cloud_keywords)
+
+    # AI安全特征
+    ai_keywords = ["ai", "llm", "gpt", "chatbot", "prompt", "ai安全", "模型"]
+    is_ai = any(kw in desc_lower or kw in url_lower for kw in ai_keywords)
+
+    # 加载对应工具
+    categories = ["core"]  # 始终加载核心工具
+
+    if is_internal:
+        categories.append("internal")
+        log("📦 加载内网渗透工具集...")
+    elif is_cloud or is_ai:
+        categories.append("cloud_ai")
+        log("📦 加载云/AI安全工具集...")
+    else:
+        # 默认加载Web工具
+        categories.append("web")
+        log("📦 加载Web渗透工具集...")
+
+    loaded = load_tools_by_category(categories, ToolRegistry())
+    log(f"✅ 已加载 {loaded} 个工具")
+
+
 def run_single_task(task_name: str, task_description: str, target_url: str,
                     task_id: str = None, cancel_check: Callable = None) -> dict:
     """
@@ -3811,6 +3866,9 @@ def run_single_task(task_name: str, task_description: str, target_url: str,
     # 重置路由守卫，避免上一个任务的状态影响
     from router import reset_route_guard
     reset_route_guard()
+
+    # 根据任务类型动态加载工具（内存优化）
+    _load_tools_for_task(task_description, target_url)
 
     # 使用统一的默认状态生成器，确保字段同步
     from state_v2 import get_default_state
