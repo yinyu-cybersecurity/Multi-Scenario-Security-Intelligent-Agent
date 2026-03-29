@@ -78,9 +78,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 安装 crackmapexec (使用 pipx，失败时使用 pip 作为备选)
-RUN pipx install crackmapexec || \
-    (pip install crackmapexec && echo "Installed via pip as fallback") || \
+# 安装 crackmapexec (从 GitHub 安装)
+RUN pipx install git+https://github.com/Porchetta-Industries/CrackMapExec.git || \
+    pipx install git+https://gitee.com/mirrors/CrackMapExec.git || \
     echo "Warning: crackmapexec installation failed"
 
 # 验证 crackmapexec 安装
