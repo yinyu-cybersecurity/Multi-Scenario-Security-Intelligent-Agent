@@ -88,6 +88,9 @@ task_states = {}
 task_results = {}  # 存储任务详细结果
 task_completion_times = {}  # 记录任务完成时间
 
+# 全局锁 - 保护所有任务字典的并发访问
+_tasks_lock = threading.RLock()
+
 # 内存清理配置
 MAX_MEMORY_TASKS = 20  # 内存中最多保留20个任务的详细数据
 CLEANUP_INTERVAL = 300  # 每5分钟检查一次
@@ -96,34 +99,39 @@ def cleanup_old_tasks():
     """清理内存中的旧任务数据"""
     global tasks, task_logs, task_queues, task_states, task_results, task_completion_times
 
-    if len(tasks) <= MAX_MEMORY_TASKS:
-        return
+    # 使用锁保护字典操作
+    with _tasks_lock:
+        if len(tasks) <= MAX_MEMORY_TASKS:
+            return
 
-    # 按完成时间排序，保留最近的任务
-    completed_tasks = [
-        (tid, task_completion_times.get(tid, 0))
-        for tid in tasks.keys()
-        if tasks.get(tid, {}).get("status") in ["completed", "error", "cancelled"]
-    ]
-    completed_tasks.sort(key=lambda x: x[1])
+        # 使用 list() 避免迭代时字典被修改
+        task_keys = list(tasks.keys())
 
-    # 清理最旧的任务
-    to_remove = completed_tasks[:len(tasks) - MAX_MEMORY_TASKS]
-    for tid, _ in to_remove:
-        task_logs.pop(tid, None)
-        task_queues.pop(tid, None)
-        task_states.pop(tid, None)
-        task_results.pop(tid, None)
-        task_completion_times.pop(tid, None)
-        tasks.pop(tid, None)
-        if task_persistence:
-            try:
-                task_persistence.delete_task(tid)
-            except:
-                pass
+        # 按完成时间排序，保留最近的任务
+        completed_tasks = [
+            (tid, task_completion_times.get(tid, 0))
+            for tid in task_keys
+            if tasks.get(tid, {}).get("status") in ["completed", "error", "cancelled"]
+        ]
+        completed_tasks.sort(key=lambda x: x[1])
 
-    if to_remove:
-        print(f"[Cleanup] 已清理 {len(to_remove)} 个旧任务，当前保留 {len(tasks)} 个")
+        # 清理最旧的任务
+        to_remove = completed_tasks[:len(tasks) - MAX_MEMORY_TASKS]
+        for tid, _ in to_remove:
+            task_logs.pop(tid, None)
+            task_queues.pop(tid, None)
+            task_states.pop(tid, None)
+            task_results.pop(tid, None)
+            task_completion_times.pop(tid, None)
+            tasks.pop(tid, None)
+            if task_persistence:
+                try:
+                    task_persistence.delete_task(tid)
+                except:
+                    pass
+
+        if to_remove:
+            print(f"[Cleanup] 已清理 {len(to_remove)} 个旧任务，当前保留 {len(tasks)} 个")
 
 # 定时清理
 import threading
@@ -187,6 +195,7 @@ except ImportError:
 _rag_retriever = None
 _rag_status_cache = None  # 缓存状态避免重复查询
 _rag_init_lock = threading.Lock()  # 防止并发初始化
+_rag_init_in_progress = False  # 标记预热是否正在进行
 
 def prewarm_rag_retriever():
     """
@@ -197,7 +206,7 @@ def prewarm_rag_retriever():
     - 模型下载导致用户等待超时
     - 预热后API响应时间降至毫秒级
     """
-    global _rag_retriever, _rag_status_cache
+    global _rag_retriever, _rag_status_cache, _rag_init_in_progress
 
     # 使用锁防止并发初始化
     with _rag_init_lock:
@@ -205,6 +214,8 @@ def prewarm_rag_retriever():
         if _rag_retriever is not None:
             return True
 
+        # 标记正在初始化
+        _rag_init_in_progress = True
         print("[RAG] Pre-warming retriever (loading model)...")
         try:
             from rag_builder.unified_vector_store import get_unified_retriever
@@ -231,6 +242,7 @@ def prewarm_rag_retriever():
             print(f"       - Payloads: {_rag_status_cache['payloads']}")
             print(f"       - Security Resources: {_rag_status_cache['security_resources']}")
 
+            _rag_init_in_progress = False
             return True
         except Exception as e:
             print(f"[RAG] Pre-warming failed: {e}")
@@ -242,19 +254,25 @@ def prewarm_rag_retriever():
                 "total": 0,
                 "writeups": 0, "nuclei": 0, "payloads": 0, "security_resources": 0
             }
+            _rag_init_in_progress = False
             return False
 
 def get_cached_rag_retriever():
-    """获取缓存中的RAG检索器，如果未预热则尝试初始化"""
-    global _rag_retriever
+    """获取缓存中的RAG检索器，如果未预热则返回None（不阻塞初始化）"""
+    global _rag_retriever, _rag_init_in_progress
 
+    # 如果已有检索器，直接返回
     if _rag_retriever is not None:
         return _rag_retriever
 
-    # 未预热，尝试初始化（可能耗时）
+    # 如果正在初始化，返回None避免阻塞
+    if _rag_init_in_progress:
+        return None
+
+    # 未预热且未在初始化，尝试初始化（仅限后台线程调用）
     # 注意：prewarm_rag_retriever会修改_rag_retriever全局变量
     prewarm_rag_retriever()
-    return _rag_retriever  # 返回检索器对象，而不是布尔值
+    return _rag_retriever
 
 # Flask启动后自动预热（延迟执行，避免阻塞启动）
 def schedule_rag_prewarm():
@@ -686,9 +704,11 @@ class LogCapture:
 
 
 def log_callback(task_id, msg):
-    """日志回调"""
-    if task_id not in task_logs:
-        task_logs[task_id] = []
+    """日志回调 - 线程安全"""
+    # 使用锁保护字典操作
+    with _tasks_lock:
+        if task_id not in task_logs:
+            task_logs[task_id] = []
 
     # 解析日志类型
     log_type = "info"
@@ -704,9 +724,12 @@ def log_callback(task_id, msg):
         "msg": msg,
         "type": log_type
     }
-    task_logs[task_id].append(log_entry)
 
-    # 通知队列
+    # 列表append是原子操作，但为了保险加锁
+    with _tasks_lock:
+        task_logs[task_id].append(log_entry)
+
+    # Queue.put 是线程安全的，不需要额外锁
     if task_id in task_queues:
         task_queues[task_id].put(log_entry)
 
@@ -740,40 +763,41 @@ def run_task(task_id, target_url):
         init_log_capture()
 
         def node_callback(node_name, state=None):
-            tasks[task_id]["current_node"] = node_name
-            tasks[task_id]["visited_nodes"].append(node_name)
-            task_states[task_id] = node_name
+            with _tasks_lock:
+                tasks[task_id]["current_node"] = node_name
+                tasks[task_id]["visited_nodes"].append(node_name)
+                task_states[task_id] = node_name
 
-            # 更新详细状态
-            if state:
-                task_results[task_id] = {
-                    "vuln_candidates": state.get("vuln_candidates", []),
-                    "credentials": state.get("credentials", []),
-                    "internal_hosts": state.get("internal_hosts", []),
-                    "attack_results": state.get("attack_results", [])[-5:],
-                    "found_flag": state.get("found_flag", False),
-                    "final_flag": state.get("final_flag", ""),
-                    "shell_session": state.get("shell_session", {}),
-                    "current_mode": state.get("current_mode", "exploit"),
-                    "failure_weighted_score": state.get("failure_weighted_score", 0),
-                    "execution_steps": state.get("execution_steps", 0),
-                    "site_topology": state.get("site_topology", {}),
-                    "critical_nodes": state.get("critical_nodes", []),
-                    "topology_priority": state.get("topology_priority", []),
-                    # 节点状态信息（用于拓扑图显示）
-                    "node_statuses": state.get("node_attack_status", {}),
-                    # 已访问的URL列表（用于拓扑图显示）
-                    "visited_urls": state.get("visited_urls", []),
-                    # 云安全状态
-                    "cloud_provider": state.get("cloud_provider", ""),
-                    "cloud_phase": state.get("cloud_phase", ""),
-                    "buckets_found": state.get("buckets_found", []),
-                    # AI安全状态
-                    "target_model": state.get("target_model", ""),
-                    "ai_phase": state.get("ai_phase", ""),
-                    "prompt_injection_success": state.get("prompt_injection_success", False),
-                    "jailbreak_success": state.get("jailbreak_success", False),
-                }
+                # 更新详细状态
+                if state:
+                    task_results[task_id] = {
+                        "vuln_candidates": state.get("vuln_candidates", []),
+                        "credentials": state.get("credentials", []),
+                        "internal_hosts": state.get("internal_hosts", []),
+                        "attack_results": state.get("attack_results", [])[-5:],
+                        "found_flag": state.get("found_flag", False),
+                        "final_flag": state.get("final_flag", ""),
+                        "shell_session": state.get("shell_session", {}),
+                        "current_mode": state.get("current_mode", "exploit"),
+                        "failure_weighted_score": state.get("failure_weighted_score", 0),
+                        "execution_steps": state.get("execution_steps", 0),
+                        "site_topology": state.get("site_topology", {}),
+                        "critical_nodes": state.get("critical_nodes", []),
+                        "topology_priority": state.get("topology_priority", []),
+                        # 节点状态信息（用于拓扑图显示）
+                        "node_statuses": state.get("node_attack_status", {}),
+                        # 已访问的URL列表（用于拓扑图显示）
+                        "visited_urls": state.get("visited_urls", []),
+                        # 云安全状态
+                        "cloud_provider": state.get("cloud_provider", ""),
+                        "cloud_phase": state.get("cloud_phase", ""),
+                        "buckets_found": state.get("buckets_found", []),
+                        # AI安全状态
+                        "target_model": state.get("target_model", ""),
+                        "ai_phase": state.get("ai_phase", ""),
+                        "prompt_injection_success": state.get("prompt_injection_success", False),
+                        "jailbreak_success": state.get("jailbreak_success", False),
+                    }
 
         if not hasattr(ctf_app, '_node_callbacks'):
             ctf_app._node_callbacks = {}
@@ -789,29 +813,36 @@ def run_task(task_id, target_url):
                                      task_id=task_id, cancel_check=cancel_check)
 
             # 检查是否被取消
-            if result.get('cancelled'):
-                tasks[task_id]["status"] = "cancelled"
-                log_callback(task_id, "[CANCELLED] Task stopped by user")
-                task_completion_times[task_id] = time.time()
-            elif result.get('found_flag'):
-                tasks[task_id]["status"] = "completed"
-                tasks[task_id]["found_flag"] = True
-                tasks[task_id]["final_flag"] = result.get('final_flag', result.get('found_flag'))
-                log_callback(task_id, f"[SUCCESS] FLAG: {tasks[task_id]['final_flag']}")
-                task_completion_times[task_id] = time.time()
-            else:
-                tasks[task_id]["status"] = "completed"
-                log_callback(task_id, "[END] Task completed, no FLAG found")
-                task_completion_times[task_id] = time.time()
+            with _tasks_lock:
+                if result.get('cancelled'):
+                    tasks[task_id]["status"] = "cancelled"
+                    task_completion_times[task_id] = time.time()
+                elif result.get('found_flag'):
+                    tasks[task_id]["status"] = "completed"
+                    tasks[task_id]["found_flag"] = True
+                    tasks[task_id]["final_flag"] = result.get('final_flag', result.get('found_flag'))
+                    task_completion_times[task_id] = time.time()
+                else:
+                    tasks[task_id]["status"] = "completed"
+                    task_completion_times[task_id] = time.time()
 
-            tasks[task_id]["progress"] = 100
-            task_results[task_id] = result
+                tasks[task_id]["progress"] = 100
+                task_results[task_id] = result
+
+            # 日志回调（在锁外执行）
+            if result.get('cancelled'):
+                log_callback(task_id, "[CANCELLED] Task stopped by user")
+            elif result.get('found_flag'):
+                log_callback(task_id, f"[SUCCESS] FLAG: {result.get('final_flag', result.get('found_flag'))}")
+            else:
+                log_callback(task_id, "[END] Task completed, no FLAG found")
 
         except TaskCancelledError as e:
             # 处理取消异常
-            tasks[task_id]["status"] = "cancelled"
+            with _tasks_lock:
+                tasks[task_id]["status"] = "cancelled"
+                task_completion_times[task_id] = time.time()
             log_callback(task_id, f"[CANCELLED] Task stopped: {e}")
-            task_completion_times[task_id] = time.time()
 
         finally:
             # 清除当前线程的任务ID
@@ -828,9 +859,10 @@ def run_task(task_id, target_url):
         run_simulated_task(task_id, target_url)
     except TaskCancelledError as e:
         # 处理取消异常（从run_single_task内部抛出）
-        tasks[task_id]["status"] = "cancelled"
+        with _tasks_lock:
+            tasks[task_id]["status"] = "cancelled"
+            task_completion_times[task_id] = time.time()
         log_callback(task_id, f"[CANCELLED] Task stopped by user")
-        task_completion_times[task_id] = time.time()
     except Exception as e:
         import traceback
         log_callback(task_id, f"[Error] Task exception: {e}")
@@ -838,9 +870,10 @@ def run_task(task_id, target_url):
 
         # 检查是否是取消异常
         if TaskCancelledError and isinstance(e, TaskCancelledError):
-            tasks[task_id]["status"] = "cancelled"
+            with _tasks_lock:
+                tasks[task_id]["status"] = "cancelled"
+                task_completion_times[task_id] = time.time()
             log_callback(task_id, "[CANCELLED] Task stopped by user")
-            task_completion_times[task_id] = time.time()
             return
 
         # 使用增强的错误处理机制
@@ -860,12 +893,13 @@ def run_task(task_id, target_url):
             if analysis.get("is_recoverable") and analysis.get("recovery_strategies"):
                 log_callback(task_id, f"[Recovery] Suggested: {analysis['recovery_strategies'][0].get('strategy', 'N/A')}")
 
-        tasks[task_id]["status"] = "error"
-        tasks[task_id]["error"] = str(e)
-        tasks[task_id]["error_type"] = error_result.get("error_type", "EXECUTION_ERROR")
-        tasks[task_id]["error_severity"] = error_result.get("severity", "MEDIUM")
-        tasks[task_id]["error_analysis"] = error_result.get("analysis")
-        task_completion_times[task_id] = time.time()
+        with _tasks_lock:
+            tasks[task_id]["status"] = "error"
+            tasks[task_id]["error"] = str(e)
+            tasks[task_id]["error_type"] = error_result.get("error_type", "EXECUTION_ERROR")
+            tasks[task_id]["error_severity"] = error_result.get("severity", "MEDIUM")
+            tasks[task_id]["error_analysis"] = error_result.get("analysis")
+            task_completion_times[task_id] = time.time()
 
 
 def run_simulated_task(task_id, target_url):
@@ -874,27 +908,32 @@ def run_simulated_task(task_id, target_url):
 
     for node in nodes:
         # 检查取消状态
-        if tasks[task_id]["status"] == "cancelled":
-            break
+        with _tasks_lock:
+            if tasks[task_id]["status"] == "cancelled":
+                break
         if cancel_manager and cancel_manager.is_cancelled(task_id):
-            tasks[task_id]["status"] = "cancelled"
+            with _tasks_lock:
+                tasks[task_id]["status"] = "cancelled"
             log_callback(task_id, "[CANCELLED] Task stopped by user")
             break
 
-        tasks[task_id]["current_node"] = node
+        with _tasks_lock:
+            tasks[task_id]["current_node"] = node
         log_callback(task_id, f"[{node}] Executing...")
 
         time.sleep(2)
 
-        tasks[task_id]["visited_nodes"].append(node)
-        tasks[task_id]["progress"] = len(tasks[task_id]["visited_nodes"]) / len(nodes) * 100
+        with _tasks_lock:
+            tasks[task_id]["visited_nodes"].append(node)
+            tasks[task_id]["progress"] = len(tasks[task_id]["visited_nodes"]) / len(nodes) * 100
 
         log_callback(task_id, f"[{node}] Completed")
 
-    if tasks[task_id]["status"] != "cancelled":
-        tasks[task_id]["status"] = "completed"
-        tasks[task_id]["progress"] = 100
-        log_callback(task_id, "[SUCCESS] Task completed!")
+    with _tasks_lock:
+        if tasks[task_id]["status"] != "cancelled":
+            tasks[task_id]["status"] = "completed"
+            tasks[task_id]["progress"] = 100
+            log_callback(task_id, "[SUCCESS] Task completed!")
 
 
 # =============================================================================
@@ -1265,24 +1304,26 @@ def api_task_start():
 
     task_id = f"task_{int(time.time() * 1000)}"
 
-    tasks[task_id] = {
-        "id": task_id,
-        "target_url": target_url,
-        "status": "running",
-        "current_node": "",
-        "visited_nodes": [],
-        "progress": 0,
-        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "task_name": task_name,
-        "task_description": task_description,
-        "found_flag": False,
-        "final_flag": ""
-    }
-    task_logs[task_id] = []
-    task_states[task_id] = ""
-    task_results[task_id] = {}
+    # 使用锁保护任务创建
+    with _tasks_lock:
+        tasks[task_id] = {
+            "id": task_id,
+            "target_url": target_url,
+            "status": "running",
+            "current_node": "",
+            "visited_nodes": [],
+            "progress": 0,
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "task_name": task_name,
+            "task_description": task_description,
+            "found_flag": False,
+            "final_flag": ""
+        }
+        task_logs[task_id] = []
+        task_states[task_id] = ""
+        task_results[task_id] = {}
 
-    # 持久化任务创建
+    # 持久化任务创建（在锁外执行，避免阻塞）
     if task_persistence:
         try:
             task_persistence.create_task(
@@ -1303,12 +1344,13 @@ def api_task_start():
 
 @bp.route('/api/task/<task_id>')
 def api_task_status(task_id):
-    """获取任务状态"""
-    if task_id not in tasks:
-        return jsonify({"error": "Task not found"}), 404
+    """获取任务状态 - 线程安全"""
+    with _tasks_lock:
+        if task_id not in tasks:
+            return jsonify({"error": "Task not found"}), 404
 
-    task = tasks[task_id]
-    result = task_results.get(task_id, {})
+        task = tasks[task_id].copy()  # 复制避免在锁外访问
+        result = task_results.get(task_id, {}).copy()
 
     return jsonify({
         "id": task["id"],
@@ -1342,12 +1384,14 @@ def api_task_status(task_id):
 
 @bp.route('/api/task/<task_id>/logs')
 def api_task_logs(task_id):
-    """获取任务日志"""
-    if task_id not in task_logs:
-        return jsonify({"logs": []})
+    """获取任务日志 - 线程安全"""
+    with _tasks_lock:
+        if task_id not in task_logs:
+            return jsonify({"logs": []})
+        logs_list = list(task_logs[task_id])  # 复制列表
 
     offset = request.args.get('offset', 0, type=int)
-    logs = task_logs[task_id][offset:]
+    logs = logs_list[offset:]
 
     return jsonify({
         "logs": logs,
@@ -1358,72 +1402,79 @@ def api_task_logs(task_id):
 @bp.route('/api/task/<task_id>/cancel', methods=['POST'])
 def api_task_cancel(task_id):
     """取消/终止任务 - 真正中断执行"""
-    if task_id not in tasks:
-        return jsonify({"error": "Task not found"}), 404
+    with _tasks_lock:
+        if task_id not in tasks:
+            return jsonify({"error": "Task not found"}), 404
 
-    task = tasks[task_id]
-    if task["status"] == "running":
+        task = tasks[task_id]
+        task_status = task["status"]
+
+    if task_status == "running":
         # 使用取消管理器标记任务为取消
         if cancel_manager:
             cancel_manager.request_cancel(task_id)
             log_callback(task_id, "[System] Task cancelled by user - interrupting execution")
         else:
             # 降级处理：仅设置状态
-            task["status"] = "cancelled"
+            with _tasks_lock:
+                if task_id in tasks:
+                    tasks[task_id]["status"] = "cancelled"
             log_callback(task_id, "[System] Task cancelled by user")
 
         return jsonify({"status": "cancelled", "message": "Task cancellation requested"})
     else:
-        return jsonify({"error": "Task is not running", "status": task["status"]}), 400
+        return jsonify({"error": "Task is not running", "status": task_status}), 400
 
 
 @bp.route('/api/task/<task_id>', methods=['DELETE'])
 def api_task_delete(task_id):
-    """删除任务记录"""
+    """删除任务记录 - 线程安全"""
     global tasks, task_logs, task_queues, task_states, task_results
 
-    if task_id not in tasks:
-        return jsonify({"error": "Task not found"}), 404
+    with _tasks_lock:
+        if task_id not in tasks:
+            return jsonify({"error": "Task not found"}), 404
 
-    task = tasks[task_id]
+        task = tasks[task_id]
 
-    # 不允许删除正在运行的任务
-    if task["status"] == "running":
-        return jsonify({"error": "Cannot delete running task. Cancel it first."}), 400
+        # 不允许删除正在运行的任务
+        if task["status"] == "running":
+            return jsonify({"error": "Cannot delete running task. Cancel it first."}), 400
 
-    # 清理所有相关数据
-    tasks.pop(task_id, None)
-    task_logs.pop(task_id, None)
-    task_queues.pop(task_id, None)
-    task_states.pop(task_id, None)
-    task_results.pop(task_id, None)
-    task_completion_times.pop(task_id, None)
-
-    return jsonify({"status": "deleted", "task_id": task_id})
-
-
-@bp.route('/api/tasks/clear', methods=['POST'])
-def api_tasks_clear():
-    """清空所有已完成的任务"""
-    global tasks, task_logs, task_queues, task_states, task_results
-
-    cleared_count = 0
-    task_ids_to_delete = []
-
-    # 找出所有非运行状态的任务
-    for task_id, task in list(tasks.items()):
-        if task["status"] != "running":
-            task_ids_to_delete.append(task_id)
-
-    # 删除任务
-    for task_id in task_ids_to_delete:
+        # 清理所有相关数据
         tasks.pop(task_id, None)
         task_logs.pop(task_id, None)
         task_queues.pop(task_id, None)
         task_states.pop(task_id, None)
         task_results.pop(task_id, None)
         task_completion_times.pop(task_id, None)
-        cleared_count += 1
+
+    return jsonify({"status": "deleted", "task_id": task_id})
+
+
+@bp.route('/api/tasks/clear', methods=['POST'])
+def api_tasks_clear():
+    """清空所有已完成的任务 - 线程安全"""
+    global tasks, task_logs, task_queues, task_states, task_results
+
+    cleared_count = 0
+    task_ids_to_delete = []
+
+    # 在锁内收集要删除的任务ID
+    with _tasks_lock:
+        for task_id, task in list(tasks.items()):
+            if task["status"] != "running":
+                task_ids_to_delete.append(task_id)
+
+        # 删除任务
+        for task_id in task_ids_to_delete:
+            tasks.pop(task_id, None)
+            task_logs.pop(task_id, None)
+            task_queues.pop(task_id, None)
+            task_states.pop(task_id, None)
+            task_results.pop(task_id, None)
+            task_completion_times.pop(task_id, None)
+            cleared_count += 1
 
     return jsonify({
         "status": "cleared",
@@ -1434,12 +1485,13 @@ def api_tasks_clear():
 
 @bp.route('/api/task/<task_id>/restart', methods=['POST'])
 def api_task_restart(task_id):
-    """重启任务"""
-    if task_id not in tasks:
-        return jsonify({"error": "Task not found"}), 404
+    """重启任务 - 线程安全"""
+    with _tasks_lock:
+        if task_id not in tasks:
+            return jsonify({"error": "Task not found"}), 404
 
-    old_task = tasks[task_id]
-    target_url = old_task.get("target_url", "")
+        old_task = tasks[task_id].copy()
+        target_url = old_task.get("target_url", "")
 
     if not target_url:
         return jsonify({"error": "No target URL found"}), 400
@@ -1448,22 +1500,23 @@ def api_task_restart(task_id):
     import uuid
     new_task_id = str(uuid.uuid4())[:8]
 
-    tasks[new_task_id] = {
-        "id": new_task_id,
-        "target_url": target_url,
-        "status": "pending",
-        "current_node": "",
-        "visited_nodes": [],
-        "progress": 0,
-        "created_at": time.time(),
-        "task_name": old_task.get("task_name", ""),
-        "task_description": old_task.get("task_description", "")
-    }
+    with _tasks_lock:
+        tasks[new_task_id] = {
+            "id": new_task_id,
+            "target_url": target_url,
+            "status": "pending",
+            "current_node": "",
+            "visited_nodes": [],
+            "progress": 0,
+            "created_at": time.time(),
+            "task_name": old_task.get("task_name", ""),
+            "task_description": old_task.get("task_description", "")
+        }
 
-    task_logs[new_task_id] = []
-    task_queues[new_task_id] = queue.Queue()
-    task_states[new_task_id] = ""
-    task_results[new_task_id] = {}
+        task_logs[new_task_id] = []
+        task_queues[new_task_id] = queue.Queue()
+        task_states[new_task_id] = ""
+        task_results[new_task_id] = {}
 
     # 在后台启动任务
     thread = threading.Thread(target=run_task, args=(new_task_id, target_url))
@@ -1488,18 +1541,19 @@ def api_task_result(task_id):
 
 @bp.route('/api/tasks')
 def api_tasks():
-    """获取任务列表"""
+    """获取任务列表 - 线程安全"""
     task_list = []
-    for tid, task in tasks.items():
-        task_list.append({
-            "id": task["id"],
-            "target_url": task["target_url"],
-            "status": task["status"],
-            "progress": task["progress"],
-            "created_at": task["created_at"],
-            "task_name": task.get("task_name", ""),
-            "found_flag": task.get("found_flag", False)
-        })
+    with _tasks_lock:
+        for tid, task in tasks.items():
+            task_list.append({
+                "id": task["id"],
+                "target_url": task["target_url"],
+                "status": task["status"],
+                "progress": task["progress"],
+                "created_at": task["created_at"],
+                "task_name": task.get("task_name", ""),
+                "found_flag": task.get("found_flag", False)
+            })
 
     # 按时间倒序
     task_list.sort(key=lambda x: x["created_at"], reverse=True)
@@ -1511,10 +1565,10 @@ def api_tasks():
 def api_task_stream(task_id):
     """日志流（SSE）- 使用Queue阻塞等待"""
     # 确保队列存在
-    if task_id not in task_queues:
-        task_queues[task_id] = queue.Queue()
-
-    task_queue = task_queues[task_id]
+    with _tasks_lock:
+        if task_id not in task_queues:
+            task_queues[task_id] = queue.Queue()
+        task_queue = task_queues[task_id]
 
     def generate():
         while True:

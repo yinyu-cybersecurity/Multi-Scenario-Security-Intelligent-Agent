@@ -42,8 +42,8 @@ class TaskCancelManager:
     def __init__(self):
         self._cancelled: Set[str] = set()
         self._lock = threading.RLock()
-        self._current_task: Optional[str] = None
-        self._task_lock = threading.local()
+        # 完全使用线程局部存储，确保多任务并发隔离
+        self._task_local = threading.local()
 
     def request_cancel(self, task_id: str) -> bool:
         """
@@ -115,12 +115,12 @@ class TaskCancelManager:
         """
         设置当前线程正在执行的任务ID
 
-        用于线程局部存储，确保多任务并发时的正确性
+        使用线程局部存储，确保多任务并发时的正确性
 
         Args:
             task_id: 任务ID或None（清除）
         """
-        self._task_lock.task_id = task_id
+        self._task_local.task_id = task_id
 
     def get_current_task(self) -> Optional[str]:
         """
@@ -129,7 +129,7 @@ class TaskCancelManager:
         Returns:
             当前任务ID或None
         """
-        return getattr(self._task_lock, 'task_id', None)
+        return getattr(self._task_local, 'task_id', None)
 
     def check_current_task(self) -> None:
         """

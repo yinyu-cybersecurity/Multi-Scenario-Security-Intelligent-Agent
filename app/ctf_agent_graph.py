@@ -3559,6 +3559,14 @@ def run_single_task(task_name: str, task_description: str, target_url: str,
                             except Exception as cb_e:
                                 log(f"回调错误: {cb_e}")
 
+                # 检查终止状态 - 主动退出循环避免阻塞
+                if accumulated_state.get("found_flag"):
+                    log("✅ 已找到 FLAG，退出执行循环")
+                    break
+                if accumulated_state.get("current_mode") == "end":
+                    log("📍 工作流已结束，退出执行循环")
+                    break
+
         # 返回最终结果 - 使用累积状态而非最后一个节点输出
         # 这样可以包含所有节点的状态（如 site_topology）
         final_result = accumulated_state if accumulated_state else {"current_mode": "end", "found_flag": False}

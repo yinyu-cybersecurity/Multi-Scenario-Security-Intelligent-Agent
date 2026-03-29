@@ -253,10 +253,14 @@ def get_task_logs(task_id: str) -> Dict:
     logs = {}
     for log_file in log_dir.glob("*.log"):
         node_name = log_file.stem
+        # 使用文件大小估算行数（避免阻塞读取大文件）
+        # 假设每行平均100字节
+        estimated_lines = max(1, log_file.stat().st_size // 100)
         logs[node_name] = {
             "path": str(log_file),
             "size": log_file.stat().st_size,
-            "lines": sum(1 for _ in open(log_file, encoding='utf-8'))
+            "lines": estimated_lines,  # 使用估算值避免阻塞
+            "lines_estimated": True    # 标记为估算值
         }
 
     return {
