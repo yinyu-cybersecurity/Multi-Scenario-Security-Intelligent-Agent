@@ -14,9 +14,9 @@ import traceback
 from typing import Dict, List
 import requests
 
-from llm_client import llm_client
-from config import config
-from logger import get_logger
+from app.llm_client import llm_client
+from app.config import config
+from app.logger import get_logger
 
 logger = get_logger("CloudSecurity")
 

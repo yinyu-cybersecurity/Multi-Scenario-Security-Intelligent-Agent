@@ -115,6 +115,9 @@ results/
 *.db
 *.sqlite
 *.sqlite3
+# 例外：允许 chroma_db 的向量数据库文件
+!data/chroma_db/*.sqlite3
+!data/chroma_db/**/*.sqlite3
 
 # =============================================================================
 # OS generated files
