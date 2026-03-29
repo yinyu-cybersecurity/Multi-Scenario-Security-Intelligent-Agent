@@ -39,6 +39,8 @@ services:
       - HTTP_SERVER_PORT=${HTTP_SERVER_PORT:-8000}
       - FRP_SERVER_PORT=${FRP_SERVER_PORT:-7000}
       - FRP_SOCKS5_PORT=${FRP_SOCKS5_PORT:-10800}
+      - HF_HOME=/app/.cache/huggingface
+      - HF_ENDPOINT=https://hf-mirror.com
     restart: unless-stopped
     stdin_open: true
     tty: true

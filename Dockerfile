@@ -189,6 +189,14 @@ RUN pip install --upgrade pip && \
     pip install -r requirements.txt && \
     pip install -r /app/thirdparty/dirsearch/requirements.txt 2>/dev/null || true
 
+# 预下载 RAG Embedding 模型（避免运行时下载延迟）
+# 使用国内镜像加速
+ENV HF_ENDPOINT=https://hf-mirror.com
+ENV HF_HOME=/app/.cache/huggingface
+RUN python3.11 -c "from sentence_transformers import SentenceTransformer; \
+    SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')" && \
+    echo "RAG model downloaded successfully"
+
 COPY app/*.py ./
 COPY app/state_types ./state_types/
 COPY app/topology ./topology/

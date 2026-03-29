@@ -1,3 +1,9 @@
+import os
+
+# 设置 HuggingFace 缓存目录（使用预下载的模型）
+os.environ['HF_HOME'] = os.environ.get('HF_HOME', '/app/.cache/huggingface')
+os.environ['HF_ENDPOINT'] = os.environ.get('HF_ENDPOINT', 'https://hf-mirror.com')
+
 import argparse
 import re
 import hashlib
