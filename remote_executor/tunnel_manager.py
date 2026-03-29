@@ -18,11 +18,35 @@ import json
 import time
 import socket
 import subprocess
+import atexit
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from logger import get_logger
 
 logger = get_logger("Tunnel")
+
+# 全局变量：跟踪frps进程，确保退出时清理
+_frps_process: Optional[subprocess.Popen] = None
+
+
+def _cleanup_frps_on_exit():
+    """程序退出时清理frps进程"""
+    global _frps_process
+    if _frps_process:
+        try:
+            _frps_process.terminate()
+            _frps_process.wait(timeout=5)
+        except Exception:
+            try:
+                _frps_process.kill()
+            except Exception:
+                pass
+        _frps_process = None
+        logger.info("[Tunnel] frps进程已清理")
+
+
+# 注册退出清理函数
+atexit.register(_cleanup_frps_on_exit)
 
 
 @dataclass
@@ -417,6 +441,8 @@ def start_local_frps(port: int = 7000, frp_dir: str = "/opt/frp") -> Optional[su
     Returns:
         frps进程对象
     """
+    global _frps_process
+
     frps_path = os.path.join(frp_dir, "frps")
     config_path = os.path.join(frp_dir, "frps.ini")
 
@@ -442,6 +468,7 @@ auth.token = "ctf_agent_token"
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
+        _frps_process = process  # 保存到全局变量，确保退出时清理
         logger.info(f"frps启动成功: 端口 {port}")
         logger.info(f"PID: {process.pid}")
         return process
@@ -469,3 +496,28 @@ def check_frps_status(port: int = 7000) -> bool:
         return result == 0
     except Exception:
         return False
+
+
+def stop_local_frps() -> Dict:
+    """
+    停止本地frps服务
+
+    Returns:
+        停止结果
+    """
+    global _frps_process
+
+    if _frps_process:
+        try:
+            _frps_process.terminate()
+            _frps_process.wait(timeout=5)
+            logger.info("[Tunnel] frps进程已终止")
+        except subprocess.TimeoutExpired:
+            _frps_process.kill()
+            logger.info("[Tunnel] frps进程已强制终止")
+        except Exception as e:
+            logger.warning(f"[Tunnel] frps终止失败: {e}")
+        _frps_process = None
+        return {"success": True, "message": "frps已停止"}
+
+    return {"success": True, "message": "frps未运行"}

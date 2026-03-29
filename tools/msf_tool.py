@@ -22,6 +22,7 @@ import socket
 import shutil
 import subprocess
 import requests
+import atexit
 from typing import Dict, Any, Optional, List
 from tool_framework import CommandLineTool
 
@@ -240,6 +241,20 @@ class MetasploitTool(CommandLineTool):
 
         # 会话持久化文件
         self.sessions_file = "/app/data/msf_sessions.json"
+
+        # 注册退出清理函数，确保RPC进程被终止
+        atexit.register(self._cleanup_on_exit)
+
+    def _cleanup_on_exit(self):
+        """程序退出时的清理函数"""
+        try:
+            self.stop_rpc()
+        except Exception:
+            pass
+
+    def __del__(self):
+        """对象销毁时清理RPC进程"""
+        self._cleanup_on_exit()
 
     def _find_msfconsole(self) -> Optional[str]:
         """查找msfconsole"""

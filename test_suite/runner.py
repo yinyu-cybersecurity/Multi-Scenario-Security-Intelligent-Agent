@@ -137,6 +137,11 @@ class TestRunner:
                 # 检查超时
                 if time.time() - start_time > timeout:
                     process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
                     result["status"] = "timeout"
                     result["errors"].append(f"执行超时 ({timeout}s)")
                     break
@@ -151,6 +156,16 @@ class TestRunner:
         except Exception as e:
             result["status"] = "error"
             result["errors"].append(str(e))
+            # 确保清理进程
+            if process and process.poll() is None:
+                try:
+                    process.terminate()
+                    process.wait(timeout=5)
+                except:
+                    try:
+                        process.kill()
+                    except:
+                        pass
 
         result["end_time"] = datetime.now().isoformat()
         return result
