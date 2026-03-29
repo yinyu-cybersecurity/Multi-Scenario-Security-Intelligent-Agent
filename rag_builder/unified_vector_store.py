@@ -633,31 +633,47 @@ class UnifiedRetriever:
 # 全局单例
 _unified_retriever = None
 _retriever_init_error = None
+_retriever_lock = None  # 延迟初始化的锁
+
+def _get_retriever_lock():
+    """延迟获取锁，避免模块导入时的线程问题"""
+    global _retriever_lock
+    if _retriever_lock is None:
+        import threading
+        _retriever_lock = threading.Lock()
+    return _retriever_lock
 
 def get_unified_retriever() -> UnifiedRetriever:
     """获取统一检索器实例
 
     改进：支持初始化失败后重试，而不是永久返回失败状态
+    增加线程锁保护，防止并发初始化
     """
     global _unified_retriever, _retriever_init_error
 
     if _unified_retriever is not None:
         return _unified_retriever
 
-    # 如果之前有错误，打印警告但允许重试（可能是临时网络问题）
-    if _retriever_init_error:
-        print(f"[RAG] Warning: Previous initialization failed: {_retriever_init_error}")
-        print("[RAG] Attempting re-initialization...")
+    # 使用双重检查锁定
+    lock = _get_retriever_lock()
+    with lock:
+        if _unified_retriever is not None:
+            return _unified_retriever
 
-    try:
-        _unified_retriever = UnifiedRetriever()
-        _retriever_init_error = None  # 清除错误记录
-        return _unified_retriever
-    except Exception as e:
-        _retriever_init_error = str(e)
-        print(f"[RAG] Error initializing retriever: {e}")
-        # 返回一个空实例，避免API崩溃
-        raise  # 让调用者处理异常
+        # 如果之前有错误，打印警告但允许重试（可能是临时网络问题）
+        if _retriever_init_error:
+            print(f"[RAG] Warning: Previous initialization failed: {_retriever_init_error}")
+            print("[RAG] Attempting re-initialization...")
+
+        try:
+            _unified_retriever = UnifiedRetriever()
+            _retriever_init_error = None  # 清除错误记录
+            return _unified_retriever
+        except Exception as e:
+            _retriever_init_error = str(e)
+            print(f"[RAG] Error initializing retriever: {e}")
+            # 返回一个空实例，避免API崩溃
+            raise  # 让调用者处理异常
 
 
 def reset_retriever():

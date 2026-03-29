@@ -242,12 +242,27 @@ class WriteupRetriever:
 
 # 全局单例（避免重复加载模型）
 _retriever = None
+_retriever_lock = None
+
+def _get_retriever_lock():
+    """延迟获取锁"""
+    global _retriever_lock
+    if _retriever_lock is None:
+        import threading
+        _retriever_lock = threading.Lock()
+    return _retriever_lock
 
 
 def get_retriever() -> WriteupRetriever:
-    """获取检索器实例（单例模式）"""
+    """获取检索器实例（单例模式，线程安全）"""
     global _retriever
-    if _retriever is None:
+    if _retriever is not None:
+        return _retriever
+
+    lock = _get_retriever_lock()
+    with lock:
+        if _retriever is not None:
+            return _retriever
         _retriever = WriteupRetriever()
     return _retriever
 
