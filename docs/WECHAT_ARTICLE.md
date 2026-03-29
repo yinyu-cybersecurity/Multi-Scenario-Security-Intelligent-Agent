@@ -67,7 +67,7 @@ CTF Agent采用**LangGraph**作为核心编排框架，将渗透测试流程抽�
 ```
 ├── Web扫描：Nuclei、Xray、SQLMap、FFUF
 ├── 内网渗透：Mimikatz、BloodHound、CrackMapExec
-├── AD域攻击：ZeroLogon、Shadow Credentials、AD CS Abuse
+├── AD域攻击：Shadow Credentials、AD CS Abuse
 ├── 云安全：Cloud Scanner、Kubernetes Attacker
 └── 通用工具：Python执行器、编码解码器
 ```

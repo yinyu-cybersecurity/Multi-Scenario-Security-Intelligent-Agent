@@ -74,7 +74,7 @@ RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/s
     chmod +x kubectl && \
     mv kubectl /usr/local/bin/kubectl || echo "Warning: kubectl installation failed"
 
-# AD CS/证书攻击工具 (ESC1-10, Shadow Credentials, ZeroLogon)
+# AD CS/证书攻击工具 (ESC1-10, Shadow Credentials, AD CS Abuse)
 RUN pipx install certipy-ad || true
 
 # pywhisker (Shadow Credentials备选工具)
