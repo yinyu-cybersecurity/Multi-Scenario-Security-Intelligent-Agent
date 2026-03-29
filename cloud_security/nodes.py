@@ -22,11 +22,15 @@ logger = get_logger("CloudSecurity")
 
 # 可选模块导入
 try:
-    from self_correction import self_correction_manager, ErrorSeverity, ErrorType
+    from app.self_correction import self_correction_manager, ErrorSeverity, ErrorType
     SELF_CORRECTION_AVAILABLE = True
 except ImportError:
-    SELF_CORRECTION_AVAILABLE = False
-    logger.debug("self_correction module not available")
+    try:
+        from self_correction import self_correction_manager, ErrorSeverity, ErrorType
+        SELF_CORRECTION_AVAILABLE = True
+    except ImportError:
+        SELF_CORRECTION_AVAILABLE = False
+        logger.debug("self_correction module not available")
 
 # 可选工具导入
 try:

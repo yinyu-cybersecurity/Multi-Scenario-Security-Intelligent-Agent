@@ -29,7 +29,11 @@ import subprocess
 import os
 import re
 
-from tool_framework import CommandLineTool
+# 集成工具框架
+try:
+    from app.tool_framework import CommandLineTool
+except ImportError:
+    from tool_framework import CommandLineTool
 
 # 集成日志
 try:
@@ -391,5 +395,8 @@ def get_adcs_abuse_tool() -> ADCSAbuseTool:
 
 
 def register():
-    from tool_framework import ToolRegistry
+    try:
+        from app.tool_framework import ToolRegistry
+    except ImportError:
+        from tool_framework import ToolRegistry
     ToolRegistry.register(ADCSAbuseTool())

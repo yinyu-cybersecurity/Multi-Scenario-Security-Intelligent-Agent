@@ -978,6 +978,12 @@ def rag_page():
     return render_template('rag.html')
 
 
+@bp.route('/strategy')
+def strategy_page():
+    """战略看板页面"""
+    return render_template('strategy.html')
+
+
 # =============================================================================
 # RAG 知识库检索 API
 # =============================================================================
