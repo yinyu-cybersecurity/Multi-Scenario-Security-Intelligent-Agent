@@ -206,6 +206,7 @@ tools/windows/*.exe
 # Thirdparty - 标注进度与大文件库
 # =============================================================================
 thirdparty/ANNOTATION_*.md
+thirdparty/*/data/
 data/security_resources/PayloadsAllTheThings-4.2/
 data/security_resources/SecLists-master/
 thirdparty/nuclei-templates-10.4.0/
@@ -245,6 +246,8 @@ app/log/
 # Data子目录补充（敏感/临时数据）
 # =============================================================================
 data/tool_raw_logs/
+data/tool_outputs/
+data/token_stats.json
 # data/nuclei_templates/  # 已上传向量数据库
 # data/chroma_db/         # 已上传向量数据库
 # data/knowledge_base/    # 已上传向量数据库
