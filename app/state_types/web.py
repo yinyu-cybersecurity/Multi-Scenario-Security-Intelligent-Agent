@@ -6,7 +6,7 @@ Web 渗透测试专用的状态字段。
 """
 
 from typing import Annotated, List, Dict, Literal, Any, Optional
-from typing_extensions import TypedDict
+from typing_extensions import TypedDict, NotRequired
 from .base import BaseCTFState
 from .reducers import (
     cap_candidates_reducer,
@@ -33,6 +33,8 @@ class VulnerabilityCandidate(TypedDict):
         context: 上下文信息
         recommended_tools: 推荐使用的工具列表
         url: 漏洞归属的 URL
+        retrieved_knowledge: 从知识库检索的相关资料（可选）
+        reason: 判断理由（可选）
     """
     type: str
     location: str
@@ -40,6 +42,9 @@ class VulnerabilityCandidate(TypedDict):
     context: Dict[str, Any]
     recommended_tools: List[str]
     url: str
+    # 可选字段
+    retrieved_knowledge: NotRequired[List[Dict[str, Any]]]
+    reason: NotRequired[str]
 
 
 class AttackAction(TypedDict):

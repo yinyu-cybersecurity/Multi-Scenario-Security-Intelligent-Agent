@@ -57,22 +57,15 @@ def ai_detect_node(state: Dict) -> Dict:
     target = state.get("current_url") or state.get("target", "")
     logger.info(f"[AIDetect] 目标: {target}")
 
-    # 知识库检索：获取相关AI攻击技术参考
+    # 从state获取主流程已检索的知识（如果有）
     knowledge_context = ""
-    try:
-        from rag_builder.retriever import retrieve_relevant_knowledge
-
-        retrieval_result = retrieve_relevant_knowledge(
-            query="prompt injection AI jailbreak CTF",
-            sources=["writeups", "security_resources"],
-            top_k=3
-        )
-
-        if retrieval_result:
-            knowledge_context = "\n".join([r.get("content", "")[:500] for r in retrieval_result])
-            logger.info(f"[AIDetect] Retrieved {len(retrieval_result)} knowledge references")
-    except Exception:
-        pass  # 静默失败，不影响主流程
+    for vuln in state.get("vuln_candidates", []):
+        if vuln.get("retrieved_knowledge"):
+            knowledge_context = "\n".join([
+                r.get("content", "")[:500]
+                for r in vuln["retrieved_knowledge"]
+            ])
+            break
 
     updates = {
         "execution_steps": state.get("execution_steps", 0) + 1

@@ -2,6 +2,7 @@
 # 作用：供头脑风暴兵调用，返回相似WP和相关知识
 # 更新：支持统一检索器（Writeups + Nuclei + Payloads + Security Resources）
 # 更新：集成RAG缓存机制，减少重复向量查询
+# 更新：集成高级检索策略（查询增强、混合检索、重排序、MMR多样性）
 
 from typing import List, Dict, Tuple, Optional
 
@@ -26,16 +27,27 @@ except ImportError:
     get_unified_retriever = None
     UNIFIED_RETRIEVER_AVAILABLE = False
 
+# 尝试导入高级检索器
+try:
+    from rag_builder.advanced_retriever import advanced_search, QueryEnhancer
+    ADVANCED_RETRIEVER_AVAILABLE = True
+except ImportError:
+    advanced_search = None
+    QueryEnhancer = None
+    ADVANCED_RETRIEVER_AVAILABLE = False
+
 
 class WriteupRetriever:
-    """Writeup检索器 - 支持统一检索"""
+    """Writeup检索器 - 支持统一检索和高级检索"""
 
-    def __init__(self, use_unified: bool = True):
+    def __init__(self, use_unified: bool = True, use_advanced: bool = True):
         """初始化检索器"""
         if not RAG_AVAILABLE:
             raise ImportError("RAG functionality requires chromadb and sentence_transformers")
 
         print("[RAG] Initializing retriever...")
+
+        self._use_advanced = use_advanced and ADVANCED_RETRIEVER_AVAILABLE
 
         # 如果可用，优先使用统一检索器
         if use_unified and UNIFIED_RETRIEVER_AVAILABLE:
@@ -47,8 +59,16 @@ class WriteupRetriever:
             self._use_unified = False
             self._init_legacy_components()
 
+        # 查询增强器
+        if ADVANCED_RETRIEVER_AVAILABLE:
+            self._query_enhancer = QueryEnhancer()
+        else:
+            self._query_enhancer = None
+
         self.count = self._get_total_count()
         print(f"[RAG] Retriever ready, knowledge base contains {self.count} records")
+        if self._use_advanced:
+            print("[RAG] Advanced retrieval enabled (query enhancement + MMR)")
 
     def _init_legacy_components(self):
         """初始化旧版组件"""
@@ -119,6 +139,42 @@ class WriteupRetriever:
             if cached_results is not None:
                 return cached_results
 
+        # 使用高级检索（查询增强）
+        if self._use_advanced and self._query_enhancer:
+            enhanced_queries = self._query_enhancer.enhance(query)
+            # 合并所有增强查询的结果
+            all_results = []
+            seen_ids = set()
+
+            for q in enhanced_queries:
+                sub_results = self._search_single_query(q, top_k, sources)
+                for r in sub_results:
+                    if r["id"] not in seen_ids:
+                        all_results.append(r)
+                        seen_ids.add(r["id"])
+
+            # 按相似度排序并过滤
+            all_results.sort(key=lambda x: x.get("similarity", 0), reverse=True)
+            filtered = [r for r in all_results if r.get("similarity", 0) >= SIMILARITY_THRESHOLD]
+            result = filtered[:top_k]
+
+            # 调试输出
+            if result:
+                print(f"[RAG+Enhanced] Query '{query[:50]}...' → {len(result)} results (best: {result[0].get('similarity', 0):.2f})")
+            else:
+                print(f"[RAG+Enhanced] Query '{query[:50]}...' → No results")
+        else:
+            # 原有逻辑
+            result = self._search_single_query(query, top_k, sources)
+
+        # 缓存结果
+        if use_cache and result:
+            cache.set(query, result, sources, top_k)
+
+        return result
+
+    def _search_single_query(self, query: str, top_k: int, sources: Tuple[str, ...]) -> List[Dict]:
+        """单个查询的检索逻辑"""
         # 执行实际查询
         if self._use_unified:
             # 使用统一检索器（包含所有数据源）
@@ -128,18 +184,22 @@ class WriteupRetriever:
             for source in sources:
                 if source in results and results[source]:
                     for item in results[source]:
-                        item["source"] = source
-                        all_results.append(item)
-            # 按相似度排序并过滤
+                        similarity = item.get("similarity", 0)
+                        # 再次过滤确保相似度达标
+                        if similarity >= SIMILARITY_THRESHOLD:
+                            item["source"] = source
+                            all_results.append(item)
+            # 按相似度排序
             all_results.sort(key=lambda x: x.get("similarity", 0), reverse=True)
-            filtered = [r for r in all_results if r.get("similarity", 0) >= SIMILARITY_THRESHOLD]
-            result = filtered[:top_k]
+            result = all_results[:top_k]
+
+            # 调试输出
+            if result:
+                print(f"[RAG] Query '{query[:50]}...' → {len(result)} results (best: {result[0].get('similarity', 0):.2f})")
+            else:
+                print(f"[RAG] Query '{query[:50]}...' → No results above threshold {SIMILARITY_THRESHOLD}")
         else:
             result = self._legacy_search_by_text(query, top_k)
-
-        # 缓存结果
-        if use_cache and result:
-            cache.set(query, result, sources, top_k)
 
         return result
 
@@ -208,7 +268,12 @@ class WriteupRetriever:
         if tags:
             query_parts.append(f"vulnerability type: {', '.join(tags)}")
 
-        query = " | ".join(query_parts) if query_parts else "CTF Web vulnerability"
+        # 如果没有提取到有效特征，返回空结果而非使用硬编码默认查询
+        if not query_parts:
+            print(f"   [RAG] No features extracted, skipping retrieval")
+            return []
+
+        query = " | ".join(query_parts)
 
         print(f"   [RAG] Query: {query[:100]}...")
         return self.search_by_text(query, top_k)
@@ -276,7 +341,7 @@ def get_retriever() -> WriteupRetriever:
 
 
 def retrieve_relevant_knowledge(query: str, sources: list = None, top_k: int = 5,
-                                use_cache: bool = True) -> List[Dict]:
+                                use_cache: bool = True, use_advanced: bool = True) -> List[Dict]:
     """
     Unified knowledge retrieval function for RAG.
 
@@ -290,6 +355,8 @@ def retrieve_relevant_knowledge(query: str, sources: list = None, top_k: int = 5
                  Default: ["writeups", "security_resources"]
         top_k: Number of results to return per source (default: 5)
         use_cache: Whether to use cache (default: True)
+        use_advanced: Whether to use advanced retrieval strategies (default: True)
+                      Advanced: query enhancement, hybrid search, reranking, MMR
 
     Returns:
         List of dicts with keys: "content", "similarity", "metadata", "source"
@@ -311,8 +378,19 @@ def retrieve_relevant_knowledge(query: str, sources: list = None, top_k: int = 5
     results = []
 
     try:
-        # Try using the unified retriever first (supports all sources)
-        if UNIFIED_RETRIEVER_AVAILABLE:
+        # 优先使用高级检索器（查询增强 + 混合检索 + 重排序 + MMR）
+        if use_advanced and ADVANCED_RETRIEVER_AVAILABLE:
+            results = advanced_search(query, top_k=top_k, sources=sources, use_reranker=False)
+
+            # 调试输出
+            if results:
+                best_sim = max(r.get("similarity", r.get("quality_score", 0)) for r in results)
+                print(f"[RAG+Advanced] Query '{query[:50]}...' → {len(results)} results (best: {best_sim:.2f})")
+            else:
+                print(f"[RAG+Advanced] Query '{query[:50]}...' → No results above threshold {SIMILARITY_THRESHOLD}")
+
+        elif UNIFIED_RETRIEVER_AVAILABLE:
+            # 使用统一检索器
             retriever = get_unified_retriever()
             raw_results = retriever.search(query, top_k=top_k, sources=sources)
 
@@ -320,19 +398,25 @@ def retrieve_relevant_knowledge(query: str, sources: list = None, top_k: int = 5
             for source in sources:
                 if source in raw_results and raw_results[source]:
                     for item in raw_results[source]:
-                        results.append({
-                            "content": item.get("content", ""),
-                            "similarity": item.get("similarity", 0),
-                            "metadata": item.get("metadata", {}),
-                            "source": source
-                        })
+                        similarity = item.get("similarity", 0)
+                        if similarity >= SIMILARITY_THRESHOLD:
+                            results.append({
+                                "content": item.get("content", ""),
+                                "similarity": similarity,
+                                "metadata": item.get("metadata", {}),
+                                "source": source
+                            })
 
             # Sort by similarity (highest first)
             results.sort(key=lambda x: x.get("similarity", 0), reverse=True)
+            results = results[:top_k]
 
-            # Return top_k * len(sources) results max
-            max_results = top_k * len(sources)
-            results = results[:max_results]
+            if results:
+                best_sim = results[0].get("similarity", 0)
+                worst_sim = results[-1].get("similarity", 0)
+                print(f"[RAG] Query '{query[:50]}...' → {len(results)} results (similarity: {worst_sim:.2f}-{best_sim:.2f})")
+            else:
+                print(f"[RAG] Query '{query[:50]}...' → No results above threshold {SIMILARITY_THRESHOLD}")
 
         else:
             # Fallback to legacy retriever (writeups only)
@@ -354,21 +438,31 @@ def retrieve_relevant_knowledge(query: str, sources: list = None, top_k: int = 5
         return results
 
     except ImportError as e:
-        # RAG dependencies not available
         print(f"[RAG] Warning: RAG dependencies not available: {e}")
         return []
     except Exception as e:
-        # Any other error - log and return empty list (graceful degradation)
         print(f"[RAG] Error retrieving knowledge: {e}")
         return []
 
 
 # 简单测试
 if __name__ == "__main__":
-    retriever = get_retriever()
+    print("\n--- Testing RAG Retrieval ---")
 
-    # 测试搜索
-    results = retriever.search_by_text("SQL injection")
-    print(f"\nFound {len(results)} results")
-    for r in results[:3]:
-        print(f"  - [{r.get('source', 'unknown')}] {r['metadata']['filename']} (similarity: {r['similarity']})")
+    # 测试查询
+    test_queries = [
+        "SQL injection bypass WAF",
+        "Spring SSTI vulnerability",
+        "JWT token bypass",
+    ]
+
+    for query in test_queries:
+        print(f"\nQuery: {query}")
+        results = retrieve_relevant_knowledge(query, use_advanced=True, top_k=3)
+
+        for r in results:
+            source = r.get("source", "unknown")
+            sim = r.get("similarity", r.get("quality_score", 0))
+            meta = r.get("metadata", {})
+            filename = meta.get("filename", meta.get("name", "unknown"))
+            print(f"  [{source}] {filename} (similarity: {sim:.2f})")

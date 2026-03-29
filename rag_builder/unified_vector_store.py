@@ -15,7 +15,8 @@ from tqdm import tqdm
 # 这样模型加载时会使用国内镜像而不是原始huggingface.co
 from rag_builder.config import (
     WRITEUPS_DIR, CHROMA_DIR, SUPPORTED_EXTENSIONS,
-    EMBEDDING_MODEL, MAX_CONTENT_LENGTH, HF_ENDPOINT
+    EMBEDDING_MODEL, MAX_CONTENT_LENGTH, HF_ENDPOINT,
+    SIMILARITY_THRESHOLD
 )
 
 # config.py已设置HF_ENDPOINT，现在可以安全导入SentenceTransformer
@@ -613,14 +614,21 @@ class UnifiedRetriever:
             if results['ids'][0]:
                 for i in range(len(results['ids'][0])):
                     distance = results['distances'][0][i]
+                    # 余弦距离范围是 0-2，余弦相似度 = 1 - 余弦距离
+                    # 相似度范围: -1 到 1，值越大越相似
+                    # distance=0 → similarity=1 (完全相同)
+                    # distance=1 → similarity=0 (正交)
+                    # distance=2 → similarity=-1 (完全相反)
                     similarity = 1 - distance
 
-                    formatted.append({
-                        "id": results['ids'][0][i],
-                        "content": results['documents'][0][i],
-                        "metadata": results['metadatas'][0][i],
-                        "similarity": round(similarity, 3)
-                    })
+                    # 过滤低相似度结果（使用config中的阈值）
+                    if similarity >= SIMILARITY_THRESHOLD:
+                        formatted.append({
+                            "id": results['ids'][0][i],
+                            "content": results['documents'][0][i],
+                            "metadata": results['metadatas'][0][i],
+                            "similarity": round(similarity, 3)
+                        })
 
             return formatted
         except Exception as e:

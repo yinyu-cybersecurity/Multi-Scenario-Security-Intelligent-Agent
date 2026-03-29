@@ -44,22 +44,15 @@ def reverse_analyst_node(state: Dict) -> Dict:
     """
     logger.info("[ReverseAnalyst] Starting reverse analysis...")
 
-    # 知识库检索：获取相关逆向工程技术参考
+    # 从state获取主流程已检索的知识
     knowledge_context = ""
-    try:
-        from rag_builder.retriever import retrieve_relevant_knowledge
-
-        retrieval_result = retrieve_relevant_knowledge(
-            query="reverse engineering flag extraction CTF",
-            sources=["writeups", "security_resources"],
-            top_k=3
-        )
-
-        if retrieval_result:
-            knowledge_context = "\n".join([r.get("content", "")[:500] for r in retrieval_result])
-            logger.info(f"[ReverseAnalyst] Retrieved {len(retrieval_result)} knowledge references")
-    except Exception:
-        pass  # 静默失败，不影响主流程
+    for vuln in state.get("vuln_candidates", []):
+        if vuln.get("retrieved_knowledge"):
+            knowledge_context = "\n".join([
+                r.get("content", "")[:500]
+                for r in vuln["retrieved_knowledge"]
+            ])
+            break
 
     binary_path = state.get("binary_path", "")
 

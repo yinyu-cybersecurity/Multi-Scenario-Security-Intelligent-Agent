@@ -6,7 +6,7 @@ import os
 import json
 import hashlib
 import time
-import threading
+from rag_builder.config import SIMILARITY_THRESHOLD
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Any
 
@@ -59,10 +59,12 @@ class RAGCache:
             A hash string to use as the cache key
         """
         # Create a unique key from all parameters
+        # 包含阈值，确保阈值改变时缓存失效
         key_data = {
             "query": query.strip().lower(),  # Normalize query
             "sources": tuple(sorted(sources)) if sources else (),
-            "top_k": top_k
+            "top_k": top_k,
+            "threshold": SIMILARITY_THRESHOLD  # 阈值改变时缓存自动失效
         }
         key_str = json.dumps(key_data, sort_keys=True)
         return hashlib.md5(key_str.encode()).hexdigest()

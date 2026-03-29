@@ -152,14 +152,36 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
     }}
   ],
   "key_intel": "关键发现",
-  "attack_strategy": "推荐攻击策略：先做什么、后做什么、如果失败如何调整",
-  "attack_chain": ["步骤1", "步骤2", "步骤3", "获取FLAG"],
-  "current_phase": "信息收集",
-  "primary_goal": "当前主要目标描述",
-  "blockers": ["当前阻碍因素"],
-  "alternatives": ["备选攻击路径"]
+  "attack_strategy": "推荐攻击策略",
+  "retrieval_requests": [
+    {{
+      "query": "检索关键词",
+      "source": "payloads|nuclei|writeups|security_resources",
+      "reason": "为什么需要检索这个"
+    }}
+  ]
 }}
 ```
 
-注意: candidates不能为空，必须给出明确的攻击方向。优先针对已识别的场景给出攻击方案。
+## 知识库检索
+
+你可以请求从知识库检索信息辅助攻击。在输出中添加`retrieval_requests`字段。
+
+### 可用数据源
+
+| 数据源 | 用途 | 示例查询 |
+|--------|------|---------|
+| payloads | 获取具体攻击载荷 | "ssti jinja", "xss dom" |
+| nuclei | CVE漏洞模板 | "CVE-2023-44487", "log4j" |
+| writeups | CTF历史题解 | "spring ssti", "file upload" |
+| security_resources | 攻击技术文档 | "deserialization", "ssrf" |
+
+### 何时请求检索
+
+- 发现漏洞但不确定具体payload
+- 需要绕过特定防护
+- 遇到不熟悉的漏洞类型
+- 需要CVE模板参数
+
+注意: candidates不能为空，必须给出明确的攻击方向。
 """

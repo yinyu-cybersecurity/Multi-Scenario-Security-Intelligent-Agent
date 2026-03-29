@@ -50,22 +50,18 @@ def cloud_recon_node(state: Dict) -> Dict:
     target = state.get("current_url") or state.get("target", "")
     logger.info(f"[CloudRecon] 目标: {target}")
 
-    # 知识库检索：获取相关云安全攻击技术参考
+    # 从state获取主流程已检索的知识
     knowledge_context = ""
-    try:
-        from rag_builder.retriever import retrieve_relevant_knowledge
+    for vuln in state.get("vuln_candidates", []):
+        if vuln.get("retrieved_knowledge"):
+            knowledge_context = "\n".join([
+                r.get("content", "")[:500]
+                for r in vuln["retrieved_knowledge"]
+            ])
+            break
 
-        retrieval_result = retrieve_relevant_knowledge(
-            query="cloud S3 metadata SSRF CTF",
-            sources=["writeups", "security_resources"],
-            top_k=3
-        )
-
-        if retrieval_result:
-            knowledge_context = "\n".join([r.get("content", "")[:500] for r in retrieval_result])
-            logger.info(f"[CloudRecon] Retrieved {len(retrieval_result)} knowledge references")
-    except Exception:
-        pass  # 静默失败，不影响主流程
+    # 检测云服务商
+    provider = _detect_provider(target)
 
     updates = {
         "execution_steps": state.get("execution_steps", 0) + 1
@@ -78,11 +74,7 @@ def cloud_recon_node(state: Dict) -> Dict:
             result = scanner.execute(target, {"action": "enumerate"})
 
             providers = result.get("cloud_providers", [])
-            provider = providers[0] if providers else ""
-
-            if not provider:
-                # 降级: 规则检测
-                provider = _detect_provider(target)
+            provider = providers[0] if providers else provider
 
             if not provider:
                 updates.update({
@@ -101,23 +93,23 @@ def cloud_recon_node(state: Dict) -> Dict:
                 "metadata_leaked": metadata,
                 "detected_services": result.get("resources", []),
                 "cloud_phase": "enum" if metadata or result.get("resources") else "complete",
-                "cloud_knowledge_context": knowledge_context  # 保存知识库上下文到state
+                "cloud_knowledge_context": knowledge_context
             })
             return updates
 
         except Exception as e:
             _record_error("cloud_recon", ErrorType.TOOL_FAILURE if SELF_CORRECTION_AVAILABLE else "TOOL_FAILURE", str(e))
-            # 降级: 规则检测
 
     # 降级路径
-    provider = _detect_provider(target)
+    if not provider:
+        provider = _detect_provider(target)
     metadata = _probe_metadata(provider) if provider else {}
 
     updates.update({
         "cloud_provider": provider,
         "metadata_leaked": metadata,
         "cloud_phase": "enum" if provider else "complete",
-        "cloud_knowledge_context": knowledge_context,  # 保存知识库上下文到state
+        "cloud_knowledge_context": knowledge_context,
         "failure_weighted_score": state.get("failure_weighted_score", 0) + (0 if provider else 0.5)
     })
     return updates

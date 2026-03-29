@@ -1627,23 +1627,47 @@ def analyst_node(state: CTFState) -> Dict:
                 "exploit_keywords": exploit_keywords if exploit_keywords else {}
             }
 
-        # [知识库检索] 识别漏洞后检索payloads
-        if formatted_candidates:
+        # [AI驱动的知识库检索] 处理AI的检索请求
+        retrieval_requests = result.get("retrieval_requests", [])
+        if retrieval_requests:
             try:
                 from rag_builder.retriever import retrieve_relevant_knowledge
-                for vuln in formatted_candidates[:3]:
-                    vuln_type = vuln.get("type", "")
-                    if vuln_type:
+
+                for req in retrieval_requests[:3]:  # 最多处理3个请求
+                    query = req.get("query", "")
+                    source = req.get("source", "writeups")
+                    # 验证数据源有效性
+                    valid_sources = ["writeups", "nuclei", "payloads", "security_resources"]
+                    if source not in valid_sources:
+                        source = "writeups"
+
+                    if query:
                         results = retrieve_relevant_knowledge(
-                            query=f"{vuln_type} payload exploit",
-                            sources=["payloads"],
+                            query=query,
+                            sources=[source],
                             top_k=3
                         )
                         if results:
-                            vuln["payload_references"] = [r.get("content", "")[:500] for r in results]
-                            log(f"   📚 为 [{vuln_type}] 检索到 {len(results)} 个payload参考")
+                            # 按相关性附加到漏洞候选
+                            # 策略：遍历所有候选，附加到查询词与漏洞类型匹配的候选
+                            attached = False
+                            for vuln in formatted_candidates:
+                                vuln_type = vuln.get("type", "").lower()
+                                query_lower = query.lower()
+                                # 双向匹配：漏洞类型在查询中 或 查询包含漏洞类型关键词
+                                if vuln_type and (vuln_type in query_lower or any(kw in vuln_type for kw in query_lower.split())):
+                                    vuln["retrieved_knowledge"] = results
+                                    log(f"   📚 为 [{vuln.get('type')}] 检索到 {len(results)} 条{source}资料")
+                                    attached = True
+                                    break
+
+                            # 如果没有精确匹配，附加到第一个候选
+                            if not attached and formatted_candidates:
+                                formatted_candidates[0]["retrieved_knowledge"] = results
+                                log(f"   📚 检索到 {len(results)} 条{source}资料 (附加到首个候选)")
+
             except Exception as e:
-                pass  # 静默失败
+                log(f"   ⚠️ 检索请求处理失败: {e}")
 
         analyst_intel = "\n\n".join(key_intel_parts) if key_intel_parts else None
         res = {
@@ -2129,36 +2153,11 @@ def attacker_node(state: CTFState) -> Dict:
             except Exception as e:
                 log(f"   ⚠️ 智慧决策失败: {e}")
 
-    # [知识库检索] 攻击前检索nuclei模板和payloads
-    try:
-        from rag_builder.retriever import retrieve_relevant_knowledge
-        for vuln in candidates[:3]:
-            cve_id = vuln.get("context", {}).get("cve_id", "") or vuln.get("cve_id", "")
-            vuln_type = vuln.get("type", "")
-
-            # 有CVE编号检索nuclei模板
-            if cve_id:
-                nuclei_results = retrieve_relevant_knowledge(
-                    query=f"CVE {cve_id}",
-                    sources=["nuclei"],
-                    top_k=2
-                )
-                if nuclei_results:
-                    vuln["nuclei_templates"] = nuclei_results
-                    log(f"   📚 为 [{cve_id}] 检索到 {len(nuclei_results)} 个nuclei模板")
-
-            # 检索payloads
-            if vuln_type:
-                payload_results = retrieve_relevant_knowledge(
-                    query=f"{vuln_type} bypass payload",
-                    sources=["payloads"],
-                    top_k=3
-                )
-                if payload_results:
-                    vuln["payload_references"] = payload_results
-                    log(f"   📚 为 [{vuln_type}] 检索到 {len(payload_results)} 个payload参考")
-    except Exception:
-        pass  # 静默失败
+    # [AI驱动的知识库检索] 使用AI请求的检索结果（已在analyst_node中处理）
+    # 如果漏洞候选中已有retrieved_knowledge，直接使用
+    for vuln in candidates[:3]:
+        if vuln.get("retrieved_knowledge"):
+            log(f"   📚 使用AI检索的 {len(vuln['retrieved_knowledge'])} 条知识资料")
 
     # =====================================================
     # [断点1修复] 处理结构化战术指导
@@ -2721,20 +2720,35 @@ def verifier_node(state: CTFState) -> Dict:
             try:
                 from rag_builder.retriever import retrieve_relevant_knowledge
 
+                # 获取上下文
                 known_facts = state.get("known_facts", "")
-                vuln_types = [v.get("type", "") for v in state.get("vuln_candidates", [])]
+                vuln_types = [v.get("type", "") for v in state.get("vuln_candidates", []) if v.get("type")]
+                tech_stack = state.get("tech_stack", [])
+
+                # 构建查询：优先使用漏洞类型
+                if vuln_types:
+                    query = vuln_types[0]
+                    if tech_stack:
+                        query = f"{tech_stack[0]} {query}"
+                elif known_facts:
+                    query = known_facts[:100]  # 限制长度
+                else:
+                    query = "CTF web exploit"
 
                 writeup_results = retrieve_relevant_knowledge(
-                    query=f"CTF {known_facts} {' '.join(vuln_types)}",
+                    query=query,
                     sources=["writeups"],
                     top_k=3
                 )
 
-                resource_results = retrieve_relevant_knowledge(
-                    query=f"{' '.join(vuln_types)} technique bypass",
-                    sources=["security_resources"],
-                    top_k=2
-                )
+                if vuln_types:
+                    resource_results = retrieve_relevant_knowledge(
+                        query=vuln_types[0],
+                        sources=["security_resources"],
+                        top_k=2
+                    )
+                else:
+                    resource_results = []
 
                 if writeup_results or resource_results:
                     log(f"   📚 卡住后检索到 {len(writeup_results)} 个writeup, {len(resource_results)} 个资源")
