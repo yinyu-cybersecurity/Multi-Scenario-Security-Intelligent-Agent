@@ -3,7 +3,8 @@ import sys
 import json
 import re
 import os
-from typing import Dict, Any
+import hashlib
+from typing import Dict, Any, List, Set
 from tool_framework import CommandLineTool
 from llm_client import llm_client
 from config import config
@@ -11,6 +12,7 @@ from config import config
 class DirsearchTool(CommandLineTool):
     """
     Dirsearch 封装 - Web 路径/目录爆破工具
+    增强功能：页面内容去重，避免相同页面被当作不同路径
     """
 
     def __init__(self):
@@ -147,6 +149,70 @@ class DirsearchTool(CommandLineTool):
             }
         }
 
+    def _get_page_hash(self, url: str) -> tuple:
+        """
+        获取页面内容的哈希和长度
+        返回: (hash, length, status_code)
+        """
+        import requests
+        try:
+            resp = requests.get(url, timeout=5, allow_redirects=False,
+                              headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'})
+            content = resp.text.strip()
+            # 移除动态内容（时间戳、随机数等）后计算哈希
+            # 简单方法：移除数字和空白后的内容计算哈希
+            clean_content = re.sub(r'\d+', '', content)
+            clean_content = re.sub(r'\s+', ' ', clean_content)
+            content_hash = hashlib.md5(clean_content.encode()).hexdigest()
+            return (content_hash, len(content), resp.status_code)
+        except Exception:
+            return (None, 0, 0)
+
+    def _deduplicate_paths(self, base_url: str, discovered_paths: List[Dict]) -> List[Dict]:
+        """
+        对发现的路径进行去重
+        过滤掉与首页内容相同的路径
+        """
+        if not discovered_paths:
+            return []
+
+        # 获取基准页面（首页）的哈希
+        base_hash, base_length, _ = self._get_page_hash(base_url)
+        seen_hashes: Set[str] = {base_hash} if base_hash else set()
+        seen_lengths: Set[int] = {base_length} if base_length else set()
+
+        unique_paths = []
+        for path_info in discovered_paths:
+            path_url = path_info.get("url", "")
+            if not path_url:
+                continue
+
+            # 获取该路径的页面哈希
+            path_hash, path_length, path_status = self._get_page_hash(path_url)
+
+            # 检查是否与已知页面重复
+            is_duplicate = False
+            duplicate_reason = ""
+
+            if path_hash and path_hash in seen_hashes:
+                is_duplicate = True
+                duplicate_reason = "内容与已有页面相同"
+            elif path_length > 0 and path_length in seen_lengths and abs(path_length - base_length) < 50:
+                # 如果长度非常接近（<50字节差异），可能是相同页面
+                is_duplicate = True
+                duplicate_reason = f"长度与基准页面接近({path_length} vs {base_length})"
+
+            if is_duplicate:
+                print(f"[dirsearch] 过滤重复路径: {path_url} - {duplicate_reason}")
+            else:
+                unique_paths.append(path_info)
+                if path_hash:
+                    seen_hashes.add(path_hash)
+                if path_length:
+                    seen_lengths.add(path_length)
+
+        return unique_paths
+
     def execute(self, target: str, params: Dict) -> Dict:
         url = params.get("url") or target
         if not url:
@@ -178,7 +244,7 @@ class DirsearchTool(CommandLineTool):
         # 排除 404, 500, 503 等无效页面
         exclude_status = params.get("exclude_status", "400,404,500,502,503")
         cmd.extend(["-x", exclude_status])
-        
+
         # 排除特定长度（例如 0 字节，或者 WAF 统一返回的长度）
         # 这里默认排除 0 字节和常见的空页面长度
         cmd.extend(["--exclude-sizes", "0b,1b"])
@@ -202,35 +268,58 @@ class DirsearchTool(CommandLineTool):
         timeout = params.get("timeout", 5) # 降低连接等待时间
         cmd.extend(["--timeout", str(timeout)])
 
-        # 6. 使用 --minimal-mode (如果 dirsearch 版本支持) 
-        # 或者通过字典限制来实现极速扫描
-        # cmd.append("--minimal-mode") 
-
         try:
             # 执行命令 - 使用流式输出，设置工具层的物理超时 (120秒)
             raw_result = self._run_command(cmd, timeout=120, stream_output=True)
             stdout = raw_result.get("stdout", "")
             stderr = raw_result.get("stderr", "")
 
-            # 🚨 [核心修改] 使用 AI 智能分析扫描结果，提取高价值路径
+            # 解析原始输出中的路径
+            discovered_paths = []
+            # 匹配格式: [状态码] URL (长度) 或类似格式
+            path_pattern = r'\[(\d{3})\]\s+(\S+)\s+(?:\(.*?\))?'
+            for match in re.finditer(path_pattern, stdout):
+                status_code = int(match.group(1))
+                path_url = match.group(2)
+                if path_url and status_code < 400:  # 只处理成功的路径
+                    discovered_paths.append({
+                        "url": path_url,
+                        "status": status_code
+                    })
+
+            # 🚨 [核心修改] 对发现的路径进行内容去重
+            if discovered_paths:
+                print(f"[dirsearch] 发现 {len(discovered_paths)} 个路径，正在进行内容去重...")
+                unique_paths = self._deduplicate_paths(url, discovered_paths)
+                print(f"[dirsearch] 去重后剩余 {len(unique_paths)} 个唯一路径")
+            else:
+                unique_paths = []
+
+            # 使用 AI 分析去重后的结果
+            paths_for_analysis = [
+                {"url": p["url"], "status": p["status"], "reason": p.get("reason", "待分析")}
+                for p in unique_paths
+            ]
+
             analysis_prompt = f"""
-分析 dirsearch 的执行输出。你的任务是识别出最有价值的路径（如 200/301 状态码且内容长度异常的页面）。
-剔除无意义的 404 或误报，精炼扫描结果。
+分析 dirsearch 的扫描结果（已去重）。识别出最有价值的路径。
 
 ### 扫描目标:
 {url}
 
-### 原始输出 (前 5000 字符):
-{stdout[:5000]}
-{stderr if stderr else ""}
+### 去重后的路径 ({len(unique_paths)} 个):
+{json.dumps(paths_for_analysis, indent=2, ensure_ascii=False)}
+
+### 原始输出摘要:
+{stdout[:2000]}
 
 ### 输出要求 (JSON):
 {{
-  "vulnerable": true/false, // 是否发现了敏感路径或配置泄露
+  "vulnerable": true/false,
   "critical_paths": [
     {{ "url": "路径", "status": 状态码, "reason": "为什么这个路径重要" }}
   ],
-  "next_step_advice": "建议下一步操作（如：访问管理后台、查看敏感配置文件等）",
+  "next_step_advice": "建议下一步操作",
   "summary": "扫描结果摘要"
 }}
 """
@@ -240,19 +329,21 @@ class DirsearchTool(CommandLineTool):
                 temperature=0.1,
                 json_mode=True
             )
-            
+
             if "```json" in analysis_text:
                 analysis_text = analysis_text.split("```json")[1].split("```")[0]
             elif "```" in analysis_text:
                 analysis_text = analysis_text.split("```")[1].split("```")[0]
-                
+
             result = json.loads(analysis_text)
-            
+
             # 保留原始输出用于日志归档
             result["stdout"] = stdout
             result["stderr"] = stderr
             result["success"] = raw_result.get("success", False)
-            
+            result["discovered_count"] = len(discovered_paths)
+            result["unique_count"] = len(unique_paths)
+
             return result
 
         except Exception as e:
