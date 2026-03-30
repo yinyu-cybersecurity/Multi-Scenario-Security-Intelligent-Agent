@@ -338,16 +338,16 @@ class AIFlowController:
 
 ## 输出格式 (JSON)
 ```json
-{
+{{
     "decision": "CONTINUE_ATTACK|GO_VERIFIER|SWITCH_STRATEGY",
     "reason": "判断理由",
     "confidence": 0.0-1.0,
-    "attack_effectiveness": {
+    "attack_effectiveness": {{
         "is_effective": true/false,
         "progress_made": true/false,
         "suggested_action": "建议的下一步动作"
-    }
-}
+    }}
+}}
 ```
 
 ## 分析要点
