@@ -189,15 +189,15 @@ RUN pip install --upgrade pip && \
     pip install -r requirements.txt && \
     pip install -r /app/thirdparty/dirsearch/requirements.txt 2>/dev/null || true
 
-# 预下载 RAG Embedding 模型到正确缓存路径（~420MB多语言模型）
+# 预下载 RAG Embedding 模型（distiluse多语言版，~500MB）
 ENV HF_ENDPOINT=https://hf-mirror.com
 ENV HF_HOME=/app/.cache/huggingface
 ENV SENTENCE_TRANSFORMERS_HOME=/app/.cache/huggingface
 ENV HF_HUB_DISABLE_PROGRESS_BARS=1
 ENV HF_HUB_DISABLE_TELEMETRY=1
 RUN python3.11 -c "from sentence_transformers import SentenceTransformer; \
-    SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')" && \
-    echo "RAG model pre-downloaded (~420MB)"
+    SentenceTransformer('sentence-transformers/distiluse-base-multilingual-cased-v2')" && \
+    echo "RAG model pre-downloaded (~500MB)"
 
 COPY app/*.py ./
 COPY app/state_types ./state_types/

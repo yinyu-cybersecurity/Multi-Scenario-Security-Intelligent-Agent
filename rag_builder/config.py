@@ -27,8 +27,8 @@ import os
 HF_ENDPOINT = os.environ.get('HF_ENDPOINT', 'https://hf-mirror.com')
 os.environ['HF_ENDPOINT'] = HF_ENDPOINT
 
-# 多语言模型（~420MB，支持中英文）
-EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+# 多语言模型（~500MB，支持中英文，更小更快）
+EMBEDDING_MODEL = "sentence-transformers/distiluse-base-multilingual-cased-v2"
 
 # 检索配置
 TOP_K_RESULTS = 10  # 默认返回几条相似结果
