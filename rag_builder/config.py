@@ -34,8 +34,8 @@ EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 # EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 # 检索配置
-TOP_K_RESULTS = 5  # 默认返回几条相似结果
-SIMILARITY_THRESHOLD = 0.6  # 相似度阈值（提高到0.6确保结果相关性）
+TOP_K_RESULTS = 10  # 默认返回几条相似结果
+SIMILARITY_THRESHOLD = 0.3  # 相似度阈值（降低到0.3，让更多结果通过，由AI判断相关性）
 
 # 分块大小（WP内容太长时可以截断）
 MAX_CONTENT_LENGTH = 2000  # 只取前2000字符

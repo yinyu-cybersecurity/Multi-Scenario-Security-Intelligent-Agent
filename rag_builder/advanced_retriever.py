@@ -30,12 +30,12 @@ except ImportError:
 
 class QueryEnhancer:
     """
-    查询增强器 - 简化版
+    查询增强器 - 极简版
 
     设计原则：
-    1. 不用硬编码映射干扰语义检索
-    2. 让AI/用户提供精确上下文
-    3. 只做必要的标准化和清理
+    1. 不做语义扩展，避免稀释原始查询意图
+    2. 只做必要的标准化（CVE格式、大小写）
+    3. 让原始查询主导检索
     """
 
     # CVE关键词提取模式
@@ -43,58 +43,39 @@ class QueryEnhancer:
 
     def enhance(self, query: str, context: Dict = None) -> List[str]:
         """
-        查询增强：生成补充查询（极简版）
+        查询增强：极简版，不做语义扩展
 
         Args:
             query: 原始查询
             context: 可选上下文（由AI提供）
 
         Returns:
-            增强后的查询列表
+            查询列表（原始查询 + 可能的标准化变体）
         """
-        queries = [query]
-        context = context or {}
+        queries = [query]  # 原始查询始终放在第一位
 
-        # 1. CVE编号标准化
+        # 1. CVE编号标准化（只做格式修正）
         cve_matches = self.CVE_PATTERN.findall(query)
         if cve_matches:
             for cve in cve_matches:
-                # 只保留标准化格式
-                queries.append(cve.upper())
+                standardized = cve.upper()
+                if standardized != cve:
+                    queries.append(standardized)
 
-        # 2. 如果AI提供了上下文，组合查询
-        tech_stack = context.get("tech_stack", [])
-        vuln_type = context.get("vuln_type")
+        # 不做任何语义扩展！
+        # 让原始查询主导，语义检索会自然找到相关内容
 
-        if tech_stack and vuln_type:
-            # 组合技术栈和漏洞类型
-            tech = tech_stack[0] if tech_stack else ""
-            queries.append(f"{tech} {vuln_type}")
-        elif vuln_type:
-            queries.append(vuln_type)
-
-        # 去重
-        unique = []
-        seen = set()
-        for q in queries:
-            q_clean = q.strip()
-            if q_clean.lower() not in seen and len(q_clean) > 2:
-                seen.add(q_clean.lower())
-                unique.append(q_clean)
-
-        return unique[:3]  # 最多3个查询
+        return queries[:2]  # 最多2个查询（原始 + CVE标准化）
 
     def extract_key_terms(self, query: str) -> Dict[str, List[str]]:
-        """提取关键术语（简化版）"""
+        """提取关键术语（仅用于精确匹配，不做扩展）"""
         result = {
             "cves": self.CVE_PATTERN.findall(query),
             "keywords": []
         }
 
-        # 只提取CVE，其他交给语义检索
-        words = re.findall(r'\b[a-zA-Z]{3,}\b', query.lower())
-        stop_words = {"the", "and", "for", "with", "how", "what", "when", "from"}
-        result["keywords"] = [w for w in words if w not in stop_words][:10]
+        # 只提取CVE，不做其他关键词提取
+        # 语义检索会自动处理关键词
 
         return result
 
@@ -437,8 +418,9 @@ class AdvancedRetriever:
                 continue
 
             # 混合检索：向量 + 关键词
+            # 获取更多候选，让后续过滤和排序有更多选择
             source_results = self._hybrid_search(
-                enhanced_queries, collection, top_k * 2  # 获取更多候选
+                enhanced_queries, collection, max(top_k * 3, 20)  # 至少获取20个候选
             )
 
             # 3. 重排序
