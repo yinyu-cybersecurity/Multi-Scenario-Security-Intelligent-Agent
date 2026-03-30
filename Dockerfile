@@ -192,16 +192,11 @@ RUN pip install --upgrade pip && \
 # 预下载 RAG Embedding 模型（hf-mirror.com国内镜像）
 ENV HF_ENDPOINT=https://hf-mirror.com
 ENV HF_HOME=/app/.cache/huggingface
-RUN python3.11 -c "from huggingface_hub import hf_hub_download; \
-    hf_hub_download('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', \
-    'pytorch_model.bin', local_dir='/app/.cache/huggingface'); \
-    hf_hub_download('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', \
-    'config.json', local_dir='/app/.cache/huggingface'); \
-    hf_hub_download('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', \
-    'tokenizer.json', local_dir='/app/.cache/huggingface'); \
-    hf_hub_download('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', \
-    'vocab.txt', local_dir='/app/.cache/huggingface')" && \
-    echo "RAG model downloaded"
+RUN python3.11 -c "from huggingface_hub import snapshot_download; \
+    snapshot_download(repo_id='sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', \
+    allow_patterns=['pytorch_model.bin','config.json','tokenizer.json','vocab.txt','tokenizer_config.json','special_tokens_map.json','modules.json','sentence_bert_config.json'], \
+    local_dir_use_symlinks=False)" && \
+    echo "RAG model downloaded (~420MB)"
 
 COPY app/*.py ./
 COPY app/state_types ./state_types/
