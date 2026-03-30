@@ -193,10 +193,11 @@ RUN pip install --upgrade pip && \
 ENV HF_ENDPOINT=https://hf-mirror.com
 ENV HF_HOME=/app/.cache/huggingface
 ENV SENTENCE_TRANSFORMERS_HOME=/app/.cache/huggingface
+ENV HF_HUB_DISABLE_PROGRESS_BARS=1
+ENV HF_HUB_DISABLE_TELEMETRY=1
 RUN python3.11 -c "from sentence_transformers import SentenceTransformer; \
-    m = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'); \
-    print(f'Model cached at: {m._cache_dir}')" && \
-    echo "RAG model pre-downloaded and cached"
+    SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')" && \
+    echo "RAG model pre-downloaded"
 
 COPY app/*.py ./
 COPY app/state_types ./state_types/
