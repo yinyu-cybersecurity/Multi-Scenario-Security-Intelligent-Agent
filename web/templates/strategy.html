@@ -12,19 +12,19 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, 'Microsoft YaHei', sans-serif; background: #f0f2f5; color: #333; min-height: 100vh; padding-top: 56px; }
-        .header { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: linear-gradient(135deg, #722ed1 0%, #531dab 100%); color: #fff; padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+        .header { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%); color: #fff; padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
         .header h1 { font-size: 18px; }
         .nav-links { display: flex; gap: 8px; }
         .nav-link { padding: 6px 16px; color: rgba(255,255,255,0.85); text-decoration: none; border-radius: 4px; font-size: 14px; }
         .nav-link:hover, .nav-link.active { background: rgba(255,255,255,0.2); color: #fff; }
 
         .main-layout { display: flex; height: calc(100vh - 56px); }
-        .sidebar { width: 280px; background: #fff; border-right: 1px solid #e8e8e8; overflow-y: auto; }
+        .sidebar { width: 300px; background: #fff; border-right: 1px solid #e8e8e8; overflow-y: auto; }
         .sidebar-section { padding: 16px; border-bottom: 1px solid #e8e8e8; }
         .sidebar-title { font-size: 13px; color: #666; margin-bottom: 12px; font-weight: 500; }
         .task-item { padding: 12px; background: #fafafa; border-radius: 4px; margin-bottom: 8px; cursor: pointer; border: 1px solid transparent; }
-        .task-item:hover { border-color: #722ed1; }
-        .task-item.active { border-color: #722ed1; background: #f9f0ff; }
+        .task-item:hover { border-color: #1890ff; }
+        .task-item.active { border-color: #1890ff; background: #e6f7ff; }
         .task-url { font-size: 13px; color: #333; word-break: break-all; }
         .task-meta { font-size: 11px; color: #999; margin-top: 4px; }
 
@@ -42,15 +42,15 @@
         .chain-step { display: flex; align-items: center; gap: 8px; }
         .step-node { padding: 12px 20px; border-radius: 6px; background: #f0f0f0; border: 2px solid #d9d9d9; font-size: 13px; color: #666; position: relative; }
         .step-node.completed { background: #f6ffed; border-color: #52c41a; color: #52c41a; }
-        .step-node.current { background: #f9f0ff; border-color: #722ed1; color: #722ed1; font-weight: 600; box-shadow: 0 0 0 3px rgba(114,46,209,0.2); }
+        .step-node.current { background: #e6f7ff; border-color: #1890ff; color: #1890ff; font-weight: 600; box-shadow: 0 0 0 3px rgba(24,144,255,0.2); }
         .step-node.pending { background: #fafafa; border-color: #d9d9d9; color: #999; }
         .step-arrow { color: #d9d9d9; font-size: 18px; }
-        .step-arrow.active { color: #722ed1; }
+        .step-arrow.active { color: #1890ff; }
 
         /* 进度条 */
         .progress-bar-container { margin: 20px 0; }
         .progress-bar { height: 8px; background: #f0f0f0; border-radius: 4px; overflow: hidden; }
-        .progress-fill { height: 100%; background: linear-gradient(90deg, #52c41a 0%, #722ed1 100%); border-radius: 4px; transition: width 0.3s; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #52c41a 0%, #1890ff 100%); border-radius: 4px; transition: width 0.3s; }
         .progress-text { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: #666; }
 
         /* 战略信息卡片 */
@@ -58,7 +58,7 @@
         .info-block { background: #fafafa; border-radius: 4px; padding: 16px; }
         .info-block-title { font-size: 12px; color: #666; margin-bottom: 8px; }
         .info-block-value { font-size: 14px; color: #333; }
-        .info-block-value.goal { color: #722ed1; font-weight: 500; }
+        .info-block-value.goal { color: #1890ff; font-weight: 500; }
 
         /* 阻碍和备选 */
         .blockers-list, .alternates-list { margin-top: 8px; }
@@ -84,10 +84,10 @@
         .graph-node.unknown circle { fill: #d9d9d9; stroke: #bfbfbf; }
         .graph-node text { font-size: 10px; fill: #333; pointer-events: none; }
         .graph-edge { fill: none; stroke: #d9d9d9; stroke-width: 1.5px; }
-        .graph-edge.active { stroke: #722ed1; stroke-width: 2px; }
+        .graph-edge.active { stroke: #1890ff; stroke-width: 2px; }
 
         /* 模块状态 */
-        .module-mode-indicator { display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: #f9f0ff; border-radius: 4px; }
+        .module-mode-indicator { display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: #e6f7ff; border-radius: 4px; }
         .mode-badge { padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 500; }
         .mode-badge.web { background: #1890ff; color: #fff; }
         .mode-badge.internal { background: #722ed1; color: #fff; }
@@ -105,10 +105,16 @@
         .empty-state-text { font-size: 14px; }
 
         .btn { padding: 8px 16px; border-radius: 4px; font-size: 13px; cursor: pointer; border: 1px solid #d9d9d9; background: #fff; color: #333; }
-        .btn:hover { border-color: #722ed1; color: #722ed1; }
-        .btn-primary { background: #722ed1; border-color: #722ed1; color: #fff; }
-        .btn-primary:hover { background: #531dab; border-color: #531dab; color: #fff; }
+        .btn:hover { border-color: #1890ff; color: #1890ff; }
+        .btn-primary { background: #1890ff; border-color: #1890ff; color: #fff; }
+        .btn-primary:hover { background: #096dd9; border-color: #096dd9; color: #fff; }
         .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+        /* 统计项样式 */
+        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        .stat-item { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; padding: 12px; text-align: center; }
+        .stat-value { font-size: 20px; font-weight: 600; color: #1890ff; }
+        .stat-label { font-size: 11px; color: #999; margin-top: 4px; }
     </style>
 </head>
 <body>
@@ -176,7 +182,7 @@
                                         <div class="chain-step">
                                             <div class="step-node" :class="getStepClass(idx)">
                                                 {{ step }}
-                                                <span v-if="idx === currentStep" style="position: absolute; top: -8px; right: -8px; background: #722ed1; color: #fff; border-radius: 50%; width: 16px; height: 16px; font-size: 10px; line-height: 16px; text-align: center;">!</span>
+                                                <span v-if="idx === currentStep" style="position: absolute; top: -8px; right: -8px; background: #1890ff; color: #fff; border-radius: 50%; width: 16px; height: 16px; font-size: 10px; line-height: 16px; text-align: center;">!</span>
                                             </div>
                                         </div>
                                         <span v-if="idx < attackChain.length - 1" class="step-arrow" :class="{ active: idx < currentStep }">→</span>
@@ -431,7 +437,5 @@
         });
         app.use(ElementPlus).mount('#app');
     </script>
-    <!-- SPA 页面切换脚本 -->
-    <script src="/fisher_ctf_agent/static/js/spa-loader.js"></script>
 </body>
 </html>

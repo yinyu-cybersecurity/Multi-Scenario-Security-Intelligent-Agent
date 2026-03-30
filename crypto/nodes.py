@@ -12,7 +12,12 @@ from typing import Dict, List, Any
 from llm_client import llm_client
 from config import config
 from logger import get_logger
-from app.flag_extractor_v2 import has_flag
+
+# 兼容本地开发和Docker环境
+try:
+    from app.flag_extractor_v2 import has_flag
+except ImportError:
+    from flag_extractor_v2 import has_flag
 from .tools import (
     CryptoIdentifier,
     EncodingDecoder,

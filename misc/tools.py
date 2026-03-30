@@ -13,7 +13,12 @@ import json
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from enum import Enum
-from app.flag_extractor_v2 import extract_flags
+
+# 兼容本地开发和Docker环境
+try:
+    from app.flag_extractor_v2 import extract_flags
+except ImportError:
+    from flag_extractor_v2 import extract_flags
 
 # 延迟导入避免循环依赖
 def _get_llm_client():
