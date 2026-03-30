@@ -42,7 +42,7 @@ RAG_MAX_CONCURRENT = 2  # 最大并发检索数
 
 # 检索配置
 TOP_K_RESULTS = 10  # 默认返回几条相似结果
-SIMILARITY_THRESHOLD = 0.3  # 相似度阈值（降低到0.3，让更多结果通过，由AI判断相关性）
+SIMILARITY_THRESHOLD = 0.15  # 相似度阈值（降低到0.15，让更多结果通过，由AI判断相关性）
 
 # 分块大小（WP内容太长时可以截断）
 MAX_CONTENT_LENGTH = 2000  # 只取前2000字符

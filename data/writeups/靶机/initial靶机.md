@@ -1,3 +1,7 @@
+---
+tags: [ThinkPHP, RCE, 内网渗透, 域控]
+---
+
 # initial靶机
 
 ## 外网

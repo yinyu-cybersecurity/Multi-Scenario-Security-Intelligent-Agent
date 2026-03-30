@@ -85,6 +85,14 @@ except ImportError:
     ATTACK_GRAPH_AVAILABLE = False
     AttackGraph = None
 
+# 导入topology模块
+try:
+    from app.topology.analyzer import TopologyAnalyzer
+    TOPOLOGY_AVAILABLE = True
+except ImportError:
+    TOPOLOGY_AVAILABLE = False
+    TopologyAnalyzer = None
+
 logger = get_logger("StrategicPlanner")
 
 
@@ -151,6 +159,19 @@ class StrategicPlanner:
 
         # 备选路径
         context["alternate_routes"] = self._generate_alternate_routes(state)
+
+        # 新增：Web拓扑分析
+        if TOPOLOGY_AVAILABLE and state.get("site_topology"):
+            try:
+                # 从拓扑中获取关键节点
+                topology_analyzer = TopologyAnalyzer(state["site_topology"])
+                critical_nodes = topology_analyzer.get_critical_nodes()
+                # 整合到战略上下文
+                context["topology_critical_nodes"] = critical_nodes[:5]
+                logger.info(f"[StrategicPlanner] Web拓扑分析完成，发现 {len(critical_nodes)} 个关键节点")
+            except Exception as e:
+                logger.warning(f"[StrategicPlanner] Web拓扑分析失败: {e}")
+                context["topology_critical_nodes"] = []
 
         return context
 
@@ -364,40 +385,77 @@ class StrategicPlanner:
             return "未知或低价值目标"
 
     def plan_attack_path(self, state: Dict) -> Dict:
-        """规划攻击路径（增强版）"""
+        """规划攻击路径（增强版 - 统一内网和Web模式）"""
         # 分析态势
         strategic_context = self.analyze_situation(state)
 
-        # 优先级排序
-        hosts = state.get("internal_hosts") or []
-        creds = state.get("credentials") or []
-        priority_targets = self.prioritize_targets(hosts, creds)
+        # 判断攻击模式
+        is_internal_mode = state.get("internal_mode", False)
+        is_web_mode = not is_internal_mode and (state.get("site_topology") or state.get("web_mode"))
 
-        # 使用攻击图获取最佳路径
+        # 初始化结果
         best_path = None
-        if ATTACK_GRAPH_AVAILABLE and priority_targets:
+        priority_targets = []
+        attack_graph = {}
+
+        if is_internal_mode:
+            # 内网模式：使用attack_graph
+            hosts = state.get("internal_hosts") or []
+            creds = state.get("credentials") or []
+            priority_targets = self.prioritize_targets(hosts, creds)
+
+            if ATTACK_GRAPH_AVAILABLE and priority_targets:
+                try:
+                    from .attack_graph import get_best_attack_path
+                    target_ip = priority_targets[0]["ip"] if priority_targets else None
+                    if target_ip:
+                        path_result = get_best_attack_path(state, target_ip)
+                        if path_result.get("path"):
+                            best_path = path_result
+                except Exception as e:
+                    logger.warning(f"[StrategicPlanner] 获取最佳路径失败: {e}")
+
+            attack_graph = self._build_attack_graph(state, priority_targets)
+
+        elif is_web_mode and TOPOLOGY_AVAILABLE:
+            # Web模式：使用topology
             try:
-                from .attack_graph import get_best_attack_path
-                target_ip = priority_targets[0]["ip"] if priority_targets else None
-                if target_ip:
-                    path_result = get_best_attack_path(state, target_ip)
-                    if path_result.get("path"):
-                        best_path = path_result
+                topology_analyzer = TopologyAnalyzer(state.get("site_topology", {}))
+                priority_targets = topology_analyzer.get_attack_priority()
+                attack_graph = topology_analyzer.get_topology_graph()
+
+                # 获取Web攻击路径
+                if priority_targets:
+                    best_path = {
+                        "path": [target.get("url", "") for target in priority_targets[:3]],
+                        "method": "web_topology",
+                        "source": "topology_analyzer"
+                    }
+                    logger.info(f"[StrategicPlanner] Web拓扑规划完成，发现 {len(priority_targets)} 个优先目标")
             except Exception as e:
-                logger.warning(f"[StrategicPlanner] 获取最佳路径失败: {e}")
+                logger.warning(f"[StrategicPlanner] Web拓扑规划失败: {e}")
+                # 降级：使用基础主机列表
+                hosts = state.get("internal_hosts") or []
+                creds = state.get("credentials") or []
+                priority_targets = self.prioritize_targets(hosts, creds)
+                attack_graph = self._build_simple_attack_graph(state, priority_targets)
+        else:
+            # 默认模式：使用基础逻辑
+            hosts = state.get("internal_hosts") or []
+            creds = state.get("credentials") or []
+            priority_targets = self.prioritize_targets(hosts, creds)
+            attack_graph = self._build_simple_attack_graph(state, priority_targets)
 
         # 推荐下一步行动
         recommended = self._recommend_next_action(state, priority_targets)
-
-        # 构建攻击图
-        attack_graph = self._build_attack_graph(state, priority_targets)
 
         # 记录规划历史
         self.attack_history.append({
             "context": strategic_context,
             "targets": priority_targets[:3],
             "recommended": recommended,
-            "best_path": best_path
+            "best_path": best_path,
+            "mode": "internal" if is_internal_mode else ("web" if is_web_mode else "default")
         })
 
         return {
@@ -405,7 +463,8 @@ class StrategicPlanner:
             "priority_targets": priority_targets,
             "recommended_action": recommended,
             "attack_graph": attack_graph,
-            "best_path": best_path
+            "best_path": best_path,
+            "attack_mode": "internal" if is_internal_mode else ("web" if is_web_mode else "default")
         }
 
     def _recommend_next_action(self, state: Dict, targets: List[Dict]) -> Dict:

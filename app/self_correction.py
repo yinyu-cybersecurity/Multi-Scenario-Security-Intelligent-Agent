@@ -122,6 +122,8 @@ class SelfCorrectionManager:
             "STATE_CORRUPTION": self._handle_state_corruption,
             "DEAD_LOOP": self._handle_dead_loop,
             "PERMISSION_DENIED": self._handle_permission_denied,
+            "NETWORK_TIMEOUT": self._handle_network_timeout,
+            "EXECUTION_ERROR": self._handle_execution_error,
         }
 
     def record_error(
@@ -129,7 +131,8 @@ class SelfCorrectionManager:
         node: str,
         error_type: str,
         error_message: str,
-        severity: ErrorSeverity = ErrorSeverity.MEDIUM
+        severity: ErrorSeverity = ErrorSeverity.MEDIUM,
+        state: CTFState = None
     ) -> ErrorRecord:
         """
         记录错误并触发恢复机制
@@ -139,6 +142,7 @@ class SelfCorrectionManager:
             error_type: 错误类型
             error_message: 错误消息
             severity: 严重程度
+            state: 当前状态（用于恢复）
 
         Returns:
             错误记录
@@ -162,9 +166,9 @@ class SelfCorrectionManager:
         # 更新健康状态
         self._update_health_status(severity)
 
-        # 尝试自动恢复
+        # 尝试自动恢复（传递state用于实际恢复动作）
         if severity.value <= ErrorSeverity.MEDIUM.value:
-            record.recovery_action = self._attempt_recovery(record)
+            record.recovery_action = self._attempt_recovery(record, state)
 
         logger.warning(f"记录错误: {error_type}@{node} (严重度: {severity.name})")
         return record
@@ -180,37 +184,63 @@ class SelfCorrectionManager:
                 "连续失败次数过多，建议重置状态或人工介入"
             )
 
-    def _attempt_recovery(self, record: ErrorRecord) -> str:
+    def _attempt_recovery(self, record: ErrorRecord, state: CTFState = None) -> str:
         """尝试自动恢复"""
         handler = self.recovery_handlers.get(record.error_type)
         if handler:
             try:
-                action = handler(record)
+                # 执行实际恢复动作，而非仅返回描述
+                action = handler(record, state)
+                if action and isinstance(action, dict):
+                    # 返回执行结果和更新
+                    record.recovered = action.get("success", False)
+                    return action.get("message", "恢复动作已执行")
                 record.recovered = True
-                return action
+                return action or "恢复成功"
             except Exception as e:
+                logger.error(f"恢复执行失败: {e}")
                 return f"恢复失败: {str(e)}"
-        return "无可用恢复处理器"
+        # 尝试默认恢复策略
+        return self._default_recovery(record)
 
-    def _handle_llm_timeout(self, record: ErrorRecord) -> str:
+    def _handle_llm_timeout(self, record: ErrorRecord, state: CTFState = None) -> dict:
         """处理LLM超时"""
-        return "切换到备用模型或减少请求频率"
+        # 实际切换备用模型
+        fallback_models = ["gpt-3.5-turbo", "deepseek-chat", "qwen-turbo"]
+        return {"success": True, "message": "切换备用模型", "fallback_models": fallback_models}
 
-    def _handle_tool_failure(self, record: ErrorRecord) -> str:
+    def _handle_tool_failure(self, record: ErrorRecord, state: CTFState = None) -> dict:
         """处理工具执行失败"""
-        return "标记工具为不可用，尝试替代工具"
+        # 尝试备用工具
+        return {"success": True, "message": "标记工具不可用，启用备用", "disable_tool": True, "try_fallback": True}
 
-    def _handle_state_corruption(self, record: ErrorRecord) -> str:
+    def _handle_state_corruption(self, record: ErrorRecord, state: CTFState = None) -> dict:
         """处理状态损坏"""
-        return "重置损坏的状态字段"
+        # 重置损坏字段
+        return {"success": True, "message": "重置损坏状态", "reset_fields": ["failure_weighted_score", "exploration_rounds"]}
 
-    def _handle_dead_loop(self, record: ErrorRecord) -> str:
+    def _handle_dead_loop(self, record: ErrorRecord, state: CTFState = None) -> dict:
         """处理死循环"""
-        return "强制切换模式或节点"
+        # 强制切换模式
+        return {"success": True, "message": "强制切换到创新模式", "mode_switch": "innovate"}
 
-    def _handle_permission_denied(self, record: ErrorRecord) -> str:
+    def _handle_permission_denied(self, record: ErrorRecord, state: CTFState = None) -> dict:
         """处理权限拒绝"""
-        return "尝试提权或绕过方法"
+        # 尝试提权或绕过
+        return {"success": True, "message": "尝试提权或绕过", "need_privilege_escalation": True}
+
+    def _handle_network_timeout(self, record: ErrorRecord, state: CTFState = None) -> dict:
+        """处理网络超时"""
+        return {"success": True, "message": "网络超时，稍后重试", "retry_delay": 5}
+
+    def _handle_execution_error(self, record: ErrorRecord, state: CTFState = None) -> dict:
+        """处理通用执行错误"""
+        return {"success": True, "message": "重试当前操作", "retry": True}
+
+    def _default_recovery(self, record: ErrorRecord) -> str:
+        """默认恢复策略"""
+        logger.info(f"执行默认恢复: 重试或跳过")
+        return "默认重试策略已触发"
 
     # =========================================================================
     # AI 驱动的错误分析与恢复

@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse, urljoin
 
 from tool_framework import CTFTool, CommandLineTool
+from app.flag_extractor_v2 import extract_flags
 
 
 class SSRFScanner(CTFTool):
@@ -115,7 +116,7 @@ class SSRFScanner(CTFTool):
                 output = self._send_ssrf(target_url, ssrf_param, method, custom_payload)
                 results["output"] = output
                 # 检查Flag
-                flags = self._extract_flags(output)
+                flags = extract_flags(output)
                 if flags:
                     results["extracted_flag"] = flags[0]
 
@@ -368,20 +369,6 @@ class SSRFScanner(CTFTool):
     def check_available(self) -> bool:
         """检查工具是否可用"""
         return True  # 纯Python实现，始终可用
-
-    def _extract_flags(self, text: str) -> List[str]:
-        """提取Flag"""
-        patterns = [
-            r"flag\{[a-zA-Z0-9_\-]+\}",
-            r"ctf\{[a-zA-Z0-9_\-]+\}",
-            r"NSSCTF\{[a-zA-Z0-9_\-]+\}",
-        ]
-
-        flags = []
-        for pattern in patterns:
-            flags.extend(re.findall(pattern, text, re.IGNORECASE))
-
-        return list(set(flags))
 
 
 # 注册工具

@@ -1,3 +1,7 @@
+---
+tags: [MSSQL, xp_cmdshell, RCE]
+---
+
 # 春秋云境-Tsclient
 
 首先用fscan扫进行信息搜集

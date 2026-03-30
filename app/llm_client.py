@@ -358,48 +358,7 @@ class LLMClient:
         logger.warning(f"All retries failed: {last_error_type.value} - {last_error_msg}")
         return LLMResult("", last_error_type, last_error_msg, retry_count)
 
-    def call_batch(
-        self,
-        requests_list: List[Dict],
-        max_concurrent: int = 3
-    ) -> List[LLMResult]:
-        """
-        批量并发调用 LLM
-
-        Args:
-            requests_list: 请求列表，每个元素包含 model, messages, temperature 等
-            max_concurrent: 最大并发数
-
-        Returns:
-            结果列表，顺序与输入对应
-        """
-        results = [None] * len(requests_list)
-
-        def call_single(index: int, req: Dict) -> Tuple[int, LLMResult]:
-            result = self.call_with_details(
-                model=req.get('model', config.ANALYST_MODEL),
-                messages=req['messages'],
-                temperature=req.get('temperature', 0.1),
-                json_mode=req.get('json_mode', False)
-            )
-            return (index, result)
-
-        with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
-            futures = {
-                executor.submit(call_single, i, req): i
-                for i, req in enumerate(requests_list)
-            }
-
-            for future in as_completed(futures):
-                try:
-                    index, result = future.result(timeout=180)
-                    results[index] = result
-                except Exception as e:
-                    index = futures[future]
-                    results[index] = LLMResult("", LLMErrorType.UNKNOWN, str(e))
-
-        return results
-
+    
 
 # 全局客户端实例
 llm_client = LLMClient()
@@ -441,36 +400,6 @@ def safe_call_chat_completion(
         return None
 
 
-def call_with_retry(
-    call_func,
-    max_retries: int = 3,
-    base_delay: float = 1.0,
-    **kwargs
-) -> Optional[str]:
-    """
-    带指数退避重试的AI调用
-
-    Args:
-        call_func: 调用函数 (如 safe_call_chat_completion)
-        max_retries: 最大重试次数
-        base_delay: 基础延迟秒数
-        **kwargs: 传递给调用函数的参数
-
-    Returns:
-        AI响应或None（所有重试失败后返回None）
-    """
-    for attempt in range(max_retries):
-        try:
-            result = call_func(**kwargs)
-            if result:
-                return result
-        except Exception as e:
-            delay = base_delay * (2 ** attempt)
-            logger.warning(f"[LLM] 调用失败，{delay}秒后重试 ({attempt+1}/{max_retries}): {e}")
-            time.sleep(delay)
-
-    logger.error(f"[LLM] 所有重试失败 ({max_retries}次)")
-    return None
 
 
 def safe_call_with_details(

@@ -84,13 +84,18 @@ def innovator_node(state: CTFState) -> Dict:
     """
     logger.info("Starting RAG brainstorming...")
     features = state.get("page_features", {})
-    # [修复] 使用 attack_results 获取失败的攻击历史，而不是 success_trace
-    # success_trace 只在找到flag后才填充，而 innovator 在攻击失败时调用
     attack_results = state.get("attack_results", [])
-    # 提取攻击类型用于分析失败原因
     trace = [{"type": r.get("tool", "unknown"), "target": r.get("target", "")}
              for r in attack_results[-10:]] if attack_results else []
     focused_scene = state.get("focused_scene", "")
+    current_fail_count = state.get("innovation_fail_count", 0)
+    current_failure_score = state.get("failure_score", 0)
+
+    # 默认降级规则（RAG/LLM失败时使用）
+    fallback_rules = [
+        {"condition": "web", "action": "dir_brute_force", "confidence": 0.5, "reason": "降级：目录扫描发现隐藏路径"},
+        {"condition": "parameter", "action": "parameter_pollution", "confidence": 0.5, "reason": "降级：参数污染测试"},
+    ]
 
     # 1. 查询 RAG 知识库
     rag_results = []
@@ -98,28 +103,34 @@ def innovator_node(state: CTFState) -> Dict:
         logger.info("   Searching for similar Writeups...")
         try:
             retriever = get_retriever()
+            # 传入caller参数用于统计
             rag_results = retriever.search_by_features(features, top_k=3)
             logger.info(f"   Found {len(rag_results)} highly relevant historical references")
         except Exception as e:
-            logger.warning(f"   RAG search failed: {e}")
+            logger.warning(f"   RAG search failed: {e}, using fallback rules")
     else:
         logger.info("   RAG not available, proceeding without historical references")
 
     # 2. 构建 Prompt
     prompt = get_innovator_prompt(features, trace, rag_results, focused_scene)
-    
+
     # 3. 调用 LLM
     logger.info("   🧠 LLM 正在进行创新推演...")
     response_text = llm_client.call_chat_completion(
         model=config.INNOVATOR_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.7, # 头脑风暴需要更高的温度以发散思维
+        temperature=0.3,  # 降低温度以获得更稳定的输出
         json_mode=True
     )
-    
+
+    # LLM调用失败处理
     if not response_text:
-        logger.warning("⚠️ LLM 调用失败，无法生成新规则")
-        return {}
+        logger.warning("⚠️ LLM 调用失败，使用降级规则")
+        return {
+            "temp_rules": fallback_rules,
+            "innovation_fail_count": current_fail_count + 1,
+            "failure_score": current_failure_score + 5
+        }
 
     # 4. 解析结果
     try:
@@ -127,7 +138,7 @@ def innovator_node(state: CTFState) -> Dict:
             response_text = response_text.split("```json")[1].split("```")[0]
         elif "```" in response_text:
             response_text = response_text.split("```")[1].split("```")[0]
-            
+
         result = json.loads(response_text)
         temp_rules = result.get("temp_rules", [])
         analysis = result.get("analysis", "")
@@ -141,18 +152,21 @@ def innovator_node(state: CTFState) -> Dict:
             temp_rules = _ai_filter_rules(temp_rules, features)
             logger.info(f"   过滤后保留 {len(temp_rules)} 条有效规则")
 
-        # 将 RAG 上下文简要保存，供后续追溯
-        rag_context = [doc['metadata'].get('filename', 'Unknown WP') for doc in rag_results]
-        
+        # 成功时重置失败计数
         return {
             "temp_rules": temp_rules,
-            "rag_context": rag_context
+            "rag_context": [doc['metadata'].get('filename', 'Unknown WP') for doc in rag_results],
+            "innovation_fail_count": 0
         }
-        
+
     except json.JSONDecodeError:
         fail_icon = "❌" if (hasattr(sys.stdout, 'encoding') and sys.stdout.encoding and sys.stdout.encoding.lower() in ('utf-8', 'utf8')) else "[FAIL]"
         logger.warning(f"{fail_icon} JSON 解析失败: {response_text[:100]}...")
-        return {}
+        return {
+            "temp_rules": fallback_rules,
+            "innovation_fail_count": current_fail_count + 1,
+            "failure_score": current_failure_score + 3
+        }
 
 
 def _ai_filter_rules(rules: List[Dict], features: Dict) -> List[Dict]:

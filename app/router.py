@@ -10,6 +10,23 @@ from langgraph.graph import END
 from llm_client import llm_client
 from logger import get_logger
 
+# 错误纠正模块导入
+try:
+    from self_correction import self_correction_manager, ErrorSeverity, ErrorType
+except ImportError:
+    self_correction_manager = None
+    ErrorSeverity = None
+    ErrorType = None
+
+# 模块智慧管理器导入
+try:
+    from module_manager import module_manager, get_module_manager
+    MODULE_MANAGER_AVAILABLE = True
+except ImportError:
+    module_manager = None
+    get_module_manager = None
+    MODULE_MANAGER_AVAILABLE = False
+
 logger = get_logger(__name__)
 
 # 拓扑分析器实例（延迟导入避免循环依赖）
@@ -190,22 +207,26 @@ class RouteGuard:
         self.last_transition_time: float = time.time()
         self.loop_count: Dict[str, int] = {}  # 记录每个节点的累计访问次数
 
-    def check_dead_loop(self, current_node: str, next_node: str) -> bool:
+    def check_dead_loop(self, current_node: str, next_node: str, state: CTFState = None) -> Tuple[bool, str]:
         """
-        检测死循环
+        检测死循环 [断点7修复版]
 
         检测模式：
         1. A -> B -> A -> B 的来回循环
         2. 同一节点总计访问超过10次（非连续）
         3. 10步内出现重复路径模式
 
+        [断点7修复]: 检查是否有备选方案后再决定是否切换
+
         Args:
             current_node: 当前节点名
             next_node: 下一节点名
+            state: 当前状态（用于检查备选方案）
 
         Returns:
-            True: 检测到死循环，需要干预
-            False: 正常
+            (is_loop: bool, suggested_node: str)
+            - is_loop: True表示检测到死循环，需要干预
+            - suggested_node: 建议的下一节点（如果is_loop=True）
         """
         # 记录当前跳转
         self.path_history.append((current_node, next_node))
@@ -222,7 +243,22 @@ class RouteGuard:
         # 规则1: 同一节点总计访问超过阈值
         if self.loop_count.get(next_node, 0) > config.MAX_LOOP_COUNT:
             logger.warning(f"节点 {next_node} 总计访问超过{config.MAX_LOOP_COUNT}次")
-            return True
+            # [断点7修复] 检查是否有备选方案
+            suggested = self._check_alternate_options(state, next_node)
+            # 记录死循环错误
+            if self_correction_manager:
+                self_correction_manager.record_error(
+                    error_type=ErrorType.ROUTING_ERROR if ErrorType else "routing_error",
+                    message=f"检测到死循环: 节点 {next_node} 访问超过 {config.MAX_LOOP_COUNT} 次",
+                    severity=ErrorSeverity.HIGH if ErrorSeverity else "high",
+                    context={
+                        "node": next_node,
+                        "visit_count": self.loop_count.get(next_node, 0),
+                        "suggested_node": suggested,
+                        "path_history": self.path_history[-10:]
+                    }
+                )
+            return True, suggested
 
         # 规则2: 检测 A->B->A 来回循环 (需要6次以上才触发)
         if len(self.path_history) >= 6:
@@ -235,19 +271,107 @@ class RouteGuard:
                     last6[0][0] == last6[2][0] and
                     last6[1][0] == last6[3][0]):
                 logger.warning(f"检测到持续来回循环: {last6}")
-                return True
+                # [断点7修复] 检查是否有备选方案
+                suggested = self._check_alternate_options(state, next_node)
+                return True, suggested
 
         # 规则3: 长时间没有进展
         current_time = time.time()
         if current_time - self.last_transition_time > config.NO_PROGRESS_TIMEOUT:
             logger.warning(f"{config.NO_PROGRESS_TIMEOUT}秒无进展，可能卡死")
             self.last_transition_time = current_time
-            return True
+            # [断点7修复] 检查是否有备选方案
+            suggested = self._check_alternate_options(state, next_node)
+            return True, suggested
 
         # 更新最后跳转时间
         self.last_transition_time = current_time
 
-        return False
+        return False, next_node
+
+    def _check_alternate_options(self, state: CTFState, next_node: str) -> str:
+        """
+        [断点7修复] 检查是否有备选方案
+
+        优先级:
+        1. remaining_payloads -> 继续attacker
+        2. alternate_routes -> 使用备选路由
+        3. remaining_options -> 使用备选选项
+        4. fallback_plans -> 使用降级计划
+        5. 无备选 -> 切换到mode_manager
+
+        Args:
+            state: 当前状态
+            next_node: 原计划的下一节点
+
+        Returns:
+            建议的下一节点
+        """
+        if not state:
+            # 无状态信息，降级到原策略
+            if next_node in ["explore", "innovate"]:
+                return "exploit"
+            return "mode_manager"
+
+        # 1. 检查是否有剩余payload
+        remaining_payloads = state.get("remaining_payloads", [])
+        if remaining_payloads and len(remaining_payloads) > 0:
+            logger.info(f"[断点7修复] 检测到 {len(remaining_payloads)} 个剩余payload，继续attacker")
+            self.reset_loop_count("attacker")
+            return "attacker"
+
+        # 2. 检查战略上下文中的备选路由
+        strategic_context = state.get("strategic_context", {})
+        alternate_routes = strategic_context.get("alternate_routes", [])
+        if alternate_routes and len(alternate_routes) > 0:
+            suggested_route = alternate_routes[0]
+            logger.info(f"[断点7修复] 使用备选路由: {suggested_route}")
+            self.reset_loop_count(suggested_route)
+            return suggested_route
+
+        # 3. 检查remaining_options
+        remaining_options = state.get("remaining_options", [])
+        if remaining_options and len(remaining_options) > 0:
+            # 尝试映射到节点
+            option = remaining_options[0]
+            if isinstance(option, dict):
+                option_node = option.get("node", option.get("target", ""))
+                if option_node:
+                    logger.info(f"[断点7修复] 使用备选选项: {option_node}")
+                    self.reset_loop_count(option_node)
+                    return option_node
+
+        # 4. 检查fallback_plans
+        fallback_plans = state.get("fallback_plans", [])
+        if fallback_plans and len(fallback_plans) > 0:
+            fallback = fallback_plans[0]
+            fallback_node = fallback.get("node", "mode_manager")
+            logger.info(f"[断点7修复] 使用降级计划: {fallback_node}")
+            self.reset_loop_count(fallback_node)
+            return fallback_node
+
+        # 5. 检查是否有可回退节点（拓扑分析）
+        try:
+            analyzer = _get_topology_analyzer(state)
+            if analyzer:
+                backtrack = analyzer.get_backtrack_candidates()
+                if backtrack:
+                    backtrack_url = backtrack[0]
+                    logger.info(f"[断点7修复] 回退到: {backtrack_url}")
+                    # 设置current_url并切换到explore
+                    # 注意：这里返回的节点名，实际URL设置需要在节点执行
+                    return "explore"
+        except:
+            pass
+
+        # 6. 无备选方案，根据当前节点决定
+        if next_node in ["explore", "innovate"]:
+            logger.info("[断点7修复] 无备选方案，强制切回exploit")
+            return "exploit"
+
+        # 7. 最终降级：回到mode_manager重新决策
+        logger.info("[断点7修复] 无备选方案，回到mode_manager重新决策")
+        return "mode_manager"
 
     def reset_loop_count(self, node: str):
         """重置特定节点的循环计数"""
@@ -278,10 +402,11 @@ def route_mode(state: CTFState, current_node: str) -> str:
 
     处理流程：
         1. 从状态获取目标模式
-        2. 上下文压缩检查
-        3. 死循环检测
-        4. 异常情况处理
-        5. 返回下一节点
+        2. [模块智慧管理] 检查是否需要切换内存模式
+        3. 上下文压缩检查
+        4. [断点7修复] 死循环检测时检查备选方案
+        5. 异常情况处理
+        6. 返回下一节点
 
     Args:
         state: 当前状态
@@ -292,6 +417,34 @@ def route_mode(state: CTFState, current_node: str) -> str:
     """
     next_node = state.get("current_mode", "exploit")
 
+    # [模块智慧管理] 根据内网/Web模式动态切换内存模式
+    if MODULE_MANAGER_AVAILABLE and module_manager:
+        current_memory_mode = state.get("memory_mode", "minimal")
+        internal_mode = state.get("internal_mode", False)
+
+        # 检测场景类型（优先内网，其次专项场景）
+        target_mode = "web"  # 默认Web模式
+
+        if internal_mode:
+            target_mode = "internal"
+        elif state.get("cloud_provider") or state.get("metadata_leaked"):
+            target_mode = "cloud"
+        elif state.get("target_model") or state.get("detected_ai_type"):
+            target_mode = "ai"
+        elif state.get("crypto_mode") or state.get("cipher_detected"):
+            target_mode = "crypto"
+        elif state.get("pwn_mode") or state.get("binary_path"):
+            target_mode = "pwn"
+        elif state.get("reverse_mode") or state.get("binary_file"):
+            target_mode = "reverse"
+
+        # 如果内存模式与目标模式不匹配，切换
+        if current_memory_mode != target_mode:
+            logger.info(f"[ModuleManager] 检测到场景切换: {current_memory_mode} -> {target_mode}")
+            updates = module_manager.switch_mode(target_mode, dict(state))
+            # 注意：不直接修改state，返回更新让上层处理
+            # 但这里只需要路由决策，模块切换是异步的
+
     # [核心修复] 检查当前 URL 是否已经过侦察
     current_url = state.get("current_url")
     visited_urls = state.get("visited_urls", [])
@@ -301,17 +454,13 @@ def route_mode(state: CTFState, current_node: str) -> str:
         logger.info(f"检测到新 URL: {current_url}，强制切换至侦察模式")
         return "recon"
 
-    # 1. 死循环检测
-    if _route_guard.check_dead_loop(current_node, next_node):
-        logger.warning("检测到死循环，尝试自动恢复")
+    # 1. [断点7修复] 死循环检测 - 现在返回建议节点
+    is_loop, suggested_node = _route_guard.check_dead_loop(current_node, next_node, state)
+    if is_loop:
+        logger.warning(f"检测到死循环，建议切换到: {suggested_node}")
         # 重置循环计数，避免日志刷屏
-        _route_guard.reset_loop_count(next_node)
-
-        # 策略修正：如果卡在探索或创新模式，强制切回攻击模式尝试突破
-        if next_node in ["explore", "innovate"]:
-             return "exploit"
-        # 如果卡在攻击模式，保持现状或让 ModeManager 决定（通常会因为失败分增加而自然切换）
-        return next_node
+        _route_guard.reset_loop_count(suggested_node)
+        return suggested_node
 
     # 2. 移除错误的 temp_rules 检查
     # temp_rules 是 innovator_node 执行后生成的，不应在进入前检查
@@ -335,7 +484,7 @@ def route_verify(state: CTFState, current_node: str) -> str:
     优先级：
         1. 获取shell -> post_exploit（后渗透处理）
         2. 找到flag -> 继续内网渗透（不再结束）
-        3. continue_attack -> attacker（继续攻击）
+        3. [断点6修复] continue_attack -> attacker（优先执行remaining_payloads）
         4. 失败分过高 -> mode_manager (自动进入创新模式)
         5. 正常情况 -> mode_manager
 
@@ -368,14 +517,24 @@ def route_verify(state: CTFState, current_node: str) -> str:
             logger.info(f"内网渗透模式下找到{len(found_flags)}个flag，继续攻陷其他主机")
             return "mode_manager"
 
-    # 3. [内网模式增强] 检查是否需要继续攻击
-    if state.get("internal_mode") and state.get("continue_attack"):
+    # 3. [断点6修复] 优先执行remaining_payloads（所有模式）
+    # 原问题: 只在internal_mode下检查，导致Web模式下remaining_payloads被忽略
+    if state.get("continue_attack"):
         remaining = state.get("remaining_payloads", [])
-        if remaining:
-            logger.info(f"内网模式：继续攻击，剩余 {len(remaining)} 个payload")
+        if remaining and len(remaining) > 0:
+            # 检查是否还有备选payload，避免空列表导致的死循环
+            logger.info(f"[断点6修复] 继续攻击，剩余 {len(remaining)} 个payload")
+            # 重置attacker节点的循环计数，允许继续尝试
+            _route_guard.reset_loop_count("attacker")
             return "attacker"
 
-    # 4. 正常回到mode_manager
+    # 4. 检查失败分是否过高，考虑切换模式
+    failure_weighted_score = state.get("failure_weighted_score", 0)
+    if failure_weighted_score > config.MAX_FAILURE_SCORE:
+        logger.info(f"失败分过高 ({failure_weighted_score})，进入创新模式")
+        return "mode_manager"
+
+    # 5. 正常回到mode_manager
     return "mode_manager"
 
 
@@ -417,6 +576,11 @@ def route_internal_mode(state: CTFState, current_node: str) -> str:
     6. privilege_escalation: 权限提升
     7. persistence: 持久化访问
 
+    [修复] 改进探索机制：
+    - 有shell会话时强制进入内网模式
+    - 减少死循环检测的激进程度
+    - 确保内网侦察不被阻断
+
     Args:
         state: 当前状态
         current_node: 当前节点名
@@ -424,9 +588,18 @@ def route_internal_mode(state: CTFState, current_node: str) -> str:
     Returns:
         下一节点名称
     """
-    # 检查是否处于内网模式
-    if not state.get("internal_mode", False):
-        return "mode_manager"  # 返回Web模式
+    # [修复] 检查是否有shell会话，有则强制进入内网模式
+    shell_session = state.get("shell_session")
+    has_shell = shell_session and shell_session.get("session_id")
+
+    # 如果内网模式已关闭且无shell，返回Web模式
+    if not state.get("internal_mode", False) and not has_shell:
+        return "mode_manager"
+
+    # [修复] 有shell但未进入内网模式，触发内网侦察
+    if has_shell and not state.get("internal_mode", False):
+        logger.info("[InternalRoute] 检测到shell会话，自动进入内网模式")
+        return "internal_recon"
 
     # 收集关键状态信息 (压缩上下文)
     context = {
@@ -437,15 +610,27 @@ def route_internal_mode(state: CTFState, current_node: str) -> str:
         "tunnel_status": state.get("tunnel_status", ""),
         "current_target": state.get("current_internal_target", ""),
         "pivot_host": state.get("pivot_host", ""),
-        "shell_session": bool(state.get("shell_session")),
+        "shell_session": has_shell,
         "proxy_info": bool(state.get("proxy_info")),
         "persistence_established": state.get("persistence_established", False),
     }
 
-    # 死循环检测
-    if _route_guard.check_dead_loop(current_node, "internal_recon"):
-        logger.warning(f"[InternalRoute] 检测到潜在死循环，重置计数")
-        _route_guard.reset_loop_count("internal_recon")
+    # [修复] 改进死循环检测 - 只检测真正的循环，不阻断正常探索
+    # 检查是否有连续5次相同的跳转（而非总共访问次数）
+    recent_paths = _route_guard.path_history[-10:] if len(_route_guard.path_history) >= 10 else []
+    if len(recent_paths) >= 5:
+        # 只检查连续3次相同跳转
+        last5 = [p[1] for p in recent_paths[-5:]]
+        if all(n == last5[0] for n in last5):
+            logger.warning(f"[InternalRoute] 检测到连续5次跳转相同节点: {last5[0]}，尝试切换")
+            _route_guard.reset_loop_count(last5[0])
+            # 强制切换到不同节点
+            if last5[0] == "internal_recon":
+                return "flag_search"
+            elif last5[0] == "flag_search":
+                return "lateral_move"
+            else:
+                return "internal_recon"
 
     # AI决策路由
     decision = _ai_route_internal_decision(context, state)
@@ -547,6 +732,18 @@ def _ai_route_internal_decision(context: Dict, state: CTFState) -> str:
 
     except Exception as e:
         logger.warning(f"[InternalRoute] AI决策异常: {e}，降级到规则决策")
+        # 记录AI决策失败错误
+        if self_correction_manager:
+            self_correction_manager.record_error(
+                error_type=ErrorType.AI_DECISION_ERROR if ErrorType else "ai_decision_error",
+                message=f"AI路由决策失败: {str(e)}",
+                severity=ErrorSeverity.MEDIUM if ErrorSeverity else "medium",
+                context={
+                    "function": "_ai_route_internal_decision",
+                    "context": context,
+                    "fallback": "规则降级决策"
+                }
+            )
 
     # ========== 规则降级决策 ==========
     # 以下为硬编码规则，仅当AI决策失败时使用
@@ -614,11 +811,13 @@ def route_internal_to_web(state: CTFState) -> str:
     1. 内网模式已关闭
     2. 当前阶段标记为complete
     3. AI验证任务完成（所有主机攻陷且Flag数量合理）
+    4. 内网超时结束
 
     新增验证逻辑：
+    - 检查内网侦察是否完成（有主机列表）
+    - 检查是否有活跃shell会话
     - 检查Flag数量是否合理
     - AI判断是否还有高价值目标
-    - 拓扑分析是否完成
 
     Args:
         state: 当前状态
@@ -641,6 +840,12 @@ def route_internal_to_web(state: CTFState) -> str:
     compromised_hosts = state.get("compromised_hosts") or []
     found_flags = state.get("found_flags") or []
     active_sessions = state.get("active_sessions") or []
+    shell_session = state.get("shell_session")
+
+    # [修复1] 检查是否有活跃shell会话，无shell则继续内网模式
+    if shell_session and shell_session.get("session_id"):
+        logger.debug("[InternalRoute] 有活跃shell会话，继续内网渗透")
+        return "internal"
 
     session_hosts = [s.get("host") for s in active_sessions if s.get("host")]
     all_compromised = set(compromised_hosts + session_hosts)
@@ -648,48 +853,46 @@ def route_internal_to_web(state: CTFState) -> str:
     unexplored = [h for h in internal_hosts
                   if isinstance(h, dict) and h.get("ip") and h.get("ip") not in all_compromised]
 
-    # 改进1：不因所有主机"攻陷"就结束，需要AI验证
-    if not unexplored and internal_hosts:
-        # AI验证是否真的完成
-        try:
-            completion = _ai_verify_completion(state, len(found_flags), len(all_compromised))
-
-            if completion.get("should_continue"):
-                logger.info(f"[InternalRoute] AI判断需要继续: {completion.get('reason')}")
-                # 检查是否有降权的节点可以回退
-                analyzer = _get_topology_analyzer(state)
-                if analyzer:
-                    backtrack = analyzer.get_backtrack_candidates()
-                    if backtrack:
-                        logger.info(f"[InternalRoute] 发现 {len(backtrack)} 个可回退节点")
-                        return "internal"
-                return "internal"
-
-            # 验证Flag数量
-            expected = _ai_estimate_expected_flags(state)
-            if len(found_flags) < expected.get("min_expected", 1):
-                logger.info(f"[InternalRoute] Flag数量不足: {len(found_flags)}/{expected.get('min_expected')}")
-                return "internal"
-
-        except Exception as e:
-            logger.warning(f"[InternalRoute] AI验证异常: {e}")
-            # 异常时保守策略：继续搜索
-            if len(found_flags) == 0:
-                return "internal"
-
-        logger.info(f"[InternalRoute] 所有主机已攻陷，AI验证通过")
-        return "web"
-
-    # 改进2：Flag数量异常检测
-    if len(found_flags) == 0 and len(all_compromised) > 0:
-        # 已经攻陷主机但没找到flag，继续搜索
-        logger.info(f"[InternalRoute] 已攻陷{len(all_compromised)}台主机但未发现Flag，继续搜索")
+    # [修复2] 内网主机列表未建立时，继续侦察
+    if not internal_hosts or len(internal_hosts) < 1:
+        logger.info("[InternalRoute] 内网主机列表未建立，继续侦察")
         return "internal"
 
-    # 内网渗透只按时间超时结束，不受步数限制
-    # 移除了 MAX_TOTAL_ROUNDS 检查，因为内网渗透有自己的 INTERNAL_TASK_TIMEOUT
+    # [修复3] 还有未攻陷主机时，继续渗透（不依赖AI验证）
+    if unexplored:
+        logger.info(f"[InternalRoute] 还有{len(unexplored)}台主机未攻陷，继续渗透")
+        return "internal"
 
-    return "internal"
+    # 改进1：不因所有主机"攻陷"就结束，需要AI验证
+    # 此时 internal_hosts 已有内容且 unexplored 为空
+    try:
+        completion = _ai_verify_completion(state, len(found_flags), len(all_compromised))
+
+        if completion.get("should_continue"):
+            logger.info(f"[InternalRoute] AI判断需要继续: {completion.get('reason')}")
+            # 检查是否有降权的节点可以回退
+            analyzer = _get_topology_analyzer(state)
+            if analyzer:
+                backtrack = analyzer.get_backtrack_candidates()
+                if backtrack:
+                    logger.info(f"[InternalRoute] 发现 {len(backtrack)} 个可回退节点")
+                    return "internal"
+            return "internal"
+
+        # 验证Flag数量
+        expected = _ai_estimate_expected_flags(state)
+        if len(found_flags) < expected.get("min_expected", 1):
+            logger.info(f"[InternalRoute] Flag数量不足: {len(found_flags)}/{expected.get('min_expected')}")
+            return "internal"
+
+    except Exception as e:
+        logger.warning(f"[InternalRoute] AI验证异常: {e}")
+        # 异常时保守策略：有shell会话或无flag则继续
+        if shell_session or len(found_flags) == 0:
+            return "internal"
+
+    logger.info(f"[InternalRoute] 所有主机已攻陷，AI验证通过")
+    return "web"
 
 
 def get_internal_next_target(state: CTFState) -> str:
@@ -832,7 +1035,29 @@ def route_with_strategic_context(state: CTFState, current_node: str) -> Dict:
     current_step = strategic_context.get("current_step", 1)
     blockers = strategic_context.get("blockers", [])
 
-    # 内网模式路由
+    # [核心修复] 优先使用AI推荐的action
+    recommended_action = state.get("recommended_action", {})
+    recommended_node = None
+
+    if recommended_action:
+        action_map = {
+            "establish_foothold": "internal_recon",
+            "privilege_escalation": "privilege_escalation",
+            "lateral_movement": "lateral_move",
+            "flag_search": "flag_search",
+            "credential_gathering": "credential_gather",
+        }
+        recommended_node = action_map.get(recommended_action.get("action"))
+
+        if recommended_node:
+            logger.info(f"[StrategicRoute] AI推荐: {recommended_action.get('action')} -> {recommended_node}, 理由: {recommended_action.get('reason')}")
+            return {
+                "next_node": recommended_node,
+                "strategic_context": strategic_context,
+                "reasoning": f"AI推荐: {recommended_action.get('reason')}"
+            }
+
+    # 内网模式路由（AI无推荐时降级）
     if position_type == "internal":
         next_node = _route_internal_with_context(state, strategic_context)
         reasoning = f"内网渗透阶段 {current_step}"
@@ -959,111 +1184,78 @@ def update_strategic_context_after_node(state: CTFState, node_name: str, result:
 
     return context
 
-def get_strategic_priority_targets(state: CTFState) -> List[Tuple[str, int]]:
+
+
+# ==============================================================================
+# [断点8修复] AI决策记录辅助函数
+# ==============================================================================
+
+def record_strategic_decision(state: CTFState, decision: Dict) -> Dict:
     """
-    获取战略优先级目标列表
+    记录AI决策到strategic_decisions字段
+
+    用于在节点执行后记录决策历史，防止信息传递丢失
+
+    Args:
+        state: 当前状态
+        decision: 决策信息字典，格式:
+            {
+                "node": str,  # 来源节点
+                "decision_type": str,  # attack/route/mode_switch/privesc/credential
+                "action": str,  # 具体行动
+                "reason": str,  # 决策理由
+                "confidence": float,  # 置信度 0-1
+                "outcome": str,  # 执行结果: success/failed/pending
+                "target": str,  # 目标（可选）
+                "payload": str,  # payload（可选）
+            }
 
     Returns:
-        [(目标IP, 优先级分数), ...]
-    """
-    # 尝试从攻击图获取
-    try:
-        from internal_network.attack_graph import build_attack_graph_from_state
+        状态更新字典，包含新增的strategic_decisions记录
 
-        graph = build_attack_graph_from_state(dict(state))
+    使用示例:
+        from app.router import record_strategic_decision
 
-        sessions = state.get("active_sessions") or []
-        compromised = {s.get("host") for s in sessions if s.get("host")}
-
-        targets = graph.get_recommended_targets(compromised)
-
-        return [(t.id, t.value) for t in targets[:5]]
-
-    except ImportError:
-        # 降级：从状态直接获取
-        internal_hosts = state.get("internal_hosts") or []
-        sessions = state.get("active_sessions") or []
-        compromised = {s.get("host") for s in sessions if s.get("host")}
-
-        priorities = []
-        for host in internal_hosts:
-            if not isinstance(host, dict):
-                continue
-            ip = host.get("ip")
-            if ip and ip not in compromised:
-                ports = [p.get("port") for p in host.get("ports", []) if isinstance(p, dict)]
-                # 简单优先级计算
-                value = 50
-                if any(p in ports for p in [88, 389]):
-                    value = 100
-                elif any(p in ports for p in [1433, 3306]):
-                    value = 80
-                priorities.append((ip, value))
-
-        priorities.sort(key=lambda x: x[1], reverse=True)
-        return priorities[:5]
-
-def should_switch_mode(state: CTFState) -> Tuple[bool, str]:
-    """
-    判断是否需要切换内存模式
-
-    Returns:
-        (是否切换, 目标模式)
-    """
-    try:
-        from app.module_manager import get_module_manager
-        mm = get_module_manager()
-    except ImportError:
-        return False, ""
-
-    current_mode = state.get("memory_mode", "minimal")
-
-    # 检测当前需要的模式
-    if state.get("internal_mode"):
-        target_mode = "internal"
-    elif state.get("cloud_mode") or state.get("ai_mode"):
-        target_mode = "cloud"
-    elif state.get("pwn_mode"):
-        target_mode = "pwn"
-    elif state.get("reverse_mode"):
-        target_mode = "reverse"
-    elif state.get("crypto_mode"):
-        target_mode = "crypto"
-    elif state.get("misc_mode"):
-        target_mode = "misc"
-    else:
-        target_mode = "web"
-
-    # 判断是否需要切换
-    if current_mode != target_mode:
-        logger.info(f"[StrategicRoute] 建议切换模式: {current_mode} -> {target_mode}")
-        return True, target_mode
-
-    return False, ""
-
-def execute_mode_switch(state: CTFState, target_mode: str) -> Dict:
-    """
-    执行模式切换
-
-    Returns:
-        状态更新字典
-    """
-    try:
-        from app.module_manager import get_module_manager
-        mm = get_module_manager()
-
-        result = mm.switch_mode(target_mode, dict(state))
-
-        logger.info(f"[StrategicRoute] 模式切换完成: {target_mode}")
-
-        return {
-            "memory_mode": result.get("memory_mode", target_mode),
-            "active_modules": result.get("active_modules", [])
+        # 在节点执行后记录
+        decision_record = {
+            "node": "attacker",
+            "decision_type": "attack",
+            "action": "sqli_payload",
+            "reason": "检测到SQL注入特征",
+            "confidence": 0.85,
+            "outcome": "pending",
         }
+        updates = record_strategic_decision(state, decision_record)
+    """
+    import time
 
-    except ImportError as e:
-        logger.warning(f"[StrategicRoute] 模块管理器不可用: {e}")
-        return {"memory_mode": target_mode}
-    except Exception as e:
-        logger.error(f"[StrategicRoute] 模式切换失败: {e}")
-        return {}
+    # 标准化决策记录
+    record = {
+        "timestamp": time.time(),
+        "node": decision.get("node", "unknown"),
+        "decision_type": decision.get("decision_type", "unknown"),
+        "action": decision.get("action", ""),
+        "reason": decision.get("reason", ""),
+        "confidence": decision.get("confidence", 0.5),
+        "outcome": decision.get("outcome", "pending"),
+        "target": decision.get("target", ""),
+        "payload": decision.get("payload", ""),
+    }
+
+    # 获取现有决策链
+    existing_decisions = state.get("strategic_decisions", [])
+    if not isinstance(existing_decisions, list):
+        existing_decisions = []
+
+    # 添加新决策（通过reducer自动累积）
+    new_decisions = existing_decisions + [record]
+
+    # 限制数量（最多50条）
+    if len(new_decisions) > 50:
+        new_decisions = new_decisions[-50:]
+
+    logger.info(f"[断点8修复] 记录AI决策: {record['node']}/{record['decision_type']} -> {record['action']}")
+
+    return {"strategic_decisions": new_decisions}
+
+

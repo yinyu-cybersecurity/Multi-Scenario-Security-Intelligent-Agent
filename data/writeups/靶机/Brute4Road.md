@@ -1,3 +1,7 @@
+---
+tags: [Redis未授权, 主从复制, SUID提权, RCE]
+---
+
 # Brute4Road
 
 进来没有信息先用fscan扫

@@ -244,12 +244,18 @@ class AttackGraph:
         """
         获取推荐攻击目标
 
-        优先级：
-        1. 高价值且可达
-        2. 有可用凭据
-        3. 低攻击成本
+        统一优先级计算（与TopologyAnalyzer一致）：
+        1. 敏感端口加分（域控/数据库）
+        2. 枢纽节点加分（连接数多）
+        3. 有可用凭据加分
+        4. 低攻击成本加分
         """
         targets = []
+
+        # 计算节点连接数（枢纽性）
+        connection_count = defaultdict(int)
+        for edge in self.edges:
+            connection_count[edge.target] += 1
 
         for node_id, node in self.nodes.items():
             if node_id in compromised_nodes:
@@ -257,18 +263,42 @@ class AttackGraph:
 
             # 检查是否可达
             reachable = False
+            min_cost = float('inf')
             for compromised in compromised_nodes:
-                path, _ = self.find_shortest_path(compromised, node_id)
+                path, cost = self.find_shortest_path(compromised, node_id)
                 if path:
                     reachable = True
+                    min_cost = min(min_cost, cost)
                     break
 
-            if reachable:
-                targets.append(node)
+            if not reachable:
+                continue
 
-        # 按价值排序
-        targets.sort(key=lambda n: n.value, reverse=True)
-        return targets[:5]
+            # 统一优先级计算（与TopologyAnalyzer.prioritize_attack_targets一致）
+            score = node.value  # 基础价值
+
+            # 敏感端口加分（类比Web的敏感关键词）
+            sensitive_ports = {88, 389, 636, 1433, 3306, 5432, 5985, 5986}
+            if any(p in node.ports for p in sensitive_ports):
+                score *= 1.5
+
+            # 枢纽节点加分（类比Web的out_degree > 2）
+            if connection_count[node_id] > 2:
+                score *= 1.2
+
+            # 有凭据加分
+            if node.credentials_available:
+                score *= 1.3
+
+            # 低攻击成本加分
+            if min_cost < float('inf') and min_cost < 2.0:
+                score *= 1.1
+
+            targets.append((node, score))
+
+        # 按统一优先级排序
+        targets.sort(key=lambda x: x[1], reverse=True)
+        return [node for node, _ in targets[:5]]
 
     def export_dict(self) -> Dict:
         """导出为字典格式"""

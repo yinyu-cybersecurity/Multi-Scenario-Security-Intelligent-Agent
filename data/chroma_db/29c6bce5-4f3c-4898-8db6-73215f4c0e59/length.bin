@@ -1,1 +1,0 @@
-invalid type: string "# 春秋云境-Tsclient\n\n首先用fscan扫进行信息搜集\n\n![image-20231203143415212](https://img2023.cnblogs.com/blog/3144128/202312/3144128-20231204163842427-950034100.png)\n\n拿到mssql账号和密码\n\nsa密码为1qaz!QAZ\n\n```\nsa权限：数据库操作，文件管理，命令执行，注册表读取等价于system，SQLServer数据库的最高权限\n```\n\n�

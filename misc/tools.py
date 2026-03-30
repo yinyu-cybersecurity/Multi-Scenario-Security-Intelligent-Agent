@@ -13,6 +13,7 @@ import json
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from enum import Enum
+from app.flag_extractor_v2 import extract_flags
 
 # 延迟导入避免循环依赖
 def _get_llm_client():
@@ -329,14 +330,21 @@ class SteganographyDetector:
         """查找可疑模式"""
         patterns = []
 
-        # 查找flag相关字符串
-        flag_pattern = rb'(?:flag|FLAG|ctf|CTF|key|KEY)\{[^\}]+\}'
-        for match in re.finditer(flag_pattern, data):
-            patterns.append({
-                'type': 'flag_string',
-                'value': match.group().decode('utf-8', errors='ignore'),
-                'offset': hex(match.start())
-            })
+        # 查找flag相关字符串 - 使用统一的提取函数
+        try:
+            text = data.decode('utf-8', errors='ignore')
+            found_flags = extract_flags(text)
+            for flag in found_flags:
+                # 查找flag在原始数据中的位置
+                flag_bytes = flag.encode('utf-8')
+                pos = data.find(flag_bytes)
+                patterns.append({
+                    'type': 'flag_string',
+                    'value': flag,
+                    'offset': hex(pos) if pos >= 0 else 'unknown'
+                })
+        except Exception:
+            pass
 
         # 查找高熵区域（可能是加密/压缩数据）
         chunk_size = 256

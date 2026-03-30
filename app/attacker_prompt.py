@@ -120,7 +120,9 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
                         known_facts: str = None,
                         failed_payloads: List[str] = None,
                         human_hint: str = None,
-                        include_payloads: bool = True) -> str:
+                        include_payloads: bool = True,
+                        stage_info: dict = None,
+                        strategic_context: dict = None) -> str:
     """
     [P3优化版] 生成攻击兵提示词
     移除了 reflector_guidance，由 verifier 统一输出 tactical_guidance
@@ -172,6 +174,36 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
 {failed_items}
 """
 
+    # 阶段信息注入
+    stage_section = ""
+    if stage_info:
+        stage_section = f"""
+## 当前阶段指引
+- 阶段名称: {stage_info.get('stage_name', '')}
+- 阶段目标: {stage_info.get('goal', '')}
+- 成功标准: {stage_info.get('success_criteria', [])}
+- 超时限制: {stage_info.get('timeout', 0)}秒
+"""
+
+    # 战略上下文注入
+    strategic_section = ""
+    if strategic_context:
+        attack_chain = strategic_context.get('attack_chain', [])
+        current_step = strategic_context.get('current_step', 1)
+        total_steps = strategic_context.get('total_steps', len(attack_chain))
+        current_stage_name = attack_chain[current_step-1] if current_step <= len(attack_chain) else '未知'
+        blockers = strategic_context.get('blockers', [])
+        alternate_routes = strategic_context.get('alternate_routes', [])
+        strategic_section = f"""
+## 战略上下文
+- 当前位置: {strategic_context.get('position_type', 'web')}
+- 攻击链进度: 第{current_step}步/共{total_steps}步
+- 当前阶段: {current_stage_name}
+- 主要目标: {strategic_context.get('primary_goal', '获取FLAG')}
+- 已知障碍: {', '.join(blockers) if blockers else '无'}
+- 备选路径: {', '.join(alternate_routes) if alternate_routes else '无'}
+"""
+
     # 获取相关 Payload 参考
     payload_ref = ""
     if include_payloads and vuln_candidates:
@@ -193,6 +225,7 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
 {guidance_desc}
 {hint_desc}
 
+{stage_section}{strategic_section}
 ## 分析情报
 {analyst_intel if analyst_intel else "无"}
 {facts_desc}

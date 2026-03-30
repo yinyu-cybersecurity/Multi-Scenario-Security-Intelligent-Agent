@@ -8,20 +8,64 @@ Crypto模块提示词
 from typing import Dict, List, Optional
 
 
-def get_crypto_analysis_prompt(features: Dict, known_facts: str) -> str:
+def _build_stage_section(stage_info: Dict = None, strategic_context: Dict = None) -> str:
+    """
+    构建阶段信息部分
+
+    Args:
+        stage_info: 阶段信息
+        strategic_context: 战略上下文
+
+    Returns:
+        阶段信息字符串
+    """
+    section = ""
+    if stage_info:
+        section += f"""
+## 当前阶段: {stage_info.get('stage_name', '')}
+- 目标: {stage_info.get('goal', '')}
+"""
+        if stage_info.get('focus'):
+            section += f"- 重点: {stage_info.get('focus')}\n"
+        if stage_info.get('hints'):
+            hints = stage_info.get('hints')
+            if isinstance(hints, list):
+                section += f"- 提示: {', '.join(hints)}\n"
+            else:
+                section += f"- 提示: {hints}\n"
+
+    if strategic_context:
+        section += f"""
+## 战略上下文
+- 已完成阶段: {strategic_context.get('completed_stages', [])}
+- 当前策略: {strategic_context.get('current_strategy', '')}
+- 关键发现: {strategic_context.get('key_findings', [])}
+"""
+        if strategic_context.get('next_steps'):
+            section += f"- 后续步骤: {strategic_context.get('next_steps')}\n"
+
+    return section
+
+
+def get_crypto_analysis_prompt(features: Dict, known_facts: str,
+                               stage_info: Dict = None, strategic_context: Dict = None) -> str:
     """
     获取加密分析提示词
 
     Args:
         features: 页面特征
         known_facts: 已知事实
+        stage_info: 阶段信息
+        strategic_context: 战略上下文
 
     Returns:
         分析提示词
     """
+    stage_section = _build_stage_section(stage_info, strategic_context)
+
     return f"""
 你是一个密码学专家，专门分析CTF中的加密挑战。
-
+{stage_section}
 ## 页面特征
 {features}
 
@@ -49,7 +93,8 @@ def get_crypto_analysis_prompt(features: Dict, known_facts: str) -> str:
 
 
 def get_rsa_analysis_prompt(n: str = None, e: str = None, c: str = None,
-                            other_params: Dict = None) -> str:
+                            other_params: Dict = None,
+                            stage_info: Dict = None, strategic_context: Dict = None) -> str:
     """
     获取RSA分析提示词
 
@@ -58,6 +103,8 @@ def get_rsa_analysis_prompt(n: str = None, e: str = None, c: str = None,
         e: 公钥指数
         c: 密文
         other_params: 其他参数
+        stage_info: 阶段信息
+        strategic_context: 战略上下文
 
     Returns:
         RSA分析提示词
@@ -73,9 +120,11 @@ def get_rsa_analysis_prompt(n: str = None, e: str = None, c: str = None,
         for k, v in other_params.items():
             params_str += f"{k} = {v}\n"
 
+    stage_section = _build_stage_section(stage_info, strategic_context)
+
     return f"""
 你是一个密码学专家，分析RSA加密挑战。
-
+{stage_section}
 ## 已知参数
 {params_str}
 
@@ -103,22 +152,26 @@ def get_rsa_analysis_prompt(n: str = None, e: str = None, c: str = None,
 """
 
 
-def get_classical_cipher_prompt(ciphertext: str, cipher_type: str = None) -> str:
+def get_classical_cipher_prompt(ciphertext: str, cipher_type: str = None,
+                                 stage_info: Dict = None, strategic_context: Dict = None) -> str:
     """
     获取古典密码分析提示词
 
     Args:
         ciphertext: 密文
         cipher_type: 密码类型（可选）
+        stage_info: 阶段信息
+        strategic_context: 战略上下文
 
     Returns:
         古典密码分析提示词
     """
     type_hint = f"提示：可能是{cipher_type}" if cipher_type else ""
+    stage_section = _build_stage_section(stage_info, strategic_context)
 
     return f"""
 你是一个古典密码专家，分析以下密文。
-
+{stage_section}
 ## 密文
 {ciphertext}
 
@@ -146,19 +199,24 @@ def get_classical_cipher_prompt(ciphertext: str, cipher_type: str = None) -> str
 """
 
 
-def get_encoding_detection_prompt(text: str) -> str:
+def get_encoding_detection_prompt(text: str,
+                                   stage_info: Dict = None, strategic_context: Dict = None) -> str:
     """
     获取编码检测提示词
 
     Args:
         text: 待检测文本
+        stage_info: 阶段信息
+        strategic_context: 战略上下文
 
     Returns:
         编码检测提示词
     """
+    stage_section = _build_stage_section(stage_info, strategic_context)
+
     return f"""
 识别以下文本的编码类型并提供解码方法。
-
+{stage_section}
 ## 文本
 {text}
 
@@ -189,7 +247,8 @@ def get_encoding_detection_prompt(text: str) -> str:
 
 
 def get_hash_crack_prompt(hash_value: str, hash_type: str = None,
-                          context: str = None) -> str:
+                          context: str = None,
+                          stage_info: Dict = None, strategic_context: Dict = None) -> str:
     """
     获取Hash破解提示词
 
@@ -197,16 +256,19 @@ def get_hash_crack_prompt(hash_value: str, hash_type: str = None,
         hash_value: 哈希值
         hash_type: 哈希类型（可选）
         context: 上下文信息（可选）
+        stage_info: 阶段信息
+        strategic_context: 战略上下文
 
     Returns:
         Hash破解提示词
     """
     type_info = f"类型: {hash_type}" if hash_type else "类型: 未知"
     ctx_info = f"\n上下文: {context}" if context else ""
+    stage_section = _build_stage_section(stage_info, strategic_context)
 
     return f"""
 分析并尝试破解以下哈希值。
-
+{stage_section}
 ## 哈希信息
 值: {hash_value}
 {type_info}
@@ -234,7 +296,8 @@ def get_hash_crack_prompt(hash_value: str, hash_type: str = None,
 """
 
 
-def get_crypto_mode_router_prompt(state: Dict) -> str:
+def get_crypto_mode_router_prompt(state: Dict,
+                                   stage_info: Dict = None, strategic_context: Dict = None) -> str:
     """
     获取Crypto模式路由提示词
 
@@ -242,6 +305,8 @@ def get_crypto_mode_router_prompt(state: Dict) -> str:
 
     Args:
         state: 当前状态
+        stage_info: 阶段信息
+        strategic_context: 战略上下文
 
     Returns:
         路由决策提示词
@@ -249,10 +314,11 @@ def get_crypto_mode_router_prompt(state: Dict) -> str:
     features = state.get("page_features", {})
     known_facts = state.get("known_facts", "")
     attack_results = state.get("attack_results", [])[-3:]
+    stage_section = _build_stage_section(stage_info, strategic_context)
 
     return f"""
 判断是否需要启用Crypto模式进行加密分析。
-
+{stage_section}
 ## 页面特征
 {features}
 

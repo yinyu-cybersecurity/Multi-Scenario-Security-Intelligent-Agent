@@ -59,6 +59,37 @@ class Config:
     MAX_INTERNAL_HOSTS: int = 50
 
     # =========================================================================
+    # 额外列表上限 - 防止无限增长
+    # =========================================================================
+
+    # 最大关键节点数（critical_nodes 列表上限）
+    MAX_CRITICAL_NODES: int = 50
+
+    # 最大攻击路径数（attack_paths 列表上限）
+    MAX_ATTACK_PATHS: int = 20
+
+    # 最大回退计划数（fallback_plans 列表上限）
+    MAX_FALLBACK_PLANS: int = 20
+
+    # 最大附件数（attachments 列表上限）
+    MAX_ATTACHMENTS: int = 50
+
+    # 最大活跃会话数（active_sessions 列表上限）
+    MAX_ACTIVE_SESSIONS: int = 10
+
+    # 最大已上传工具数（uploaded_tools 列表上限）
+    MAX_UPLOADED_TOOLS: int = 30
+
+    # 最大持久化结果数（persistence_results 列表上限）
+    MAX_PERSISTENCE_RESULTS: int = 20
+
+    # 最大已攻陷主机数（compromised_hosts 列表上限）
+    MAX_COMPROMISED_HOSTS: int = 50
+
+    # 最大发现Flag数（found_flags 列表上限）
+    MAX_FOUND_FLAGS: int = 20
+
+    # =========================================================================
     # 超时常量 - 所有超时相关配置
     # =========================================================================
 
@@ -333,7 +364,28 @@ class Config:
 
     # 扫描扩展名默认配置
     # 用于目录扫描、文件爆破等场景
-    DEFAULT_SCAN_EXTENSIONS: str = "php,html,js,asp,aspx,jsp,txt,bak,old"
+    # 分层配置：基础层 + 配置层 + 数据层 + 备份层
+    DEFAULT_SCAN_EXTENSIONS: str = (
+        # 基础层：Web常见文件
+        "php,html,htm,js,css,asp,aspx,jsp,do,action,"
+        # 配置层：配置文件
+        "json,xml,yaml,yml,conf,config,ini,env,properties,toml,"
+        # 数据层：数据文件
+        "sql,db,sqlite,csv,tsv,xls,xlsx,doc,docx,pdf,"
+        # 备份层：备份和临时文件
+        "bak,old,backup,swp,swo,tmp,save,copy,"
+        # 源码层：版本控制和源码
+        "git,svn,hg,htaccess,htpasswd,md,txt,log"
+    )
+
+    # 扩展探索工具组合
+    # 多工具组合提升发现率
+    EXPLORE_TOOLS: List[str] = field(default_factory=lambda: [
+        "dirsearch",  # 目录扫描
+        "ffuf",       # 模糊测试
+        "nuclei",     # 漏洞扫描
+        "httpx",      # HTTP探测
+    ])
 
     # 并行扫描默认工具
     # 默认启用的自动化扫描工具组合
@@ -454,13 +506,16 @@ class Config:
         possible_paths = [
             path,
             os.path.join(os.path.dirname(__file__), '..', path),
-            os.path.join(os.path.dirname(__file__), '..', '..', path),
+            os.path.join(os.path.dirname(__file__), '..', '..', 'config.yaml'),
         ]
 
         for p in possible_paths:
             if os.path.exists(p):
                 with open(p, 'r', encoding='utf-8') as f:
                     data = yaml.safe_load(f)
+                # 处理空文件或None情况
+                if data is None:
+                    data = {}
                 return cls(**data)
         return cls()
 
@@ -533,14 +588,3 @@ def get_tool_timeout(tool_name: str) -> int:
     return config.TOOL_TIMEOUTS["default"]
 
 
-def get_tool_path(tool_name: str) -> str:
-    """获取工具路径
-
-    Args:
-        tool_name: 工具名称
-
-    Returns:
-        工具的完整路径
-    """
-    base = config.TOOL_PATHS["thirdparty_base"]
-    return os.path.join(base, tool_name)

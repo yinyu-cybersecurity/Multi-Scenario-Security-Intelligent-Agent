@@ -838,27 +838,135 @@ class CredentialManager:
         return result
 
     def _verify_rdp_credential(self, cred: Credential) -> Dict:
-        """验证RDP凭据"""
+        """
+        验证RDP凭据 - 完整实现
+
+        使用xfreerdp验证凭据有效性
+        """
         result = {"valid": False, "privilege": cred.privilege.value, "error": None}
 
-        # RDP验证需要特殊工具，这里只做简单连接测试
+        # Step 1: 检查端口可达性
+        import socket
         try:
-            import socket
-
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(5)
-            result_code = sock.connect_ex((cred.host, 3389))
+            code = sock.connect_ex((cred.host, 3389))
             sock.close()
 
-            if result_code == 0:
-                # 端口开放，但无法直接验证凭据
-                result["valid"] = True  # 保守估计
-                result["error"] = "RDP端口可达，但无法直接验证凭据"
-            else:
-                result["error"] = "RDP端口不可达"
-
+            if code != 0:
+                result["error"] = "RDP端口(3389)不可达"
+                return result
         except Exception as e:
-            result["error"] = str(e)
+            result["error"] = f"端口检查失败: {str(e)}"
+            return result
+
+        # Step 2: 检查xfreerdp工具
+        xfreerdp_available = self._check_xfreerdp()
+        if not xfreerdp_available:
+            # 降级方案：只报告端口可达
+            result["valid"] = True
+            result["error"] = "RDP端口可达，但xfreerdp不可用，无法完整验证凭据"
+            result["warning"] = "建议安装freerdp2-x11以完整验证"
+            return result
+
+        # Step 3: 使用xfreerdp验证凭据
+        if not cred.password:
+            result["error"] = "RDP验证需要明文凭据"
+            return result
+
+        verify_result = self._verify_with_xfreerdp(cred)
+        if verify_result.get("valid"):
+            result["valid"] = True
+            self.mark_verified(cred.host, cred.username, True)
+
+            # 检查权限提升
+            if verify_result.get("is_admin"):
+                result["privilege"] = "local_admin"
+                cred.privilege = PrivilegeLevel.LOCAL_ADMIN
+        else:
+            result["error"] = verify_result.get("error", "凭据验证失败")
+            self.mark_verified(cred.host, cred.username, False)
+
+        return result
+
+    def _check_xfreerdp(self) -> bool:
+        """检查xfreerdp是否可用"""
+        import subprocess
+        try:
+            subprocess.run(
+                ["xfreerdp", "/version"],
+                capture_output=True,
+                timeout=5
+            )
+            return True
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+
+    def _verify_with_xfreerdp(self, cred: Credential) -> Dict:
+        """使用xfreerdp验证凭据"""
+        import subprocess
+        result = {"valid": False, "error": None, "is_admin": False}
+
+        # 构建验证命令 - 使用非交互模式
+        cmd = [
+            "xfreerdp",
+            f"/u:{cred.username}",
+            f"/p:{cred.password}",
+            f"/v:{cred.host}",
+            "/nosc",  # 不获取桌面
+            "/sec:nla",  # NLA认证
+            "/cert-ignore",
+            "+auth-only",  # 仅认证（新版支持）
+            "/timeout:10000"
+        ]
+
+        if cred.domain:
+            cmd.insert(3, f"/d:{cred.domain}")
+
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                timeout=30,
+                text=True
+            )
+
+            output = proc.stdout + proc.stderr
+
+            # 成功标志
+            success_indicators = [
+                "Authentication successful",
+                proc.returncode == 0
+            ]
+            if any(success_indicators):
+                result["valid"] = True
+                # 管理员检测 - 通过输出或后续查询
+                if "ADMIN" in output.upper() or "administrators" in output.lower():
+                    result["is_admin"] = True
+                return result
+
+            # 失败标志
+            failed_indicators = [
+                "Authentication failed",
+                "Access denied",
+                "Logon failure",
+                "wrong password",
+                "invalid credentials",
+                "STATUS_LOGON_FAILURE"
+            ]
+            for ind in failed_indicators:
+                if ind.lower() in output.lower():
+                    result["error"] = f"认证失败: {ind}"
+                    return result
+
+            # 未知状态
+            result["error"] = f"验证结果未知 (rc={proc.returncode})"
+            result["output"] = output[:300]
+
+        except subprocess.TimeoutExpired:
+            result["error"] = "验证超时(30秒)"
+        except Exception as e:
+            result["error"] = f"验证异常: {str(e)}"
 
         return result
 

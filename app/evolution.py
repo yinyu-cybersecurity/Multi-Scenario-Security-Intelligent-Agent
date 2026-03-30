@@ -231,27 +231,7 @@ class EvolutionManager:
 
         return rule
 
-    def export_to_strategy_filter(self) -> Dict[str, List[str]]:
-        """
-        导出为策略过滤器可用的格式
-        返回: { "tech_stack": ["vuln_type1", "vuln_type2"] }
-        """
-        result = {}
-
-        for rule in self.rules:
-            if rule.get("status") != "active":
-                continue
-
-            tech = rule.get("condition", {}).get("tech_stack", "any")
-            vuln_type = rule.get("type")
-
-            if tech not in result:
-                result[tech] = []
-            if vuln_type not in result[tech]:
-                result[tech].append(vuln_type)
-
-        return result
-
+    
 
 def evolution_node(state: CTFState) -> Dict:
     """

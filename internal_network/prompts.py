@@ -8,10 +8,53 @@
 from typing import Dict, List, Any, Optional
 
 
+def _build_stage_section(stage_info: Dict = None) -> str:
+    """
+    构建阶段信息部分
+
+    Args:
+        stage_info: 阶段信息字典
+
+    Returns:
+        格式化的阶段信息字符串
+    """
+    if not stage_info:
+        return ""
+
+    return f"""
+## 当前阶段: {stage_info.get('stage_name', '')}
+- 目标: {stage_info.get('goal', '')}
+- 成功标准: {', '.join(stage_info.get('success_criteria', [])) or '无'}
+"""
+
+
+def _build_strategic_section(strategic_context: Dict = None) -> str:
+    """
+    构建战略上下文部分
+
+    Args:
+        strategic_context: 战略上下文字典
+
+    Returns:
+        格式化的战略上下文字符串
+    """
+    if not strategic_context:
+        return ""
+
+    return f"""
+## 战略上下文
+- 攻击链进度: 第{strategic_context.get('current_step', 1)}步/共{strategic_context.get('total_steps', 5)}步
+- 已知障碍: {', '.join(strategic_context.get('blockers', [])) or '无'}
+- 备选路径: {', '.join(strategic_context.get('alternate_routes', [])) or '无'}
+"""
+
+
 def get_internal_recon_prompt(
     network_range: str,
     discovered_hosts: List[Dict],
-    pivot_host: str
+    pivot_host: str,
+    stage_info: Dict = None,
+    strategic_context: Dict = None
 ) -> str:
     """
     内网侦察分析提示词
@@ -20,6 +63,8 @@ def get_internal_recon_prompt(
         network_range: 内网网段
         discovered_hosts: 已发现的主机列表
         pivot_host: 跳板机IP
+        stage_info: 阶段信息
+        strategic_context: 战略上下文
 
     Returns:
         分析提示词
@@ -31,6 +76,9 @@ def get_internal_recon_prompt(
 
     hosts_text = "\n".join(hosts_summary) if hosts_summary else "暂无发现"
 
+    stage_section = _build_stage_section(stage_info)
+    strategic_section = _build_strategic_section(strategic_context)
+
     return f"""
 # 内网侦察分析报告
 
@@ -38,7 +86,7 @@ def get_internal_recon_prompt(
 - 内网网段: {network_range}
 - 跳板机: {pivot_host}
 - 发现主机数: {len(discovered_hosts)}
-
+{stage_section}{strategic_section}
 ## 发现的主机
 {hosts_text}
 
@@ -86,7 +134,9 @@ def get_internal_recon_prompt(
 def get_credential_analysis_prompt(
     credentials: List[Dict],
     target_host: str,
-    target_ports: List[Dict]
+    target_ports: List[Dict],
+    stage_info: Dict = None,
+    strategic_context: Dict = None
 ) -> str:
     """
     凭据分析提示词
@@ -95,6 +145,8 @@ def get_credential_analysis_prompt(
         credentials: 已获取的凭据列表
         target_host: 目标主机
         target_ports: 目标主机开放的端口
+        stage_info: 阶段信息
+        strategic_context: 战略上下文
 
     Returns:
         凭据分析提示词
@@ -109,6 +161,9 @@ def get_credential_analysis_prompt(
     creds_text = "\n".join(creds_summary) if creds_summary else "暂无凭据"
     ports_text = ", ".join([f"{p.get('port')}/{p.get('service', '?')}" for p in target_ports])
 
+    stage_section = _build_stage_section(stage_info)
+    strategic_section = _build_strategic_section(strategic_context)
+
     return f"""
 # 凭据利用分析
 
@@ -118,7 +173,7 @@ def get_credential_analysis_prompt(
 ## 目标主机
 - IP: {target_host}
 - 开放端口: {ports_text}
-
+{stage_section}{strategic_section}
 ## 分析任务
 
 ### 1. 凭据复用检测
@@ -159,7 +214,9 @@ def get_lateral_move_prompt(
     target_host: str,
     method: str,
     credential: Dict,
-    target_info: Dict
+    target_info: Dict,
+    stage_info: Dict = None,
+    strategic_context: Dict = None
 ) -> str:
     """
     横向移动执行提示词
@@ -170,10 +227,15 @@ def get_lateral_move_prompt(
         method: 移动方法
         credential: 使用的凭据
         target_info: 目标主机信息
+        stage_info: 阶段信息
+        strategic_context: 战略上下文
 
     Returns:
         横向移动提示词
     """
+    stage_section = _build_stage_section(stage_info)
+    strategic_section = _build_strategic_section(strategic_context)
+
     return f"""
 # 横向移动执行计划
 
@@ -187,7 +249,7 @@ def get_lateral_move_prompt(
 - OS: {target_info.get('os', 'unknown')}
 - 开放端口: {target_info.get('ports', [])}
 - 域: {target_info.get('domain', 'unknown')}
-
+{stage_section}{strategic_section}
 ## 执行步骤
 
 ### PsExec方式
@@ -221,7 +283,9 @@ def get_ad_analysis_prompt(
     ad_users: List[str],
     ad_groups: List[str],
     ad_computers: List[str],
-    domain_controller: str
+    domain_controller: str,
+    stage_info: Dict = None,
+    strategic_context: Dict = None
 ) -> str:
     """
     AD域分析提示词
@@ -232,6 +296,8 @@ def get_ad_analysis_prompt(
         ad_groups: 域组列表
         ad_computers: 域计算机列表
         domain_controller: 域控IP
+        stage_info: 阶段信息
+        strategic_context: 战略上下文
 
     Returns:
         AD分析提示词
@@ -239,6 +305,9 @@ def get_ad_analysis_prompt(
     users_text = "\n".join([f"  - {u}" for u in ad_users[:20]]) if ad_users else "  暂无"
     groups_text = "\n".join([f"  - {g}" for g in ad_groups[:15]]) if ad_groups else "  暂无"
     computers_text = "\n".join([f"  - {c}" for c in ad_computers[:15]]) if ad_computers else "  暂无"
+
+    stage_section = _build_stage_section(stage_info)
+    strategic_section = _build_strategic_section(strategic_context)
 
     return f"""
 # Active Directory 分析报告
@@ -255,7 +324,7 @@ def get_ad_analysis_prompt(
 
 ## 域计算机 ({len(ad_computers)} 台)
 {computers_text}
-
+{stage_section}{strategic_section}
 ## 分析任务
 
 ### 1. 高权限账户识别
@@ -303,7 +372,9 @@ def get_privilege_escalation_prompt(
     current_user: str,
     current_privileges: List[str],
     system_info: Dict,
-    available_tools: List[str]
+    available_tools: List[str],
+    stage_info: Dict = None,
+    strategic_context: Dict = None
 ) -> str:
     """
     权限提升分析提示词
@@ -313,10 +384,15 @@ def get_privilege_escalation_prompt(
         current_privileges: 当前权限
         system_info: 系统信息
         available_tools: 可用工具列表
+        stage_info: 阶段信息
+        strategic_context: 战略上下文
 
     Returns:
         权限提升提示词
     """
+    stage_section = _build_stage_section(stage_info)
+    strategic_section = _build_strategic_section(strategic_context)
+
     return f"""
 # 权限提升分析
 
@@ -331,7 +407,7 @@ def get_privilege_escalation_prompt(
 
 ## 可用工具
 {available_tools}
-
+{stage_section}{strategic_section}
 ## 分析任务
 
 ### 1. 本地提权漏洞
@@ -374,13 +450,17 @@ def get_privilege_escalation_prompt(
 
 
 def get_internal_mode_router_prompt(
-    state: Dict
+    state: Dict,
+    stage_info: Dict = None,
+    strategic_context: Dict = None
 ) -> str:
     """
     内网模式路由决策提示词
 
     Args:
         state: 当前状态
+        stage_info: 阶段信息
+        strategic_context: 战略上下文
 
     Returns:
         路由决策提示词
@@ -391,6 +471,9 @@ def get_internal_mode_router_prompt(
     current_target = state.get("current_internal_target", "")
     pivot_host = state.get("pivot_host", "")
 
+    stage_section = _build_stage_section(stage_info)
+    strategic_section = _build_strategic_section(strategic_context)
+
     return f"""
 # 内网渗透模式决策
 
@@ -400,7 +483,7 @@ def get_internal_mode_router_prompt(
 - 活跃会话: {len(active_sessions)} 个
 - 当前目标: {current_target}
 - 跳板机: {pivot_host}
-
+{stage_section}{strategic_section}
 ## 决策选项
 
 ### recon_mode (侦察模式)
@@ -430,5 +513,209 @@ def get_internal_mode_router_prompt(
   "reason": "原因",
   "target_host": "目标主机IP",
   "action": "具体动作"
+}}
+"""
+
+
+def get_flag_search_prompt(
+    current_host: str,
+    user_context: str,
+    search_paths: List[str],
+    stage_info: Dict = None,
+    strategic_context: Dict = None
+) -> str:
+    """
+    Flag搜索提示词
+
+    Args:
+        current_host: 当前主机
+        user_context: 用户上下文
+        search_paths: 搜索路径列表
+        stage_info: 阶段信息
+        strategic_context: 战略上下文
+
+    Returns:
+        Flag搜索提示词
+    """
+    stage_section = _build_stage_section(stage_info)
+    strategic_section = _build_strategic_section(strategic_context)
+    paths_text = "\n".join([f"  - {p}" for p in search_paths]) if search_paths else "  默认路径"
+
+    return f"""
+# Flag搜索任务
+
+## 当前环境
+- 主机: {current_host}
+- 用户上下文: {user_context}
+{stage_section}{strategic_section}
+## 搜索路径
+{paths_text}
+
+## 搜索策略
+
+### 1. 文件系统搜索
+搜索常见的flag存放位置:
+- 桌面目录
+- 用户文档目录
+- Web目录
+- 数据库文件
+
+### 2. 数据库搜索
+检查数据库中的flag:
+- MySQL: information_schema, 用户数据库
+- MSSQL: master, 用户数据库
+- PostgreSQL: postgres, 用户数据库
+
+### 3. 内存搜索
+从进程内存中提取flag
+
+## 输出格式 (JSON)
+{{
+  "search_commands": [
+    {{
+      "path": "搜索路径",
+      "command": "搜索命令",
+      "expected_pattern": "flag格式模式"
+    }}
+  ],
+  "priority_order": ["按优先级排序的搜索位置"],
+  "estimated_time": "预计耗时"
+}}
+"""
+
+
+def get_persistence_prompt(
+    target_host: str,
+    user_context: str,
+    system_info: Dict,
+    stage_info: Dict = None,
+    strategic_context: Dict = None
+) -> str:
+    """
+    持久化提示词
+
+    Args:
+        target_host: 目标主机
+        user_context: 用户上下文
+        system_info: 系统信息
+        stage_info: 阶段信息
+        strategic_context: 战略上下文
+
+    Returns:
+        持久化提示词
+    """
+    stage_section = _build_stage_section(stage_info)
+    strategic_section = _build_strategic_section(strategic_context)
+
+    return f"""
+# 持久化方案
+
+## 目标环境
+- 主机: {target_host}
+- 用户: {user_context}
+- OS: {system_info.get('os', 'unknown')}
+- 架构: {system_info.get('arch', 'unknown')}
+{stage_section}{strategic_section}
+## 持久化方法
+
+### 1. 计划任务 (Windows)
+使用schtasks创建持久化任务
+
+### 2. 注册表 (Windows)
+通过注册表启动项实现持久化
+
+### 3. 服务 (Windows/Linux)
+创建恶意服务实现持久化
+
+### 4. Cron (Linux)
+通过cron任务实现持久化
+
+### 5. SSH密钥 (Linux)
+植入SSH公钥实现持久化
+
+## 输出格式 (JSON)
+{{
+  "persistence_methods": [
+    {{
+      "method": "方法名称",
+      "command": "执行命令",
+      "cleanup_command": "清理命令",
+      "detection_risk": "low/medium/high"
+    }}
+  ],
+  "recommended_order": ["按优先级排序的方法"],
+  "stealth_options": ["隐蔽性选项"]
+}}
+"""
+
+
+def get_credential_gather_prompt(
+    target_host: str,
+    target_info: Dict,
+    available_methods: List[str],
+    stage_info: Dict = None,
+    strategic_context: Dict = None
+) -> str:
+    """
+    凭据收集提示词
+
+    Args:
+        target_host: 目标主机
+        target_info: 目标主机信息
+        available_methods: 可用的凭据收集方法
+        stage_info: 阶段信息
+        strategic_context: 战略上下文
+
+    Returns:
+        凭据收集提示词
+    """
+    stage_section = _build_stage_section(stage_info)
+    strategic_section = _build_strategic_section(strategic_context)
+    methods_text = ", ".join(available_methods) if available_methods else "默认方法"
+
+    return f"""
+# 凭据收集任务
+
+## 目标信息
+- 主机: {target_host}
+- OS: {target_info.get('os', 'unknown')}
+- 域: {target_info.get('domain', 'unknown')}
+- 开放端口: {target_info.get('ports', [])}
+{stage_section}{strategic_section}
+## 可用方法
+{methods_text}
+
+## 收集策略
+
+### 1. 内存凭据 (LSASS)
+- Mimikatz sekurlsa::logonpasswords
+- Procdump + Mimikatz离线分析
+
+### 2. 本地账户
+- SAM数据库导出
+- 本地管理员密码重置
+
+### 3. 域凭据
+- NTDS.dit导出
+- DCSync攻击
+- Kerberoasting
+
+### 4. 配置文件
+- Web配置文件
+- 数据库连接字符串
+- 应用程序配置
+
+## 输出格式 (JSON)
+{{
+  "collection_methods": [
+    {{
+      "method": "方法名称",
+      "command": "执行命令",
+      "privilege_required": "所需权限",
+      "detection_risk": "low/medium/high"
+    }}
+  ],
+  "priority_order": ["按优先级排序的方法"],
+  "expected_credentials": ["预期获取的凭据类型"]
 }}
 """

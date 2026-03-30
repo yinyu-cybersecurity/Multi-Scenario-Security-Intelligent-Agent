@@ -12,6 +12,9 @@
 
 from typing import List, Dict, Any, TypeVar, Callable
 
+# 从 config 导入统一上限配置（必须在函数定义之前）
+from config import config
+
 T = TypeVar('T')
 
 
@@ -77,9 +80,9 @@ def cap_candidates_reducer(x: List[Dict], y: List[Dict]) -> List[Dict]:
         y: 新候选项
 
     Returns:
-        去重后的候选项列表（最多20条）
+        去重后的候选项列表（使用config配置上限）
     """
-    CAP_LIMIT = 20
+    CAP_LIMIT = config.MAX_VULN_CANDIDATES
 
     if x is None:
         x = []
@@ -168,6 +171,54 @@ def _make_cap_reducer(cap: int):
         return new_list[-cap:] if len(new_list) > cap else new_list
     return reducer
 
+def _make_dedupe_cap_reducer(cap: int, dedupe_key_fn=None):
+    """创建带去重和上限的 reducer - 超限时生成摘要保留关键信息"""
+    def reducer(x, y):
+        if x is None: x = []
+        if y is None: y = []
+        if not y: return x
+
+        # 去重合并
+        merged = list(x)
+        seen = set()
+
+        # 使用自定义去重键或默认值
+        if dedupe_key_fn:
+            seen = set(dedupe_key_fn(item) for item in merged)
+            for item in y:
+                key = dedupe_key_fn(item)
+                if key not in seen:
+                    merged.append(item)
+                    seen.add(key)
+        else:
+            seen = set(merged)
+            for item in y:
+                if item not in seen:
+                    merged.append(item)
+                    seen.add(item)
+
+        # 超限时压缩摘要而非直接删除
+        if len(merged) > cap:
+            # 保留最后cap-1条完整记录
+            recent = merged[-(cap-1):]
+            older = merged[:-(cap-1)]
+
+            # 生成关键信息摘要
+            summary = {
+                "_summary": True,
+                "count": len(older),
+                "types": list(set(
+                    item.get("type", "unknown") if isinstance(item, dict) else "unknown"
+                    for item in older
+                )),
+                "first_ts": older[0].get("timestamp") if older and isinstance(older[0], dict) else None,
+                "last_ts": older[-1].get("timestamp") if older and isinstance(older[-1], dict) else None,
+            }
+            return [summary] + recent
+
+        return merged[-cap:] if len(merged) > cap else merged
+    return reducer
+
 def _make_candidates_reducer(cap: int):
     """创建带去重功能的候选项 reducer"""
     def _make_dedup_key(cand: Dict) -> str:
@@ -254,7 +305,7 @@ def generate_attack_summary(results: List[Dict]) -> str:
 
     return "; ".join(summary_parts)
 
-# [断点4修复] 增强版攻击结果reducer（增加到50条上限）
+# [断点4修复] 增强版攻击结果reducer（使用config配置上限）
 def _attack_results_reducer_with_summary(x: List[Dict], y: List[Dict]) -> List[Dict]:
     """
     攻击结果规约器（带摘要生成）
@@ -266,7 +317,7 @@ def _attack_results_reducer_with_summary(x: List[Dict], y: List[Dict]) -> List[D
     if y is None: y = []
     if not y: return x
 
-    CAP = 50  # 增加上限到50条
+    CAP = config.MAX_ATTACK_RESULTS
 
     new_list = x + y
     if len(new_list) > CAP:
@@ -275,11 +326,62 @@ def _attack_results_reducer_with_summary(x: List[Dict], y: List[Dict]) -> List[D
         return new_list[-CAP:]
     return new_list
 
-# 导出的 reducer 实例
-visited_urls_reducer = _make_cap_reducer(100)
-visited_fingerprints_reducer = _make_cap_reducer(100)
+# 导出的 reducer 实例（使用config统一配置）
+visited_urls_reducer = _make_dedupe_cap_reducer(config.MAX_VISITED_URLS)
+visited_fingerprints_reducer = _make_dedupe_cap_reducer(config.MAX_VISITED_PAGES)
 attack_results_reducer = _attack_results_reducer_with_summary  # [断点4修复] 使用增强版
-tool_calls_reducer = _make_cap_reducer(100)
-failed_payloads_reducer = _make_cap_reducer(50)
-credentials_reducer = _make_cap_reducer(30)
-internal_hosts_reducer = _make_cap_reducer(50)
+tool_calls_reducer = _make_cap_reducer(config.MAX_TOOL_CALLS)
+failed_payloads_reducer = _make_dedupe_cap_reducer(config.MAX_FAILED_PAYLOADS)
+credentials_reducer = _make_cap_reducer(config.MAX_CREDENTIALS)
+internal_hosts_reducer = _make_cap_reducer(config.MAX_INTERNAL_HOSTS)
+
+# 通用列表字段 reducer（用于无上限但有潜在增长风险的字段）
+# 使用较大的上限防止意外无限增长
+generic_list_reducer_20 = _make_cap_reducer(20)
+generic_list_reducer_50 = _make_cap_reducer(50)
+generic_list_reducer_100 = _make_cap_reducer(100)
+
+
+def should_update_attack_summary(results: List[Dict], current_summary: str) -> str:
+    """
+    检查是否需要更新 attack_summary 并返回新摘要
+
+    当满足以下条件时生成新摘要：
+    1. results 数量达到上限的80%
+    2. current_summary 为空
+    3. 有新的成功攻击记录
+
+    Args:
+        results: 当前攻击结果列表
+        current_summary: 当前摘要字符串
+
+    Returns:
+        新摘要（如果需要更新）或原摘要（如果不需要）
+    """
+    if not results:
+        return current_summary
+
+    # 条件1: 达到上限的80%
+    threshold = int(config.MAX_ATTACK_RESULTS * 0.8)
+    if len(results) < threshold:
+        return current_summary
+
+    # 条件2: 摘要为空
+    if not current_summary:
+        return generate_attack_summary(results)
+
+    # 条件3: 有新的成功攻击（与上次摘要对比）
+    # 检查是否有"成功"字样但摘要中未记录的工具
+    successful_tools = set(
+        r.get("tool", "unknown") for r in results
+        if r.get("is_exploit") or r.get("status") == 200
+    )
+    if successful_tools and "成功工具:" in current_summary:
+        existing_tools = set(
+            t.strip() for t in current_summary.split("成功工具:")[1].split(";")[0].split(",")
+        )
+        new_tools = successful_tools - existing_tools
+        if new_tools:
+            return generate_attack_summary(results)
+
+    return current_summary

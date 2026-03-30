@@ -1067,10 +1067,67 @@ class ShellSessionManager:
 
 # 全局会话管理器实例
 _session_manager = None
+_health_check_thread = None
+
+
+class SessionHealthChecker:
+    """会话健康检查器 - 后台定时检查会话状态"""
+
+    CHECK_INTERVAL = 60  # 每60秒检查一次
+    SESSION_TIMEOUT = 300  # 5分钟无活动视为超时
+
+    def __init__(self, manager: ShellSessionManager):
+        self.manager = manager
+        self._running = False
+        self._thread = None
+
+    def start(self):
+        """启动健康检查线程"""
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._check_loop, daemon=True)
+        self._thread.start()
+        logger.info("会话健康检查线程已启动")
+
+    def stop(self):
+        """停止健康检查"""
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=2)
+
+    def _check_loop(self):
+        """健康检查循环"""
+        while self._running:
+            try:
+                # 检查所有会话
+                dead_sessions = self.manager.cleanup_dead_sessions()
+                if dead_sessions:
+                    logger.info(f"清理了 {len(dead_sessions)} 个断开的会话")
+
+                # 检查超时但可重连的会话
+                for session_id, session in list(self.manager.sessions.items()):
+                    idle_time = time.time() - session.last_active
+                    if idle_time > self.SESSION_TIMEOUT:
+                        health = self.manager.check_session_health(session_id)
+                        if health.get("can_reconnect"):
+                            logger.info(f"会话 {session_id} 超时，尝试重连...")
+                        elif not health.get("alive"):
+                            session.status = "disconnected"
+                            self.manager._save_sessions()
+
+            except Exception as e:
+                logger.warning(f"健康检查异常: {e}")
+
+            time.sleep(self.CHECK_INTERVAL)
+
 
 def get_session_manager() -> ShellSessionManager:
     """获取全局会话管理器"""
-    global _session_manager
+    global _session_manager, _health_check_thread
     if _session_manager is None:
         _session_manager = ShellSessionManager()
+        # 启动健康检查
+        checker = SessionHealthChecker(_session_manager)
+        checker.start()
     return _session_manager

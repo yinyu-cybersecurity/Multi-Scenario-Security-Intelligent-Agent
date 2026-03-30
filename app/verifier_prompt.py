@@ -12,7 +12,9 @@ BASE64_PATTERN = re.compile(r'[A-Za-z0-9+/]{20,}={0,2}')
 
 def get_verifier_prompt(attack_batch: list, results: list, analyst_intel: str = None,
                         node_info: dict = None, known_facts: str = None,
-                        human_hint: str = None) -> str:
+                        human_hint: str = None,
+                        stage_info: dict = None,
+                        strategic_context: dict = None) -> str:
     """
     构建核验兵的 Prompt [P3合并版]
     合并了原verifier和reflector的职责，一次LLM调用完成所有判断
@@ -85,6 +87,38 @@ def get_verifier_prompt(attack_batch: list, results: list, analyst_intel: str = 
 请根据以上人工指导调整战术建议和攻击方向。
 """
 
+    # 阶段成功标准检查
+    success_criteria_section = ""
+    if stage_info and stage_info.get('success_criteria'):
+        criteria_list = stage_info.get('success_criteria', [])
+        criteria_text = '\n'.join(f'- {c}' for c in criteria_list) if isinstance(criteria_list, list) else f'- {criteria_list}'
+        success_criteria_section = f"""
+## 阶段成功标准
+检查以下条件是否满足：
+{criteria_text}
+
+如果所有条件满足，应建议进入下一阶段。
+"""
+
+    # 战略上下文注入
+    strategic_section = ""
+    if strategic_context:
+        attack_chain = strategic_context.get('attack_chain', [])
+        current_step = strategic_context.get('current_step', 1)
+        total_steps = strategic_context.get('total_steps', len(attack_chain))
+        current_stage_name = attack_chain[current_step-1] if current_step <= len(attack_chain) else '未知'
+        blockers = strategic_context.get('blockers', [])
+        alternate_routes = strategic_context.get('alternate_routes', [])
+        strategic_section = f"""
+## 战略上下文
+- 当前位置: {strategic_context.get('position_type', 'web')}
+- 攻击链进度: 第{current_step}步/共{total_steps}步
+- 当前阶段: {current_stage_name}
+- 主要目标: {strategic_context.get('primary_goal', '获取FLAG')}
+- 已知障碍: {', '.join(blockers) if blockers else '无'}
+- 备选路径: {', '.join(alternate_routes) if alternate_routes else '无'}
+"""
+
     # 获取共享的提示模块
     success_criteria = get_success_criteria()
 
@@ -98,7 +132,7 @@ def get_verifier_prompt(attack_batch: list, results: list, analyst_intel: str = 
 {facts_context}
 {hint_context}
 {node_context}
-
+{success_criteria_section}{strategic_section}
 ## 攻击结果
 {json.dumps(formatted_results, indent=2, ensure_ascii=False)}
 

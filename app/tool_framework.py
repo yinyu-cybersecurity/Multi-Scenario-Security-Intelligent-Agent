@@ -991,6 +991,69 @@ class ToolRegistry:
         return [name for name, enabled in cls._enabled_tools.items() if not enabled]
 
     @classmethod
+    def execute_with_retry(cls, tool_name: str, target: str, params: Dict,
+                           state: Dict = None, max_retries: int = 2,
+                           fallback_tools: List[str] = None) -> Dict:
+        """
+        带重试和备用工具的执行方法
+
+        Args:
+            tool_name: 主工具名称
+            target: 目标
+            params: 参数
+            state: 状态
+            max_retries: 最大重试次数
+            fallback_tools: 备用工具列表
+
+        Returns:
+            执行结果
+        """
+        # 第一次尝试
+        result = cls.execute_cached(tool_name, target, params, state)
+
+        if result.get("result", {}).get("success"):
+            return result
+
+        # 重试逻辑
+        for attempt in range(max_retries):
+            logger.warning(f"[ToolRegistry] {tool_name} 失败，重试 {attempt + 1}/{max_retries}")
+
+            # 添加重试参数（如增加超时、降低并发等）
+            retry_params = params.copy()
+            retry_params["_retry_attempt"] = attempt + 1
+            retry_params["_retry_delay"] = attempt * 2  # 递增延迟
+
+            result = cls.execute_cached(tool_name, target, retry_params, state)
+
+            if result.get("result", {}).get("success"):
+                logger.info(f"[ToolRegistry] {tool_name} 重试成功")
+                return result
+
+        # 尝试备用工具
+        if fallback_tools:
+            for fallback in fallback_tools:
+                if cls.tool_exists(fallback) and cls.is_tool_enabled(fallback):
+                    logger.info(f"[ToolRegistry] 切换备用工具: {fallback}")
+                    result = cls.execute_cached(fallback, target, params, state)
+                    if result.get("result", {}).get("success"):
+                        logger.info(f"[ToolRegistry] 备用工具 {fallback} 成功")
+                        return result
+
+        # 记录失败到错误恢复系统
+        try:
+            from self_correction import self_correction_manager, ErrorSeverity, ErrorType
+            self_correction_manager.record_error(
+                node="tool_executor",
+                error_type=ErrorType.TOOL_FAILURE,
+                error_message=f"{tool_name} 执行失败，已尝试 {max_retries} 次重试和 {len(fallback_tools or [])} 个备用工具",
+                severity=ErrorSeverity.MEDIUM
+            )
+        except Exception:
+            pass
+
+        return result
+
+    @classmethod
     def execute_cached(cls, tool_name: str, target: str, params: Dict,
                        state: Dict = None) -> Dict:
         """

@@ -11,7 +11,10 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
                         tools_info: str = None,
                         focused_scene: str = None,
                         scene_tested: bool = False,
-                        topology_hint: str = None) -> str:
+                        topology_hint: str = None,
+                        stage_info: dict = None,
+                        strategic_context: dict = None,
+                        hybrid_detection_results: list = None) -> str:
     """
     生成分析兵的情报统筹提示词。
     """
@@ -83,6 +86,47 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
     rule_candidates_json = json.dumps(rule_candidates, indent=2, ensure_ascii=False)[:500]
     topology_section = f"## 拓扑分析\n{topology_hint}\n" if topology_hint else ""
 
+    # hybrid_detector检测结果格式化
+    hybrid_section = ""
+    if hybrid_detection_results:
+        hybrid_lines = []
+        for result in hybrid_detection_results:
+            confidence = result.get("confidence", "unknown")
+            det_type = result.get("type", "unknown")
+            matched = result.get("matched_text", "")[:100]
+            hybrid_lines.append(f"- [{confidence}] {det_type}: {matched}...")
+        hybrid_section = "## hybrid_detector快速检测结果\n" + "\n".join(hybrid_lines) + "\n\n注：高置信度结果已自动加入漏洞候选，LLM需进一步确认并细化攻击策略。\n"
+
+    # 阶段信息注入
+    stage_section = ""
+    if stage_info:
+        stage_section = f"""
+## 当前阶段指引
+- 阶段名称: {stage_info.get('stage_name', '')}
+- 阶段目标: {stage_info.get('goal', '')}
+- 成功标准: {stage_info.get('success_criteria', [])}
+- 超时限制: {stage_info.get('timeout', 0)}秒
+"""
+
+    # 战略上下文注入
+    strategic_section = ""
+    if strategic_context:
+        attack_chain = strategic_context.get('attack_chain', [])
+        current_step = strategic_context.get('current_step', 1)
+        total_steps = strategic_context.get('total_steps', len(attack_chain))
+        current_stage_name = attack_chain[current_step-1] if current_step <= len(attack_chain) else '未知'
+        blockers = strategic_context.get('blockers', [])
+        alternate_routes = strategic_context.get('alternate_routes', [])
+        strategic_section = f"""
+## 战略上下文
+- 当前位置: {strategic_context.get('position_type', 'web')}
+- 攻击链进度: 第{current_step}步/共{total_steps}步
+- 当前阶段: {current_stage_name}
+- 主要目标: {strategic_context.get('primary_goal', '获取FLAG')}
+- 已知障碍: {', '.join(blockers) if blockers else '无'}
+- 备选路径: {', '.join(alternate_routes) if alternate_routes else '无'}
+"""
+
     # 获取共享的场景框架和攻击决策原则
     scene_framework = get_scene_framework_for_analyst()
     decision_principles = get_attack_decision_principles()
@@ -100,6 +144,9 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
 {scenes_section}
 {focus_section}
 {topology_section}
+{hybrid_section}
+{stage_section}
+{strategic_section}
 ## 页面特征
 {page_features_json}
 
@@ -159,7 +206,19 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
       "source": "payloads|nuclei|writeups|security_resources",
       "reason": "为什么需要检索这个"
     }}
-  ]
+  ],
+  "structured_guidance": {{
+    "action": "具体执行动作描述",
+    "guidance_type": "continue|switch_scene|enforce_attack|fallback",
+    "enforce_change": false,
+    "target_url": "建议切换的目标URL（仅switch_scene时有效）",
+    "reason": "给出此指导的原因",
+    "params": {{
+      "method": "GET|POST",
+      "url": "目标URL",
+      "data": {{}}
+    }}
+  }}
 }}
 ```
 

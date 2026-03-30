@@ -190,10 +190,11 @@ class FRPManager(CommandLineTool):
 
     def _generate_config(self, vps_ip: str, vps_port: int,
                          remote_port: int) -> str:
-        """生成frpc.toml配置文件"""
-        config = f"""# frpc configuration
+        """生成frpc.toml配置文件 (统一格式)"""
+        config = f"""# frpc configuration (frp 0.52.0+ TOML format)
 serverAddr = "{vps_ip}"
 serverPort = {vps_port}
+auth.token = "ctf_agent_token"
 
 [[proxies]]
 name = "socks5"
@@ -592,7 +593,7 @@ tasklist | findstr frpc
 
     def auto_deploy_proxy(self, params: Dict, session_executor=None) -> Dict:
         """
-        自动部署代理（全自动化）
+        自动部署代理（全自动化，带重试机制）
 
         Args:
             params: 代理参数，包含：
@@ -602,6 +603,7 @@ tasklist | findstr frpc
                 - system_type: linux/windows
                 - target_host: 目标主机
                 - upload_path: 上传路径（可选）
+                - max_retries: 最大重试次数（默认3）
             session_executor: 会话执行器（用于执行命令）
 
         Returns:
@@ -613,6 +615,7 @@ tasklist | findstr frpc
         system_type = params.get("system_type", "linux")
         target_host = params.get("target_host", "")
         upload_path = params.get("upload_path", "/tmp" if system_type == "linux" else "C:\\temp")
+        max_retries = params.get("max_retries", 3)
 
         if vps_ip == "YOUR_VPS_IP":
             return {
@@ -628,11 +631,12 @@ tasklist | findstr frpc
 
         # 步骤2: 如果有会话执行器，自动执行上传和启动
         if session_executor:
-            return self._auto_execute_deployment(
+            return self._auto_execute_deployment_with_retry(
                 setup_result,
                 session_executor,
                 system_type,
-                upload_path
+                upload_path,
+                max_retries
             )
 
         # 没有执行器，返回手动执行指令
@@ -749,6 +753,123 @@ tasklist | findstr frpc
         results["message"] = "代理部署完成" if results["success"] else "代理部署失败"
 
         return results
+
+    def _auto_execute_deployment_with_retry(
+        self, setup_result: Dict, executor,
+        system_type: str, upload_path: str,
+        max_retries: int = 3
+    ) -> Dict:
+        """
+        自动执行部署（带重试机制和完整验证）
+
+        Args:
+            setup_result: 初始配置结果
+            executor: 会话执行器
+            system_type: 系统类型
+            upload_path: 上传路径
+            max_retries: 最大重试次数
+
+        Returns:
+            部署结果
+        """
+        import socket
+
+        retry_count = 0
+        last_error = ""
+
+        while retry_count < max_retries:
+            if retry_count > 0:
+                print(f"重试部署 #{retry_count}...")
+                time.sleep(3)
+
+            results = self._auto_execute_deployment(
+                setup_result, executor, system_type, upload_path
+            )
+
+            if results.get("success"):
+                # 完整验证
+                verify_result = self._verify_tunnel_complete(
+                    executor, system_type, upload_path,
+                    setup_result.get("proxy_info", {})
+                )
+
+                if verify_result.get("success"):
+                    results["verification"] = verify_result
+                    results["retries_used"] = retry_count
+                    results["message"] = f"代理部署成功(重试{retry_count}次)"
+                    return results
+                else:
+                    last_error = verify_result.get("error", "验证失败")
+                    # 清理失败的进程
+                    self._cleanup_failed_tunnel(executor, system_type)
+
+            retry_count += 1
+
+        return {
+            "success": False,
+            "error": f"部署失败(重试{retry_count}次): {last_error}",
+            "retries_used": retry_count,
+            "message": "代理部署失败，已达到最大重试次数"
+        }
+
+    def _verify_tunnel_complete(
+        self, executor, system_type: str,
+        upload_path: str, proxy_info: Dict
+    ) -> Dict:
+        """
+        完整隧道验证
+
+        验证项:
+        1. frpc进程运行
+        2. 本地1080端口监听
+        3. VPS frps端口可达
+
+        Returns:
+            验证结果
+        """
+        vps_ip = proxy_info.get("vps_ip", "")
+        vps_port = proxy_info.get("vps_port", 7000)
+
+        # 验证1: 检查frpc进程
+        if system_type == "linux":
+            check_cmd = "ps aux | grep frpc | grep -v grep"
+        else:
+            check_cmd = "tasklist | findstr frpc"
+
+        proc_result = executor.execute(check_cmd)
+        if "frpc" not in str(proc_result):
+            return {"success": False, "error": "frpc进程未运行"}
+
+        # 验证2: 检查本地1080端口
+        if system_type == "linux":
+            port_cmd = f"netstat -tlnp 2>/dev/null | grep :1080 || ss -tlnp | grep :1080"
+        else:
+            port_cmd = "netstat -an | findstr :1080"
+
+        port_result = executor.execute(port_cmd)
+        if ":1080" not in str(port_result):
+            return {"success": False, "error": "本地1080端口未监听"}
+
+        # 验证3: 检查VPS frps端口可达性
+        try:
+            test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            test_sock.settimeout(5)
+            result = test_sock.connect_ex((vps_ip, vps_port))
+            test_sock.close()
+
+            if result != 0:
+                return {"success": False, "error": f"frps端口不可达: {vps_ip}:{vps_port}"}
+        except Exception as e:
+            return {"success": False, "error": f"检查frps失败: {e}"}
+
+        return {"success": True, "message": "隧道验证通过"}
+
+    def _cleanup_failed_tunnel(self, executor, system_type: str):
+        """清理失败的隧道进程"""
+        if system_type == "linux":
+            executor.execute("pkill -9 frpc 2>/dev/null || true")
+        else:
+            executor.execute("taskkill /F /IM frpc.exe 2>nul || echo ok")
 
     def auto_deploy_multi_hop(self, hop_chain: List[Dict], session_executors: Dict) -> Dict:
         """
@@ -871,6 +992,40 @@ def check_proxy_health(vps_ip: str, socks_port: int) -> bool:
         sock.close()
         return result == 0
     except:
+        return False
+
+
+def auto_configure_proxychains(socks5_port: int, config_path: str = "/etc/proxychains4.conf") -> bool:
+    """
+    自动配置proxychains
+
+    Args:
+        socks5_port: SOCKS5代理端口（本机监听）
+        config_path: proxychains配置文件路径
+
+    Returns:
+        是否成功
+    """
+    import os
+
+    config_content = f"""# proxychains.conf generated by CTF-Agent
+strict_chain
+proxy_dns
+tcp_read_time_out 15000
+tcp_connect_time_out 8000
+
+[ProxyList]
+socks5 127.0.0.1 {socks5_port}
+"""
+
+    try:
+        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        with open(config_path, 'w') as f:
+            f.write(config_content)
+        print(f"proxychains已配置: socks5 127.0.0.1 {socks5_port}")
+        return True
+    except Exception as e:
+        print(f"配置proxychains失败: {e}")
         return False
 
 

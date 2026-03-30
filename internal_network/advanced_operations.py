@@ -401,29 +401,256 @@ class RemoteDesktopHandler:
     - SSH X11 Forwarding (Linux)
     """
 
+    # RDP工具优先级列表
+    RDP_TOOLS = [
+        {"name": "xfreerdp", "cmd": "xfreerdp", "check_args": "/version"},
+        {"name": "rdesktop", "cmd": "rdesktop", "check_args": "-V"},
+    ]
+
+    @classmethod
+    def _check_rdp_tool(cls) -> Optional[str]:
+        """检查可用的RDP工具"""
+        for tool in cls.RDP_TOOLS:
+            try:
+                import subprocess
+                result = subprocess.run(
+                    [tool["cmd"], tool["check_args"]],
+                    capture_output=True,
+                    timeout=5
+                )
+                if result.returncode == 0 or result.stdout:
+                    return tool["cmd"]
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                continue
+        return None
+
     @classmethod
     def connect_rdp(cls, target: str, credentials: Dict) -> OperationResult:
-        """连接RDP"""
+        """
+        连接RDP - 完整实现
+
+        功能:
+        1. 检查RDP工具可用性
+        2. 验证目标3389端口可达
+        3. 构建连接命令
+        4. 提供凭据验证能力
+        """
         username = credentials.get("username")
         password = credentials.get("password")
         domain = credentials.get("domain", "")
 
-        # 使用xfreerdp或rdesktop
-        cmd = f"xfreerdp /u:{username} /p:{password} /v:{target}"
-        if domain:
-            cmd += f" /d:{domain}"
+        # Step 1: 检查工具可用性
+        rdp_tool = cls._check_rdp_tool()
+        if not rdp_tool:
+            return OperationResult(
+                status=OperationStatus.FAILED,
+                message="RDP工具不可用，请安装xfreerdp或rdesktop",
+                data={"available_tools": ["xfreerdp", "rdesktop"]},
+                next_steps=["apt install freerdp2-x11", "apt install rdesktop"]
+            )
 
-        # 实际连接需要交互式环境，这里只是准备连接
+        # Step 2: 验证端口可达性
+        port_result = cls._check_rdp_port(target)
+        if not port_result.get("reachable"):
+            return OperationResult(
+                status=OperationStatus.FAILED,
+                message=f"RDP端口不可达: {port_result.get('error')}",
+                data=port_result,
+                next_steps=["检查防火墙规则", "确认目标IP正确"]
+            )
+
+        # Step 3: 构建连接命令
+        if rdp_tool == "xfreerdp":
+            cmd = cls._build_xfreerdp_cmd(target, username, password, domain)
+        else:
+            cmd = cls._build_rdesktop_cmd(target, username, password, domain)
+
         return OperationResult(
             status=OperationStatus.SUCCESS,
-            message="RDP connection parameters prepared",
+            message="RDP连接参数已准备，可执行连接",
             data={
                 "command": cmd,
                 "target": target,
-                "username": username
+                "username": username,
+                "tool": rdp_tool,
+                "port_check": port_result
             },
-            next_steps=["Execute connection in interactive session"]
+            next_steps=["在交互式会话中执行连接命令", "使用verify_rdp_credentials验证凭据"]
         )
+
+    @classmethod
+    def verify_rdp_credentials(cls, target: str, credentials: Dict) -> OperationResult:
+        """
+        验证RDP凭据有效性
+
+        使用xfreerdp的/nosc盾模式验证，不建立完整连接
+        """
+        username = credentials.get("username")
+        password = credentials.get("password")
+        domain = credentials.get("domain", "")
+
+        rdp_tool = cls._check_rdp_tool()
+        if not rdp_tool:
+            return OperationResult(
+                status=OperationStatus.FAILED,
+                message="需要xfreerdp工具验证凭据",
+                data={},
+                next_steps=["apt install freerdp2-x11"]
+            )
+
+        # xfreerdp验证模式 - 只验证凭据，不获取桌面
+        if rdp_tool == "xfreerdp":
+            # 使用/nosc盾模式，只验证认证
+            verify_cmd = [
+                "xfreerdp",
+                f"/u:{username}",
+                f"/p:{password}",
+                f"/v:{target}",
+                "/nosc",
+                "/sec:nla",  # 使用NLA认证
+                "/cert-ignore",  # 忽略证书警告
+                "+auth-only",  # 仅认证模式（如果可用）
+                "/timeout:10000"
+            ]
+            if domain:
+                verify_cmd.insert(3, f"/d:{domain}")
+
+            try:
+                import subprocess
+                result = subprocess.run(
+                    verify_cmd,
+                    capture_output=True,
+                    timeout=30,
+                    text=True
+                )
+
+                # 分析结果
+                output = result.stdout + result.stderr
+
+                # 成功认证的标志
+                if result.returncode == 0 or "Authentication successful" in output:
+                    return OperationResult(
+                        status=OperationStatus.SUCCESS,
+                        message=f"RDP凭据验证成功: {username}@{target}",
+                        data={"valid": True, "username": username},
+                        next_steps=["建立完整RDP连接"]
+                    )
+
+                # 失败标志
+                failed_indicators = [
+                    "Authentication failed",
+                    "Access denied",
+                    "Logon failure",
+                    "wrong password",
+                    "invalid credentials"
+                ]
+                if any(ind in output for ind in failed_indicators):
+                    return OperationResult(
+                        status=OperationStatus.FAILED,
+                        message=f"RDP凭据无效: {username}@{target}",
+                        data={"valid": False, "error": "凭据验证失败"},
+                        next_steps=["尝试其他凭据", "检查账户状态"]
+                    )
+
+                # 未知结果
+                return OperationResult(
+                    status=OperationStatus.PARTIAL,
+                    message="RDP凭据验证结果未知",
+                    data={"output": output[:500], "returncode": result.returncode},
+                    next_steps=["手动验证", "检查NLA设置"]
+                )
+
+            except subprocess.TimeoutExpired:
+                return OperationResult(
+                    status=OperationStatus.TIMEOUT,
+                    message="RDP验证超时",
+                    data={},
+                    next_steps=["检查目标可达性", "增加超时时间"]
+                )
+            except Exception as e:
+                return OperationResult(
+                    status=OperationStatus.FAILED,
+                    message=f"RDP验证异常: {str(e)}",
+                    data={},
+                    next_steps=["检查工具配置"]
+                )
+
+        # rdesktop备用方案 - 端口验证
+        return cls._verify_rdp_port_based(target, credentials)
+
+    @classmethod
+    def _check_rdp_port(cls, target: str) -> Dict:
+        """检查RDP端口(3389)可达性"""
+        import socket
+        result = {"reachable": False, "error": None}
+
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            code = sock.connect_ex((target, 3389))
+            sock.close()
+
+            if code == 0:
+                result["reachable"] = True
+            else:
+                result["error"] = f"端口3389连接失败 (code={code})"
+        except socket.timeout:
+            result["error"] = "连接超时"
+        except Exception as e:
+            result["error"] = str(e)
+
+        return result
+
+    @classmethod
+    def _verify_rdp_port_based(cls, target: str, credentials: Dict) -> OperationResult:
+        """备用验证方案：基于端口检查"""
+        port_result = cls._check_rdp_port(target)
+
+        if port_result.get("reachable"):
+            return OperationResult(
+                status=OperationStatus.PARTIAL,
+                message="RDP端口可达，建议使用xfreerdp完整验证",
+                data={"port_reachable": True, "credentials": credentials},
+                next_steps=["安装xfreerdp进行完整验证"]
+            )
+        else:
+            return OperationResult(
+                status=OperationStatus.FAILED,
+                message=f"RDP端口不可达: {port_result.get('error')}",
+                data=port_result,
+                next_steps=[]
+            )
+
+    @classmethod
+    def _build_xfreerdp_cmd(cls, target: str, username: str,
+                            password: str, domain: str = "") -> str:
+        """构建xfreerdp命令"""
+        cmd_parts = [
+            "xfreerdp",
+            f"/u:{username}",
+            f"/p:{password}",
+            f"/v:{target}",
+            "/dynamic-resolution",  # 动态分辨率
+            "+clipboard",  # 启用剪贴板
+            "/cert-ignore",  # 忽略证书
+            "/drive:share,/tmp"  # 共享驱动器（可选）
+        ]
+        if domain:
+            cmd_parts.insert(3, f"/d:{domain}")
+        return " ".join(cmd_parts)
+
+    @classmethod
+    def _build_rdesktop_cmd(cls, target: str, username: str,
+                            password: str, domain: str = "") -> str:
+        """构建rdesktop命令"""
+        cmd_parts = ["rdesktop", target]
+        if username:
+            cmd_parts.append(f"-u '{username}'")
+        if password:
+            cmd_parts.append(f"-p '{password}'")
+        if domain:
+            cmd_parts.append(f"-d '{domain}'")
+        return " ".join(cmd_parts)
 
     @classmethod
     def connect_winrm(cls, target: str, credentials: Dict) -> OperationResult:
@@ -1137,18 +1364,901 @@ class PersistenceHandler:
             }
 
     @classmethod
-    def verify_persistence(cls, session: Dict, method: str = None) -> bool:
-        """验证持久化是否有效 - AI驱动"""
+    def verify_persistence(cls, session: Dict, method: str = None,
+                           persistence_data: Dict = None) -> bool:
+        """
+        验证持久化是否有效 - AI驱动，支持多种方法
+        """
+        if method:
+            verify_cmd = cls._get_verify_command(method)
+            if verify_cmd:
+                result = PrivilegeEscalation._execute_command(session, verify_cmd)
+                return result.get("success", False)
+
+        # 降级: 检查环境变化
         env_info = cls._collect_env_info(session)
+        return len(env_info.get("whoami", "")) > 0
 
-        # 简单验证：检查环境变化
-        if method == "registry_run":
-            result = PrivilegeEscalation._execute_command(
-                session, 'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"'
+    @staticmethod
+    def _get_verify_command(method: str) -> str:
+        """获取验证命令 - 支持8种常见方法"""
+        verify_map = {
+            "registry_run": 'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"',
+            "scheduled_task": 'schtasks /query /tn "UpdateService"',
+            "service": 'sc query UpdateService',
+            "wmi_event": 'wmic eventsubscription list',
+            "bashrc": "grep -c 'Update' ~/.bashrc",
+            "crontab": "crontab -l | grep -c 'update'",
+            "systemd_service": "systemctl is-active update-service",
+            "ssh_key": "test -f ~/.ssh/authorized_keys && echo 1"
+        }
+        return verify_map.get(method, "")
+
+    @classmethod
+    def rollback_persistence(cls, session: Dict, persistence_data: Dict) -> OperationResult:
+        """
+        回滚/清理持久化
+        """
+        cleanup_commands = persistence_data.get("cleanup_commands", [])
+
+        if not cleanup_commands:
+            return OperationResult(
+                status=OperationStatus.FAILED,
+                message="无清理命令可用",
+                data={},
+                next_steps=[]
             )
-            return "UpdateService" in result.get("output", "")
-        elif method == "bashrc":
-            result = PrivilegeEscalation._execute_command(session, "cat ~/.bashrc | grep -c Update")
-            return "1" in result.get("output", "0")
 
-        return False
+        results = []
+        for cmd in cleanup_commands:
+            result = PrivilegeEscalation._execute_command(session, cmd)
+            results.append({"command": cmd, "success": result.get("success", False)})
+
+        successful = [r for r in results if r["success"]]
+        return OperationResult(
+            status=OperationStatus.SUCCESS if successful else OperationStatus.PARTIAL,
+            message=f"清理完成: {len(successful)}/{len(results)} 成功",
+            data={"results": results},
+            next_steps=[]
+        )
+
+
+def detect_persistence_traces(session: Dict) -> Dict:
+    """
+    检测持久化痕迹
+
+    检查项目：
+    1. Windows: 计划任务、注册表启动项、服务、WMI订阅
+    2. Linux: crontab、systemd服务、ssh密钥、.bashrc
+
+    Args:
+        session: 会话信息字典，包含os_type等
+
+    Returns:
+        Dict: 包含traces列表、count数量、scan_time扫描时间
+    """
+    os_type = session.get("os_type", "windows").lower()
+    results = []
+
+    if os_type == "windows":
+        # 检查计划任务
+        results.extend(_check_scheduled_tasks(session))
+        # 检查注册表启动项
+        results.extend(_check_registry_run(session))
+        # 检查服务
+        results.extend(_check_services(session))
+    else:
+        # 检查crontab
+        results.extend(_check_crontab(session))
+        # 检查systemd服务
+        results.extend(_check_systemd_services(session))
+        # 检查SSH密钥
+        results.extend(_check_ssh_keys(session))
+
+    return {
+        "traces": results,
+        "count": len(results),
+        "scan_time": time.time()
+    }
+
+
+def _check_scheduled_tasks(session: Dict) -> List[Dict]:
+    """
+    检查Windows计划任务
+
+    查找可疑的计划任务，包括：
+    - 以SYSTEM权限运行的任务
+    - 启动时执行的任务
+    - 异常名称的任务
+    """
+    results = []
+    cmd = "schtasks /query /fo LIST /v"
+
+    result = PrivilegeEscalation._execute_command(session, cmd)
+    output = result.get("output", "")
+
+    if not output or result.get("success") is False:
+        return results
+
+    # 解析计划任务输出
+    tasks = []
+    current_task = {}
+
+    for line in output.split("\n"):
+        line = line.strip()
+        if line.startswith("TaskName:"):
+            if current_task:
+                tasks.append(current_task)
+            current_task = {"name": line.split(":", 1)[1].strip()}
+        elif line.startswith("Task To Run:"):
+            current_task["command"] = line.split(":", 1)[1].strip()
+        elif line.startswith("Run As User:"):
+            current_task["run_as"] = line.split(":", 1)[1].strip()
+        elif line.startswith("Next Run Time:"):
+            current_task["next_run"] = line.split(":", 1)[1].strip()
+
+    if current_task:
+        tasks.append(current_task)
+
+    # 识别可疑任务
+    suspicious_patterns = [
+        r"cmd\.exe", r"powershell\.exe", r"wscript\.exe", r"cscript\.exe",
+        r"mshta\.exe", r"regsvr32\.exe", r"rundll32\.exe",
+        r"http://", r"https://", r"\\\\",  # 网络路径
+        r"base64", r"-enc", r"-encodedcommand",
+        r"S-1-5-18", r"SYSTEM", r"NT AUTHORITY"
+    ]
+
+    for task in tasks:
+        command = task.get("command", "").lower()
+        run_as = task.get("run_as", "").upper()
+
+        is_suspicious = False
+        matched_patterns = []
+
+        for pattern in suspicious_patterns:
+            if re.search(pattern, command, re.IGNORECASE) or re.search(pattern, run_as, re.IGNORECASE):
+                is_suspicious = True
+                matched_patterns.append(pattern)
+
+        if is_suspicious:
+            results.append({
+                "type": "scheduled_task",
+                "name": task.get("name", "Unknown"),
+                "command": task.get("command", ""),
+                "run_as": task.get("run_as", ""),
+                "next_run": task.get("next_run", ""),
+                "suspicious": True,
+                "matched_patterns": matched_patterns,
+                "severity": "high" if "SYSTEM" in run_as or "S-1-5-18" in run_as else "medium"
+            })
+
+    return results
+
+
+def _check_registry_run(session: Dict) -> List[Dict]:
+    """
+    检查注册表启动项
+
+    检查常见的自启动注册表位置：
+    - HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run
+    - HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run
+    - HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce
+    - HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce
+    - Winlogon Shell/Userinit
+    """
+    results = []
+
+    # 常见自启动注册表位置
+    run_keys = [
+        "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce",
+        "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce",
+        "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\SharedTaskScheduler",
+        "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\ShellExecuteHooks",
+    ]
+
+    # Winlogon相关
+    winlogon_keys = [
+        "HKLM\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\Shell",
+        "HKLM\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\Userinit",
+        "HKLM\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\Taskman",
+    ]
+
+    all_keys = run_keys + winlogon_keys
+
+    # 可疑命令模式
+    suspicious_patterns = [
+        r"cmd\.exe", r"powershell\.exe", r"wscript\.exe", r"cscript\.exe",
+        r"mshta\.exe", r"regsvr32\.exe", r"rundll32\.exe",
+        r"http://", r"https://",
+        r"base64", r"-enc", r"-encodedcommand",
+        r"\\\\", r"C:\\\\Users\\\\Public",
+        r"AppData\\\\Local\\\\Temp", r"AppData\\\\Roaming"
+    ]
+
+    for key in all_keys:
+        cmd = f'reg query "{key}" 2>nul'
+        result = PrivilegeEscalation._execute_command(session, cmd)
+        output = result.get("output", "")
+
+        if not output:
+            continue
+
+        # 解析注册表值
+        for line in output.split("\n"):
+            line = line.strip()
+            if not line or line.startswith("!") or "HKEY_" in line.upper():
+                continue
+
+            # 解析格式: 值名 类型 数据
+            parts = line.split(None, 2)
+            if len(parts) >= 3:
+                value_name = parts[0]
+                value_data = parts[2] if len(parts) > 2 else ""
+
+                # 检查是否可疑
+                is_suspicious = False
+                matched_patterns = []
+
+                for pattern in suspicious_patterns:
+                    if re.search(pattern, value_data, re.IGNORECASE):
+                        is_suspicious = True
+                        matched_patterns.append(pattern)
+
+                if is_suspicious:
+                    results.append({
+                        "type": "registry_run",
+                        "key": key,
+                        "value_name": value_name,
+                        "value_data": value_data,
+                        "suspicious": True,
+                        "matched_patterns": matched_patterns,
+                        "severity": "high" if "HKLM" in key.upper() else "medium"
+                    })
+
+    return results
+
+
+def _check_services(session: Dict) -> List[Dict]:
+    """
+    检查Windows服务
+
+    查找可疑服务：
+    - 隐藏或伪装的服务
+    - 异常路径的服务
+    - 以SYSTEM权限运行的异常服务
+    """
+    results = []
+    cmd = "wmic service get name,pathname,startmode,startname 2>nul"
+
+    result = PrivilegeEscalation._execute_command(session, cmd)
+    output = result.get("output", "")
+
+    if not output:
+        # 备用命令
+        cmd = "sc query type= service state= all"
+        result = PrivilegeEscalation._execute_command(session, cmd)
+        output = result.get("output", "")
+
+    if not output:
+        return results
+
+    # 可疑路径模式
+    suspicious_path_patterns = [
+        r"C:\\\\Users\\\\Public",
+        r"C:\\\\Temp",
+        r"C:\\\\Windows\\\\Temp",
+        r"AppData\\\\Local\\\\Temp",
+        r"AppData\\\\Roaming",
+        r"\\\\\\\\",  # UNC路径
+        r"http://", r"https://",
+        r"cmd\.exe", r"powershell\.exe",
+        r"mshta\.exe", r"regsvr32\.exe", r"rundll32\.exe"
+    ]
+
+    # 解析服务信息
+    services = []
+    current_service = {}
+
+    for line in output.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+
+        # WMIC格式解析
+        if "  " in line and len(line.split()) >= 3:
+            parts = line.split()
+            if len(parts) >= 3:
+                service = {
+                    "name": parts[0],
+                    "pathname": " ".join(parts[1:-1]) if len(parts) > 2 else "",
+                    "startname": parts[-1] if len(parts) >= 3 else ""
+                }
+                services.append(service)
+
+    # 检查可疑服务
+    for service in services:
+        pathname = service.get("pathname", "").lower()
+        startname = service.get("startname", "").upper()
+
+        is_suspicious = False
+        matched_patterns = []
+
+        for pattern in suspicious_path_patterns:
+            if re.search(pattern, pathname, re.IGNORECASE):
+                is_suspicious = True
+                matched_patterns.append(pattern)
+
+        # 检查以SYSTEM运行的可疑服务
+        if "LOCALSYSTEM" in startname or "NT AUTHORITY" in startname:
+            if any(p in pathname for p in ["temp", "public", "appdata", "users"]):
+                is_suspicious = True
+                matched_patterns.append("SYSTEM_with_suspicious_path")
+
+        if is_suspicious:
+            results.append({
+                "type": "service",
+                "name": service.get("name", ""),
+                "pathname": service.get("pathname", ""),
+                "startname": service.get("startname", ""),
+                "suspicious": True,
+                "matched_patterns": matched_patterns,
+                "severity": "high" if "LOCALSYSTEM" in startname else "medium"
+            })
+
+    return results
+
+
+def _check_crontab(session: Dict) -> List[Dict]:
+    """
+    检查Linux crontab
+
+    检查：
+    - /etc/crontab
+    - /etc/cron.d/
+    - /etc/cron.daily/, /etc/cron.hourly/, etc.
+    - 用户crontab
+    """
+    results = []
+
+    # 检查系统crontab
+    system_cron_paths = [
+        "/etc/crontab",
+        "/etc/cron.d/",
+        "/etc/cron.daily/",
+        "/etc/cron.hourly/",
+        "/etc/cron.weekly/",
+        "/etc/cron.monthly/"
+    ]
+
+    # 可疑命令模式
+    suspicious_patterns = [
+        r"curl.*\|.*sh", r"wget.*\|.*sh",
+        r"bash\s+-i", r"nc\s+-", r"ncat\s+-",
+        r"/dev/tcp/", r"/dev/udp/",
+        r"python.*-c.*import",
+        r"perl.*-e",
+        r"base64.*-d",
+        r"http://", r"https://",
+        r"\*/\*\s+\*\s+\*\s+\*\s+\*",  # 每分钟执行
+    ]
+
+    # 检查系统crontab
+    cmd = "cat /etc/crontab 2>/dev/null; for f in /etc/cron.d/*; do echo \"=== $f ===\"; cat \"$f\" 2>/dev/null; done"
+    result = PrivilegeEscalation._execute_command(session, cmd)
+    output = result.get("output", "")
+
+    if output:
+        for line in output.split("\n"):
+            line = line.strip()
+            if not line or line.startswith("#") or line.startswith("==="):
+                continue
+
+            is_suspicious = False
+            matched_patterns = []
+
+            for pattern in suspicious_patterns:
+                if re.search(pattern, line, re.IGNORECASE):
+                    is_suspicious = True
+                    matched_patterns.append(pattern)
+
+            if is_suspicious:
+                results.append({
+                    "type": "crontab",
+                    "source": "system_crontab",
+                    "line": line,
+                    "suspicious": True,
+                    "matched_patterns": matched_patterns,
+                    "severity": "high"
+                })
+
+    # 检查用户crontab
+    cmd = "crontab -l 2>/dev/null"
+    result = PrivilegeEscalation._execute_command(session, cmd)
+    output = result.get("output", "")
+
+    if output and "no crontab" not in output.lower():
+        for line in output.split("\n"):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            is_suspicious = False
+            matched_patterns = []
+
+            for pattern in suspicious_patterns:
+                if re.search(pattern, line, re.IGNORECASE):
+                    is_suspicious = True
+                    matched_patterns.append(pattern)
+
+            if is_suspicious:
+                results.append({
+                    "type": "crontab",
+                    "source": "user_crontab",
+                    "line": line,
+                    "suspicious": True,
+                    "matched_patterns": matched_patterns,
+                    "severity": "medium"
+                })
+
+    # 检查所有用户的crontab
+    cmd = "ls /var/spool/cron/crontabs/ 2>/dev/null"
+    result = PrivilegeEscalation._execute_command(session, cmd)
+    output = result.get("output", "")
+
+    if output:
+        for user in output.split():
+            user = user.strip()
+            if user:
+                cmd = f"cat /var/spool/cron/crontabs/{user} 2>/dev/null"
+                result = PrivilegeEscalation._execute_command(session, cmd)
+                user_cron = result.get("output", "")
+
+                if user_cron:
+                    for line in user_cron.split("\n"):
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+
+                        is_suspicious = False
+                        matched_patterns = []
+
+                        for pattern in suspicious_patterns:
+                            if re.search(pattern, line, re.IGNORECASE):
+                                is_suspicious = True
+                                matched_patterns.append(pattern)
+
+                        if is_suspicious:
+                            results.append({
+                                "type": "crontab",
+                                "source": f"user_{user}",
+                                "line": line,
+                                "suspicious": True,
+                                "matched_patterns": matched_patterns,
+                                "severity": "medium"
+                            })
+
+    return results
+
+
+def _check_systemd_services(session: Dict) -> List[Dict]:
+    """
+    检查systemd服务
+
+    检查：
+    - 自定义systemd服务
+    - 异常服务文件路径
+    - 可疑服务配置
+    """
+    results = []
+
+    # 可疑路径模式
+    suspicious_path_patterns = [
+        r"/tmp/", r"/var/tmp/",
+        r"/home/",
+        r"http://", r"https://",
+        r"curl", r"wget",
+        r"bash.*-c", r"python.*-c",
+        r"nc\s", r"ncat\s",
+        r"/dev/tcp/"
+    ]
+
+    # 检查运行中的可疑服务
+    cmd = "systemctl list-units --type=service --state=running --no-pager 2>/dev/null"
+    result = PrivilegeEscalation._execute_command(session, cmd)
+    output = result.get("output", "")
+
+    running_services = []
+    if output:
+        for line in output.split("\n"):
+            if ".service" in line:
+                parts = line.split()
+                for part in parts:
+                    if part.endswith(".service"):
+                        running_services.append(part)
+                        break
+
+    # 检查服务文件
+    service_paths = [
+        "/etc/systemd/system/",
+        "/lib/systemd/system/",
+        "/usr/lib/systemd/system/"
+    ]
+
+    for path in service_paths:
+        cmd = f"ls -la {path}*.service 2>/dev/null"
+        result = PrivilegeEscalation._execute_command(session, cmd)
+        output = result.get("output", "")
+
+        if not output:
+            continue
+
+        for line in output.split("\n"):
+            if ".service" in line:
+                parts = line.split()
+                if len(parts) >= 9:
+                    service_file = parts[-1]
+
+                    # 读取服务内容
+                    cmd = f"cat {service_file} 2>/dev/null"
+                    result = PrivilegeEscalation._execute_command(session, cmd)
+                    service_content = result.get("output", "")
+
+                    if not service_content:
+                        continue
+
+                    is_suspicious = False
+                    matched_patterns = []
+                    exec_start = ""
+
+                    for content_line in service_content.split("\n"):
+                        if "ExecStart=" in content_line:
+                            exec_start = content_line.split("ExecStart=")[1].strip() if "ExecStart=" in content_line else ""
+
+                            for pattern in suspicious_path_patterns:
+                                if re.search(pattern, exec_start, re.IGNORECASE):
+                                    is_suspicious = True
+                                    matched_patterns.append(pattern)
+
+                    if is_suspicious:
+                        results.append({
+                            "type": "systemd_service",
+                            "service_file": service_file,
+                            "exec_start": exec_start,
+                            "running": any(os.path.basename(service_file) in s for s in running_services),
+                            "suspicious": True,
+                            "matched_patterns": matched_patterns,
+                            "severity": "high"
+                        })
+
+    # 检查用户级systemd服务
+    cmd = "ls -la ~/.config/systemd/user/*.service 2>/dev/null"
+    result = PrivilegeEscalation._execute_command(session, cmd)
+    output = result.get("output", "")
+
+    if output:
+        for line in output.split("\n"):
+            if ".service" in line:
+                parts = line.split()
+                if len(parts) >= 9:
+                    service_file = parts[-1]
+
+                    cmd = f"cat {service_file} 2>/dev/null"
+                    result = PrivilegeEscalation._execute_command(session, cmd)
+                    service_content = result.get("output", "")
+
+                    if service_content:
+                        is_suspicious = False
+                        matched_patterns = []
+                        exec_start = ""
+
+                        for content_line in service_content.split("\n"):
+                            if "ExecStart=" in content_line:
+                                exec_start = content_line.split("ExecStart=")[1].strip() if "ExecStart=" in content_line else ""
+
+                                for pattern in suspicious_path_patterns:
+                                    if re.search(pattern, exec_start, re.IGNORECASE):
+                                        is_suspicious = True
+                                        matched_patterns.append(pattern)
+
+                        if is_suspicious:
+                            results.append({
+                                "type": "systemd_service",
+                                "service_file": service_file,
+                                "exec_start": exec_start,
+                                "running": False,
+                                "user_level": True,
+                                "suspicious": True,
+                                "matched_patterns": matched_patterns,
+                                "severity": "medium"
+                            })
+
+    return results
+
+
+def _check_ssh_keys(session: Dict) -> List[Dict]:
+    """
+    检查SSH密钥
+
+    检查：
+    - authorized_keys中的可疑公钥
+    - 新添加的密钥
+    - 异常权限
+    """
+    results = []
+
+    # 检查当前用户的authorized_keys
+    cmd = "cat ~/.ssh/authorized_keys 2>/dev/null"
+    result = PrivilegeEscalation._execute_command(session, cmd)
+    output = result.get("output", "")
+
+    if output:
+        for line in output.split("\n"):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            # 解析authorized_keys行
+            parts = line.split()
+            if len(parts) >= 2:
+                key_type = parts[0]
+                key_data = parts[1]
+                comment = " ".join(parts[2:]) if len(parts) > 2 else ""
+
+                # 检查可疑注释或来源
+                suspicious_comments = ["attack", "malware", "backdoor", "pentest"]
+
+                is_suspicious = False
+                for sus in suspicious_comments:
+                    if sus in comment.lower():
+                        is_suspicious = True
+                        break
+
+                results.append({
+                    "type": "ssh_key",
+                    "source": "authorized_keys",
+                    "key_type": key_type,
+                    "key_fingerprint": key_data[:32] + "..." if len(key_data) > 32 else key_data,
+                    "comment": comment,
+                    "suspicious": is_suspicious,
+                    "severity": "high" if is_suspicious else "info"
+                })
+
+    # 检查文件权限（应该为600）
+    cmd = "stat -c '%a %n' ~/.ssh/authorized_keys 2>/dev/null"
+    result = PrivilegeEscalation._execute_command(session, cmd)
+    output = result.get("output", "")
+
+    if output:
+        parts = output.strip().split()
+        if len(parts) >= 2:
+            perms = parts[0]
+            file_path = parts[1]
+
+            # 检查权限是否过于宽松
+            if perms and perms != "600" and perms != "400":
+                results.append({
+                    "type": "ssh_key_permission",
+                    "file": file_path,
+                    "permissions": perms,
+                    "suspicious": True,
+                    "severity": "medium",
+                    "note": "SSH authorized_keys权限过于宽松"
+                })
+
+    # 检查.ssh目录权限
+    cmd = "stat -c '%a %n' ~/.ssh 2>/dev/null"
+    result = PrivilegeEscalation._execute_command(session, cmd)
+    output = result.get("output", "")
+
+    if output:
+        parts = output.strip().split()
+        if len(parts) >= 2:
+            perms = parts[0]
+            file_path = parts[1]
+
+            if perms and perms != "700":
+                results.append({
+                    "type": "ssh_dir_permission",
+                    "file": file_path,
+                    "permissions": perms,
+                    "suspicious": True,
+                    "severity": "medium",
+                    "note": "SSH目录权限过于宽松"
+                })
+
+    # 检查所有用户的authorized_keys（需要root权限）
+    cmd = "cat /etc/passwd | grep -v nologin | cut -d: -f6 2>/dev/null"
+    result = PrivilegeEscalation._execute_command(session, cmd)
+    output = result.get("output", "")
+
+    if output:
+        for home_dir in output.split("\n"):
+            home_dir = home_dir.strip()
+            if home_dir and home_dir != "/":
+                cmd = f"cat {home_dir}/.ssh/authorized_keys 2>/dev/null"
+                result = PrivilegeEscalation._execute_command(session, cmd)
+                user_keys = result.get("output", "")
+
+                if user_keys:
+                    for line in user_keys.split("\n"):
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            key_type = parts[0]
+                            comment = " ".join(parts[2:]) if len(parts) > 2 else ""
+
+                            suspicious_comments = ["attack", "malware", "backdoor", "pentest"]
+                            is_suspicious = any(sus in comment.lower() for sus in suspicious_comments)
+
+                            if is_suspicious:
+                                results.append({
+                                    "type": "ssh_key",
+                                    "source": f"{home_dir}/.ssh/authorized_keys",
+                                    "key_type": key_type,
+                                    "comment": comment,
+                                    "suspicious": True,
+                                    "severity": "high"
+                                })
+
+    return results
+
+
+def verify_persistence(session: Dict, persistence_type: str) -> Dict:
+    """
+    验证持久化是否生效
+
+    Args:
+        session: 会话信息字典
+        persistence_type: 持久化类型
+            - "scheduled_task": Windows计划任务
+            - "registry": Windows注册表启动项
+            - "service": Windows服务
+            - "wmi": WMI事件订阅
+            - "crontab": Linux crontab
+            - "systemd": Linux systemd服务
+            - "ssh_key": SSH密钥
+            - "bashrc": .bashrc后门
+
+    Returns:
+        Dict: 包含status(状态)、exists(是否存在)、details(详情)
+    """
+    os_type = session.get("os_type", "windows").lower()
+    result = {
+        "persistence_type": persistence_type,
+        "exists": False,
+        "status": "unknown",
+        "details": {}
+    }
+
+    if persistence_type == "scheduled_task":
+        # 验证计划任务
+        cmd = 'schtasks /query /fo LIST /v 2>nul'
+        exec_result = PrivilegeEscalation._execute_command(session, cmd)
+        output = exec_result.get("output", "")
+
+        if output and "TaskName:" in output:
+            result["exists"] = True
+            result["status"] = "active"
+            result["details"]["task_count"] = output.count("TaskName:")
+
+    elif persistence_type == "registry":
+        # 验证注册表启动项
+        keys_to_check = [
+            "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+            "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+        ]
+
+        found_entries = []
+        for key in keys_to_check:
+            cmd = f'reg query "{key}" 2>nul'
+            exec_result = PrivilegeEscalation._execute_command(session, cmd)
+            output = exec_result.get("output", "")
+
+            if output and len(output.strip()) > 0:
+                found_entries.append({"key": key, "entries": output.strip()})
+
+        if found_entries:
+            result["exists"] = True
+            result["status"] = "active"
+            result["details"]["entries"] = found_entries
+
+    elif persistence_type == "service":
+        # 验证Windows服务
+        cmd = "sc query type= service state= all 2>nul"
+        exec_result = PrivilegeEscalation._execute_command(session, cmd)
+        output = exec_result.get("output", "")
+
+        if output:
+            service_count = output.lower().count("service_name")
+            result["exists"] = service_count > 0
+            result["status"] = "active"
+            result["details"]["service_count"] = service_count
+
+    elif persistence_type == "wmi":
+        # 验证WMI事件订阅
+        cmd = "wmic eventsubscription list 2>nul"
+        exec_result = PrivilegeEscalation._execute_command(session, cmd)
+        output = exec_result.get("output", "")
+
+        if output and len(output.strip()) > 0:
+            result["exists"] = True
+            result["status"] = "active"
+            result["details"]["subscriptions"] = output.strip()
+
+    elif persistence_type == "crontab":
+        # 验证crontab
+        cmd = "crontab -l 2>/dev/null; cat /etc/crontab 2>/dev/null"
+        exec_result = PrivilegeEscalation._execute_command(session, cmd)
+        output = exec_result.get("output", "")
+
+        if output and "no crontab" not in output.lower():
+            result["exists"] = True
+            result["status"] = "active"
+            result["details"]["crontab_entries"] = output.strip()
+
+    elif persistence_type == "systemd":
+        # 验证systemd服务
+        cmd = "systemctl list-unit-files --type=service --state=enabled --no-pager 2>/dev/null"
+        exec_result = PrivilegeEscalation._execute_command(session, cmd)
+        output = exec_result.get("output", "")
+
+        if output:
+            enabled_services = []
+            for line in output.split("\n"):
+                if ".service" in line and "enabled" in line:
+                    enabled_services.append(line.strip())
+
+            if enabled_services:
+                result["exists"] = True
+                result["status"] = "active"
+                result["details"]["enabled_services"] = enabled_services
+
+    elif persistence_type == "ssh_key":
+        # 验证SSH密钥
+        cmd = "cat ~/.ssh/authorized_keys 2>/dev/null"
+        exec_result = PrivilegeEscalation._execute_command(session, cmd)
+        output = exec_result.get("output", "")
+
+        if output and len(output.strip()) > 0:
+            key_count = len([l for l in output.split("\n") if l.strip() and not l.startswith("#")])
+            result["exists"] = key_count > 0
+            result["status"] = "active"
+            result["details"]["key_count"] = key_count
+
+    elif persistence_type == "bashrc":
+        # 验证.bashrc后门
+        cmd = "cat ~/.bashrc 2>/dev/null"
+        exec_result = PrivilegeEscalation._execute_command(session, cmd)
+        output = exec_result.get("output", "")
+
+        if output:
+            suspicious_lines = []
+            suspicious_patterns = [
+                r"curl.*\|.*sh", r"wget.*\|.*sh",
+                r"bash\s+-i", r"nc\s+-",
+                r"/dev/tcp/", r"base64",
+                r"http://", r"https://"
+            ]
+
+            for line in output.split("\n"):
+                for pattern in suspicious_patterns:
+                    if re.search(pattern, line, re.IGNORECASE):
+                        suspicious_lines.append(line.strip())
+                        break
+
+            if suspicious_lines:
+                result["exists"] = True
+                result["status"] = "active"
+                result["details"]["suspicious_lines"] = suspicious_lines
+
+    else:
+        result["status"] = "unsupported_type"
+        result["details"]["error"] = f"Unknown persistence type: {persistence_type}"
+
+    return result

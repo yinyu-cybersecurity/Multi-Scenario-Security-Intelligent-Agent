@@ -12,6 +12,7 @@ from typing import Dict, List, Any
 from llm_client import llm_client
 from config import config
 from logger import get_logger
+from app.flag_extractor_v2 import has_flag
 from .tools import (
     CryptoIdentifier,
     EncodingDecoder,
@@ -190,7 +191,7 @@ def crypto_solver_node(state: Dict) -> Dict:
                                     "method": "ai_generated"
                                 })
                                 ai_success = True
-                                if _contains_flag(plaintext):
+                                if has_flag(plaintext):
                                     potential_flags.append(plaintext)
                                 break
                 except Exception as e:
@@ -212,7 +213,7 @@ def crypto_solver_node(state: Dict) -> Dict:
                         "plaintext": plaintext,
                         "confidence": confidence
                     })
-                    if _contains_flag(plaintext):
+                    if has_flag(plaintext):
                         potential_flags.append(plaintext)
                     break
 
@@ -229,7 +230,7 @@ def crypto_solver_node(state: Dict) -> Dict:
                     "plaintext": r["plaintext"],
                     "method": "bruteforce"
                 })
-                if _contains_flag(r["plaintext"]):
+                if has_flag(r["plaintext"]):
                     potential_flags.append(r["plaintext"])
 
     logger.info(f"Decrypted {len(decrypted_results)} items, found {len(potential_flags)} potential flags")
@@ -410,21 +411,3 @@ def _attempt_decrypt(ciphertext: str, enc_type: str) -> Dict:
             }
 
     return {"success": False, "error": f"Could not decrypt with {enc_type}"}
-
-
-def _contains_flag(text: str) -> bool:
-    """检查文本是否包含flag"""
-    import re
-    flag_patterns = [
-        r'flag\{.*?\}',
-        r'FLAG\{.*?\}',
-        r'ctf\{.*?\}',
-        r'CTF\{.*?\}',
-        r'key\{.*?\}',
-        r'KEY\{.*?\}'
-    ]
-
-    for pattern in flag_patterns:
-        if re.search(pattern, text, re.IGNORECASE):
-            return True
-    return False

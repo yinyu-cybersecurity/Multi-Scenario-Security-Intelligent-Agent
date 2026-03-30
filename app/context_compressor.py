@@ -22,8 +22,6 @@ from dataclasses import dataclass, field
 from logger import get_logger
 
 logger = get_logger("Compressor")
-from llm_client import llm_client
-from config import config
 
 
 # =============================================================================
@@ -154,17 +152,23 @@ class ContextCompressor:
     - 压缩效果统计
     """
 
-    # 压缩阈值
-    MAX_ATTACK_RESULTS = 20      # 最多保留20条攻击结果
-    MAX_TOOL_CALLS = 50          # 最多保留50条工具调用
-    MAX_FAILED_PAYLOADS = 30     # 最多保留30条失败payload
-    MAX_PAGE_HISTORY = 10        # 最多保留10个页面历史
-
-    # Token 估算参数
-    # 中文约 1.5 字符/token，英文约 4 字符/token，代码约 2-3 字符/token
-    # 取保守值 2.5 字符/token
-    CHARS_PER_TOKEN = 2.5
-    MAX_TOKENS = 30000           # 触发压缩的 Token 阈值
+    # 从 config 导入常量，确保一致性
+    try:
+        from config import config
+        MAX_ATTACK_RESULTS = config.MAX_ATTACK_RESULTS
+        MAX_TOOL_CALLS = config.MAX_TOOL_CALLS
+        MAX_FAILED_PAYLOADS = config.MAX_FAILED_PAYLOADS
+        MAX_PAGE_HISTORY = config.MAX_PAGE_HISTORY
+        CHARS_PER_TOKEN = config.CHARS_PER_TOKEN
+        MAX_TOKENS = config.MAX_CONTEXT_TOKENS
+    except ImportError:
+        # 降级默认值（与 config.py 保持一致）
+        MAX_ATTACK_RESULTS = 20
+        MAX_TOOL_CALLS = 50
+        MAX_FAILED_PAYLOADS = 30
+        MAX_PAGE_HISTORY = 20  # 与 config.py 一致
+        CHARS_PER_TOKEN = 2.5
+        MAX_TOKENS = 30000
 
     def __init__(self):
         self.chain_recorder = AttackChainRecorder()
@@ -429,112 +433,28 @@ class ContextCompressor:
 
         return result
 
-    # =========================================================================
-    # AI智能压缩
-    # =========================================================================
-
-    def ai_compress_failures(self, failures: List[Dict]) -> Dict:
-        """
-        AI总结失败攻击
-
-        当失败攻击太多时，用AI总结共同原因
-        """
-        if not failures:
-            return {"total": 0, "reasons": [], "suggestion": ""}
-
-        # 构建摘要
-        failure_summary = []
-        for f in failures[:20]:  # 最多分析20条
-            failure_summary.append({
-                "tool": f.get("tool", "unknown"),
-                "target": f.get("target", ""),
-                "error": f.get("error", f.get("output", ""))[:100]
-            })
-
-        prompt = f"""分析以下失败的攻击尝试，总结失败原因和下一步建议。
-
-## 失败记录
-{json.dumps(failure_summary, ensure_ascii=False, indent=2)}
-
-## 输出格式 (JSON)
-{{
-  "total": 失败总数,
-  "main_reasons": ["主要原因1", "主要原因2"],
-  "tools_tried": ["尝试的工具列表"],
-  "suggestion": "下一步建议"
-}}
-"""
-        try:
-            response = llm_client.call_chat_completion(
-                model=config.ANALYST_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                json_mode=True
-            )
-
-            if "```json" in response:
-                response = response.split("```json")[1].split("```")[0]
-
-            result = json.loads(response.strip())
-            result["total"] = len(failures)
-            return result
-
-        except Exception as e:
-            return {
-                "total": len(failures),
-                "reasons": ["分析失败"],
-                "suggestion": "检查网络连接和目标可达性"
-            }
-
-    # =========================================================================
-    # 状态变化检测
-    # =========================================================================
-
-    def detect_changes(self, before: Dict, after: Dict) -> List[str]:
-        """
-        检测状态变化
-
-        用于记录攻击链条中的changes字段
-        """
-        changes = []
-
-        # 检测新凭据
-        before_creds = set(str(c) for c in (before.get("credentials") or []))
-        after_creds = set(str(c) for c in (after.get("credentials") or []))
-        new_creds = after_creds - before_creds
-        if new_creds:
-            changes.append(f"获取{len(new_creds)}个新凭据")
-
-        # 检测新漏洞
-        before_vulns = len(before.get("vuln_candidates") or [])
-        after_vulns = len(after.get("vuln_candidates") or [])
-        if after_vulns > before_vulns:
-            changes.append(f"发现{after_vulns - before_vulns}个新漏洞")
-
-        # 检测FLAG
-        if after.get("found_flag") and not before.get("found_flag"):
-            changes.append("发现FLAG!")
-
-        # 检测Shell
-        if after.get("shell_session") and not before.get("shell_session"):
-            changes.append("获取Shell会话")
-
-        # 检测新主机
-        before_hosts = set(h.get("ip") for h in (before.get("internal_hosts") or []))
-        after_hosts = set(h.get("ip") for h in (after.get("internal_hosts") or []))
-        new_hosts = after_hosts - before_hosts
-        if new_hosts:
-            changes.append(f"发现{len(new_hosts)}个新主机")
-
-        return changes
-
 
 # =============================================================================
 # 全局实例
 # =============================================================================
 
+_chain_recorder: Optional['AttackChainRecorder'] = None
+
+def get_chain_recorder() -> 'AttackChainRecorder':
+    """获取攻击链记录器全局实例"""
+    global _chain_recorder
+    if _chain_recorder is None:
+        _chain_recorder = AttackChainRecorder()
+    return _chain_recorder
+
+def record_node(node: str, decision: str, result: str,
+               changes: List[str] = None, success: bool = False):
+    """记录节点执行情况的便捷函数"""
+    recorder = get_chain_recorder()
+    recorder.record(node, decision, result, changes or [], success)
+    return recorder
+
 _compressor: Optional[ContextCompressor] = None
-_chain_recorder: Optional[AttackChainRecorder] = None
 
 
 def get_compressor() -> ContextCompressor:
@@ -543,23 +463,3 @@ def get_compressor() -> ContextCompressor:
     if _compressor is None:
         _compressor = ContextCompressor()
     return _compressor
-
-
-def get_chain_recorder() -> AttackChainRecorder:
-    """获取全局链条记录器"""
-    global _chain_recorder
-    if _chain_recorder is None:
-        _chain_recorder = AttackChainRecorder()
-    return _chain_recorder
-
-
-def compress_state(state: Dict) -> Dict:
-    """便捷函数：压缩状态"""
-    return get_compressor().compress(state)
-
-
-def record_node(node: str, decision: str, result: str,
-                changes: List[str] = None, success: bool = False) -> Dict:
-    """便捷函数：记录节点执行"""
-    entry = get_chain_recorder().record(node, decision, result, changes, success)
-    return entry.to_dict()

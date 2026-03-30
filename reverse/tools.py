@@ -13,6 +13,7 @@ import json
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from enum import Enum
+from app.flag_extractor_v2 import extract_flags
 
 # 延迟导入避免循环依赖
 def _get_llm_client():
@@ -402,23 +403,9 @@ class StringExtractor:
     @classmethod
     def find_flag_patterns(cls, strings: List[str]) -> List[str]:
         """查找可能的flag模式"""
-        flag_patterns = [
-            r'flag\{.*?\}',
-            r'FLAG\{.*?\}',
-            r'ctf\{.*?\}',
-            r'CTF\{.*?\}',
-            r'key\{.*?\}',
-            r'password\s*[=:]\s*\S+'
-        ]
-
-        found = []
-        for s in strings:
-            for pattern in flag_patterns:
-                match = re.search(pattern, s, re.IGNORECASE)
-                if match:
-                    found.append(match.group())
-
-        return found
+        # 合并所有字符串并使用统一的提取函数
+        combined_text = ' '.join(strings)
+        return extract_flags(combined_text)
 
     @classmethod
     def find_encoded_strings(cls, strings: List[str]) -> Dict[str, List[str]]:

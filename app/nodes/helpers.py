@@ -12,6 +12,9 @@ from typing import Dict, Any, Optional
 import time
 from logger import get_logger
 
+# URL处理函数已移至 url_utils.py
+from url_utils import is_ip_target, extract_ip
+
 logger = get_logger(__name__)
 
 
@@ -46,19 +49,9 @@ def format_duration(seconds: float) -> str:
     hours = minutes / 60
     return f"{hours:.1f}h"
 
-
-def is_ip_target(url: str) -> bool:
-    """检查目标是否是IP地址"""
-    import re
-    ip_pattern = r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$'
-    return bool(re.match(ip_pattern, url.split('/')[0].split('?')[0]))
-
-
-def extract_ip(url: str) -> Optional[str]:
-    """从URL中提取IP地址"""
-    import re
-    ip_match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', url)
-    return ip_match.group(1) if ip_match else None
+# IP相关函数已移至 url_utils.py:
+# - is_ip_target
+# - extract_ip
 
 
 def safe_get(state: Dict, key: str, default: Any = None) -> Any:

@@ -15,14 +15,13 @@ from typing_extensions import TypedDict
 import operator
 
 # 从 state_types 导入类型定义
-from state_types.base import BaseCTFState
 from state_types.strategic import StrategicContext
 from state_types.web import (
-    WebCTFState, VulnerabilityCandidate, AttackAction,
-    PageFeatures, Hint, ToolCall, NodeAttackStatus, HtmlExtraction
+    VulnerabilityCandidate, AttackAction,
+    PageFeatures, Hint, ToolCall, NodeAttackStatus
 )
 from state_types.internal_network import (
-    InternalNetworkState, InternalHost, Credential, LateralMove
+    InternalHost, Credential
 )
 # 导入所有预定义的 reducer
 from state_types.reducers import (
@@ -37,11 +36,17 @@ from state_types.reducers import (
     merge_dict_reducer,
     dedupe_list_reducer,
     _make_cap_reducer,
+    generic_list_reducer_20,
+    generic_list_reducer_50,
+    generic_list_reducer_100,
 )
 
 # 创建带特定上限的 reducer
 _cap_50_reducer = _make_cap_reducer(50)
 _cap_100_reducer = _make_cap_reducer(100)
+
+# 从 config 导入配置
+from config import config
 
 
 class CTFStateV2(TypedDict):
@@ -72,7 +77,7 @@ class CTFStateV2(TypedDict):
     visited_urls: Annotated[List[str], visited_urls_reducer]
     scanned_ips: Annotated[List[str], dedupe_list_reducer]
     scanned_urls: Annotated[List[str], dedupe_list_reducer]
-    attachments: List[Dict[str, Any]]
+    attachments: Annotated[List[Dict[str, Any]], _make_cap_reducer(config.MAX_ATTACHMENTS)]
 
     # =====================================================
     # [S] 战略上下文字段 - AI思维框架
@@ -80,6 +85,18 @@ class CTFStateV2(TypedDict):
     strategic_context: Dict[str, Any]  # StrategicContext结构
     active_modules: List[str]  # 当前激活的模块列表
     memory_mode: str  # 当前内存模式: "minimal"/"web"/"internal"/"cloud"/"ai"
+
+    # [断点8修复] AI决策链累积字段
+    strategic_decisions: Annotated[List[Dict[str, Any]], generic_list_reducer_50]  # AI决策历史记录
+    # 每个决策记录格式: {
+    #     "timestamp": float,
+    #     "node": str,  # 来源节点
+    #     "decision_type": str,  # attack/route/mode_switch/privesc
+    #     "action": str,  # 具体行动
+    #     "reason": str,  # 决策理由
+    #     "confidence": float,  # 置信度
+    #     "outcome": str,  # 执行结果: success/failed/pending
+    # }
 
     # =====================================================
     # [W] Web CTF 字段
@@ -91,14 +108,14 @@ class CTFStateV2(TypedDict):
     detected_scenes: Dict[str, Any]
     site_topology: Annotated[Dict[str, List[str]], merge_dict_reducer]
     node_metadata: Annotated[Dict[str, Dict], merge_dict_reducer]
-    critical_nodes: List[str]
-    attack_paths: List[List[str]]
+    critical_nodes: Annotated[List[str], _make_cap_reducer(config.MAX_CRITICAL_NODES)]
+    attack_paths: Annotated[List[List[str]], _make_cap_reducer(config.MAX_ATTACK_PATHS)]
     topology_priority: List[tuple]  # 拓扑优先级: [(url, score), ...]
     visited_fingerprints: Annotated[List[str], visited_fingerprints_reducer]
     vuln_candidates: Annotated[List[VulnerabilityCandidate], cap_candidates_reducer]
     permanent_rules: Annotated[List[Dict], _cap_50_reducer]
     tool_cache: Annotated[Dict[str, Any], merge_dict_reducer]
-    attack_batch: List[AttackAction]
+    attack_batch: List[AttackAction]  # 单次攻击批次，无需reducer
     attack_results: Annotated[List[Dict], attack_results_reducer]
     attack_summary: str  # [断点4修复] 攻击历史摘要（关键发现压缩，防止截断丢失）
     tool_calls: Annotated[List[ToolCall], tool_calls_reducer]
@@ -110,12 +127,12 @@ class CTFStateV2(TypedDict):
     guidance_target_url: str  # 战术指导建议的目标URL
     analyst_intel: Optional[str]
     failed_payloads: Annotated[List[str], failed_payloads_reducer]
-    fallback_plans: List[Dict[str, Any]]  # 备选攻击方案列表：[{tool, params, reasoning, source_action_id}, ...]
+    fallback_plans: Annotated[List[Dict[str, Any]], _make_cap_reducer(config.MAX_FALLBACK_PLANS)]
     hint_level: int
     hint_history: Annotated[List[Hint], operator.add]
-    rag_context: List[str]
-    temp_rules: List[Dict]
-    success_trace: List[Dict]
+    rag_context: List[str]  # RAG上下文，单次使用，无需reducer
+    temp_rules: Annotated[List[Dict], generic_list_reducer_20]
+    success_trace: Annotated[List[Dict], generic_list_reducer_50]
     node_attack_status: Dict[str, NodeAttackStatus]
 
     # =====================================================
@@ -135,9 +152,9 @@ class CTFStateV2(TypedDict):
     credentials: Annotated[List[Credential], credentials_reducer]
     domain_info: Dict[str, Any]
     shell_session: Optional[Dict[str, Any]]
-    active_sessions: List[Dict[str, Any]]
+    active_sessions: Annotated[List[Dict[str, Any]], _make_cap_reducer(config.MAX_ACTIVE_SESSIONS)]
     socks5_port: int
-    uploaded_tools: List[str]
+    uploaded_tools: Annotated[List[str], _make_cap_reducer(config.MAX_UPLOADED_TOOLS)]
     pivot_host: str  # 跳板机IP
     proxy_info: Optional[Dict[str, Any]]  # SOCKS5代理信息
     upload_status: str  # 工具上传状态: pending/completed/commands_generated/failed
@@ -165,10 +182,11 @@ class CTFStateV2(TypedDict):
     # [I] 内网渗透扩展字段 - 多主机Flag搜索
     # =====================================================
     found_flags: Annotated[List[str], dedupe_list_reducer]  # 所有发现的flag
-    compromised_hosts: Annotated[List[str], dedupe_list_reducer]  # 已攻陷的主机IP
+    compromised_hosts: Annotated[List[str], _make_cap_reducer(config.MAX_COMPROMISED_HOSTS)]  # 已攻陷的主机IP
+    failed_lateral_hosts: Annotated[List[str], dedupe_list_reducer]  # 横向移动失败的主机IP
     current_compromise_phase: str  # 当前阶段: flag_search/lateral_move/complete
     persistence_established: bool  # 是否已建立持久化
-    persistence_results: List[Dict[str, Any]]  # 持久化结果记录
+    persistence_results: Annotated[List[Dict[str, Any]], _make_cap_reducer(config.MAX_PERSISTENCE_RESULTS)]  # 持久化结果记录
 
     # =====================================================
     # [C] 云安全字段
@@ -200,9 +218,9 @@ class CTFStateV2(TypedDict):
     # =====================================================
     crypto_mode: bool
     crypto_analysis: Dict[str, Any]
-    identified_ciphertexts: List[Dict[str, Any]]
-    decrypted_data: List[str]
-    potential_flags: List[str]
+    identified_ciphertexts: Annotated[List[Dict[str, Any]], generic_list_reducer_50]
+    decrypted_data: Annotated[List[str], generic_list_reducer_50]
+    potential_flags: Annotated[List[str], dedupe_list_reducer]
 
     # =====================================================
     # [Pwn] 二进制漏洞利用字段
@@ -210,7 +228,7 @@ class CTFStateV2(TypedDict):
     pwn_mode: bool
     binary_path: str
     binary_info: Dict[str, Any]
-    vulnerabilities: List[Dict[str, Any]]
+    vulnerabilities: Annotated[List[Dict[str, Any]], generic_list_reducer_20]
     exploit_script: str
     exploit_info: Dict[str, Any]
     pwn_analysis: Dict[str, Any]
@@ -223,8 +241,8 @@ class CTFStateV2(TypedDict):
     decompiled_code: str
     algorithm_type: str
     key_findings: str
-    functions: List[Dict[str, Any]]
-    extracted_strings: List[str]
+    functions: Annotated[List[Dict[str, Any]], generic_list_reducer_100]
+    extracted_strings: Annotated[List[str], generic_list_reducer_100]
 
     # =====================================================
     # [Misc] 杂项 CTF 字段
@@ -235,8 +253,8 @@ class CTFStateV2(TypedDict):
     steg_results: Dict[str, Any]
     media_analysis: Dict[str, Any]
     misc_analysis: Dict[str, Any]
-    extracted_data: List[Any]
-    embedded_files: List[str]
+    extracted_data: Annotated[List[Any], generic_list_reducer_50]
+    embedded_files: Annotated[List[str], generic_list_reducer_50]
 
 
 # 向后兼容别名
@@ -298,6 +316,8 @@ def get_default_state(task_name: str, task_description: str, target_url: str) ->
         "strategic_context": {},
         "active_modules": ["app.llm_client", "app.logger", "app.config"],
         "memory_mode": "minimal",
+        # [断点8修复] strategic_decisions默认值
+        "strategic_decisions": [],
     })
 
     return state

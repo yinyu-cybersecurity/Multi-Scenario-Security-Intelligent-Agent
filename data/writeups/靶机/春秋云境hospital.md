@@ -1,3 +1,7 @@
+---
+tags: [Shiro, Heapdump泄露, 反序列化]
+---
+
 # 春秋云境hospital
 
 先用fscan扫一下，知道了医院管理后台和一个heapdump信息泄露

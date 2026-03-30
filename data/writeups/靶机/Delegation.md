@@ -1,3 +1,7 @@
+---
+tags: [CmsEasy, 任意文件写入, 任意文件读取, RCE]
+---
+
 # Delegation
 
 ## flag1

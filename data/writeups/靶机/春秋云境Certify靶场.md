@@ -1,3 +1,7 @@
+---
+tags: [Log4j2, JNDI注入, RCE]
+---
+
 # 春秋云境Certify靶场
 
 ## flag01

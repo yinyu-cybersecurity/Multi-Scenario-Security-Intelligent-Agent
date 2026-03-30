@@ -17,6 +17,13 @@ from urllib.parse import urlparse
 # 上下文压缩和链条记录
 from context_compressor import get_chain_recorder, get_compressor
 
+# Token压缩节点
+try:
+    from compressor_node import compressor_node
+    COMPRESSOR_AVAILABLE = True
+except ImportError:
+    COMPRESSOR_AVAILABLE = False
+
 # 统一日志系统
 from logger import get_logger, node_log, log_node_start, log_node_result, log_attack, log_flag_found
 logger = get_logger(__name__)
@@ -53,6 +60,9 @@ except ImportError:
 from typing import Dict as TypingDict
 import atexit
 
+# URL处理工具集
+from url_utils import normalize_target_url, normalize_url, ensure_protocol_consistency, extract_target_info
+
 _executor = None
 _running_tasks: TypingDict[str, concurrent.futures.Future] = {}
 
@@ -72,122 +82,11 @@ def _shutdown_executor():
         _executor.shutdown(wait=False, cancel_futures=False)
         _executor = None
 
-def normalize_target_url(url_str: str) -> str:
-    """
-    [加固版] 极度鲁棒的 URL 清洗逻辑，专门对付 LLM 产生的各类噪音
-    """
-    if not url_str: return ""
-    s = str(url_str).strip()
-
-    # 1. 暴力移除所有已知的干扰字符
-    for char in ["`", "\\", "\n", "\r", "\t"]:
-        s = s.replace(char, "")
-
-    # 2. 精准提取第一个 http(s) 链接
-    # 排除空格、引号、括号、尖括号、中括号
-    match = re.search(r'(https?://[^\s\'"<>\[\]\(\)]+)', s)
-    if match:
-        clean_url = match.group(1)
-        # 3. 剥离末尾可能残留的标点符号
-        return clean_url.strip().rstrip(".").rstrip(",").rstrip("/")
-
-    # 4. 如果没找到协议头，尝试二次清理后返回
-    return s.strip("'").strip('"').strip()
-
-def ensure_protocol_consistency(target_url: str, original_url: str) -> str:
-    """
-    确保目标URL与原始URL使用相同协议
-    防止LLM将https改成http
-    """
-    if not target_url or not original_url:
-        return target_url
-
-    original_is_https = original_url.lower().startswith("https://")
-
-    if original_is_https and target_url.lower().startswith("http://"):
-        # 将http改为https
-        target_url = "https://" + target_url[7:]
-        log(f"   ⚠️ 协议修正: http -> https")
-    elif not original_is_https and target_url.lower().startswith("https://"):
-        # 将https改为http
-        target_url = "http://" + target_url[8:]
-        log(f"   ⚠️ 协议修正: https -> http")
-
-    return target_url
-
-def normalize_url(url: str) -> str:
-    """
-    标准化URL：添加协议头、处理常见格式问题
-    """
-    if not url:
-        return ""
-
-    url = url.strip()
-
-    # 移除多余空白和特殊字符
-    for char in ["`", "\\", "\n", "\r", "\t"]:
-        url = url.replace(char, "")
-
-    # 如果没有协议头，添加http://
-    if not url.startswith(("http://", "https://")):
-        # 检查是否是IP或域名格式
-        if re.match(r'^[\w\.-]+(:\d+)?', url):
-            url = "http://" + url
-
-    # 移除末尾的标点符号
-    url = url.rstrip(".").rstrip(",").rstrip("/")
-
-    return url
-
-def extract_target_info(url: str) -> tuple:
-    """
-    从URL自动识别环境类型
-    返回: (task_name, task_description)
-
-    环境类型:
-    - CTF环境: 域名形式，CTF靶场题目
-    - 内网渗透: 内网IP段 (10.x, 172.16-31.x, 192.168.x)
-    - 外网打点: 公网IP形式，可访问
-    """
-    parsed = urlparse(url)
-    hostname = parsed.hostname or parsed.netloc.split(':')[0]
-    port = parsed.port or (443 if parsed.scheme == 'https' else 80)
-
-    # 判断是否为IP地址
-    is_ip = bool(re.match(r'^(\d{1,3}\.){3}\d{1,3}$', hostname))
-
-    if is_ip:
-        # 解析IP段
-        ip_parts = [int(x) for x in hostname.split('.')]
-        first_octet = ip_parts[0]
-        second_octet = ip_parts[1]
-
-        # 内网IP段判断
-        # 10.0.0.0/8
-        # 172.16.0.0/12 (172.16.x.x - 172.31.x.x)
-        # 192.168.0.0/16
-        is_internal = (
-            first_octet == 10 or
-            (first_octet == 172 and 16 <= second_octet <= 31) or
-            (first_octet == 192 and second_octet == 168)
-        )
-
-        if is_internal:
-            task_name = f"Internal-{hostname}:{port}"
-            task_description = "内网渗透环境 - 内网IP目标"
-        else:
-            task_name = f"External-{hostname}:{port}"
-            task_description = "外网打点环境 - 公网IP目标"
-    else:
-        # 域名形式，判定为CTF环境
-        domain_parts = hostname.split('.')
-        if len(domain_parts) >= 2:
-            task_name = domain_parts[0]
-        else:
-            task_name = hostname
-        task_description = "CTF靶场环境 - 域名目标"
-
-    return task_name, task_description
+# URL处理函数已移至 url_utils.py:
+# - normalize_target_url
+# - normalize_url
+# - ensure_protocol_consistency
+# - extract_target_info
 
 # ctf_agent_graph.py
 from config import config
@@ -733,8 +632,9 @@ def _detect_file_type(file_path: str) -> Dict:
         if header[:4] == b'PK\x03\x04':
             return {"misc_mode": True, "misc_file": file_path}
 
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"[ChallengeType] 文件头检测失败: {e}")
+        # 继续按扩展名判断
 
     # 按扩展名判断
     if ext in ['elf', 'out', 'so']:
@@ -1417,6 +1317,14 @@ def analyst_node(state: CTFState) -> Dict:
     """
     log("🔍 [分析] 解析页面特征...")
 
+    # 导入hybrid_detector用于置信度分级检测
+    try:
+        from hybrid_detector import hybrid_detector, quick_detect, full_detect
+    except ImportError:
+        hybrid_detector = None
+        quick_detect = None
+        full_detect = None
+
     # 检查是否为内网模式
     internal_mode = state.get("internal_mode", False)
 
@@ -1519,11 +1427,67 @@ def analyst_node(state: CTFState) -> Dict:
             hint_parts.append(f"拓扑优先目标: {top_targets}")
         topology_hint = "\n".join(hint_parts)
 
-    # 2. 构建 Prompt
+    # =====================================================
+    # [置信度分级检测] hybrid_detector快速检测
+    # =====================================================
+    quick_results = []
+    hybrid_candidates = []
+    page_content = raw_html or page_features.get('text_content', '')
+
+    if quick_detect and page_content:
+        log("   🔬 [hybrid_detector] 执行快速正则检测...")
+        detection = quick_detect(page_content)
+        if detection.get('detected'):
+            log(f"   ✅ [hybrid_detector] 检测到: {detection.get('detection_type')}, 置信度: {detection.get('confidence')}")
+            quick_results.append({
+                "type": detection.get("detection_type"),
+                "confidence": detection.get("confidence"),
+                "matched_text": detection.get("matched_text", "")[:200],
+                "matches": detection.get("matches", []),
+                "source": "hybrid_detector"
+            })
+            
+            # 高置信度结果直接转换为漏洞候选
+            if detection.get("confidence") == "high":
+                for match in detection.get("matches", [])[:3]:  # 取前3个匹配
+                    hybrid_candidates.append({
+                        "type": match.get("type", "unknown"),
+                        "location": current_url,
+                        "confidence": 0.95,  # 高置信度
+                        "context": {
+                            "matched_text": match.get("matched_text", "")[:500],
+                            "pattern_name": match.get("pattern_name", ""),
+                            "source": "hybrid_detector"
+                        },
+                        "reason": f"hybrid_detector高置信度检测: {match.get('description', '检测到安全敏感信息')}",
+                        "recommended_tools": [],
+                        "url": current_url
+                    })
+                log(f"   🎯 [hybrid_detector] 高置信度候选: {len(hybrid_candidates)} 个")
+    
+    # 合并hybrid_detector候选到规则候选
+    combined_candidates = rule_candidates + hybrid_candidates
+
+    # 获取战略上下文和阶段信息
+    strategic_context = state.get("strategic_context", {})
+
+    # 构建阶段信息
+    stage_info = None
+    if strategic_context:
+        current_step = strategic_context.get("current_step", 1)
+        attack_chain = strategic_context.get("attack_chain", [])
+        stage_info = {
+            "stage_name": attack_chain[current_step - 1] if current_step <= len(attack_chain) else "未知",
+            "goal": strategic_context.get("primary_goal", "获取FLAG"),
+            "success_criteria": [],  # 可根据需要从staged_planner获取
+            "timeout": 0  # 可根据需要从staged_planner获取
+        }
+
+    # 2. 构建 Prompt (将quick_results作为参考信息)
     prompt = get_analyst_prompt(
         page_features,
         raw_html,
-        rule_candidates,
+        combined_candidates,  # 使用合并后的候选
         task_name=task_name,
         task_description=task_description,
         baseline_response=baseline_response,
@@ -1531,7 +1495,10 @@ def analyst_node(state: CTFState) -> Dict:
         tools_info=tools_info,
         focused_scene=focused_scene,
         scene_tested=scene_exhausted,
-        topology_hint=topology_hint  # 新增：拓扑提示
+        topology_hint=topology_hint,  # 拓扑提示
+        hybrid_detection_results=quick_results,  # hybrid_detector检测结果
+        stage_info=stage_info,
+        strategic_context=strategic_context
     )
     
     # 3. 调用 LLM
@@ -1557,6 +1524,21 @@ def analyst_node(state: CTFState) -> Dict:
             
         result = json.loads(response_text)
         candidates = result.get("candidates", [])
+
+        # [断点1修复] 提取结构化战术指导
+        structured_guidance = result.get("structured_guidance", {})
+        if structured_guidance:
+            guidance_action = structured_guidance.get("action", "")
+            guidance_type = structured_guidance.get("guidance_type", "continue")
+            enforce_change = structured_guidance.get("enforce_change", False)
+            guidance_target_url = structured_guidance.get("target_url", "")
+            guidance_reason = structured_guidance.get("reason", "")
+            guidance_params = structured_guidance.get("params", {})
+            log(f"   📋 战术指导: {guidance_type}, 强制执行: {enforce_change}")
+            if guidance_action:
+                log(f"   🎯 建议动作: {guidance_action[:100]}")
+            if guidance_target_url:
+                log(f"   🔗 建议目标URL: {guidance_target_url}")
 
         # 提取分析兵的关键情报（源码、过滤规则等）
         key_intel_parts = []
@@ -1586,6 +1568,16 @@ def analyst_node(state: CTFState) -> Dict:
                 "url": current_url # [核心修复] 绑定当前 URL
             })
             
+        # [拓扑驱动] 按拓扑优先级排序漏洞候选
+        priority_dict = {url: score for url, score in topology_priority}
+        if formatted_candidates and priority_dict:
+            formatted_candidates.sort(key=lambda c: (
+                priority_dict.get(c.get("url", current_url), 0.5) * 0.5 + c.get("confidence", 0.5) * 0.5
+            ), reverse=True)
+            top_url = formatted_candidates[0].get("url", "")
+            top_score = priority_dict.get(top_url, 0.5)
+            log(f"   📊 拓扑驱动排序: 优先漏洞 @ {top_url} (优先级={top_score:.2f})")
+
         log(f"   ✅ 发现 {len(formatted_candidates)} 个潜在漏洞点")
 
         # [内网模式] 合并漏扫结果
@@ -1629,65 +1621,83 @@ def analyst_node(state: CTFState) -> Dict:
                 "exploit_keywords": exploit_keywords if exploit_keywords else {}
             }
 
-        # [AI驱动的知识库检索] 处理AI的检索请求
-        retrieval_requests = result.get("retrieval_requests", [])
-        if retrieval_requests:
-            try:
-                from rag_builder.retriever import retrieve_relevant_knowledge
-
-                for req in retrieval_requests[:3]:  # 最多处理3个请求
-                    query = req.get("query", "")
-                    source = req.get("source", "writeups")
-                    # 验证数据源有效性
-                    valid_sources = ["writeups", "nuclei", "payloads", "security_resources"]
-                    if source not in valid_sources:
-                        source = "writeups"
-
-                    if query:
-                        results = retrieve_relevant_knowledge(
-                            query=query,
-                            sources=[source],
-                            top_k=3
-                        )
-                        if results:
-                            # 按相关性附加到漏洞候选
-                            # 策略：遍历所有候选，附加到查询词与漏洞类型匹配的候选
-                            attached = False
-                            for vuln in formatted_candidates:
-                                vuln_type = vuln.get("type", "").lower()
-                                query_lower = query.lower()
-                                # 双向匹配：漏洞类型在查询中 或 查询包含漏洞类型关键词
-                                if vuln_type and (vuln_type in query_lower or any(kw in vuln_type for kw in query_lower.split())):
-                                    vuln["retrieved_knowledge"] = results
-                                    log(f"   📚 为 [{vuln.get('type')}] 检索到 {len(results)} 条{source}资料")
-                                    attached = True
-                                    break
-
-                            # 如果没有精确匹配，附加到第一个候选
-                            if not attached and formatted_candidates:
-                                formatted_candidates[0]["retrieved_knowledge"] = results
-                                log(f"   📚 检索到 {len(results)} 条{source}资料 (附加到首个候选)")
-
-            except Exception as e:
-                log(f"   ⚠️ 检索请求处理失败: {e}")
-
         analyst_intel = "\n\n".join(key_intel_parts) if key_intel_parts else None
         res = {
             "vuln_candidates": formatted_candidates,
             "analyst_intel": analyst_intel,
             "exploit_keywords": exploit_keywords if exploit_keywords else {}
         }
+        # [断点1修复] 将结构化战术指导传递给状态
+        if structured_guidance:
+            res["structured_guidance"] = structured_guidance
+            res["latest_tactical_guidance"] = structured_guidance.get("action", "")
+            res["guidance_type"] = structured_guidance.get("guidance_type", "continue")
+            res["enforce_change"] = structured_guidance.get("enforce_change", False)
+            if structured_guidance.get("target_url"):
+                res["guidance_target_url"] = structured_guidance.get("target_url")
         log_node_data("analyst", {"prompt": prompt}, res)
         return res
 
     except json.JSONDecodeError:
-        log(f"   ❌ JSON 解析失败")
+        log(f"   ❌ JSON 解析失败，执行降级分析")
         log_node_data("analyst", {"prompt": prompt, "raw_response": response_text}, {"error": "JSON parse error"})
-        # JSON解析失败也返回空，触发探索
+
+        # [断点3修复] JSON解析失败时生成默认漏洞候选，防止浪费一轮
+        # 基于当前URL和页面特征生成基础探测候选
+        default_candidates = []
+        current_url = state.get("current_url", "")
+
+        if current_url:
+            # 生成基础URL探测候选
+            default_candidates.append({
+                "type": "info_disclosure",
+                "location": current_url,
+                "confidence": 0.3,
+                "reason": "降级分析：JSON解析失败，执行基础信息收集",
+                "recommended_tools": ["requests"],
+                "context": {"fallback": True},
+                "url": current_url
+            })
+
+            # 检查是否有参数，生成参数探测候选
+            if "?" in current_url:
+                params_part = current_url.split("?", 1)[1]
+                param_names = [p.split("=")[0] for p in params_part.split("&") if "=" in p]
+                for param in param_names[:3]:
+                    default_candidates.append({
+                        "type": "param_probe",
+                        "location": f"{current_url} (参数: {param})",
+                        "confidence": 0.25,
+                        "reason": f"降级分析：探测参数 {param} 的潜在漏洞",
+                        "recommended_tools": ["requests"],
+                        "context": {"param": param, "fallback": True},
+                        "url": current_url
+                    })
+
+        # 合并漏扫结果
+        if scan_vulns:
+            for v in scan_vulns:
+                vtype = v.get("plugin") or v.get("name") or v.get("template-id", "unknown")
+                default_candidates.append({
+                    "type": vtype.lower(),
+                    "location": v.get("url", current_url),
+                    "confidence": 0.8,
+                    "context": {
+                        "cve_id": v.get("cve") or v.get("cve_id"),
+                        "severity": v.get("severity"),
+                        "source": v.get("source"),
+                        "fallback": True
+                    },
+                    "recommended_tools": [],
+                    "url": v.get("url", current_url),
+                    "verified": True
+                })
+
+        log(f"   📋 降级生成 {len(default_candidates)} 个默认漏洞候选")
         return {
-            "vuln_candidates": scan_vulns if scan_vulns else [],  # 至少返回漏扫结果
-            "analyst_intel": None,
-            "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.0,
+            "vuln_candidates": default_candidates,  # [断点3修复] 返回默认候选而非空
+            "analyst_intel": "降级分析：JSON解析失败，已生成基础探测候选",
+            "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,  # 减少惩罚，因为有降级动作
             "exploit_keywords": exploit_keywords if exploit_keywords else {}
         }
 
@@ -1985,12 +1995,20 @@ def mode_manager_node(state: CTFState) -> Dict:
         }
 
 
-def execute_single_attack(action: Dict, current_url: str, page_history: Dict) -> Dict:
-    """同步执行单个攻击动作并进行页面对比"""
+def execute_single_attack(action: Dict, current_url: str, page_history: Dict, timeout: int = None) -> Dict:
+    """同步执行单个攻击动作并进行页面对比
+
+    Args:
+        action: 攻击动作配置
+        current_url: 当前目标URL
+        page_history: 页面历史记录
+        timeout: 工具超时时间（秒），None时使用默认30秒
+    """
     # [核心修复] 初始化默认返回值，确保即便发生异常，核心字段也不为空
     tool_name = "unknown"
     target = current_url
     payload = "N/A"
+    request_timeout = timeout or 30  # 统一超时处理
     
     try:
         if not isinstance(action, dict):
@@ -2077,7 +2095,7 @@ def execute_single_attack(action: Dict, current_url: str, page_history: Dict) ->
                     data=req_data,
                     headers=req_headers,
                     files=req_files, # 增加文件支持
-                    timeout=30,
+                    timeout=request_timeout,  # 使用统一超时
                     verify=False
                 )
             finally:
@@ -2219,6 +2237,13 @@ def attacker_node(state: CTFState) -> Dict:
     2. 然后使用手工payload进行攻击
     3. 综合两种方式的结果
     """
+    # [智能流转] 导入AI流转控制器
+    try:
+        from ai_flow_controller import ai_flow_controller, FlowDecision
+    except ImportError:
+        ai_flow_controller = None
+        FlowDecision = None
+
     current_url = state.get("current_url")
     target_url = state.get("target_url", current_url)  # 原始目标URL
     log(f"⚔️ [攻击] 目标: {current_url}")
@@ -2232,13 +2257,14 @@ def attacker_node(state: CTFState) -> Dict:
     # 因为fscan扫描出的漏洞URL可能与current_url不同
     all_candidates = state.get("vuln_candidates", [])
 
-    # 优先处理当前URL的候选，但也保留其他候选
+    # 改进过滤逻辑：不遗漏无URL的候选（如非Web漏洞）
     candidates_for_current = [c for c in all_candidates if c.get("url") == current_url]
-    other_candidates = [c for c in all_candidates if c.get("url") != current_url and c.get("url")]
+    # 无URL或非当前URL的候选（保留无URL候选，不遗漏）
+    other_candidates = [c for c in all_candidates if c.get("url") != current_url]
 
-    # 如果当前URL没有候选，但有其他URL的候选，使用其他候选
+    # 如果当前URL没有候选，但有其他候选，使用其他候选
     if not candidates_for_current and other_candidates:
-        log(f"   📌 当前URL无候选，使用其他URL的漏洞候选 ({len(other_candidates)}个)")
+        log(f"   📌 当前URL无候选，使用其他漏洞候选 ({len(other_candidates)}个)")
         candidates = other_candidates[:10]
     elif candidates_for_current:
         # 优先使用当前URL的候选，补充其他URL的高置信度候选
@@ -2336,11 +2362,11 @@ def attacker_node(state: CTFState) -> Dict:
             except Exception as e:
                 log(f"   ⚠️ 智慧决策失败: {e}")
 
-    # [AI驱动的知识库检索] 使用AI请求的检索结果（已在analyst_node中处理）
-    # 如果漏洞候选中已有retrieved_knowledge，直接使用
-    for vuln in candidates[:3]:
-        if vuln.get("retrieved_knowledge"):
-            log(f"   📚 使用AI检索的 {len(vuln['retrieved_knowledge'])} 条知识资料")
+    # [RAG优化] 已移除其他节点的RAG调用，RAG仅在innovator_node中调用
+    # 如果有temp_rules（来自innovator_node的RAG检索），可以在攻击时参考
+    temp_rules = state.get("temp_rules", [])
+    if temp_rules:
+        log(f"   💡 使用innovator生成的 {len(temp_rules)} 条临时规则")
 
     # =====================================================
     # [断点1修复] 处理结构化战术指导
@@ -2416,6 +2442,21 @@ def attacker_node(state: CTFState) -> Dict:
         if latest_hint.get("source") == "human":
             human_hint = latest_hint.get("content")
 
+    # 获取战略上下文和阶段信息
+    strategic_context = state.get("strategic_context", {})
+
+    # 构建阶段信息
+    stage_info = None
+    if strategic_context:
+        current_step = strategic_context.get("current_step", 1)
+        attack_chain = strategic_context.get("attack_chain", [])
+        stage_info = {
+            "stage_name": attack_chain[current_step - 1] if current_step <= len(attack_chain) else "未知",
+            "goal": strategic_context.get("primary_goal", "获取FLAG"),
+            "success_criteria": [],
+            "timeout": 0
+        }
+
     prompt = get_attacker_prompt(
         candidates[:max_actions],  # 使用动态上限
         tools_info,
@@ -2425,7 +2466,9 @@ def attacker_node(state: CTFState) -> Dict:
         analyst_intel=state.get("analyst_intel"),
         known_facts=state.get("known_facts", ""),
         failed_payloads=state.get("failed_payloads", []),
-        human_hint=human_hint
+        human_hint=human_hint,
+        stage_info=stage_info,
+        strategic_context=strategic_context
     ) # 增加题目背景与战术指引
 
     try:
@@ -2586,13 +2629,13 @@ def attacker_node(state: CTFState) -> Dict:
     # [同步修复] 使用线程池执行，并设置合理的单任务超时
     attack_results = []
     futures_map = {}
-    
+
     for a in attack_actions:
-        # 从配置获取慢速工具列表和超时值（移除硬编码）
+        # 从配置获取慢速工具列表和超时值
         tool_name = a.get("tool", "unknown")
         task_timeout = config.TOOL_TIMEOUTS.get("slow", 180) if tool_name in config.SLOW_TOOLS else config.TOOL_TIMEOUTS.get("default", 60)
-        
-        future = get_executor().submit(execute_single_attack, a, current_url, state.get("page_history", {}))
+
+        future = get_executor().submit(execute_single_attack, a, current_url, state.get("page_history", {}), task_timeout)
         futures_map[future] = a
 
     try:
@@ -2718,104 +2761,199 @@ def attacker_node(state: CTFState) -> Dict:
     # [fallback修复] 将fallback方案存入状态
     if fallback_plans:
         res["fallback_plans"] = fallback_plans
+
+    # =========================================================================
+    # [智能流转] AI流转决策 - 根据攻击结果智能决定下一步流向
+    # =========================================================================
+    if ai_flow_controller and attack_results:
+        try:
+            # 综合所有攻击结果进行决策
+            combined_result = {
+                "attack_count": len(attack_results),
+                "success_count": sum(1 for r in attack_results if r.get("is_exploit")),
+                "vulns_found": len(discovered_vulns),
+                "creds_found": len(discovered_creds),
+                "hosts_found": len(discovered_hosts),
+                "has_progress": len(discovered_vulns) > 0 or len(discovered_creds) > 0 or len(discovered_hosts) > 0
+            }
+
+            flow_decision, decision_reason = ai_flow_controller.decide(
+                state=state,
+                attack_result=combined_result,
+                current_node="attacker"
+            )
+
+            log(f"   🧠 [智能流转] 决策: {flow_decision.value if hasattr(flow_decision, 'value') else flow_decision}")
+            log(f"      理由: {decision_reason}")
+
+            # 根据决策设置流转标志
+            if flow_decision == FlowDecision.CONTINUE_ATTACK:
+                # 有明显进展，可以绕过verifier直接继续
+                res["skip_verifier"] = True
+                res["flow_decision"] = "continue_attack"
+                res["flow_reason"] = decision_reason
+                log("      → 绕过verifier，直接继续攻击")
+
+            elif flow_decision == FlowDecision.REPORT_FLAG:
+                # 发现FLAG，直接报告
+                res["skip_verifier"] = True
+                res["flow_decision"] = "report_flag"
+                res["flow_reason"] = decision_reason
+                log("      → 发现FLAG，准备报告")
+
+            elif flow_decision == FlowDecision.SWITCH_STRATEGY:
+                # 需要切换策略
+                res["flow_decision"] = "switch_strategy"
+                res["flow_reason"] = decision_reason
+                # 增加失败分触发策略切换
+                res["failure_weighted_score"] = state.get("failure_weighted_score", 0) + 3.0
+                log("      → 切换攻击策略")
+
+            else:
+                # GO_VERIFIER - 正常流转
+                res["flow_decision"] = "go_verifier"
+                res["flow_reason"] = decision_reason
+                log("      → 正常流转到verifier")
+
+        except Exception as e:
+            log(f"   ⚠️ [智能流转] 决策异常: {e}")
+            # 异常时保持默认流转（不设置skip_verifier）
+
     log_node_data("attacker", {"prompt": prompt, "actions": attack_actions}, res)
     return res
 
 
+def _run_exploration_tool(tool_name: str, target: str, options: dict = None) -> dict:
+    """
+    执行单个探索工具并返回发现的URL列表
+    """
+    result = {"urls": [], "status_codes": {}, "error": None}
+    options = options or {}
+
+    try:
+        tool_result = ToolRegistry.execute_cached(tool_name, target, options)
+        if tool_result.get("cached", False):
+            return result
+
+        output = tool_result.get("result", {}).get("output", "")
+        if not output and tool_result.get("result", {}).get("file_path"):
+            try:
+                with open(tool_result["result"]["file_path"], "r", encoding="utf-8") as f:
+                    output = f.read()
+            except (IOError, OSError, UnicodeDecodeError):
+                pass
+
+        if output:
+            urls = re.findall(r'(http[s]?://[^\s<>"\']+)', output)
+            static_exts = ('.css', '.ico', '.png', '.jpg', '.gif', '.svg', '.woff')
+            for u in urls:
+                if u != target and not any(u.endswith(ext) for ext in static_exts):
+                    result["urls"].append(u)
+                    result["status_codes"][u] = 200
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+
+def _should_switch_to_innovate(exploration_rounds: int, found_count: int) -> tuple:
+    """判断是否应该切换到创新模式"""
+    min_rounds = getattr(config, 'EXPLORE_ROUNDS_FOR_INNOVATE', 8)
+    if exploration_rounds < min_rounds:
+        return False, f"轮次 {exploration_rounds}/{min_rounds}"
+    if found_count > 0:
+        return False, f"仍有发现({found_count})"
+    return True, f"探索{exploration_rounds}轮后无新发现"
+
+
 def explorer_node(state: CTFState) -> Dict:
     """
-    [探索兵] (异步扫描 + 图数据库更新)
+    [探索兵] (多工具组合扫描 + 图数据库更新)
 
     职责:
-        1. 执行耗时扫描操作 (dirsearch)
+        1. 执行多工具组合扫描 (dirsearch + ffuf + nuclei)
         2. 发现新路径，更新拓扑图
         3. 图分析（关键节点、死循环检测）
         4. 自动剪枝无效路径
+
+    探索策略:
+        - 第一轮: dirsearch 目录扫描
+        - 第二轮: ffuf 模糊测试
+        - 第三轮+: nuclei 漏洞扫描
+        - 达到 EXPLORE_ROUNDS_FOR_INNOVATE 后才允许切换创新模式
     """
-    log("🗺️ [探索] 启动目录扫描...")
+    log("🗺️ [探索] 启动多工具组合扫描...")
     target_url = state.get("target_url")
     current_url = state.get("current_url")
     exploration_rounds = state.get("exploration_rounds", 0)
+    visited_urls = state.get("visited_urls", [])
 
-    # 优先扫描当前URL，如果当前是root，则扫描target_url
     scan_target = current_url if current_url else target_url
 
-    # 检查是否已扫描过该目标（避免重复）
-    visited_urls = state.get("visited_urls", [])
-    if scan_target in visited_urls and exploration_rounds > 0:
-        log(f"   ⏭️ 已扫描过，切换到创新模式")
-        # 已扫描过，直接切换到创新模式
-        return {
-            "exploration_rounds": exploration_rounds + 1,
-            "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.0,
-            "current_mode": "innovate"  # 直接切换模式
-        }
+    # 检查是否已扫描过该目标
+    if scan_target in visited_urls:
+        log(f"   📦 已扫描过: {scan_target}")
+        exploration_rounds += 1
+        should_switch, reason = _should_switch_to_innovate(exploration_rounds, 0)
+        if should_switch:
+            log(f"   🔄 {reason}，切换创新模式")
+            return {"exploration_rounds": exploration_rounds,
+                    "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
+                    "current_mode": "innovate"}
+        log(f"   ⏭️ {reason}，跳过")
 
     new_paths = {}
     node_status = {}
+    total_found = 0
 
     if scan_target:
         log(f"   扫描: {scan_target}")
-        # 调用 dirsearch
-        try:
-            # 从配置获取默认扫描扩展名（移除硬编码）
-            result = ToolRegistry.execute_cached("dirsearch", scan_target, {"extensions": config.DEFAULT_SCAN_EXTENSIONS})
 
-            # 检查是否缓存命中
-            if result.get("cached", False):
-                log(f"   📦 使用缓存结果")
-                # 如果是缓存结果，说明之前扫描过，无需重复
-                exploration_rounds += 1
-                if exploration_rounds >= 2:
-                    log(f"   🔄 缓存命中且无新发现，切换到创新模式")
-                    return {
-                        "exploration_rounds": exploration_rounds,
-                        "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
-                        "current_mode": "innovate"
-                    }
+        # 探索工具组合（按轮次递进）
+        explore_tools = [
+            {"name": "dirsearch", "condition": exploration_rounds < 3,
+             "options": {"extensions": config.DEFAULT_SCAN_EXTENSIONS}},
+            {"name": "ffuf", "condition": exploration_rounds >= 1, "options": {"mode": "dir"}},
+            {"name": "nuclei", "condition": exploration_rounds >= 2,
+             "options": {"severity": "medium,high,critical"}},
+        ]
 
-            # 解析输出提取 URL
+        for tool_info in explore_tools:
+            tool_name = tool_info["name"]
+            if not tool_info.get("condition", True):
+                continue
 
-            output = result.get("result", {}).get("output", "")
-            if not output and result.get("result", {}).get("file_path"):
-                 # 尝试从文件读取
-                 try:
-                     with open(result["result"]["file_path"], "r", encoding="utf-8") as f:
-                         output = f.read()
-                 except (IOError, OSError, UnicodeDecodeError):
-                     pass  # 文件读取失败，忽略
+            log(f"   🔧 执行 {tool_name}...")
+            result = _run_exploration_tool(tool_name, scan_target, tool_info.get("options", {}))
 
-            found_urls = []
-            if output:
-                # 简单正则提取 http/https 链接
-                # 排除自身
-                urls = re.findall(r'(http[s]?://[^\s]+)', output)
-                for u in urls:
-                    if u != scan_target:
-                        found_urls.append(u)
-                        # 尝试从行中提取状态码 (例如 [200])
-                        # 这比较脆弱，实际应优化 dirsearch 输出格式
-                        node_status[u] = 200
+            if result.get("error"):
+                log(f"   ⚠️ {tool_name} 失败: {result['error']}")
+                continue
 
+            found_urls = result.get("urls", [])
             if found_urls:
-                new_paths[scan_target] = found_urls
-                log(f"   ✅ 发现 {len(found_urls)} 个新路径")
-            else:
-                log("   ⚠️ 未发现新路径")
-                # 无新发现时切换到创新模式
-                return {
-                    "exploration_rounds": exploration_rounds + 1,
-                    "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
-                    "current_mode": "innovate"
-                }
+                unique_urls = list(set(found_urls) - set(visited_urls))
+                if unique_urls:
+                    new_paths[f"{scan_target}_{tool_name}"] = unique_urls
+                    node_status.update(result.get("status_codes", {}))
+                    total_found += len(unique_urls)
+                    log(f"   ✅ {tool_name} 发现 {len(unique_urls)} 个新路径")
 
-        except Exception as e:
-            log(f"   ❌ 扫描失败: {e}")
-            return {
-                "exploration_rounds": exploration_rounds + 1,
-                "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
-                "current_mode": "innovate"
-            }
+        # 汇总路径
+        all_found = list(set(sum(new_paths.values(), [])))
+        if all_found:
+            new_paths[scan_target] = all_found
+            log(f"   📊 本轮共发现 {len(all_found)} 个新路径")
+        else:
+            log("   ⚠️ 本轮未发现新路径")
+
+        # 延迟切换创新模式
+        should_switch, reason = _should_switch_to_innovate(exploration_rounds + 1, total_found)
+        if should_switch:
+            log(f"   🔄 {reason}，切换创新模式")
+            return {"exploration_rounds": exploration_rounds + 1,
+                    "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.3,
+                    "current_mode": "innovate"}
 
     # 1. 初始化图构建器
     builder = TopologyBuilder()
@@ -2922,6 +3060,26 @@ def verifier_node(state: CTFState) -> Dict:
             status["status"] = "abandoned"
             # [补充修复] 早期返回分支也需要完整字段
             strategic_context = update_strategic_context_after_node(state, "verifier", {"error": "timeout"})
+
+            # 记录战略决策
+            try:
+                from router import record_strategic_decision
+                decision_updates = record_strategic_decision(
+                    state,
+                    {
+                        "timestamp": time.time(),
+                        "node": "verifier",
+                        "decision_type": "validation",
+                        "action": "abandon",
+                        "reason": "节点超时",
+                        "confidence": 1.0,
+                        "outcome": "timeout"
+                    }
+                )
+            except Exception as e:
+                logger.warning(f"记录战略决策失败: {e}")
+                decision_updates = {}
+
             return {
                 "node_attack_status": node_status,
                 "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
@@ -2930,7 +3088,8 @@ def verifier_node(state: CTFState) -> Dict:
                 "enforce_change": False,
                 "guidance_reason": "节点超时",
                 "guidance_target_url": "",
-                "strategic_context": strategic_context
+                "strategic_context": strategic_context,
+                **decision_updates
             }
 
     # 获取当前批次的攻击结果
@@ -2943,19 +3102,61 @@ def verifier_node(state: CTFState) -> Dict:
         if current_mode == "explore":
             # 已由 attacker 设置为 explore 模式，直接返回
             log("   ⏭️ 已触发探索模式，跳过核验")
+
+            # 记录战略决策
+            try:
+                from router import record_strategic_decision
+                decision_updates = record_strategic_decision(
+                    state,
+                    {
+                        "timestamp": time.time(),
+                        "node": "verifier",
+                        "decision_type": "validation",
+                        "action": "skip",
+                        "reason": "探索模式已触发",
+                        "confidence": 1.0,
+                        "outcome": "skipped"
+                    }
+                )
+            except Exception as e:
+                logger.warning(f"记录战略决策失败: {e}")
+                decision_updates = {}
+
             return {
                 "guidance_type": "continue",
                 "enforce_change": False,
                 "guidance_reason": "探索模式已触发",
-                "guidance_target_url": ""
+                "guidance_target_url": "",
+                **decision_updates
             }
         log("   ⚠️ 本轮无攻击动作")
+
+        # 记录战略决策
+        try:
+            from router import record_strategic_decision
+            decision_updates = record_strategic_decision(
+                state,
+                {
+                    "timestamp": time.time(),
+                    "node": "verifier",
+                    "decision_type": "validation",
+                    "action": "skip",
+                    "reason": "无攻击动作",
+                    "confidence": 0.5,
+                    "outcome": "skipped"
+                }
+            )
+        except Exception as e:
+            logger.warning(f"记录战略决策失败: {e}")
+            decision_updates = {}
+
         return {
             "failure_weighted_score": state.get("failure_weighted_score", 0) + config.HARD_FAILURE_WEIGHT,
             "guidance_type": "continue",
             "enforce_change": False,
             "guidance_reason": "无攻击动作",
-            "guidance_target_url": ""
+            "guidance_target_url": "",
+            **decision_updates
         }
 
     recent_results = results[-len(attack_batch):]
@@ -2967,77 +3168,67 @@ def verifier_node(state: CTFState) -> Dict:
         node_status[current_url]["last_status_codes"] = node_status[current_url]["last_status_codes"][-10:]
         node_status[current_url]["attempt_count"] = node_status[current_url].get("attempt_count", 0) + 1
 
-        # [知识库检索] 连续失败3次后检索writeups获取思路
-        attempt_count = node_status[current_url].get("attempt_count", 0)
-        if attempt_count >= 3:
-            try:
-                from rag_builder.retriever import retrieve_relevant_knowledge
-
-                # 获取上下文
-                known_facts = state.get("known_facts", "")
-                vuln_types = [v.get("type", "") for v in state.get("vuln_candidates", []) if v.get("type")]
-                tech_stack = state.get("tech_stack", [])
-
-                # 构建查询：优先使用漏洞类型
-                if vuln_types:
-                    query = vuln_types[0]
-                    if tech_stack:
-                        query = f"{tech_stack[0]} {query}"
-                elif known_facts:
-                    query = known_facts[:100]  # 限制长度
-                else:
-                    query = "CTF web exploit"
-
-                writeup_results = retrieve_relevant_knowledge(
-                    query=query,
-                    sources=["writeups"],
-                    top_k=3
-                )
-
-                if vuln_types:
-                    resource_results = retrieve_relevant_knowledge(
-                        query=vuln_types[0],
-                        sources=["security_resources"],
-                        top_k=2
-                    )
-                else:
-                    resource_results = []
-
-                if writeup_results or resource_results:
-                    log(f"   📚 卡住后检索到 {len(writeup_results)} 个writeup, {len(resource_results)} 个资源")
-                    updates["retrieval_context"] = {
-                        "similar_writeups": writeup_results,
-                        "technique_docs": resource_results
-                    }
-            except Exception:
-                pass  # 静默失败
-
     if not recent_results:
         log("   ⚠️ 无结果可核验")
+
+        # 记录战略决策
+        try:
+            from router import record_strategic_decision
+            decision_updates = record_strategic_decision(
+                state,
+                {
+                    "timestamp": time.time(),
+                    "node": "verifier",
+                    "decision_type": "validation",
+                    "action": "skip",
+                    "reason": "无结果可核验",
+                    "confidence": 0.5,
+                    "outcome": "skipped"
+                }
+            )
+        except Exception as e:
+            logger.warning(f"记录战略决策失败: {e}")
+            decision_updates = {}
+
         return {
             "failure_weighted_score": state.get("failure_weighted_score", 0) + config.HARD_FAILURE_WEIGHT,
             "guidance_type": "continue",
             "enforce_change": False,
             "guidance_reason": "无结果可核验",
-            "guidance_target_url": ""
+            "guidance_target_url": "",
+            **decision_updates
         }
 
-    # [核心] Flag正则预捕获 - 三重兜底
-    pre_captured_flag: Optional[str] = None
-    for res in recent_results:
-        if res.get("extracted_flag"):
-            pre_captured_flag = res["extracted_flag"]
-            break
-        diff = res.get("diff_analysis", {})
-        if diff.get("extracted_flag"):
-            pre_captured_flag = diff["extracted_flag"]
-            break
-        output_text = res.get("output", "")
-        if isinstance(output_text, str):
-            flag_m = re.search(r"((?:flag|ctf|nssctf|hgame|dasctf|moectf|isctf|unctf|swpuctf|gwctf|ciscn|miniLCTF|actf|sctf|vnctf|xyctf|geekgame|hackergame)\{[a-zA-Z0-9_\-!@#$%^&*()+=,./?:;'\"<>\[\]{}|~` ]+\})", output_text, re.IGNORECASE)
-            if flag_m:
-                pre_captured_flag = flag_m.group(0)
-                break
+    # [核心] Flag预捕获 - 使用统一的flag_extractor，支持多Flag
+    pre_captured_flags: List[str] = []
+    try:
+        from flag_extractor import extract_flags
+        for res in recent_results:
+            if res.get("extracted_flag"):
+                pre_captured_flags.append(res["extracted_flag"])
+            diff = res.get("diff_analysis", {})
+            if diff.get("extracted_flag"):
+                pre_captured_flags.append(diff["extracted_flag"])
+            output_text = res.get("output", "")
+            if isinstance(output_text, str):
+                found = extract_flags(output_text, decode=True)
+                pre_captured_flags.extend(found)
+        # 去重
+        pre_captured_flags = list(set(pre_captured_flags))
+    except ImportError:
+        # 兜底：使用简化正则
+        for res in recent_results:
+            if res.get("extracted_flag"):
+                pre_captured_flags.append(res["extracted_flag"])
+            output_text = res.get("output", "")
+            if isinstance(output_text, str):
+                flag_m = re.search(r"[a-zA-Z0-9_]+\{[^\}]+\}", output_text, re.IGNORECASE)
+                if flag_m:
+                    pre_captured_flags.append(flag_m.group(0))
+        pre_captured_flags = list(set(pre_captured_flags))
+
+    # 取第一个作为预捕获flag（向后兼容）
+    pre_captured_flag: Optional[str] = pre_captured_flags[0] if pre_captured_flags else None
 
     # 读取日志文件并附加差异分析
     for res in recent_results:
@@ -3077,6 +3268,21 @@ def verifier_node(state: CTFState) -> Dict:
         if latest_hint.get("source") == "human":
             human_hint = latest_hint.get("content")
 
+    # 获取战略上下文和阶段信息
+    strategic_context = state.get("strategic_context", {})
+
+    # 构建阶段信息
+    stage_info = None
+    if strategic_context:
+        current_step = strategic_context.get("current_step", 1)
+        attack_chain = strategic_context.get("attack_chain", [])
+        stage_info = {
+            "stage_name": attack_chain[current_step - 1] if current_step <= len(attack_chain) else "未知",
+            "goal": strategic_context.get("primary_goal", "获取FLAG"),
+            "success_criteria": [],
+            "timeout": 0
+        }
+
     # 调用LLM
     prompt = get_verifier_prompt(
         attack_batch,
@@ -3084,7 +3290,9 @@ def verifier_node(state: CTFState) -> Dict:
         analyst_intel=state.get("analyst_intel"),
         node_info=node_info,
         known_facts=state.get("known_facts", ""),
-        human_hint=human_hint
+        human_hint=human_hint,
+        stage_info=stage_info,
+        strategic_context=strategic_context
     )
 
     response_text = llm_client.call_chat_completion(
@@ -3168,6 +3376,27 @@ def verifier_node(state: CTFState) -> Dict:
             updated_context = update_strategic_context_after_node(state, "verifier", result)
             if updated_context:
                 result["strategic_context"] = updated_context
+
+            # 记录战略决策
+            try:
+                from router import record_strategic_decision
+                decision_updates = record_strategic_decision(
+                    state,
+                    {
+                        "timestamp": time.time(),
+                        "node": "verifier",
+                        "decision_type": "validation",
+                        "action": "flag_captured",
+                        "reason": f"成功捕获FLAG: {potential_flag[:50]}...",
+                        "confidence": 1.0,
+                        "outcome": "success",
+                        "target": current_url
+                    }
+                )
+                result.update(decision_updates)
+            except Exception as e:
+                logger.warning(f"记录战略决策失败: {e}")
+
             return result
 
         # 攻击成功
@@ -3282,6 +3511,26 @@ def verifier_node(state: CTFState) -> Dict:
             if updated_context:
                 result_dict["strategic_context"] = updated_context
 
+            # 记录战略决策
+            try:
+                from router import record_strategic_decision
+                decision_updates = record_strategic_decision(
+                    state,
+                    {
+                        "timestamp": time.time(),
+                        "node": "verifier",
+                        "decision_type": "validation",
+                        "action": node_decision if node_decision else "continue",
+                        "reason": evidence[:100] if evidence else "攻击有效",
+                        "confidence": 0.8,
+                        "outcome": "success",
+                        "target": current_url
+                    }
+                )
+                result_dict.update(decision_updates)
+            except Exception as e:
+                logger.warning(f"记录战略决策失败: {e}")
+
             return result_dict
 
         # 攻击失败 - [P3合并] 处理节点决策
@@ -3356,6 +3605,26 @@ def verifier_node(state: CTFState) -> Dict:
             if updated_context:
                 result_dict["strategic_context"] = updated_context
 
+            # 记录战略决策
+            try:
+                from router import record_strategic_decision
+                decision_updates = record_strategic_decision(
+                    state,
+                    {
+                        "timestamp": time.time(),
+                        "node": "verifier",
+                        "decision_type": "validation",
+                        "action": "fallback",
+                        "reason": fallback_action.get("fallback_description", "执行Fallback方案"),
+                        "confidence": 0.6,
+                        "outcome": "pending",
+                        "target": current_url
+                    }
+                )
+                result_dict.update(decision_updates)
+            except Exception as e:
+                logger.warning(f"记录战略决策失败: {e}")
+
             log(f"   🎯 Fallback攻击动作: {fallback_attack.get('tool')}")
             return result_dict
 
@@ -3391,6 +3660,26 @@ def verifier_node(state: CTFState) -> Dict:
                 updated_context = update_strategic_context_after_node(state, "verifier", result_dict)
                 if updated_context:
                     result_dict["strategic_context"] = updated_context
+
+                # 记录战略决策
+                try:
+                    from router import record_strategic_decision
+                    decision_updates = record_strategic_decision(
+                        state,
+                        {
+                            "timestamp": time.time(),
+                            "node": "verifier",
+                            "decision_type": "validation",
+                            "action": "shell_obtained",
+                            "reason": "内网模式检测到活跃Shell会话",
+                            "confidence": 0.9,
+                            "outcome": "success",
+                            "target": current_url
+                        }
+                    )
+                    result_dict.update(decision_updates)
+                except Exception as e:
+                    logger.warning(f"记录战略决策失败: {e}")
 
                 return result_dict
 
@@ -3445,6 +3734,26 @@ def verifier_node(state: CTFState) -> Dict:
         if updated_context:
             result_dict["strategic_context"] = updated_context
 
+        # 记录战略决策
+        try:
+            from router import record_strategic_decision
+            decision_updates = record_strategic_decision(
+                state,
+                {
+                    "timestamp": time.time(),
+                    "node": "verifier",
+                    "decision_type": "validation",
+                    "action": node_decision if node_decision else "continue",
+                    "reason": failure_analysis[:100] if failure_analysis else "攻击无效",
+                    "confidence": 1.0 - failure_severity,
+                    "outcome": "failed",
+                    "target": current_url
+                }
+            )
+            result_dict.update(decision_updates)
+        except Exception as e:
+            logger.warning(f"记录战略决策失败: {e}")
+
         return result_dict
 
     except Exception as e:
@@ -3464,6 +3773,26 @@ def verifier_node(state: CTFState) -> Dict:
         updated_context = update_strategic_context_after_node(state, "verifier", result_dict)
         if updated_context:
             result_dict["strategic_context"] = updated_context
+
+        # 记录战略决策
+        try:
+            from router import record_strategic_decision
+            decision_updates = record_strategic_decision(
+                state,
+                {
+                    "timestamp": time.time(),
+                    "node": "verifier",
+                    "decision_type": "validation",
+                    "action": "error",
+                    "reason": f"解析异常: {str(e)[:50]}",
+                    "confidence": 0.0,
+                    "outcome": "error",
+                    "target": current_url
+                }
+            )
+            result_dict.update(decision_updates)
+        except Exception as ex:
+            logger.warning(f"记录战略决策失败: {ex}")
 
         return result_dict
 
@@ -3495,6 +3824,10 @@ workflow.add_node("explorer", wrap_node("explorer", explorer_node))  # type: ign
 workflow.add_node("innovator", wrap_node("innovator", innovator_node))  # type: ignore # 头脑风暴
 workflow.add_node("verifier", wrap_node("verifier", verifier_node))  # type: ignore # 核验兵 [P3合并]
 workflow.add_node("evolution", wrap_node("evolution", evolution_node))  # type: ignore # 进化闭环
+
+# Token压缩节点 (可选启用)
+if COMPRESSOR_AVAILABLE:
+    workflow.add_node("compressor", compressor_node)  # type: ignore # Token压缩
 
 # 内网渗透节点 (可选启用)
 if INTERNAL_NETWORK_AVAILABLE:
@@ -3661,16 +3994,66 @@ if REVERSE_AVAILABLE:
 if MISC_AVAILABLE:
     _mode_manager_routes["misc_analyst"] = "misc_analyst"
 
-workflow.add_conditional_edges(
-    "mode_manager",
-    _route_from_mode_manager,
-    _mode_manager_routes
-)
+# Token压缩节点路由（可选启用）
+if COMPRESSOR_AVAILABLE:
+    # mode_manager后先压缩再路由
+    workflow.add_edge("mode_manager", "compressor")
+    # 构建压缩器路由映射（添加compressor）
+    _compressor_routes = _mode_manager_routes.copy()
+    _compressor_routes["compressor"] = "compressor"
+    workflow.add_conditional_edges(
+        "compressor",
+        _route_from_mode_manager,
+        _compressor_routes
+    )
+else:
+    # 原有逻辑：直接从mode_manager路由
+    workflow.add_conditional_edges(
+        "mode_manager",
+        _route_from_mode_manager,
+        _mode_manager_routes
+    )
 
 # 3. 分支回归逻辑
 workflow.add_edge("explorer", "mode_manager")  # 探索后重新决策
 workflow.add_edge("innovator", "strategy_filter")  # 创新后注入规则到过滤器
-workflow.add_edge("attacker", "verifier")  # 攻击后必须验证
+
+# 3.5 [智能流转] attacker 条件路由 - 支持绕过 verifier
+def _route_from_attacker(state: CTFState) -> str:
+    """
+    attacker 后智能路由
+
+    根据 ai_flow_controller 的决策决定下一步：
+    - skip_verifier=True -> 直接返回 attacker 继续攻击
+    - flow_decision='report_flag' -> 进化流程
+    - 默认 -> verifier 验证
+    """
+    # 检查是否应该绕过 verifier
+    if state.get("skip_verifier"):
+        # 重置标志，避免重复路由
+        logger.info("[智能流转] 绕过 verifier，直接继续攻击")
+        return "attacker"
+
+    # 检查 flow_decision
+    flow_decision = state.get("flow_decision", "")
+    if flow_decision == "report_flag":
+        logger.info("[智能流转] 发现 FLAG，进入进化流程")
+        return "evolution"
+
+    # 默认进入 verifier
+    return "verifier"
+
+_attacker_routes = {
+    "verifier": "verifier",
+    "attacker": "attacker",  # 绕过 verifier 继续攻击
+    "evolution": "evolution",  # 发现 FLAG 直接进化
+}
+
+workflow.add_conditional_edges(
+    "attacker",
+    _route_from_attacker,
+    _attacker_routes
+)
 
 # 4. [P3优化] 验证后分流: 成功则进化，shell则后渗透，失败则回到mode_manager
 _verifier_routes = {
@@ -3702,14 +4085,15 @@ if INTERNAL_NETWORK_AVAILABLE:
         "lateral_move": "lateral_move",
         "privilege_escalation": "privilege_escalation",
         "flag_search": "flag_search",
+        "persistence": "persistence",
         "upload_tools": "upload_tools",
         "setup_tunnel": "setup_tunnel",
         "mode_manager": "mode_manager"
     }
 
-    # 内网侦察/凭据收集/横向移动/权限提升/Flag搜索 共用同一路由映射
+    # 内网侦察/凭据收集/横向移动/权限提升/Flag搜索/持久化 共用同一路由映射
     for _node_name in ["internal_recon", "credential_gather", "lateral_move",
-                       "privilege_escalation", "flag_search"]:
+                       "privilege_escalation", "flag_search", "persistence"]:
         workflow.add_conditional_edges(
             _node_name,
             lambda state, _n=_node_name: route_internal_mode(state, _n),

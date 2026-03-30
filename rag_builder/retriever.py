@@ -3,8 +3,12 @@
 # 更新：支持统一检索器（Writeups + Nuclei + Payloads + Security Resources）
 # 更新：集成RAG缓存机制，减少重复向量查询
 # 更新：集成高级检索策略（查询增强、混合检索、重排序、MMR多样性）
+# 更新：添加调用统计，优化RAG调用时机（仅在innovator_node调用）
 
 from typing import List, Dict, Tuple, Optional
+import threading
+import time
+from datetime import datetime
 
 # Optional dependencies - RAG functionality requires these
 try:
@@ -18,6 +22,54 @@ except ImportError:
 
 from rag_builder.config import CHROMA_DIR, EMBEDDING_MODEL, TOP_K_RESULTS, SIMILARITY_THRESHOLD
 from rag_builder.cache import get_cache, RAGCache
+
+# ==================== RAG调用统计 ====================
+class RAGStats:
+    """RAG调用统计器 - 追踪调用次数和性能"""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._call_count = 0
+        self._cache_hits = 0
+        self._total_time = 0.0
+        self._last_call_time = None
+        self._last_caller = None
+
+    def record_call(self, caller: str, duration: float, cache_hit: bool = False):
+        """记录一次RAG调用"""
+        with self._lock:
+            self._call_count += 1
+            self._total_time += duration
+            self._last_call_time = datetime.now()
+            self._last_caller = caller
+            if cache_hit:
+                self._cache_hits += 1
+
+    def get_stats(self) -> Dict:
+        """获取统计数据"""
+        with self._lock:
+            return {
+                "total_calls": self._call_count,
+                "cache_hits": self._cache_hits,
+                "cache_hit_rate": self._cache_hits / self._call_count if self._call_count > 0 else 0,
+                "total_time": self._total_time,
+                "avg_time": self._total_time / self._call_count if self._call_count > 0 else 0,
+                "last_call_time": self._last_call_time.isoformat() if self._last_call_time else None,
+                "last_caller": self._last_caller
+            }
+
+    def log_summary(self):
+        """打印统计摘要"""
+        stats = self.get_stats()
+        if stats["total_calls"] > 0:
+            print(f"[RAG Stats] 总调用: {stats['total_calls']}次, "
+                  f"缓存命中: {stats['cache_hits']}次 ({stats['cache_hit_rate']*100:.1f}%), "
+                  f"平均耗时: {stats['avg_time']:.2f}s, "
+                  f"最后调用者: {stats['last_caller']}")
+
+
+# 全局统计实例
+_rag_stats = RAGStats()
 
 # 尝试导入统一检索器
 try:
@@ -115,7 +167,8 @@ class WriteupRetriever:
                 raise
 
     def search_by_text(self, query: str, top_k: int = TOP_K_RESULTS,
-                       sources: Tuple[str, ...] = None, use_cache: bool = True) -> List[Dict]:
+                       sources: Tuple[str, ...] = None, use_cache: bool = True,
+                       caller: str = "unknown") -> List[Dict]:
         """
         用文本检索相似内容
 
@@ -124,10 +177,13 @@ class WriteupRetriever:
             top_k: 返回结果数量
             sources: 数据源元组，如 ("writeups", "nuclei")
             use_cache: 是否使用缓存（默认True）
+            caller: 调用者标识，用于统计（默认"unknown"）
 
         Returns:
             相似内容列表
         """
+        start_time = time.time()
+
         # 确定数据源
         if sources is None:
             sources = ("writeups", "nuclei", "payloads", "security_resources")
@@ -137,6 +193,10 @@ class WriteupRetriever:
             cache = get_cache()
             cached_results = cache.get(query, sources, top_k)
             if cached_results is not None:
+                # 记录缓存命中
+                duration = time.time() - start_time
+                _rag_stats.record_call(caller, duration, cache_hit=True)
+                print(f"[RAG] Cache hit for '{query[:30]}...' (caller: {caller})")
                 return cached_results
 
         # 使用高级检索（查询增强）
@@ -170,6 +230,11 @@ class WriteupRetriever:
         # 缓存结果
         if use_cache and result:
             cache.set(query, result, sources, top_k)
+
+        # 记录调用统计
+        duration = time.time() - start_time
+        _rag_stats.record_call(caller, duration, cache_hit=False)
+        print(f"[RAG] Called by [{caller}] in {duration:.2f}s, returned {len(result)} results")
 
         return result
 
@@ -230,13 +295,14 @@ class WriteupRetriever:
 
         return formatted
 
-    def search_by_features(self, features: Dict, top_k: int = TOP_K_RESULTS) -> List[Dict]:
+    def search_by_features(self, features: Dict, top_k: int = TOP_K_RESULTS, caller: str = "innovator") -> List[Dict]:
         """
         根据页面特征检索（供头脑风暴兵直接调用）
 
         Args:
             features: 侦察兵提取的页面特征
             top_k: 返回数量
+            caller: 调用者标识，用于统计（默认"innovator"）
         """
         # 构建更精准的查询文本
         query_parts = []
@@ -270,13 +336,13 @@ class WriteupRetriever:
 
         # 如果没有提取到有效特征，返回空结果而非使用硬编码默认查询
         if not query_parts:
-            print(f"   [RAG] No features extracted, skipping retrieval")
+            print(f"   [RAG] No features extracted, skipping retrieval (caller: {caller})")
             return []
 
         query = " | ".join(query_parts)
 
-        print(f"   [RAG] Query: {query[:100]}...")
-        return self.search_by_text(query, top_k)
+        print(f"   [RAG] Query: {query[:100]}... (caller: {caller})")
+        return self.search_by_text(query, top_k, caller=caller)
 
     def search_by_tags(self, tags: List[str], top_k: int = TOP_K_RESULTS) -> List[Dict]:
         """根据tags检索"""
@@ -484,3 +550,22 @@ if __name__ == "__main__":
             meta = r.get("metadata", {})
             filename = meta.get("filename", meta.get("name", "unknown"))
             print(f"  [{source}] {filename} (similarity: {sim:.2f})")
+
+    # 打印统计信息
+    print("\n--- RAG Statistics ---")
+    _rag_stats.log_summary()
+
+
+def get_rag_stats() -> Dict:
+    """
+    获取RAG调用统计数据
+
+    Returns:
+        包含调用次数、缓存命中率、平均耗时等统计信息的字典
+    """
+    return _rag_stats.get_stats()
+
+
+def log_rag_stats():
+    """打印RAG统计摘要"""
+    _rag_stats.log_summary()

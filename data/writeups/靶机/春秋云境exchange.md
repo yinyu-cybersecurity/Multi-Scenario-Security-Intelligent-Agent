@@ -1,3 +1,7 @@
+---
+tags: [Fastjson反序列化, JDBC利用, RCE]
+---
+
 # 春秋云境exchange靶场
 
 ### flag1

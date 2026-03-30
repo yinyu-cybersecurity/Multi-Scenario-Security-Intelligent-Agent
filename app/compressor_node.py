@@ -5,6 +5,7 @@
 from typing import Dict
 from state import CTFState
 from logger import get_logger
+from config import config
 
 logger = get_logger(__name__)
 
@@ -24,8 +25,10 @@ def compressor_node(state: CTFState) -> Dict:
     Returns:
         需要更新的字段字典，空字典表示无需压缩
     """
+    # 使用config中的配置计算阈值
+    threshold = config.MAX_CONTEXT_TOKENS * config.CHARS_PER_TOKEN  # Token估算转换为字符数
+
     state_size = len(str(state))
-    threshold = 50000  # 50KB
 
     if state_size < threshold:
         return {}  # 无需压缩
@@ -75,5 +78,7 @@ def should_compress(state: CTFState) -> bool:
     Returns:
         是否需要压缩
     """
+    # 使用config中的配置计算阈值
+    threshold = config.MAX_CONTEXT_TOKENS * config.CHARS_PER_TOKEN
     state_size = len(str(state))
-    return state_size > 50000
+    return state_size > threshold

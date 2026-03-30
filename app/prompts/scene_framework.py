@@ -204,33 +204,129 @@ ATTACK_DECISION_PRINCIPLES = """
 # 组合函数
 # =============================================================================
 
-def get_scene_framework_for_attacker() -> str:
+def get_scene_framework_for_attacker(stage_info: Dict = None, strategic_context: Dict = None) -> str:
     """获取攻击兵用的场景框架（简洁版）"""
-    return SCENE_FRAMEWORK
+    stage_section = ""
+    if stage_info:
+        stage_section = f"""
+## 当前阶段: {stage_info.get('stage_name', '')}
+### 阶段目标: {stage_info.get('goal', '')}
+"""
+    if strategic_context:
+        # 构建战略上下文（使用正确的字段）
+        attack_chain = strategic_context.get('attack_chain', [])
+        current_step = strategic_context.get('current_step', 0)
+        total_steps = strategic_context.get('total_steps', 0)
+        blockers = strategic_context.get('blockers', [])
+        alternate_routes = strategic_context.get('alternate_routes', [])
 
-def get_scene_framework_for_analyst() -> str:
+        stage_section += f"""
+### 战略上下文
+- 攻击链进度: 第{current_step}步/共{total_steps}步
+- 当前障碍: {', '.join(blockers) if blockers else '无'}
+- 备选路径: {', '.join(alternate_routes[:3]) if alternate_routes else '无'}
+"""
+    return stage_section + SCENE_FRAMEWORK
+
+def get_scene_framework_for_analyst(stage_info: Dict = None, strategic_context: Dict = None) -> str:
     """获取分析师用的场景框架（详细版+策略映射）"""
-    return SCENE_RECOGNITION_DETAIL + "\n" + SCENE_STRATEGY_MAPPING
+    stage_section = ""
+    if stage_info:
+        stage_section = f"""
+## 当前阶段: {stage_info.get('stage_name', '')}
+### 阶段目标: {stage_info.get('goal', '')}
+"""
+    if strategic_context:
+        attack_chain = strategic_context.get('attack_chain', [])
+        current_step = strategic_context.get('current_step', 0)
+        total_steps = strategic_context.get('total_steps', 0)
+        primary_goal = strategic_context.get('primary_goal', '')
+        blockers = strategic_context.get('blockers', [])
 
-def get_encoding_tips() -> str:
+        stage_section += f"""
+### 战略上下文
+- 主要目标: {primary_goal}
+- 攻击链: {' -> '.join(attack_chain[:5]) if attack_chain else '待规划'}
+- 进度: 第{current_step}步/共{total_steps}步
+- 当前障碍: {', '.join(blockers) if blockers else '无'}
+"""
+    return stage_section + SCENE_RECOGNITION_DETAIL + "\n" + SCENE_STRATEGY_MAPPING
+
+def get_encoding_tips(stage_info: Dict = None, strategic_context: Dict = None) -> str:
     """获取编码处理提示"""
-    return ENCODING_TIPS
+    stage_section = ""
+    if stage_info:
+        stage_section = f"""
+## 当前阶段: {stage_info.get('stage_name', '')}
+### 阶段目标: {stage_info.get('goal', '')}
+"""
+    if strategic_context:
+        blockers = strategic_context.get('blockers', [])
+        stage_section += f"""
+### 当前障碍: {', '.join(blockers[:3]) if blockers else '无'}
+"""
+    return stage_section + ENCODING_TIPS
 
-def get_new_path_discovery_tips() -> str:
+def get_new_path_discovery_tips(stage_info: Dict = None, strategic_context: Dict = None) -> str:
     """获取新路径发现提示"""
-    return NEW_PATH_DISCOVERY_TIPS
+    stage_section = ""
+    if stage_info:
+        stage_section = f"""
+## 当前阶段: {stage_info.get('stage_name', '')}
+### 阶段目标: {stage_info.get('goal', '')}
+"""
+    if strategic_context:
+        alternate_routes = strategic_context.get('alternate_routes', [])
+        stage_section += f"""
+### 备选路径: {', '.join(alternate_routes[:3]) if alternate_routes else '待发现'}
+"""
+    return stage_section + NEW_PATH_DISCOVERY_TIPS
 
-def get_success_criteria() -> str:
+def get_success_criteria(stage_info: Dict = None, strategic_context: Dict = None) -> str:
     """获取成功判断标准"""
-    return SUCCESS_CRITERIA
+    stage_section = ""
+    if stage_info:
+        stage_section = f"""
+## 当前阶段: {stage_info.get('stage_name', '')}
+### 阶段目标: {stage_info.get('goal', '')}
+"""
+    if strategic_context:
+        current_step = strategic_context.get('current_step', 0)
+        total_steps = strategic_context.get('total_steps', 0)
+        stage_section += f"""
+### 进度: 第{current_step}步/共{total_steps}步
+"""
+    return stage_section + SUCCESS_CRITERIA
 
-def get_tool_selection_principles() -> str:
+def get_tool_selection_principles(stage_info: Dict = None, strategic_context: Dict = None) -> str:
     """获取工具选择原则"""
-    return TOOL_SELECTION_PRINCIPLES
+    stage_section = ""
+    if stage_info:
+        stage_section = f"""
+## 当前阶段: {stage_info.get('stage_name', '')}
+### 阶段目标: {stage_info.get('goal', '')}
+"""
+    if strategic_context:
+        blockers = strategic_context.get('blockers', [])
+        stage_section += f"""
+### 当前障碍: {', '.join(blockers[:3]) if blockers else '无'}
+"""
+    return stage_section + TOOL_SELECTION_PRINCIPLES
 
-def get_attack_decision_principles() -> str:
+def get_attack_decision_principles(stage_info: Dict = None, strategic_context: Dict = None) -> str:
     """获取攻击决策原则"""
-    return ATTACK_DECISION_PRINCIPLES
+    stage_section = ""
+    if stage_info:
+        stage_section = f"""
+## 当前阶段: {stage_info.get('stage_name', '')}
+### 阶段目标: {stage_info.get('goal', '')}
+"""
+    if strategic_context:
+        primary_goal = strategic_context.get('primary_goal', '')
+        stage_section += f"""
+### 主要目标: {primary_goal}
+"""
+    return stage_section + ATTACK_DECISION_PRINCIPLES
 
 def get_recommended_tools(scene_type: str) -> List[str]:
     """根据场景类型获取推荐工具列表"""

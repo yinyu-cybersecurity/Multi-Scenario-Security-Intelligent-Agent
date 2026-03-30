@@ -11,6 +11,7 @@ import requests
 from typing import Dict, List, Optional
 
 from tool_framework import CTFTool
+from app.flag_extractor_v2 import extract_first_flag
 
 
 class AIAttacker(CTFTool):
@@ -173,7 +174,7 @@ class AIAttacker(CTFTool):
 
                 if response:
                     success = payload["indicator"].lower() in response.lower()
-                    flag = self._extract_flag(response)
+                    flag = extract_first_flag(response)
 
                     findings.append({
                         "type": "prompt_injection",
@@ -236,7 +237,7 @@ class AIAttacker(CTFTool):
 
                 if response:
                     success = payload["indicator"].lower() in response.lower()
-                    flag = self._extract_flag(response)
+                    flag = extract_first_flag(response)
 
                     findings.append({
                         "type": "jailbreak",
@@ -340,7 +341,7 @@ class AIAttacker(CTFTool):
                 response = self._send_ai_request(target_url, api_key, model, payload["prompt"])
 
                 if response:
-                    flag = self._extract_flag(response)
+                    flag = extract_first_flag(response)
                     findings.append({
                         "type": "data_extraction",
                         "payload_name": payload["name"],
@@ -411,21 +412,6 @@ class AIAttacker(CTFTool):
     def check_available(self) -> bool:
         """检查工具是否可用"""
         return True  # 纯Python实现，始终可用
-
-    def _extract_flag(self, text: str) -> Optional[str]:
-        """提取Flag"""
-        patterns = [
-            r"flag\{[a-zA-Z0-9_\-]+\}",
-            r"ctf\{[a-zA-Z0-9_\-]+\}",
-            r"FLAG\{[a-zA-Z0-9_\-]+\}",
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                return match.group(0)
-
-        return None
 
     def _extract_secrets(self, text: str) -> List[str]:
         """提取可能的敏感信息"""

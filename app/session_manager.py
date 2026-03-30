@@ -12,6 +12,8 @@
     from app.session_manager import get_session_manager, ShellType, ShellSession
 """
 
+from typing import Dict, List, Any
+
 # 从remote_executor导入所有内容
 from remote_executor.session_manager import (
     ShellSessionManager,
@@ -75,3 +77,154 @@ def create_webshell_session(url: str, password: str = "",
     """创建WebShell会话的便捷函数"""
     manager = get_session_manager()
     return manager.create_webshell_session(url, password, shell_type, os_type)
+
+
+# ==================== [断点5修复] 统一会话检测函数 ====================
+
+def has_valid_shell_session(state: Dict) -> bool:
+    """
+    统一检测是否有有效的shell会话
+
+    解决各节点检测方式不一致问题:
+    - 有的检测 shell_session.get("session_id")
+    - 有的检测 shell_session.get("id")
+    - 有的检测 shell_session is not None
+
+    Args:
+        state: 状态字典，包含 shell_session 字段
+
+    Returns:
+        True: 有有效的shell会话
+        False: 无有效会话
+
+    使用示例:
+        from app.session_manager import has_valid_shell_session
+        if has_valid_shell_session(state):
+            # 有会话时的处理
+    """
+    shell_session = state.get("shell_session")
+
+    if not shell_session:
+        return False
+
+    if not isinstance(shell_session, dict):
+        return False
+
+    # 检测多种可能的session_id字段名
+    session_id = shell_session.get("session_id") or shell_session.get("id")
+
+    if not session_id:
+        return False
+
+    # 可选：验证会话是否真实存在（如果session_manager有记录）
+    try:
+        manager = get_session_manager()
+        if manager.get_session(session_id):
+            return True
+    except:
+        pass
+
+    # 如果没有在manager中注册，但有session_id，仍然认为有效
+    return True
+
+
+def get_shell_session_info(state: Dict) -> Dict[str, Any]:
+    """
+    获取shell会话的详细信息，统一格式
+
+    Args:
+        state: 状态字典
+
+    Returns:
+        统一格式的会话信息字典:
+        {
+            "session_id": str,
+            "type": str,  # ssh/webshell/meterpreter
+            "os_type": str,  # linux/windows
+            "target": str,  # 目标主机
+            "is_admin": bool,
+            "status": str,  # active/dead
+        }
+        如果无有效会话，返回空字典 {}
+    """
+    if not has_valid_shell_session(state):
+        return {}
+
+    shell_session = state.get("shell_session")
+
+    # 标准化字段名
+    result = {
+        "session_id": shell_session.get("session_id") or shell_session.get("id"),
+        "type": shell_session.get("type", shell_session.get("shell_type", "unknown")),
+        "os_type": shell_session.get("os_type", "linux"),
+        "target": shell_session.get("target", shell_session.get("host", "")),
+        "is_admin": shell_session.get("is_admin", False),
+        "status": shell_session.get("status", "active"),
+    }
+
+    return result
+
+
+def get_all_sessions(state: Dict) -> List[Dict]:
+    """
+    获取所有可用会话（包含shell_session和active_sessions）
+
+    Args:
+        state: 状态字典
+
+    Returns:
+        所有会话的列表，每个会话包含标准化字段
+    """
+    sessions = []
+
+    # 1. 添加主shell_session
+    shell_info = get_shell_session_info(state)
+    if shell_info:
+        sessions.append(shell_info)
+
+    # 2. 添加active_sessions中的会话
+    active_sessions = state.get("active_sessions") or []
+    for session in active_sessions:
+        if isinstance(session, dict):
+            standardized = {
+                "session_id": session.get("session_id") or session.get("id"),
+                "type": session.get("type", "unknown"),
+                "os_type": session.get("os_type", "linux"),
+                "target": session.get("target", session.get("host", "")),
+                "is_admin": session.get("is_admin", False),
+                "status": session.get("status", "active"),
+            }
+            if standardized["session_id"]:
+                sessions.append(standardized)
+
+    return sessions
+
+
+def check_session_health_from_state(state: Dict) -> Dict[str, str]:
+    """
+    检查会话健康状态
+
+    Args:
+        state: 状态字典
+
+    Returns:
+        {session_id: health_status} 字典
+    """
+    sessions = get_all_sessions(state)
+    health_map = {}
+
+    for session in sessions:
+        session_id = session.get("session_id")
+        if not session_id:
+            continue
+
+        # 尝试检查真实健康状态
+        try:
+            manager = get_session_manager()
+            health = manager.check_session_health(session_id)
+            health_map[session_id] = health
+        except:
+            # 无法检查时，根据status字段判断
+            health_map[session_id] = session.get("status", "unknown")
+
+    return health_map
