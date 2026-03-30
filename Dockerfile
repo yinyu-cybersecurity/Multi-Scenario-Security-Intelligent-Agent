@@ -189,14 +189,9 @@ RUN pip install --upgrade pip && \
     pip install -r requirements.txt && \
     pip install -r /app/thirdparty/dirsearch/requirements.txt 2>/dev/null || true
 
-# 预下载 RAG Embedding 模型（ModelScope国内镜像，约420MB）
+# RAG Embedding 模型配置（运行时从hf-mirror.com下载）
+ENV HF_ENDPOINT=https://hf-mirror.com
 ENV HF_HOME=/app/.cache/huggingface
-RUN pip install modelscope && \
-    python3.11 -c "from modelscope import snapshot_download; \
-    snapshot_download('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', \
-    cache_dir='/app/.cache/huggingface', \
-    allow_patterns=['*.json','*.txt','*.bin','model.safetensors'])" && \
-    echo "RAG model downloaded (~420MB)"
 
 COPY app/*.py ./
 COPY app/state_types ./state_types/
