@@ -6,6 +6,7 @@ import os
 import json
 import hashlib
 import time
+import threading
 from rag_builder.config import SIMILARITY_THRESHOLD
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Any
