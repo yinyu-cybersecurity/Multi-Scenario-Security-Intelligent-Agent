@@ -192,10 +192,10 @@ RUN pip install --upgrade pip && \
 # 预下载 RAG Embedding 模型（国内镜像）
 ENV HF_ENDPOINT=https://hf-mirror.com
 ENV HF_HOME=/app/.cache/huggingface
-RUN pip install -U huggingface_hub && \
-    huggingface-cli download sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 \
-    --local-dir /app/.cache/huggingface/models--paraphrase-multilingual-MiniLM-L12-v2 \
-    --local-dir-use-symlinks False && \
+RUN python3.11 -c "from huggingface_hub import snapshot_download; \
+    snapshot_download('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', \
+    local_dir='/app/.cache/huggingface/models--paraphrase-multilingual-MiniLM-L12-v2', \
+    local_dir_use_symlinks=False)" && \
     echo "RAG model downloaded"
 
 COPY app/*.py ./
