@@ -79,7 +79,17 @@ def misc_analyst_node(state: Dict) -> Dict:
         # 基本文件分析
         file_info = ForensicsAnalyzer.analyze_file(file_path)
 
-        # 隐写术检测
+        # AI动态隐写检测（让AI决定检测策略）
+        ai_steg_result = SteganographyDetector.ai_detect_steganography(
+            file_path,
+            file_info={
+                "type": file_info.file_type.value,
+                "mime": file_info.mime_type,
+                "size": file_info.size
+            }
+        )
+
+        # 传统隐写术检测（作为补充验证）
         steg_results = {}
 
         # 检查文件尾部附加数据
@@ -94,16 +104,27 @@ def misc_analyst_node(state: Dict) -> Dict:
             except Exception:
                 pass
 
-        # 检查LSB隐写（图片）
+        # 检查LSB隐写（图片）- 根据AI建议决定是否执行
         if file_info.file_type == FileType.IMAGE:
-            lsb_data = SteganographyDetector.extract_lsb(file_path)
-            if lsb_data:
-                steg_results['lsb_data'] = str(lsb_data)[:200]
+            # 如果AI建议LSB提取，则执行
+            if ai_steg_result.get('extraction_strategy', {}).get('primary_method') == 'lsb' or \
+               'lsb' in ai_steg_result.get('extraction_strategy', {}).get('secondary_methods', []):
+                lsb_data = SteganographyDetector.extract_lsb(file_path)
+                if lsb_data:
+                    steg_results['lsb_data'] = str(lsb_data)[:200]
 
             # 检查EXIF
             exif = SteganographyDetector.check_exif_data(file_path)
             if exif:
                 steg_results['exif'] = exif
+
+        # 将AI检测结果合并
+        steg_results['ai_detection'] = {
+            'type': ai_steg_result.get('steganography_type', 'unknown'),
+            'confidence': ai_steg_result.get('confidence', 0),
+            'strategy': ai_steg_result.get('extraction_strategy', {}),
+            'findings': ai_steg_result.get('findings', [])
+        }
 
         # 媒体分析
         media_analysis = {}
@@ -115,7 +136,7 @@ def misc_analyst_node(state: Dict) -> Dict:
         # 查找嵌入文件
         embedded = ForensicsAnalyzer.find_embedded_files(file_path)
 
-        # LLM分析（注入知识库上下文）
+        # LLM分析（注入知识库上下文和AI隐写检测结果）
         llm_insight = _llm_misc_analysis(file_info, steg_results, embedded, state, knowledge_context)
 
         logger.info(f"[MiscAnalyst] Analysis complete: {file_info.file_type.value}")
@@ -180,8 +201,30 @@ def misc_extractor_node(state: Dict) -> Dict:
     extracted = []
     potential_flags = []
 
+    # 获取AI检测结果
+    ai_detection = steg_results.get('ai_detection', {})
+    extraction_strategy = ai_detection.get('strategy', {})
+    primary_method = extraction_strategy.get('primary_method', '')
+    secondary_methods = extraction_strategy.get('secondary_methods', [])
+
+    # 根据AI建议的优先级执行提取
+    logger.info(f"[MiscExtractor] AI suggested primary method: {primary_method}")
+
+    # 1. 执行AI建议的主要提取方法
+    if primary_method:
+        extracted.extend(_execute_extraction_by_method(
+            file_info, file_info.get("path", ""), primary_method, extraction_strategy.get('parameters', {})
+        ))
+
+    # 2. 执行次要方法
+    for method in secondary_methods:
+        extracted.extend(_execute_extraction_by_method(
+            file_info, file_info.get("path", ""), method, {}
+        ))
+
+    # 3. 传统提取方法（作为补充）
     # 提取尾部数据
-    if 'trailer_data' in steg_results:
+    if 'trailer_data' in steg_results and primary_method != 'trailer':
         trailer_hex = steg_results['trailer_data']
         try:
             trailer_bytes = bytes.fromhex(trailer_hex)
@@ -192,8 +235,8 @@ def misc_extractor_node(state: Dict) -> Dict:
         except Exception:
             pass
 
-    # 提取LSB数据
-    if 'lsb_data' in steg_results:
+    # 提取LSB数据（如果之前没执行）
+    if 'lsb_data' in steg_results and primary_method != 'lsb':
         extracted.append({
             "method": "lsb_extraction",
             "data": steg_results['lsb_data']
@@ -263,6 +306,149 @@ def _find_flags(text: str) -> List[str]:
         flags.extend(matches)
 
     return flags
+
+
+def _execute_extraction_by_method(file_info: Dict, file_path: str, method: str, params: Dict) -> List[Dict]:
+    """
+    根据AI建议的方法执行提取操作
+
+    Args:
+        file_info: 文件信息
+        file_path: 文件路径
+        method: 提取方法名
+        params: 方法参数
+
+    Returns:
+        提取结果列表
+    """
+    results = []
+
+    try:
+        if method == 'lsb':
+            # LSB隐写提取
+            lsb_data = SteganographyDetector.extract_lsb(file_path)
+            if lsb_data:
+                results.append({
+                    "method": "lsb_extraction",
+                    "data": str(lsb_data)[:500],
+                    "confidence": params.get('confidence', 0.7)
+                })
+
+        elif method == 'trailer':
+            # 文件尾部数据提取
+            trailer_data = SteganographyDetector.check_file_trailer(file_path)
+            if trailer_data:
+                decoded = trailer_data.decode('utf-8', errors='ignore')[:500]
+                results.append({
+                    "method": "file_trailer",
+                    "data": decoded,
+                    "raw_hex": trailer_data[:100].hex()
+                })
+                # 尝试解码
+                decoded_results = EncodingConverter.try_decode(decoded)
+                for enc_type, dec_value in decoded_results.items():
+                    results.append({
+                        "method": f"trailer_{enc_type}_decoded",
+                        "data": dec_value[:300]
+                    })
+
+        elif method == 'extract_embedded':
+            # 提取嵌入文件
+            embedded = ForensicsAnalyzer.find_embedded_files(file_path)
+            if embedded:
+                results.append({
+                    "method": "embedded_files_detection",
+                    "data": json.dumps(embedded, indent=2)
+                })
+                # 尝试提取嵌入的ZIP等
+                for emb in embedded:
+                    if emb.get('type') == 'ZIP':
+                        # 可能需要提取ZIP内容
+                        results.append({
+                            "method": "potential_zip_embedded",
+                            "offset": emb.get('offset'),
+                            "suggestion": "Use binwalk or dd to extract"
+                        })
+
+        elif method == 'exif':
+            # EXIF元数据提取
+            exif = SteganographyDetector.check_exif_data(file_path)
+            if exif:
+                results.append({
+                    "method": "exif_extraction",
+                    "data": json.dumps(exif, indent=2)
+                })
+
+        elif method == 'binwalk':
+            # binwalk分析建议
+            results.append({
+                "method": "binwalk_suggestion",
+                "data": f"Run: binwalk {file_path}",
+                "suggestion": "Use binwalk to scan for embedded files and data"
+            })
+
+        elif method == 'strings':
+            # 字符串提取
+            import subprocess
+            try:
+                proc = subprocess.run(
+                    ['strings', '-n', '8', file_path],
+                    capture_output=True, text=True, timeout=30
+                )
+                strings_output = proc.stdout[:1000]
+                results.append({
+                    "method": "strings_extraction",
+                    "data": strings_output
+                })
+                # 在字符串中查找flag
+                flags = _find_flags(strings_output)
+                for flag in flags:
+                    results.append({
+                        "method": "strings_flag_found",
+                        "data": flag
+                    })
+            except Exception:
+                pass
+
+        elif method == 'palette':
+            # 调色板分析（针对PNG）
+            results.append({
+                "method": "palette_analysis",
+                "suggestion": "Check PNG palette for hidden data",
+                "data": "Use tools like pngcheck or stegsolve for palette analysis"
+            })
+
+        elif method == 'spectrogram':
+            # 频谱图分析（音频）
+            spectrogram_hint = MediaAnalyzer.check_spectrogram(file_path)
+            results.append({
+                "method": "spectrogram_analysis",
+                "data": spectrogram_hint
+            })
+
+        elif method == 'traffic':
+            # 流量分析
+            traffic_result = TrafficAnalyzer.analyze_pcap(file_path)
+            results.append({
+                "method": "traffic_analysis",
+                "data": json.dumps(traffic_result, indent=2, default=str)[:500]
+            })
+
+        else:
+            # 未知方法，记录建议
+            results.append({
+                "method": "unknown",
+                "suggestion": f"AI suggested method '{method}' not directly implemented",
+                "params": params
+            })
+
+    except Exception as e:
+        results.append({
+            "method": method,
+            "error": str(e)
+        })
+
+    return results
 
 
 def _llm_misc_analysis(file_info: Any, steg_results: Dict,

@@ -16,12 +16,11 @@ from config import config
 class ToolOutputParser:
     """AI驱动的工具输出解析器"""
 
-    # 漏洞类型映射
-    VULN_TYPES = [
-        "rce", "sqli", "xss", "lfi", "rfi", "ssrf", "xxe",
-        "weak_password", "unauthorized", "deserialization",
-        "ssti", "csrf", "ssrf", "file_upload", "command_injection"
-    ]
+    # 漏洞类型映射 - 使用配置
+    @property
+    def VULN_TYPES(self) -> List[str]:
+        """获取漏洞类型列表"""
+        return config.VULN_TYPES
 
     # 严重程度
     SEVERITY_LEVELS = ["critical", "high", "medium", "low", "info"]

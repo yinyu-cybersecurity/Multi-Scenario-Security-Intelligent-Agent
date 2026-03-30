@@ -212,7 +212,9 @@ from router import (
     route_internal_mode,
     route_internal_to_web,
     get_internal_next_target,
-    route_post_exploit
+    route_post_exploit,
+    route_with_strategic_context,
+    update_strategic_context_after_node
 )
 from state import CTFState, VulnerabilityCandidate, AttackAction, PageFeatures, Hint, ToolCall
 
@@ -675,7 +677,7 @@ def _check_http_accessible(url: str) -> tuple:
     """检查HTTP服务是否可访问"""
     try:
         import requests
-        resp = requests.head(url, timeout=5, verify=False, allow_redirects=True)
+        resp = requests.head(url, timeout=config.HTTP_HEAD_TIMEOUT, verify=False, allow_redirects=True)
         if resp.status_code < 500:
             return True, {
                 "status_code": resp.status_code,
@@ -945,7 +947,7 @@ def recon_node(state: CTFState) -> Dict:
 
     try:
         import requests
-        resp = requests.get(http_url, timeout=10, verify=False, allow_redirects=True)
+        resp = requests.get(http_url, timeout=config.HTTP_GET_TIMEOUT, verify=False, allow_redirects=True)
         raw_html = resp.text
 
         # 记录重定向信息
@@ -1261,20 +1263,20 @@ def recon_node(state: CTFState) -> Dict:
             confidence = 0.5  # 仅端口开放，置信度较低
 
         # [核心修复] 确定 URL 绑定
-        # Web 端口列表
-        web_ports = [80, 443, 8080, 8443, 8000, 8888, 3000, 5000, 9000]
+        # Web 端口列表 - 使用配置
+        web_ports = config.WEB_PORTS
         port_num = port if isinstance(port, int) else (int(port) if str(port).isdigit() else 0)
 
-        if port_num in web_ports or vuln_type in ["sqli", "xss", "lfi", "rce", "ssrf", "xxe"]:
+        if port_num in web_ports or vuln_type in config.WEB_VULN_TYPES:
             # Web 漏洞，绑定到 http_url
             vuln_url = http_url
         elif target:
             # 非 Web 漏洞，构造协议 URL
             if port_num == 22:
                 vuln_url = f"ssh://{target}:{port}" if port else f"ssh://{target}"
-            elif port_num in [3306, 1433, 5432, 27017, 6379]:
+            elif port_num in config.DATABASE_PORTS:
                 vuln_url = f"db://{target}:{port}"
-            elif port_num in [21, 25, 110, 993, 995]:
+            elif port_num in config.MAIL_PORTS:
                 vuln_url = f"tcp://{target}:{port}"
             else:
                 vuln_url = f"http://{target}:{port}" if port else f"http://{target}"
@@ -1690,21 +1692,173 @@ def analyst_node(state: CTFState) -> Dict:
         }
 
 
+def _ai_decide_mode_switch(state: Dict) -> Optional[Dict]:
+    """
+    AI决策模式切换
 
+    综合考虑：失败分、探索进度、场景匹配度、剩余时间
+
+    Returns:
+        None: AI决策不可用或失败，使用硬编码规则
+        Dict: AI决策结果，包含 current_mode 和决策理由
+    """
+    # 检查是否启用AI决策
+    if not config.USE_AI_MODE_DECISION:
+        return None
+
+    # 检查决策间隔，避免频繁调用LLM
+    last_ai_decision_time = state.get("last_ai_decision_time", 0)
+    current_time = time.time()
+    if current_time - last_ai_decision_time < config.AI_MODE_DECISION_INTERVAL:
+        return None
+
+    # 收集决策上下文
+    score = state.get("failure_weighted_score", 0)
+    steps = state.get("execution_steps", 0)
+    current_mode = state.get("current_mode", "exploit")
+    start_time = state.get("start_time", time.time())
+    internal_mode = state.get("internal_mode", False)
+    visited_urls = state.get("visited_urls", [])
+    vuln_candidates = state.get("vuln_candidates", [])
+    focused_scene = state.get("focused_scene", "")
+    scene_attack_attempts = state.get("scene_attack_attempts", 0)
+    explore_rounds = state.get("explore_rounds", 0)
+    current_round = state.get("current_round", 0)
+    flags_found = state.get("flags_found", [])
+
+    # 计算剩余时间
+    timeout = config.INTERNAL_TASK_TIMEOUT if internal_mode else config.TASK_TIMEOUT
+    elapsed_time = current_time - start_time
+    remaining_time = timeout - elapsed_time
+    remaining_minutes = remaining_time / 60
+
+    # 计算探索进度
+    total_urls = len(visited_urls)
+    high_value_urls = sum(1 for url in visited_urls if any(kw in url.lower() for kw in ["admin", "login", "api", "upload", "config", "backup", "debug"]))
+    vuln_count = len(vuln_candidates)
+
+    # 构建AI决策提示
+    prompt = f"""你是一个CTF攻击模式决策专家。请根据当前状态决定下一步应该切换到什么模式。
+
+## 当前状态
+- 当前模式: {current_mode}
+- 失败分数: {score:.1f} (越高表示攻击越不顺利)
+- 执行步数: {steps}
+- 当前轮次: {current_round}
+- 剩余时间: {remaining_minutes:.1f} 分钟
+- 环境类型: {'内网渗透' if internal_mode else 'Web CTF'}
+
+## 探索进度
+- 已访问URL数: {total_urls}
+- 高价值URL数: {high_value_urls}
+- 漏洞候选数: {vuln_count}
+- 探索轮数: {explore_rounds}
+
+## 场景聚焦
+- 聚焦场景: {focused_scene or '无'}
+- 场景攻击次数: {scene_attack_attempts}/{config.MAX_SCENE_ATTEMPTS}
+
+## 已发现Flag
+- Flag数量: {len(flags_found)}
+
+## 可选模式
+1. **exploit**: 继续攻击当前目标或漏洞候选
+   - 适合：有明确的攻击目标、漏洞候选、或场景聚焦
+
+2. **explore**: 探索新目标
+   - 适合：当前目标无进展、需要发现新攻击面
+
+3. **innovate**: 创新思维模式
+   - 适合：常规方法失效、需要尝试非常规思路
+
+4. **end**: 结束任务
+   - 适合：时间耗尽、已获得Flag、或确实无解
+
+## 决策原则
+1. 内网渗透模式只按时间结束，不受失败分影响
+2. 有聚焦场景时优先深度挖掘，直到场景穷尽
+3. 失败分高时考虑切换模式，但不要过于激进
+4. 时间不足时，优先快速验证高价值目标
+5. 已发现Flag时，考虑是否需要继续寻找其他Flag
+
+## 输出格式 (JSON)
+{{
+  "mode": "exploit/explore/innovate/end",
+  "confidence": 0.0-1.0,
+  "reasoning": "简要说明决策理由",
+  "factors": {{
+    "failure_score_weight": 0.0-1.0,
+    "time_pressure": 0.0-1.0,
+    "exploration_progress": 0.0-1.0,
+    "vuln_potential": 0.0-1.0
+  }}
+}}
+"""
+
+    try:
+        log_mode_manager("🤖 调用AI决策模式切换...")
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            json_mode=True
+        )
+
+        if not response:
+            log_mode_manager("   ⚠️ AI决策无响应")
+            return None
+
+        # 解析响应
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+
+        result = json.loads(response.strip())
+        mode = result.get("mode", "exploit")
+        confidence = result.get("confidence", 0.5)
+        reasoning = result.get("reasoning", "")
+
+        # 验证模式有效性
+        valid_modes = ["exploit", "explore", "innovate", "end"]
+        if mode not in valid_modes:
+            log_mode_manager(f"   ⚠️ AI返回无效模式: {mode}")
+            return None
+
+        # 置信度过低时使用硬编码规则
+        if confidence < 0.4:
+            log_mode_manager(f"   ⚠️ AI置信度过低: {confidence:.2f}，使用硬编码规则")
+            return None
+
+        log_mode_manager(f"   ✅ AI决策: {mode} (置信度: {confidence:.2f})")
+        log_mode_manager(f"   📝 理由: {reasoning}")
+
+        return {
+            "current_mode": mode,
+            "ai_decision_reasoning": reasoning,
+            "ai_decision_confidence": confidence,
+            "last_ai_decision_time": current_time,
+            "ai_decision_factors": result.get("factors", {})
+        }
+
+    except json.JSONDecodeError as e:
+        log_mode_manager(f"   ❌ AI决策JSON解析失败: {e}")
+        return None
+    except Exception as e:
+        log_mode_manager(f"   ❌ AI决策异常: {e}")
+        return None
 
 
 def mode_manager_node(state: CTFState) -> Dict:
     """
-    模式决策器 - 增强版
+    模式决策器 - 增强版（AI决策 + 硬编码规则降级）
+
+    决策优先级：
+    1. 预设模式（上游已决定）
+    2. AI决策（如果启用）
+    3. 硬编码规则（降级方案）
 
     结束条件：只有时间超时
     - 外网打点：30分钟 (TASK_TIMEOUT)
     - 内网渗透：50分钟 (INTERNAL_TASK_TIMEOUT)
-
-    核心逻辑：
-    1. 检查时间超时
-    2. 如果有明确的聚焦场景，优先深度挖掘
-    3. 场景穷尽后切换探索模式
     """
     score = state.get("failure_weighted_score", 0)
     steps = state.get("execution_steps", 0)
@@ -1721,54 +1875,83 @@ def mode_manager_node(state: CTFState) -> Dict:
     # 0. 尊重上游设置的模式
     preset_mode = state.get("current_mode")
     if preset_mode == "end":
-        log(f"📍 保持预设模式: end")
+        log_mode_manager("保持预设模式: end")
         return {"current_mode": "end"}
     elif preset_mode == "explore":
-        log(f"📍 保持预设模式: explore")
+        log_mode_manager("保持预设模式: explore")
         return {"current_mode": "explore"}
     elif preset_mode == "innovate":
-        log(f"📍 创新模式已执行，重置分数并切回攻击模式")
+        log_mode_manager("创新模式已执行，重置分数并切回攻击模式")
         return {
             "current_mode": "exploit",
             "failure_weighted_score": 0,
             "current_round": state.get("current_round", 0) + 1
         }
 
-    # 1. [唯一结束条件] 时间超时检查
+    # 1. [优先] AI决策模式切换
+    if config.USE_AI_MODE_DECISION:
+        ai_decision = _ai_decide_mode_switch(state)
+        if ai_decision:
+            # AI决策成功，检查是否需要进一步验证
+            ai_mode = ai_decision.get("current_mode")
+            ai_confidence = ai_decision.get("ai_decision_confidence", 0)
+
+            # AI决策高置信度时直接采用
+            if ai_confidence >= 0.7:
+                log_mode_manager(f"AI高置信度决策: {ai_mode} (置信度: {ai_confidence:.2f})")
+                return ai_decision
+
+            # 中等置信度时，结合硬编码规则验证
+            # 特别关注：时间超时检查不可跳过
+            elapsed_time = time.time() - start_time
+            timeout = config.INTERNAL_TASK_TIMEOUT if internal_mode else config.TASK_TIMEOUT
+
+            if elapsed_time >= timeout:
+                log_mode_manager(f"时间超时优先于AI决策: {elapsed_time/60:.1f}分钟 >= {timeout/60:.0f}分钟")
+                return {"current_mode": "end"}
+
+            # 中等置信度时采用AI建议，但记录降级情况
+            log_mode_manager(f"AI中等置信度决策: {ai_mode} (置信度: {ai_confidence:.2f})")
+            return ai_decision
+
+    # 2. [降级] 硬编码规则决策
+    log_mode_manager("使用硬编码规则决策")
+
+    # 时间超时检查
     elapsed_time = time.time() - start_time
     timeout = config.INTERNAL_TASK_TIMEOUT if internal_mode else config.TASK_TIMEOUT
 
     if elapsed_time >= timeout:
-        log(f"⏰ 任务超时: {elapsed_time/60:.1f}分钟 >= {timeout/60:.0f}分钟")
+        log_mode_manager(f"任务超时: {elapsed_time/60:.1f}分钟 >= {timeout/60:.0f}分钟")
         return {"current_mode": "end"}
 
     # 剩余时间提醒
     remaining = timeout - elapsed_time
     if remaining < 300:  # 剩余不足5分钟
-        log(f"⏰ 剩余时间: {remaining/60:.1f}分钟")
+        log_mode_manager(f"剩余时间: {remaining/60:.1f}分钟")
 
-    # 2. 场景聚焦判断
+    # 场景聚焦判断
     MAX_SCENE_ATTEMPTS = config.MAX_SCENE_ATTEMPTS
 
     if focused_scene and not scene_exhausted:
         if scene_attack_attempts < MAX_SCENE_ATTEMPTS:
-            log(f"🎯 聚焦场景 [{focused_scene}] 继续攻击 ({scene_attack_attempts}/{MAX_SCENE_ATTEMPTS})")
+            log_mode_manager(f"聚焦场景 [{focused_scene}] 继续攻击 ({scene_attack_attempts}/{MAX_SCENE_ATTEMPTS})")
             return {"current_mode": "exploit"}
         else:
-            log(f"🔄 场景 [{focused_scene}] 已穷尽 {scene_attack_attempts} 次攻击，切换探索模式")
+            log_mode_manager(f"场景 [{focused_scene}] 已穷尽 {scene_attack_attempts} 次攻击，切换探索模式")
             return {
                 "current_mode": "explore",
                 "scene_exhausted": True
             }
 
-    # 3. 创新模式检查 (仅Web CTF)
+    # 创新模式检查 (仅Web CTF)
     if not internal_mode and (steps >= config.MAX_STEPS_BEFORE_INNOVATE or score >= config.FAILURE_SCORE_FOR_INNOVATE):
-        log(f"💡 自动进入创新模式 (步数:{steps}, 失败分:{score:.1f})")
+        log_mode_manager(f"自动进入创新模式 (步数:{steps}, 失败分:{score:.1f})")
         return {"current_mode": "innovate"}
     elif internal_mode:
-        log(f"🌐 内网模式，继续渗透 (已运行:{elapsed_time/60:.1f}分钟, 失败分:{score:.1f})")
+        log_mode_manager(f"内网模式，继续渗透 (已运行:{elapsed_time/60:.1f}分钟, 失败分:{score:.1f})")
 
-    # 3. 节点状态管理 - 智能放弃判断
+    # 节点状态管理 - 智能放弃判断
     # 不再仅凭 attempt_count 判断，而是看最近的攻击是否有进展
     # 如果最近有成功的攻击（状态码200且有输出变化），则不放弃
     if current_url and current_url in node_status:
@@ -1781,18 +1964,18 @@ def mode_manager_node(state: CTFState) -> Dict:
             success_rate = sum(1 for c in recent_codes if c not in [404, 500, 0]) / len(recent_codes)
             if success_rate < 0.3:  # 最近5次攻击中，成功率低于30%才放弃
                 status["status"] = "abandoned"
-                log(f"   🛑 放弃节点（成功率低）: {current_url}")
+                log_mode_manager(f"放弃节点（成功率低）: {current_url}")
             else:
-                log(f"   📊 节点仍有进展（成功率 {success_rate*100:.0f}%），继续攻击")
+                log_mode_manager(f"节点仍有进展（成功率 {success_rate*100:.0f}%），继续攻击")
 
-    # 4. 模式切换 - 简化阈值
+    # 模式切换 - 简化阈值
     # [重要] 头脑风暴和探索模式只在Web CTF模式下触发
     # 内网渗透只按时间超时结束，不受失败分影响
     if score >= config.FAILURE_SCORE_FOR_INNOVATE and not internal_mode:
-        log(f"💡 创新模式 (失败分:{score:.1f})")
+        log_mode_manager(f"创新模式 (失败分:{score:.1f})")
         return {"current_mode": "innovate"}
     elif score >= config.FAILURE_SCORE_FOR_EXPLORE and not internal_mode:
-        log(f"🗺️ 探索模式 (失败分:{score:.1f})")
+        log_mode_manager(f"探索模式 (失败分:{score:.1f})")
         return {"current_mode": "explore"}
     else:
         return {
@@ -2305,6 +2488,8 @@ def attacker_node(state: CTFState) -> Dict:
         import hashlib
         attack_actions = []
         seen_action_hashes = set()
+        # [fallback修复] 收集fallback方案
+        fallback_plans = []
 
         def _make_action_hash(action: dict) -> str:
             """生成动作唯一hash：tool + params组合"""
@@ -2313,7 +2498,7 @@ def attacker_node(state: CTFState) -> Dict:
             params_hash = hashlib.md5(params_str.encode()).hexdigest()[:8]
             return f"{tool}:{params_hash}"
 
-        for action in raw_actions:
+        for idx, action in enumerate(raw_actions):
             if not isinstance(action, dict): continue
             tool = action.get("tool")
             if not tool: continue
@@ -2326,6 +2511,53 @@ def attacker_node(state: CTFState) -> Dict:
 
             attack_actions.append(action)
             seen_action_hashes.add(action_hash)
+
+            # [fallback修复] 提取并存储fallback方案
+            fallback = action.get("fallback", "")
+            if fallback and isinstance(fallback, str) and fallback.strip():
+                # 尝试将fallback转换为具体的攻击动作
+                fallback_action = {
+                    "tool": tool,  # 默认使用相同工具
+                    "params": action.get("params", {}),
+                    "reasoning": f"Fallback方案: {fallback}",
+                    "source_action_id": f"fallback_{idx}_{tool}",
+                    "fallback_description": fallback
+                }
+                # 如果fallback中包含工具切换提示，尝试解析
+                if "时间盲注" in fallback or "sleep" in fallback.lower():
+                    fallback_action["params"] = {
+                        "method": "POST",
+                        "url": action.get("params", {}).get("url", current_url),
+                        "data": {"sleep": "5"}
+                    }
+                    fallback_action["reasoning"] = "Fallback: 切换到时间盲注"
+                elif "union" in fallback.lower():
+                    fallback_action["params"] = {
+                        "method": "GET",
+                        "url": action.get("params", {}).get("url", current_url),
+                        "params": {"id": "1' UNION SELECT 1,2,3--"}
+                    }
+                    fallback_action["reasoning"] = "Fallback: 切换到UNION注入"
+                elif "布尔盲注" in fallback or "boolean" in fallback.lower():
+                    fallback_action["params"] = {
+                        "method": "GET",
+                        "url": action.get("params", {}).get("url", current_url),
+                        "params": {"id": "1' AND 1=1--"}
+                    }
+                    fallback_action["reasoning"] = "Fallback: 切换到布尔盲注"
+                elif "错误注入" in fallback or "error" in fallback.lower():
+                    fallback_action["params"] = {
+                        "method": "GET",
+                        "url": action.get("params", {}).get("url", current_url),
+                        "params": {"id": "1' AND extractvalue(1,concat(0x7e,version()))--"}
+                    }
+                    fallback_action["reasoning"] = "Fallback: 切换到错误注入"
+                fallback_plans.append(fallback_action)
+                log(f"   📋 收集Fallback方案: {fallback[:50]}")
+
+        # [fallback修复] 记录收集到的fallback方案数量
+        if fallback_plans:
+            log(f"   ✅ 共收集 {len(fallback_plans)} 个Fallback方案")
 
     except Exception as e:
         log(f"   ❌ LLM 决策失败: {e}")
@@ -2483,6 +2715,9 @@ def attacker_node(state: CTFState) -> Dict:
         "credentials": discovered_creds,
         "internal_hosts": discovered_hosts,
     }
+    # [fallback修复] 将fallback方案存入状态
+    if fallback_plans:
+        res["fallback_plans"] = fallback_plans
     log_node_data("attacker", {"prompt": prompt, "actions": attack_actions}, res)
     return res
 
@@ -2685,10 +2920,17 @@ def verifier_node(state: CTFState) -> Dict:
         if now - status.get("start_time", now) > config.NODE_TIMEOUT:
             log(f"   ⏰ 节点超时，放弃: {current_url}")
             status["status"] = "abandoned"
+            # [补充修复] 早期返回分支也需要完整字段
+            strategic_context = update_strategic_context_after_node(state, "verifier", {"error": "timeout"})
             return {
                 "node_attack_status": node_status,
                 "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
-                "execution_steps": state.get("execution_steps", 0) + 1
+                "execution_steps": state.get("execution_steps", 0) + 1,
+                "guidance_type": "continue",
+                "enforce_change": False,
+                "guidance_reason": "节点超时",
+                "guidance_target_url": "",
+                "strategic_context": strategic_context
             }
 
     # 获取当前批次的攻击结果
@@ -2701,9 +2943,20 @@ def verifier_node(state: CTFState) -> Dict:
         if current_mode == "explore":
             # 已由 attacker 设置为 explore 模式，直接返回
             log("   ⏭️ 已触发探索模式，跳过核验")
-            return {}
+            return {
+                "guidance_type": "continue",
+                "enforce_change": False,
+                "guidance_reason": "探索模式已触发",
+                "guidance_target_url": ""
+            }
         log("   ⚠️ 本轮无攻击动作")
-        return {"failure_weighted_score": state.get("failure_weighted_score", 0) + config.HARD_FAILURE_WEIGHT}
+        return {
+            "failure_weighted_score": state.get("failure_weighted_score", 0) + config.HARD_FAILURE_WEIGHT,
+            "guidance_type": "continue",
+            "enforce_change": False,
+            "guidance_reason": "无攻击动作",
+            "guidance_target_url": ""
+        }
 
     recent_results = results[-len(attack_batch):]
 
@@ -2761,7 +3014,13 @@ def verifier_node(state: CTFState) -> Dict:
 
     if not recent_results:
         log("   ⚠️ 无结果可核验")
-        return {"failure_weighted_score": state.get("failure_weighted_score", 0) + config.HARD_FAILURE_WEIGHT}
+        return {
+            "failure_weighted_score": state.get("failure_weighted_score", 0) + config.HARD_FAILURE_WEIGHT,
+            "guidance_type": "continue",
+            "enforce_change": False,
+            "guidance_reason": "无结果可核验",
+            "guidance_target_url": ""
+        }
 
     # [核心] Flag正则预捕获 - 三重兜底
     pre_captured_flag: Optional[str] = None
@@ -2844,7 +3103,11 @@ def verifier_node(state: CTFState) -> Dict:
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
             "execution_steps": state.get("execution_steps", 0) + 1,
             "node_attack_status": node_status,
-            "vuln_candidates": candidates
+            "vuln_candidates": candidates,
+            "guidance_type": "continue",
+            "enforce_change": False,
+            "guidance_reason": "LLM返回空响应",
+            "guidance_target_url": ""
         }
 
     # 解析结果
@@ -2878,6 +3141,8 @@ def verifier_node(state: CTFState) -> Dict:
             tactical_guidance = tactical_guidance_raw if isinstance(tactical_guidance_raw, str) else str(tactical_guidance_raw)
             guidance_type = "continue"
             enforce_change = False
+            guidance_reason = ""
+            guidance_target_url = ""
         updated_known_facts = result.get("updated_known_facts", "")
         node_decision = result.get("node_decision", "continue")
         failure_analysis = result.get("failure_analysis", "")
@@ -2891,7 +3156,7 @@ def verifier_node(state: CTFState) -> Dict:
         # 找到FLAG
         if found_flag:
             log(f"\n   🎉 找到 FLAG: {potential_flag}")
-            return {
+            result = {
                 "found_flag": True,
                 "final_flag": potential_flag,
                 "success_trace": recent_results[-1:],
@@ -2899,6 +3164,11 @@ def verifier_node(state: CTFState) -> Dict:
                 "node_attack_status": node_status,
                 "execution_steps": state.get("execution_steps", 0) + 1
             }
+            # [战略上下文更新] 找到FLAG是成功案例
+            updated_context = update_strategic_context_after_node(state, "verifier", result)
+            if updated_context:
+                result["strategic_context"] = updated_context
+            return result
 
         # 攻击成功
         if is_exploit_successful:
@@ -2993,6 +3263,11 @@ def verifier_node(state: CTFState) -> Dict:
             result_dict = {
                 "failure_weighted_score": new_score,
                 "latest_tactical_guidance": tactical_guidance,
+                # [断点1修复] 添加结构化指导字段到成功分支
+                "guidance_type": guidance_type,
+                "enforce_change": enforce_change,
+                "guidance_reason": guidance_reason,
+                "guidance_target_url": guidance_target_url,
                 "execution_steps": state.get("execution_steps", 0) + 1,
                 "node_attack_status": node_status,
                 "vuln_candidates": candidates
@@ -3001,6 +3276,12 @@ def verifier_node(state: CTFState) -> Dict:
                 result_dict["known_facts"] = new_known_facts
             if shell_session_info:
                 result_dict["shell_session"] = shell_session_info
+
+            # [战略上下文更新] 攻击成功时更新战略上下文
+            updated_context = update_strategic_context_after_node(state, "verifier", result_dict)
+            if updated_context:
+                result_dict["strategic_context"] = updated_context
+
             return result_dict
 
         # 攻击失败 - [P3合并] 处理节点决策
@@ -3016,6 +3297,67 @@ def verifier_node(state: CTFState) -> Dict:
             payload_str = action.get("payload", "")
             if payload_str:
                 failed_payloads.append(payload_str)
+
+        # =====================================================
+        # [fallback修复] 检查是否有备选方案可用
+        # =====================================================
+        fallback_plans = state.get("fallback_plans", [])
+        fallback_action = None
+
+        if fallback_plans:
+            log(f"   🔄 检查Fallback方案... (共 {len(fallback_plans)} 个)")
+            # 找到第一个未被尝试的fallback方案
+            for fb in fallback_plans:
+                fb_desc = fb.get("fallback_description", "")
+                fb_tool = fb.get("tool", "")
+                # 检查是否已被尝试（通过failed_payloads或历史记录）
+                if fb_desc and fb_desc not in [p[:50] for p in failed_payloads]:
+                    fallback_action = fb
+                    log(f"   ✅ 找到可用Fallback: {fb_tool} - {fb_desc[:50]}")
+                    break
+
+        # 如果有fallback方案，生成fallback攻击动作
+        if fallback_action:
+            log(f"   🔀 执行Fallback方案切换")
+            # 从fallback_plans中移除已使用的方案
+            remaining_fallbacks = [fb for fb in fallback_plans if fb != fallback_action]
+
+            # 构建fallback攻击动作
+            fallback_attack = {
+                "tool": fallback_action.get("tool", "requests"),
+                "params": fallback_action.get("params", {}),
+                "reasoning": fallback_action.get("reasoning", "Fallback方案执行")
+            }
+
+            # 更新战术指导，说明正在执行fallback
+            tactical_guidance = f"原攻击失败，正在执行Fallback方案: {fallback_action.get('fallback_description', '未知')}"
+            guidance_type = "continue"
+            enforce_change = False
+
+            result_dict = {
+                "failure_weighted_score": max(0, state.get("failure_weighted_score", 0) - 0.3),  # 有fallback方案，减少失败惩罚
+                "attack_batch": [fallback_attack],  # 直接生成fallback攻击
+                "latest_tactical_guidance": tactical_guidance,
+                "guidance_type": guidance_type,
+                "enforce_change": enforce_change,
+                "guidance_reason": "Fallback方案执行",
+                "guidance_target_url": "",
+                "execution_steps": state.get("execution_steps", 0) + 1,
+                "node_attack_status": node_status,
+                "vuln_candidates": candidates,
+                "fallback_plans": remaining_fallbacks,  # 更新剩余fallback列表
+                "scene_attack_attempts": scene_attack_attempts
+            }
+            if failed_payloads:
+                result_dict["failed_payloads"] = failed_payloads
+
+            # [战略上下文更新] Fallback方案执行时更新战略上下文
+            updated_context = update_strategic_context_after_node(state, "verifier", result_dict)
+            if updated_context:
+                result_dict["strategic_context"] = updated_context
+
+            log(f"   🎯 Fallback攻击动作: {fallback_attack.get('tool')}")
+            return result_dict
 
         # =====================================================
         # [内网模式增强] Shell存活验证 + 继续攻击决策
@@ -3037,8 +3379,19 @@ def verifier_node(state: CTFState) -> Dict:
                     "execution_steps": state.get("execution_steps", 0) + 1,
                     "node_attack_status": node_status,
                     "vuln_candidates": candidates,
-                    "shell_session": shell_session
+                    "shell_session": shell_session,
+                    # [断点1修复] 添加结构化指导字段
+                    "guidance_type": guidance_type,
+                    "enforce_change": enforce_change,
+                    "guidance_reason": guidance_reason,
+                    "guidance_target_url": guidance_target_url
                 }
+
+                # [战略上下文更新] 内网模式获取Shell时更新战略上下文
+                updated_context = update_strategic_context_after_node(state, "verifier", result_dict)
+                if updated_context:
+                    result_dict["strategic_context"] = updated_context
+
                 return result_dict
 
             # 检查是否还有未尝试的payload
@@ -3078,22 +3431,41 @@ def verifier_node(state: CTFState) -> Dict:
             # [断点1修复] 添加结构化指导字段
             "guidance_type": guidance_type,
             "enforce_change": enforce_change,
+            "guidance_reason": guidance_reason,
+            "guidance_target_url": guidance_target_url,
             "scene_attack_attempts": scene_attack_attempts,
             "continue_attack": continue_attack,
             "remaining_payloads": remaining_payloads
         }
         if failed_payloads:
             result_dict["failed_payloads"] = failed_payloads
+
+        # [战略上下文更新] 更新战略上下文
+        updated_context = update_strategic_context_after_node(state, "verifier", result_dict)
+        if updated_context:
+            result_dict["strategic_context"] = updated_context
+
         return result_dict
 
     except Exception as e:
         log(f"   ❌ 解析异常: {e}")
-        return {
+        result_dict = {
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.8,
             "execution_steps": state.get("execution_steps", 0) + 1,
             "node_attack_status": node_status,
-            "vuln_candidates": candidates
+            "vuln_candidates": candidates,
+            "guidance_type": "continue",
+            "enforce_change": False,
+            "guidance_reason": f"解析异常: {str(e)[:50]}",
+            "guidance_target_url": ""
         }
+
+        # [战略上下文更新] 异常时也更新战略上下文，记录失败
+        updated_context = update_strategic_context_after_node(state, "verifier", result_dict)
+        if updated_context:
+            result_dict["strategic_context"] = updated_context
+
+        return result_dict
 
 
 
@@ -3226,7 +3598,7 @@ workflow.add_edge("strategy_filter", "mode_manager")
 # 2. 模式分流: 根据决策结果进入不同执行路径
 # 统一处理所有模式切换
 def _route_from_mode_manager(state: CTFState) -> str:
-    """统一的mode_manager路由函数，处理所有CTF方向模式"""
+    """统一的mode_manager路由函数，处理所有CTF方向模式，集成战略上下文"""
     # 优先检查内网模式
     if state.get("internal_mode", False) and INTERNAL_NETWORK_AVAILABLE:
         return "internal_recon"
@@ -3242,8 +3614,23 @@ def _route_from_mode_manager(state: CTFState) -> str:
     # 检查Misc模式
     if state.get("misc_mode", False) and MISC_AVAILABLE:
         return "misc_analyst"
-    # 否则使用标准路由
-    return route_mode(state, "mode_manager")
+    # 检查Cloud模式
+    if state.get("cloud_mode", False) and CLOUD_SECURITY_AVAILABLE:
+        return "cloud_recon"
+    # 检查AI模式
+    if state.get("ai_mode", False) and AI_SECURITY_AVAILABLE:
+        return "ai_detect"
+
+    # Web模式：使用战略上下文路由
+    strategic_result = route_with_strategic_context(state, "mode_manager")
+    next_node = strategic_result.get("next_node", "exploit")
+
+    # 记录战略路由决策日志
+    strategic_context = strategic_result.get("strategic_context", {})
+    if strategic_context:
+        logger.info(f"[StrategicRoute] Web模式路由决策: {next_node}, 理由: {strategic_result.get('reasoning', 'N/A')}")
+
+    return next_node
 
 # 构建基础路由映射
 _mode_manager_routes = {

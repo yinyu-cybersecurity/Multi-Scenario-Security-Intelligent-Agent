@@ -121,11 +121,20 @@ class Config:
     # 节点最大循环次数（防止死循环）
     MAX_LOOP_COUNT: int = 15
 
+    # 无进展超时时间（秒）- 用于死循环检测
+    NO_PROGRESS_TIMEOUT: int = 600  # 10分钟无进展视为卡死
+
     # 最大总运行轮次（防止无限烧Token，匹配30-50分钟任务时长）
     MAX_TOTAL_ROUNDS: int = 100
 
     # 步数达到此值自动进入创新模式
     MAX_STEPS_BEFORE_INNOVATE: int = 80
+
+    # 是否启用AI模式决策（使用LLM决定模式切换）
+    USE_AI_MODE_DECISION: bool = True
+
+    # AI模式决策最小间隔（秒）- 避免频繁调用LLM
+    AI_MODE_DECISION_INTERVAL: int = 120  # 2分钟
 
     # =========================================================================
     # Token 限制 - 控制上下文大小
@@ -253,6 +262,55 @@ class Config:
     FRP_SOCKS5_PORT: int = 10800
 
     # =========================================================================
+    # 端口配置 - 各类服务端口列表
+    # =========================================================================
+
+    # Web服务端口
+    WEB_PORTS: List[int] = field(default_factory=lambda: [80, 443, 8080, 8443, 8000, 8888, 3000, 5000, 9000])
+
+    # 数据库端口
+    DATABASE_PORTS: List[int] = field(default_factory=lambda: [3306, 1433, 5432, 27017, 6379])
+
+    # 域控/AD端口 (Kerberos, LDAP, LDAPS, Global Catalog)
+    DOMAIN_CONTROLLER_PORTS: List[int] = field(default_factory=lambda: [88, 389, 636, 3268])
+
+    # 文件服务端口 (SMB, FTP)
+    FILE_SERVICE_PORTS: List[int] = field(default_factory=lambda: [445, 21])
+
+    # 远程访问端口 (SSH, RDP, VNC)
+    REMOTE_ACCESS_PORTS: List[int] = field(default_factory=lambda: [22, 3389, 5900])
+
+    # 高价值端口 (域控+数据库+SMB)
+    HIGH_VALUE_PORTS: List[int] = field(default_factory=lambda: [88, 389, 636, 3268, 1433, 3306, 5432, 445])
+
+    # 邮件服务端口
+    MAIL_PORTS: List[int] = field(default_factory=lambda: [21, 25, 110, 993, 995])
+
+    # =========================================================================
+    # 漏洞类型配置
+    # =========================================================================
+
+    # 已知漏洞类型列表
+    VULN_TYPES: List[str] = field(default_factory=lambda: [
+        "rce", "sqli", "xss", "lfi", "rfi", "ssrf", "xxe",
+        "weak_password", "unauthorized", "deserialization",
+        "ssti", "csrf", "file_upload", "command_injection"
+    ])
+
+    # Web漏洞类型 (用于URL绑定判断)
+    WEB_VULN_TYPES: List[str] = field(default_factory=lambda: ["sqli", "xss", "lfi", "rce", "ssrf", "xxe"])
+
+    # =========================================================================
+    # HTTP请求配置
+    # =========================================================================
+
+    # HTTP HEAD请求超时(秒)
+    HTTP_HEAD_TIMEOUT: int = 5
+
+    # HTTP GET请求超时(秒)
+    HTTP_GET_TIMEOUT: int = 10
+
+    # =========================================================================
     # 工具配置
     # =========================================================================
 
@@ -306,6 +364,48 @@ class Config:
 
     RAG_ENABLED: bool = True
     RAG_FOR_WEB_ONLY: bool = True
+
+    # =========================================================================
+    # 策略过滤器配置 - strategy_filter.py 使用
+    # =========================================================================
+
+    # 未知漏洞置信度阈值
+    # 如果漏洞类型不在已知规则中，但置信度达到此阈值，可能是新型漏洞或0day
+    # 设置为 None 表示使用AI动态判断（需配合 analyze_vulnerability_novelty 函数）
+    UNKNOWN_VULN_THRESHOLD: float = 0.8
+
+    # 是否启用AI动态判断未知漏洞
+    # True: 当未知漏洞置信度接近阈值时，使用AI进行二次判断
+    # False: 使用固定的 UNKNOWN_VULN_THRESHOLD 阈值
+    UNKNOWN_VULN_AI_JUDGEMENT: bool = False
+
+    # 云/容器特征置信度提升值
+    # 当检测到 cloud/docker/k8s 等特征时，对相关漏洞类型的置信度提升
+    CLOUD_CONTAINER_CONFIDENCE_BOOST: float = 0.05
+
+    # 中间件特征置信度提升值
+    # 当检测到 tomcat/nginx/apache/redis/weblogic 等中间件特征时，对相关漏洞的置信度提升
+    MIDDLEWARE_CONFIDENCE_BOOST: float = 0.2
+
+    # 文件上传漏洞最低置信度
+    # 当检测到 multipart/upload 特征时，文件上传漏洞的最低置信度保底值
+    FILE_UPLOAD_MIN_CONFIDENCE: float = 0.6
+
+    # 无技术栈时的降权系数
+    # 当无法检测到任何技术栈时，对非通用漏洞的置信度乘以此系数
+    NO_TECH_STACK_DOWNGRADE_FACTOR: float = 0.5
+
+    # 无技术栈时的最低置信度保底值
+    # 当无法检测技术栈时，非通用漏洞的置信度最低不会低于此值
+    NO_TECH_STACK_MIN_CONFIDENCE: float = 0.1
+
+    # 未知漏洞缺乏证据时的降权系数
+    # 当未知漏洞置信度达标但缺乏具体证据时，置信度乘以此系数
+    UNKNOWN_VULN_NO_EVIDENCE_DOWNGRADE_FACTOR: float = 0.6
+
+    # 临时规则置信度提升值
+    # 当漏洞匹配临时规则时，置信度提升
+    TEMP_RULE_CONFIDENCE_BOOST: float = 0.2
 
     # =========================================================================
     # 模型配置 - 不同任务使用不同模型

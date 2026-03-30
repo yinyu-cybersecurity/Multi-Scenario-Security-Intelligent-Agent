@@ -2170,8 +2170,8 @@ def get_next_internal_target(state: Dict) -> str:
     session_hosts = [s.get("host") for s in active_sessions if s.get("host")]
     all_compromised = set(compromised_hosts + session_hosts)
 
-    # 高价值端口
-    high_value_ports = [88, 389, 636, 3268, 1433, 3306, 5432, 445]
+    # 高价值端口 - 使用配置
+    high_value_ports = config.HIGH_VALUE_PORTS
 
     # 优先选择高价值目标
     for host in internal_hosts:

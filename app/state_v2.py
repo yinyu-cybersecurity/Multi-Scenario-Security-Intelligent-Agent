@@ -106,8 +106,11 @@ class CTFStateV2(TypedDict):
     # [断点1修复] 结构化战术指导字段
     guidance_type: str  # switch_scene/continue/deepen/abort
     enforce_change: bool  # 是否强制执行指导
+    guidance_reason: str  # 战术指导的原因
+    guidance_target_url: str  # 战术指导建议的目标URL
     analyst_intel: Optional[str]
     failed_payloads: Annotated[List[str], failed_payloads_reducer]
+    fallback_plans: List[Dict[str, Any]]  # 备选攻击方案列表：[{tool, params, reasoning, source_action_id}, ...]
     hint_level: int
     hint_history: Annotated[List[Hint], operator.add]
     rag_context: List[str]

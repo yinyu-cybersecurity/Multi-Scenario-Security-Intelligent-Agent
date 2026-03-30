@@ -9,9 +9,27 @@ import re
 import os
 import subprocess
 import struct
+import json
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from enum import Enum
+
+# 延迟导入避免循环依赖
+def _get_llm_client():
+    """获取LLM客户端实例"""
+    try:
+        from llm_client import llm_client
+        return llm_client
+    except ImportError:
+        return None
+
+def _get_config():
+    """获取配置"""
+    try:
+        from config import config
+        return config
+    except ImportError:
+        return None
 
 
 class BinaryType(Enum):
@@ -611,16 +629,36 @@ class PatternMatcher:
         return constants[:50]  # 限制数量
 
     @classmethod
-    def identify_algorithm(cls, analysis: Dict) -> str:
+    def identify_algorithm(cls, analysis: Dict, disasm: List = None, decompiled: str = None) -> str:
         """
         识别算法类型
 
         Args:
             analysis: 函数分析结果
+            disasm: 反汇编结果（可选，用于AI分析）
+            decompiled: 反编译代码（可选，用于AI分析）
 
         Returns:
             算法类型
         """
+        # 首先尝试规则匹配
+        rule_based_result = cls._rule_based_identify(analysis)
+
+        # 如果规则匹配置信度较高，直接返回
+        if analysis.get('crypto_type') and analysis.get('confidence', 0) > 0.8:
+            return rule_based_result
+
+        # 尝试AI动态识别
+        if disasm or decompiled:
+            ai_result = cls._ai_identify_algorithm(analysis, disasm, decompiled)
+            if ai_result and ai_result.get('confidence', 0) > 0.6:
+                return f"{ai_result.get('algorithm', 'Unknown')} (AI identified, confidence: {ai_result.get('confidence', 0):.2f})"
+
+        return rule_based_result
+
+    @classmethod
+    def _rule_based_identify(cls, analysis: Dict) -> str:
+        """基于规则的算法识别"""
         if analysis.get('crypto_type'):
             return f"Detected: {analysis['crypto_type']}"
 
@@ -628,3 +666,110 @@ class PatternMatcher:
             return "Possible custom algorithm"
 
         return "Standard code"
+
+    @classmethod
+    def _ai_identify_algorithm(cls, analysis: Dict, disasm: List = None, decompiled: str = None) -> Optional[Dict]:
+        """
+        使用AI动态识别算法
+
+        根据代码结构、指令模式、数据流等特征让AI进行算法识别，
+        而非依赖硬编码的模式匹配。
+
+        Args:
+            analysis: 函数分析结果
+            disasm: 反汇编结果列表
+            decompiled: 反编译代码字符串
+
+        Returns:
+            识别结果字典，包含algorithm、confidence、description等字段
+        """
+        llm_client = _get_llm_client()
+        config = _get_config()
+
+        if not llm_client or not config:
+            return None
+
+        # 构建代码上下文
+        code_context = ""
+
+        # 反编译代码（最易读）
+        if decompiled:
+            code_context += f"## Decompiled Code\n```\n{decompiled[:1500]}\n```\n\n"
+
+        # 反汇编指令摘要
+        if disasm:
+            # 提取关键指令序列（限制数量）
+            instructions = []
+            for i, insn in enumerate(disasm[:100]):
+                instructions.append(f"{insn.mnemonic} {insn.operands}")
+            code_context += f"## Instruction Sequence (first 100)\n```\n" + "\n".join(instructions) + "\n```\n\n"
+
+        # 函数分析特征
+        code_context += f"""## Function Analysis Features
+- Total Instructions: {analysis.get('instructions_count', 0)}
+- Has Loops: {analysis.get('has_loops', False)}
+- Has Crypto Indicators: {analysis.get('has_crypto', False)}
+- Crypto Type Hint: {analysis.get('crypto_type', 'None')}
+- Function Calls: {', '.join(analysis.get('calls', [])[:10]) or 'None'}
+"""
+
+        prompt = f"""
+You are a reverse engineering expert analyzing binary code to identify algorithms.
+
+{code_context}
+
+## Task
+Analyze the code structure and identify the algorithm being used. Consider:
+1. Instruction patterns and their sequences
+2. Data transformation operations (XOR, shifts, rotations, etc.)
+3. Loop structures and iteration patterns
+4. Constant values and their significance
+5. Library function calls (crypto libraries, etc.)
+
+## Common CTF Algorithms to Consider
+- XOR cipher (single-byte, multi-byte, rolling key)
+- Base64 encoding/decoding
+- AES encryption/decryption
+- DES/3DES
+- RC4 stream cipher
+- TEA/XTEA
+- MD5/SHA hash functions
+- RSA operations
+- Custom substitution ciphers
+- Bit manipulation puzzles
+- Anti-debugging tricks
+
+## Output Format (JSON)
+{{
+  "algorithm": "algorithm name or 'Unknown'",
+  "confidence": 0.0-1.0,
+  "description": "brief description of the algorithm behavior",
+  "key_indicators": ["list of features that led to this conclusion"],
+  "suggested_approach": "how to verify or exploit this algorithm",
+  "potential_keys": ["any hardcoded keys or constants found"]
+}}
+
+Only output valid JSON. Be honest about confidence levels.
+"""
+
+        try:
+            response = llm_client.call_chat_completion(
+                model=config.ANALYST_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                json_mode=True
+            )
+
+            # 解析JSON响应
+            if "```json" in response:
+                response = response.split("```json")[1].split("```")[0]
+
+            result = json.loads(response.strip())
+            return result
+
+        except json.JSONDecodeError as e:
+            print(f"[PatternMatcher] AI identification JSON parse error: {e}")
+            return None
+        except Exception as e:
+            print(f"[PatternMatcher] AI identification error: {e}")
+            return None

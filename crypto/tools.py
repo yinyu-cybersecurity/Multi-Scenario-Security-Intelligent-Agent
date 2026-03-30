@@ -586,12 +586,176 @@ class HashAnalyzer:
     识别和破解哈希值
     """
 
-    # 常见弱密码
+    # 扩展的常见CTF密码字典（100+常见密码）
     COMMON_PASSWORDS = [
+        # 基础弱密码
         'password', '123456', 'admin', 'root', 'test', 'guest',
         'flag', 'ctf', 'secret', 'key', 'pass', 'qwerty',
-        'letmein', 'welcome', 'monkey', 'dragon', 'master'
+        'letmein', 'welcome', 'monkey', 'dragon', 'master',
+        # CTF常见密码
+        'flag{', 'ctf2024', 'ctf2023', 'ctf2025', 'hacker', 'pwn', 'web', 'crypto',
+        'misc', 'reverse', 'forensic', 'stego', 'pwnable', 'exploit', 'shell',
+        'overflow', 'buffer', 'injection', 'xss', 'sqli', 'rce', 'lfi', 'rfi',
+        # 数字密码
+        '12345678', '123456789', '1234567890', '111111', '000000', '666666',
+        '88888888', '123123', '12341234', '12345', '1234567', '111',
+        # 常见单词密码
+        'hello', 'world', 'love', 'god', 'sex', 'money', 'angel', 'devil',
+        'shadow', 'sunshine', 'princess', 'football', 'baseball', 'soccer',
+        # 安全相关词汇
+        'security', 'secure', 'access', 'login', 'user', 'passwd', 'authenticate',
+        'encrypted', 'decrypt', 'cipher', 'hash', 'md5', 'sha1', 'sha256',
+        # Linux/系统相关
+        'linux', 'ubuntu', 'centos', 'debian', 'redhat', 'unix', 'bash', 'shell',
+        'nobody', 'apache', 'nginx', 'mysql', 'postgres', 'redis', 'mongodb',
+        # 默认密码
+        'default', 'changeme', 'administrator', 'sysadmin', 'operator',
+        'manager', 'supervisor', 'support', 'service', 'backup', 'oracle',
+        # 动物和常见词
+        'abc123', 'qazwsx', 'asdfgh', 'zxcvbn', 'password1', 'password123',
+        'admin123', 'root123', 'test123', 'guest123', 'user123', 'login123',
+        # 技术相关
+        'python', 'java', 'javascript', 'php', 'ruby', 'golang', 'rust',
+        'docker', 'kubernetes', 'aws', 'azure', 'cloud', 'server', 'network',
+        # CTF平台常见词
+        'ctftime', 'ctfhub', 'bugku', 'buuctf', 'hwb', 'actf', 'suctf', 'qwb',
+        'xctf', 'hgame', 'nss', 'ciscn', 'awd', 'awdp', 'joy', 'easy', 'hard',
+        # 题目提示词
+        'baby', 'easy', 'simple', 'basic', 'classic', 'crypto', 'modern',
+        'ancient', 'caesar', 'vigenere', 'rsa', 'aes', 'des', 'xor', 'rot13',
+        # 节日日期
+        'spring', 'summer', 'autumn', 'winter', 'christmas', 'halloween',
+        'newyear', 'holiday', '2024', '2025', '2026',
+        # 其他常见弱密码
+        'qwertyuiop', 'asdfghjkl', 'zxcvbnm', '1qaz2wsx', 'qazwsxedc',
+        'password!', 'admin!', 'p@ssw0rd', 'p@ssword', 'pa$$word',
     ]
+
+    @classmethod
+    def _ai_generate_passwords(cls, context: Dict = None, challenge_title: str = None,
+                               challenge_description: str = None) -> List[str]:
+        """
+        根据题目上下文动态生成针对性密码
+
+        Args:
+            context: 题目上下文信息字典
+            challenge_title: 题目标题
+            challenge_description: 题目描述
+
+        Returns:
+            生成的针对性密码列表
+        """
+        generated = []
+
+        # 合并上下文信息
+        text = ''
+        if context:
+            text += str(context.get('title', '')) + ' '
+            text += str(context.get('description', '')) + ' '
+            text += str(context.get('hint', '')) + ' '
+        if challenge_title:
+            text += challenge_title + ' '
+        if challenge_description:
+            text += challenge_description + ' '
+
+        text = text.lower()
+
+        # 根据关键词生成针对性密码
+        keyword_patterns = {
+            # RSA相关
+            'rsa': ['rsa', 'n', 'e', 'd', 'p', 'q', 'phi', 'modular', 'exponent',
+                    'wiener', 'fermat', 'common_modulus', 'small_e', 'small_d',
+                    'rsa2024', 'rsa2025', 'rsa_key', 'private_key', 'public_key'],
+            # 凯撒密码相关
+            'caesar': ['caesar', 'shift', 'rotate', 'rot', 'julius', 'caesar_cipher',
+                       'rot13', 'rot47', 'shift13', 'shift5', 'shift3'],
+            # XOR相关
+            'xor': ['xor', 'exclusive', 'xor_key', 'xorcipher', 'xor_decrypt',
+                    'xork', 'xorcrack', 'repeated_xor', 'single_byte_xor'],
+            # Base编码相关
+            'base': ['base64', 'base32', 'base16', 'base58', 'base85', 'b64', 'b32'],
+            # 古典密码
+            'classical': ['vigenere', 'rail_fence', 'railfence', 'fence', 'bacon',
+                         'polybius', 'playfair', 'affine', 'atbash', 'substitution'],
+            # 现代加密
+            'modern': ['aes', 'des', '3des', 'rc4', 'blowfish', 'twofish',
+                      'serpent', 'chacha20', 'salsa20'],
+            # 哈希相关
+            'hash': ['md5', 'sha1', 'sha256', 'sha512', 'md4', 'ntlm',
+                    'bcrypt', 'scrypt', 'pbkdf2', 'hmac'],
+            # 编码相关
+            'encoding': ['hex', 'binary', 'octal', 'ascii', 'unicode', 'utf',
+                        'morse', 'brainfuck', 'ook', 'aaencode'],
+            # Web安全
+            'web': ['sql', 'xss', 'csrf', 'ssrf', 'rce', 'lfi', 'rfi', 'sqli',
+                   'xss_attack', 'webshell', 'backdoor', 'eval', 'system'],
+            # 逆向相关
+            'reverse': ['elf', 'pe', 'exe', 'binary', 'assembly', 'gdb', 'ida',
+                       'ghidra', 'debug', 'breakpoint', 'register'],
+            # PWN相关
+            'pwn': ['shell', 'overflow', 'buffer', 'stack', 'heap', 'rop', 'ret',
+                   'libc', 'gadget', 'canary', 'nx', 'aslr', 'pie'],
+            # 隐写相关
+            'stego': ['steghide', 'stegsolve', 'lsb', 'png', 'jpg', 'gif',
+                     'exif', 'metadata', 'binwalk', 'foremost', 'wav'],
+            # 取证相关
+            'forensic': ['wireshark', 'pcap', 'network', 'traffic', 'packet',
+                        'memory', 'disk', 'volatility', 'registry', 'timeline'],
+            # 中文相关
+            'chinese': ['flag', 'miyao', 'mima', 'key', 'secret', 'password',
+                       'mima123', 'key123', 'admin', 'root', 'test'],
+            # 数学相关
+            'math': ['prime', 'factor', 'mod', 'gcd', 'lcm', 'euler', 'phi',
+                    'carmichael', 'fermat', 'pollard', 'rho'],
+        }
+
+        # 根据匹配的关键词生成密码
+        for category, passwords in keyword_patterns.items():
+            if category in text:
+                generated.extend(passwords)
+
+        # 从题目中提取可能的密码关键词
+        import re
+        # 提取引号内的内容作为可能的密码
+        quoted = re.findall(r'["\']([^"\']{3,20})["\']', text)
+        generated.extend(quoted)
+
+        # 提取可能的密码提示词
+        hints = re.findall(r'(?:password|pwd|pass|key|flag)[:\s=]+(\S+)', text, re.IGNORECASE)
+        generated.extend(hints)
+
+        # 提取题目名称可能的变体
+        if challenge_title:
+            title_lower = challenge_title.lower().replace(' ', '_')
+            generated.append(title_lower)
+            generated.append(title_lower.replace('_', ''))
+            generated.append(title_lower + '_flag')
+            generated.append(title_lower + '_key')
+            generated.append(title_lower + '_password')
+            # 提取题目名称中的关键单词
+            title_words = re.findall(r'[a-zA-Z]{3,}', challenge_title)
+            generated.extend([w.lower() for w in title_words])
+
+        # 根据数字生成变体
+        numbers = re.findall(r'\d{4}', text)  # 年份
+        for num in numbers:
+            generated.extend([
+                'password' + num,
+                'admin' + num,
+                'key' + num,
+                'flag' + num,
+                'ctf' + num,
+            ])
+
+        # 去重并保持顺序
+        seen = set()
+        unique_generated = []
+        for pwd in generated:
+            if pwd and pwd not in seen and len(pwd) >= 1:
+                seen.add(pwd)
+                unique_generated.append(pwd)
+
+        return unique_generated
 
     @classmethod
     def identify_hash(cls, hash_value: str) -> Dict:
@@ -634,7 +798,9 @@ class HashAnalyzer:
 
     @classmethod
     def crack_hash(cls, hash_value: str, hash_type: str = None,
-                   wordlist: List[str] = None) -> Dict:
+                   wordlist: List[str] = None, context: Dict = None,
+                   challenge_title: str = None, challenge_description: str = None,
+                   use_ai_passwords: bool = True) -> Dict:
         """
         尝试破解Hash
 
@@ -642,6 +808,10 @@ class HashAnalyzer:
             hash_value: 哈希值
             hash_type: 哈希类型（可选）
             wordlist: 密码字典（可选）
+            context: 题目上下文信息字典（用于AI生成针对性密码）
+            challenge_title: 题目标题（用于AI生成针对性密码）
+            challenge_description: 题目描述（用于AI生成针对性密码）
+            use_ai_passwords: 是否使用AI生成的针对性密码（默认True）
 
         Returns:
             破解结果
@@ -660,12 +830,33 @@ class HashAnalyzer:
         if not hash_func:
             return {'success': False, 'error': f'Unsupported hash type: {hash_type}'}
 
-        # 使用提供的字典或默认字典
-        passwords = wordlist or cls.COMMON_PASSWORDS
-
         hash_lower = hash_value.lower()
 
-        for password in passwords:
+        # 构建密码尝试列表，优先级：用户字典 > AI生成 > 默认字典
+        passwords_to_try = []
+
+        if wordlist:
+            # 用户提供的字典优先级最高
+            passwords_to_try.extend(wordlist)
+
+        if use_ai_passwords and (context or challenge_title or challenge_description):
+            # AI生成的针对性密码优先于默认字典
+            ai_passwords = cls._ai_generate_passwords(
+                context=context,
+                challenge_title=challenge_title,
+                challenge_description=challenge_description
+            )
+            passwords_to_try.extend(ai_passwords)
+
+        # 添加默认字典（去重）
+        seen = set(passwords_to_try)
+        for pwd in cls.COMMON_PASSWORDS:
+            if pwd not in seen:
+                passwords_to_try.append(pwd)
+                seen.add(pwd)
+
+        # 尝试破解
+        for password in passwords_to_try:
             computed = hash_func(password.encode()).hexdigest()
             if computed == hash_lower:
                 return {

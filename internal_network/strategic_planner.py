@@ -264,23 +264,23 @@ class StrategicPlanner:
     def _calculate_priority(self, ports: List[int]) -> int:
         """计算目标优先级"""
         # 域控特征
-        if any(p in ports for p in [88, 389, 636, 3268]):
+        if any(p in ports for p in config.DOMAIN_CONTROLLER_PORTS):
             return AttackPriority.CRITICAL
 
         # 数据库
-        if any(p in ports for p in [1433, 3306, 5432, 27017]):
+        if any(p in ports for p in config.DATABASE_PORTS):
             return AttackPriority.HIGH
 
         # 文件服务器
-        if 445 in ports or 21 in ports:
+        if any(p in ports for p in config.FILE_SERVICE_PORTS):
             return AttackPriority.HIGH
 
         # Web服务器
-        if any(p in ports for p in [80, 443, 8080, 8443]):
+        if any(p in ports for p in config.WEB_PORTS):
             return AttackPriority.MEDIUM
 
         # 远程访问
-        if any(p in ports for p in [22, 3389, 5900]):
+        if any(p in ports for p in config.REMOTE_ACCESS_PORTS):
             return AttackPriority.MEDIUM
 
         return AttackPriority.UNKNOWN

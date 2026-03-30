@@ -588,11 +588,20 @@ def get_executable_tools(tools: List[str], state: Dict) -> List[str]:
 # ============================================================================
 # AI驱动的智能工具选择
 # ============================================================================
+# 注意：以下三个函数为预留接口，供未来扩展使用：
+# - ai_select_tools: AI驱动工具选择，可与 attacker_node 配合使用
+# - ai_generate_exploit_strategy: Pwn模块专用，未来可集成到专门的Pwn节点
+# - ai_decide_decryption: Crypto模块专用，未来可集成到专门的Crypto节点
+# 当前 attacker_node 已有自己的 LLM 工具选择逻辑，这些函数暂未被调用。
+# ============================================================================
 
 def ai_select_tools(vuln_info: Dict, context: Dict = None,
                     attack_history: List[Dict] = None) -> List[str]:
     """
-    AI驱动的工具选择 - 根据漏洞特征和上下文动态选择最优工具
+    [预留接口] AI驱动的工具选择 - 根据漏洞特征和上下文动态选择最优工具
+
+    注意：当前 attacker_node 已有自己的 LLM 工具选择逻辑，此函数暂未被调用。
+    未来可用于：当需要更精细的工具选择逻辑时，替代或补充现有实现。
 
     Args:
         vuln_info: 漏洞信息 {"type": "sql", "location": "...", ...}
@@ -676,7 +685,10 @@ def ai_select_tools(vuln_info: Dict, context: Dict = None,
 
 def ai_generate_exploit_strategy(vuln_info: Dict, binary_info: Dict = None) -> Dict:
     """
-    AI生成exploit策略 - 用于Pwn模块
+    [预留接口] AI生成exploit策略 - 用于Pwn模块
+
+    注意：此函数为预留接口，当前项目暂无专门的Pwn节点调用此函数。
+    未来可在 Pwn 类题目处理流程中调用，用于自动生成漏洞利用策略。
 
     Args:
         vuln_info: 漏洞信息
@@ -731,7 +743,10 @@ def ai_generate_exploit_strategy(vuln_info: Dict, binary_info: Dict = None) -> D
 
 def ai_decide_decryption(ciphertext: str, analysis: Dict) -> Dict:
     """
-    AI决策解密策略 - 用于Crypto模块
+    [预留接口] AI决策解密策略 - 用于Crypto模块
+
+    注意：此函数为预留接口，当前项目暂无专门的Crypto节点调用此函数。
+    未来可在 Crypto 类题目处理流程中调用，用于自动决策解密方法和策略。
 
     Args:
         ciphertext: 密文

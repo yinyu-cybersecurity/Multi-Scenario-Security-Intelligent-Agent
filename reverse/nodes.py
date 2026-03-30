@@ -180,8 +180,8 @@ def reverse_decompiler_node(state: Dict) -> Dict:
         # LLM深度分析（注入知识库上下文）
         llm_findings = _llm_reverse_analysis(decompiled, analysis, patterns, state, knowledge_context)
 
-        # 识别算法
-        algorithm = PatternMatcher.identify_algorithm(analysis)
+        # AI动态算法识别（传入完整代码上下文）
+        algorithm = PatternMatcher.identify_algorithm(analysis, disasm=disasm, decompiled=decompiled)
 
         logger.info(f"[ReverseDeompiler] Decompiled {len(decompiled)} chars, found {len(patterns)} patterns")
 
