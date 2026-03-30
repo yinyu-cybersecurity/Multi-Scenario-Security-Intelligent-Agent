@@ -189,9 +189,19 @@ RUN pip install --upgrade pip && \
     pip install -r requirements.txt && \
     pip install -r /app/thirdparty/dirsearch/requirements.txt 2>/dev/null || true
 
-# RAG Embedding 模型配置（运行时从hf-mirror.com下载）
+# 预下载 RAG Embedding 模型（hf-mirror.com国内镜像）
 ENV HF_ENDPOINT=https://hf-mirror.com
 ENV HF_HOME=/app/.cache/huggingface
+RUN python3.11 -c "from huggingface_hub import hf_hub_download; \
+    hf_hub_download('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', \
+    'pytorch_model.bin', local_dir='/app/.cache/huggingface'); \
+    hf_hub_download('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', \
+    'config.json', local_dir='/app/.cache/huggingface'); \
+    hf_hub_download('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', \
+    'tokenizer.json', local_dir='/app/.cache/huggingface'); \
+    hf_hub_download('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', \
+    'vocab.txt', local_dir='/app/.cache/huggingface')" && \
+    echo "RAG model downloaded"
 
 COPY app/*.py ./
 COPY app/state_types ./state_types/
