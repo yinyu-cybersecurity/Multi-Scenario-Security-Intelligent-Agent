@@ -167,6 +167,8 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
 
 你可以请求从知识库检索信息辅助攻击。在输出中添加`retrieval_requests`字段。
 
+⚠️ **重要提醒**：检索结果仅供参考，不一定适用于当前场景。请结合目标实际情况判断payload和技术的可行性，不要盲目照搬。
+
 ### 可用数据源
 
 | 数据源 | 用途 | 示例查询 |

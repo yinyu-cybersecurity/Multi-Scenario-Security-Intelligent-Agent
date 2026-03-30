@@ -468,6 +468,7 @@ def _llm_pwn_analysis(binary_info: Dict, vulnerabilities: List[Dict],
     if knowledge_context:
         knowledge_section = f"""
 ## Related Exploit Knowledge References
+⚠️ 注意：以下参考资料仅供参考，不一定适用于当前二进制文件，请结合实际保护机制和架构判断。
 {knowledge_context[:1000]}
 """
 

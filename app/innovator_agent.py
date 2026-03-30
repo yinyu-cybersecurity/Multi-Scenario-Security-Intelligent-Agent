@@ -54,6 +54,7 @@ def get_innovator_prompt(features: dict, trace: list, rag_docs: list, focused_sc
 {json.dumps(trace, ensure_ascii=False)}
 {scene_hint}
 2. 知识库参考 (RAG 检索出的相似题目 Writeups)
+⚠️ 注意：以下参考案例仅供参考，不一定适用于当前场景，请结合实际情况判断。
 仔细阅读以下历史成功案例，寻找可以迁移到当前环境的技术：
 {formatted_docs if formatted_docs else "无匹配的参考案例，请依靠你的内化知识。"}
 

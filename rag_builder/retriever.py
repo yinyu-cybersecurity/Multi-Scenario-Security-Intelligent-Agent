@@ -362,13 +362,16 @@ def retrieve_relevant_knowledge(query: str, sources: list = None, top_k: int = 5
     Returns:
         List of dicts with keys: "content", "similarity", "metadata", "source"
         Returns empty list on failure (graceful degradation)
+
+    Note:
+        检索结果仅供参考，不一定准确。请结合实际情况判断是否适用。
     """
     # 输入验证
     if not query or len(query.strip()) < 2:
         return []
 
-    # 限制查询长度，避免超长查询
-    query = query.strip()[:500]
+    # 限制查询长度，允许较长的脚本和payload
+    query = query.strip()[:5000]  # 增加到5000字符，支持完整脚本
 
     if sources is None:
         sources = ["writeups", "security_resources"]
@@ -445,6 +448,10 @@ def retrieve_relevant_knowledge(query: str, sources: list = None, top_k: int = 5
         # Cache the results
         if use_cache and results:
             cache.set(query, results, sources_tuple, top_k)
+
+        # 为每个结果添加免责声明
+        for r in results:
+            r["disclaimer"] = "检索结果仅供参考，不一定适用于当前场景，请结合实际情况判断。"
 
         return results
 

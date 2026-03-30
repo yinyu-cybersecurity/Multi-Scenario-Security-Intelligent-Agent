@@ -213,6 +213,7 @@ def _llm_reverse_analysis(decompiled: str, analysis: Dict,
     if knowledge_context:
         knowledge_section = f"""
 ## Related Reverse Engineering Knowledge References
+⚠️ 注意：以下参考资料仅供参考，不一定适用于当前二进制文件，请结合实际代码逻辑判断。
 {knowledge_context[:1000]}
 """
 
