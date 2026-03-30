@@ -86,6 +86,16 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
     rule_candidates_json = json.dumps(rule_candidates, indent=2, ensure_ascii=False)[:500]
     topology_section = f"## 拓扑分析\n{topology_hint}\n" if topology_hint else ""
 
+    # [关键修复] 添加源码到提示词 - CTF页面一般小于10KB
+    source_code_section = ""
+    if raw_html:
+        source_code_section = f"""
+## 页面源码
+```
+{raw_html[:10000]}
+```
+"""
+
     # hybrid_detector检测结果格式化
     hybrid_section = ""
     if hybrid_detection_results:
@@ -147,6 +157,7 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
 {hybrid_section}
 {stage_section}
 {strategic_section}
+{source_code_section}
 ## 页面特征
 {page_features_json}
 

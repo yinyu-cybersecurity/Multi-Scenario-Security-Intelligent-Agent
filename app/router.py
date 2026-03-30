@@ -530,7 +530,7 @@ def route_verify(state: CTFState, current_node: str) -> str:
 
     # 4. 检查失败分是否过高，考虑切换模式
     failure_weighted_score = state.get("failure_weighted_score", 0)
-    if failure_weighted_score > config.MAX_FAILURE_SCORE:
+    if failure_weighted_score > config.FAILURE_SCORE_ABANDON:
         logger.info(f"失败分过高 ({failure_weighted_score})，进入创新模式")
         return "mode_manager"
 
@@ -1016,8 +1016,12 @@ def route_with_strategic_context(state: CTFState, current_node: str) -> Dict:
     # 获取战略上下文
     strategic_context = state.get("strategic_context", {})
 
-    if not strategic_context:
-        # 如果没有战略上下文，调用规划器生成
+    # [关键修复] 只有内网模式才调用内网战略规划器
+    # Web模式不需要SOCKS5代理、隧道等内网概念
+    internal_mode = state.get("internal_mode", False)
+
+    if not strategic_context and internal_mode:
+        # 内网模式：调用内网战略规划器
         try:
             from internal_network.strategic_planner import strategic_planner_node
             result = strategic_planner_node(dict(state))
@@ -1029,6 +1033,13 @@ def route_with_strategic_context(state: CTFState, current_node: str) -> Dict:
                 "strategic_context": {},
                 "reasoning": "降级到默认路由"
             }
+    elif not strategic_context:
+        # Web模式：不需要战略规划器，直接使用默认路由
+        return {
+            "next_node": route_mode(state, current_node),
+            "strategic_context": {},
+            "reasoning": "Web模式使用默认路由"
+        }
 
     # 基于战略上下文决策
     position_type = strategic_context.get("position_type", "web")

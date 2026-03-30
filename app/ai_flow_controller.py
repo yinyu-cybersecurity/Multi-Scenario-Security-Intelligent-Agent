@@ -278,7 +278,7 @@ class AIFlowController:
             return FlowDecision.SWITCH_STRATEGY, f"失败分过高({failure_score}), 建议放弃或深度创新"
 
         # 达到创新阈值
-        if failure_score >= self.cfg.failure_score_innovate:
+        if failure_score >= self.cfg.failure_score_for_innovate:
             self._stats["strategy_switches"] += 1
             logger.info(f"[FlowController] 失败分达到创新阈值: {failure_score}")
             return FlowDecision.SWITCH_STRATEGY, f"失败分达到创新阈值({failure_score}), 切换策略"
