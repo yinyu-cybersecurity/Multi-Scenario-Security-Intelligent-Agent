@@ -281,16 +281,35 @@ class DirsearchTool(CommandLineTool):
 
             # 解析原始输出中的路径
             discovered_paths = []
-            # 匹配格式: [状态码] URL (长度) 或类似格式
-            path_pattern = r'\[(\d{3})\]\s+(\S+)\s+(?:\(.*?\))?'
-            for match in re.finditer(path_pattern, stdout):
-                status_code = int(match.group(1))
-                path_url = match.group(2)
-                if path_url and status_code < 400:  # 只处理成功的路径
-                    discovered_paths.append({
-                        "url": path_url,
-                        "status": status_code
-                    })
+
+            # 🚨 修复：匹配dirsearch实际输出格式
+            # 格式1: [时间] 状态码 - 长度 - URL
+            # 格式2: 状态码 - 长度 - URL（静默模式下可能没有时间）
+            # 示例: [13:17:21] 200 - 814B - http://example.com/path
+
+            # 多个正则匹配不同格式
+            patterns = [
+                # 格式1: 带时间的完整格式
+                r'\[?\d{2}:\d{2}:\d{2}\]?\s*(\d{3})\s*-\s*(\d+[KB]?)\s*-\s*(https?://\S+)',
+                # 格式2: 简洁格式 [状态码] URL
+                r'\[(\d{3})\]\s+(https?://\S+)',
+                # 格式3: 状态码 + URL（无括号）
+                r'(\d{3})\s+(https?://\S+)'
+            ]
+
+            for pattern in patterns:
+                for match in re.finditer(pattern, stdout):
+                    groups = match.groups()
+                    status_code = int(groups[0])
+                    path_url = groups[-1]  # URL总是在最后一组
+
+                    if path_url and status_code < 400:  # 只处理成功的路径
+                        # 避免重复添加
+                        if not any(p["url"] == path_url for p in discovered_paths):
+                            discovered_paths.append({
+                                "url": path_url,
+                                "status": status_code
+                            })
 
             # 🚨 [核心修改] 对发现的路径进行内容去重
             if discovered_paths:
