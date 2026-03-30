@@ -6,17 +6,22 @@ import glob
 import hashlib
 import yaml
 import re
+import threading
+import time
 from pathlib import Path
 from typing import List, Dict, Optional
 import chromadb
 from tqdm import tqdm
 
+# 性能优化：设置环境变量
+os.environ.setdefault('TOKENIZERS_PARALLELISM', 'false')  # 禁用tokenizer并行，避免死锁
+os.environ.setdefault('OMP_NUM_THREADS', '1')  # 限制OpenMP线程数
+
 # 重要：先导入config设置HF_ENDPOINT环境变量，再导入sentence_transformers
-# 这样模型加载时会使用国内镜像而不是原始huggingface.co
 from rag_builder.config import (
     WRITEUPS_DIR, CHROMA_DIR, SUPPORTED_EXTENSIONS,
     EMBEDDING_MODEL, MAX_CONTENT_LENGTH, HF_ENDPOINT,
-    SIMILARITY_THRESHOLD
+    SIMILARITY_THRESHOLD, RAG_SEARCH_TIMEOUT, RAG_MAX_CONCURRENT
 )
 
 # config.py已设置HF_ENDPOINT，现在可以安全导入SentenceTransformer
@@ -500,7 +505,11 @@ Sample Entries: {content[:1000]}
 
 
 class UnifiedRetriever:
-    """统一检索器 - 支持跨collection检索"""
+    """统一检索器 - 支持跨collection检索，带性能优化"""
+
+    # 类级别的并发控制
+    _search_semaphore = None
+    _model_lock = threading.Lock()
 
     def __init__(self):
         print("[RAG] Initializing unified retriever...")
@@ -530,6 +539,11 @@ class UnifiedRetriever:
 
         # 模型延迟加载（节省内存）
         self._model = None
+        self._model_load_time = 0
+
+        # 初始化并发控制信号量
+        if UnifiedRetriever._search_semaphore is None:
+            UnifiedRetriever._search_semaphore = threading.Semaphore(RAG_MAX_CONCURRENT)
 
         # 统计
         total = 0
@@ -546,60 +560,75 @@ class UnifiedRetriever:
 
     @property
     def model(self):
-        """延迟加载模型（节省内存）"""
+        """延迟加载模型（节省内存），带线程锁保护"""
         if self._model is None:
-            print("[RAG] Loading embedding model (first use)...")
-            self._model = SentenceTransformer(EMBEDDING_MODEL)
+            with UnifiedRetriever._model_lock:
+                if self._model is None:
+                    print("[RAG] Loading embedding model (first use)...")
+                    start_time = time.time()
+                    self._model = SentenceTransformer(EMBEDDING_MODEL)
+                    self._model_load_time = time.time() - start_time
+                    print(f"[RAG] Model loaded in {self._model_load_time:.1f}s")
         return self._model
 
-    def search(self, query: str, top_k: int = 5, sources: List[str] = None) -> Dict:
+    def search(self, query: str, top_k: int = 5, sources: List[str] = None, timeout: int = None) -> Dict:
         """
-        统一检索接口
+        统一检索接口，带并发控制和超时
 
         Args:
             query: 查询文本
             top_k: 每个来源返回的数量
-            sources: 指定检索来源 ["writeups", "nuclei", "payloads", "security_resources"]
+            sources: 指定检索来源
+            timeout: 超时时间（秒）
 
         Returns:
-            {
-                "writeups": [...],
-                "nuclei": [...],
-                "payloads": [...],
-                "security_resources": [...],
-                "total": N
-            }
+            检索结果字典
         """
+        timeout = timeout or RAG_SEARCH_TIMEOUT
         sources = sources or ["writeups", "nuclei", "payloads", "security_resources"]
-        query_embedding = self.model.encode(query).tolist()
 
-        results = {"total": 0}
+        # 并发控制
+        acquired = UnifiedRetriever._search_semaphore.acquire(timeout=timeout)
+        if not acquired:
+            print(f"[RAG] Search timeout waiting for semaphore (concurrent limit: {RAG_MAX_CONCURRENT})")
+            return {"total": 0, "error": "concurrent_limit"}
 
-        # 检索Writeups
-        if "writeups" in sources and self.writeups_collection:
-            wp_results = self._search_collection(self.writeups_collection, query_embedding, top_k)
-            results["writeups"] = wp_results
-            results["total"] += len(wp_results)
+        try:
+            # 生成查询embedding
+            query_embedding = self.model.encode(query).tolist()
 
-        # 检索Nuclei模板
-        if "nuclei" in sources and self.nuclei_collection:
-            nuclei_results = self._search_collection(self.nuclei_collection, query_embedding, top_k)
-            results["nuclei"] = nuclei_results
-            results["total"] += len(nuclei_results)
+            results = {"total": 0}
 
-        # 检索Payloads
-        if "payloads" in sources and self.payloads_collection:
-            payload_results = self._search_collection(self.payloads_collection, query_embedding, top_k)
-            results["payloads"] = payload_results
-            results["total"] += len(payload_results)
+            # 限制检索的source数量，避免过长时间
+            max_sources = 3  # 一次最多检索3个source
+            limited_sources = sources[:max_sources]
 
-        # 检索Security Resources
-        if "security_resources" in sources and self.security_resources_collection:
-            sec_results = self._search_collection(self.security_resources_collection, query_embedding, top_k)
-            results["security_resources"] = sec_results
-            results["total"] += len(sec_results)
+            # 检索各collection
+            for source in limited_sources:
+                collection = self._get_collection(source)
+                if collection:
+                    source_results = self._search_collection(collection, query_embedding, top_k)
+                    if source_results:
+                        results[source] = source_results
+                        results["total"] += len(source_results)
 
-        return results
+            return results
+
+        except Exception as e:
+            print(f"[RAG] Search error: {e}")
+            return {"total": 0, "error": str(e)}
+        finally:
+            UnifiedRetriever._search_semaphore.release()
+
+    def _get_collection(self, source: str):
+        """获取对应source的collection"""
+        mapping = {
+            "writeups": self.writeups_collection,
+            "nuclei": self.nuclei_collection,
+            "payloads": self.payloads_collection,
+            "security_resources": self.security_resources_collection
+        }
+        return mapping.get(source)
 
     def _search_collection(self, collection, embedding: List, top_k: int) -> List[Dict]:
         """在指定collection中检索"""

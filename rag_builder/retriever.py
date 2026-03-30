@@ -341,7 +341,8 @@ def get_retriever() -> WriteupRetriever:
 
 
 def retrieve_relevant_knowledge(query: str, sources: list = None, top_k: int = 5,
-                                use_cache: bool = True, use_advanced: bool = True) -> List[Dict]:
+                                use_cache: bool = True, use_advanced: bool = True,
+                                timeout: int = 30) -> List[Dict]:
     """
     Unified knowledge retrieval function for RAG.
 
@@ -356,14 +357,24 @@ def retrieve_relevant_knowledge(query: str, sources: list = None, top_k: int = 5
         top_k: Number of results to return per source (default: 5)
         use_cache: Whether to use cache (default: True)
         use_advanced: Whether to use advanced retrieval strategies (default: True)
-                      Advanced: query enhancement, hybrid search, reranking, MMR
+        timeout: Timeout in seconds (default: 30)
 
     Returns:
         List of dicts with keys: "content", "similarity", "metadata", "source"
         Returns empty list on failure (graceful degradation)
     """
+    # 输入验证
+    if not query or len(query.strip()) < 2:
+        return []
+
+    # 限制查询长度，避免超长查询
+    query = query.strip()[:500]
+
     if sources is None:
         sources = ["writeups", "security_resources"]
+
+    # 限制source数量
+    sources = sources[:3]
 
     # Convert sources to tuple for cache key
     sources_tuple = tuple(sources)

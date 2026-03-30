@@ -27,8 +27,14 @@ import os
 HF_ENDPOINT = os.environ.get('HF_ENDPOINT', 'https://hf-mirror.com')
 os.environ['HF_ENDPOINT'] = HF_ENDPOINT
 
-# 多语言模型（~500MB，支持中英文，更小更快）
-EMBEDDING_MODEL = "sentence-transformers/distiluse-base-multilingual-cased-v2"
+# 多语言模型（~420MB，支持中英文）
+EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
+# 性能优化配置
+RAG_MAX_MEMORY_MB = 600  # RAG模块最大内存占用（MB）
+RAG_MODEL_CACHE_TTL = 3600  # 模型缓存时间（秒），1小时不使用可卸载
+RAG_SEARCH_TIMEOUT = 30  # 单次检索超时（秒）
+RAG_MAX_CONCURRENT = 2  # 最大并发检索数
 
 # 检索配置
 TOP_K_RESULTS = 10  # 默认返回几条相似结果
