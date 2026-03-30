@@ -59,8 +59,8 @@ class DecisionRecord:
 @dataclass
 class FlowControllerConfig:
     """控制器配置"""
-    # AI决策超时（秒）
-    ai_decision_timeout: int = 20
+    # AI决策超时（秒）- 增加到60秒，网络请求可能较慢
+    ai_decision_timeout: int = 60
 
     # 决策链最大长度
     max_decision_history: int = 10

@@ -419,7 +419,8 @@ def route_mode(state: CTFState, current_node: str) -> str:
 
     # [模块智慧管理] 根据内网/Web模式动态切换内存模式
     if MODULE_MANAGER_AVAILABLE and module_manager:
-        current_memory_mode = state.get("memory_mode", "minimal")
+        # [修复] 使用 module_manager 的实际模式，而不是 state 中可能过期的值
+        current_memory_mode = module_manager.memory_mode
         internal_mode = state.get("internal_mode", False)
 
         # 检测场景类型（优先内网，其次专项场景）
@@ -442,8 +443,6 @@ def route_mode(state: CTFState, current_node: str) -> str:
         if current_memory_mode != target_mode:
             logger.info(f"[ModuleManager] 检测到场景切换: {current_memory_mode} -> {target_mode}")
             updates = module_manager.switch_mode(target_mode, dict(state))
-            # 注意：不直接修改state，返回更新让上层处理
-            # 但这里只需要路由决策，模块切换是异步的
 
     # [核心修复] 检查当前 URL 是否已经过侦察
     current_url = state.get("current_url")
