@@ -21,13 +21,21 @@ CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 SUPPORTED_EXTENSIONS = [".md", ".txt", ".markdown"]
 
 # Embedding模型配置
-# 使用国内镜像加速下载
+# 优先使用国内镜像
+import os
+
+# 设置HuggingFace镜像（必须在导入sentence_transformers之前）
 HF_ENDPOINT = os.environ.get('HF_ENDPOINT', 'https://hf-mirror.com')
 os.environ['HF_ENDPOINT'] = HF_ENDPOINT
 
-# 多语言模型（同时支持中英文）- 使用国内镜像
+# 设置代理（可选，如果需要）
+# os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7890'
+# os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7890'
+
+# 多语言模型（同时支持中英文）
 EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-# 更轻量的替代方案（更快下载）:
+
+# 备选模型（更小更快，但只支持英文）
 # EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 # 检索配置
