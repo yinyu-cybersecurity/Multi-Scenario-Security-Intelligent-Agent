@@ -12,7 +12,12 @@ from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse, urljoin
 
 from tool_framework import CTFTool, CommandLineTool
-from app.flag_extractor_v2 import extract_flags
+
+# 兼容本地开发和Docker环境
+try:
+    from app.flag_extractor_v2 import extract_flags
+except ImportError:
+    from flag_extractor_v2 import extract_flags
 
 
 class SSRFScanner(CTFTool):

@@ -11,7 +11,12 @@ import requests
 from typing import Dict, List, Optional
 
 from tool_framework import CTFTool
-from app.flag_extractor_v2 import extract_first_flag
+
+# 兼容本地开发和Docker环境
+try:
+    from app.flag_extractor_v2 import extract_first_flag
+except ImportError:
+    from flag_extractor_v2 import extract_first_flag
 
 
 class AIAttacker(CTFTool):
