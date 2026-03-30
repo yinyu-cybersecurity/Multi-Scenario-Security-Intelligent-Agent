@@ -151,13 +151,22 @@ class LLMClient:
     """LLM API 客户端 - 增强版"""
 
     def __init__(self):
-        self.api_key = config.LLM_API_KEY
-        self.base_url = config.LLM_BASE_URL
-        self.headers = {
-            "Authorization": f"Bearer {self.api_key}",
+        # 不在初始化时固定配置，而是每次调用时动态读取
+        self.rate_limiter = _rate_limiter
+
+    def _get_config(self):
+        """动态获取当前配置"""
+        return {
+            "api_key": config.LLM_API_KEY,
+            "base_url": config.LLM_BASE_URL
+        }
+
+    def _get_headers(self, api_key: str) -> Dict[str, str]:
+        """构建请求头"""
+        return {
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
-        self.rate_limiter = _rate_limiter
 
     def call_chat_completion(
         self,
@@ -270,7 +279,10 @@ class LLMClient:
         Args:
             timeout: 超时秒数 (可选，默认使用config.LLM_TIMEOUT)
         """
-        url = f"{self.base_url}/chat/completions"
+        # 动态获取当前配置（支持运行时修改）
+        cfg = self._get_config()
+        url = f"{cfg['base_url']}/chat/completions"
+        headers = self._get_headers(cfg['api_key'])
         request_timeout = timeout if timeout is not None else config.LLM_TIMEOUT
 
         payload = {
@@ -290,7 +302,7 @@ class LLMClient:
 
         for attempt in range(retry_count):
             try:
-                response = requests.post(url, headers=self.headers, json=payload, timeout=request_timeout)
+                response = requests.post(url, headers=headers, json=payload, timeout=request_timeout)
 
                 # 检查HTTP状态码
                 if response.status_code == 401:

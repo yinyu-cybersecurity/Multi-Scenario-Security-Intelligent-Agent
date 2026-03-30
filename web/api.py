@@ -2376,21 +2376,38 @@ def api_update_config():
         data = request.json
         from config import config
 
+        # 记录哪些配置需要重启生效
+        restart_required = []
+
         # 更新允许的配置项
         if 'LLM_BASE_URL' in data:
             config.LLM_BASE_URL = data['LLM_BASE_URL']
+            # LLM配置已支持运行时生效（llm_client动态读取）
         if 'LLM_API_KEY' in data:
             # 空字符串表示清除
             if data['LLM_API_KEY'] == '':
                 config.LLM_API_KEY = ''
             else:
                 config.LLM_API_KEY = data['LLM_API_KEY']
+            # LLM配置已支持运行时生效
         if 'ANALYST_MODEL' in data:
             config.ANALYST_MODEL = data['ANALYST_MODEL']
+            # 模型配置运行时生效
         if 'LOCAL_PUBLIC_IP' in data:
             config.LOCAL_PUBLIC_IP = data['LOCAL_PUBLIC_IP']
+            # 公网IP运行时生效（用于构造回调地址）
+        if 'HTTP_SERVER_PORT' in data:
+            config.HTTP_SERVER_PORT = data['HTTP_SERVER_PORT']
+            restart_required.append('HTTP_SERVER_PORT')
+        if 'FRP_SERVER_PORT' in data:
+            config.FRP_SERVER_PORT = data['FRP_SERVER_PORT']
+            restart_required.append('FRP_SERVER_PORT')
 
-        return jsonify({"success": True, "message": "配置已更新"})
+        message = "配置已更新"
+        if restart_required:
+            message += f"（注意：{', '.join(restart_required)} 需重启服务才能生效）"
+
+        return jsonify({"success": True, "message": message, "restart_required": restart_required})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
