@@ -176,10 +176,14 @@ class DirsearchTool(CommandLineTool):
         if not discovered_paths:
             return []
 
+        print(f"[dirsearch] 开始去重，基准URL: {base_url}")
+
         # 获取基准页面（首页）的哈希
         base_hash, base_length, _ = self._get_page_hash(base_url)
         seen_hashes: Set[str] = {base_hash} if base_hash else set()
         seen_lengths: Set[int] = {base_length} if base_length else set()
+
+        print(f"[dirsearch] 基准页面: hash={base_hash[:16] if base_hash else 'N/A'}..., length={base_length}")
 
         unique_paths = []
         for path_info in discovered_paths:
@@ -196,15 +200,16 @@ class DirsearchTool(CommandLineTool):
 
             if path_hash and path_hash in seen_hashes:
                 is_duplicate = True
-                duplicate_reason = "内容与已有页面相同"
-            elif path_length > 0 and path_length in seen_lengths and abs(path_length - base_length) < 50:
+                duplicate_reason = f"内容哈希相同 ({path_hash[:16]}...)"
+            elif path_length > 0 and base_length > 0 and abs(path_length - base_length) < 50:
                 # 如果长度非常接近（<50字节差异），可能是相同页面
                 is_duplicate = True
                 duplicate_reason = f"长度与基准页面接近({path_length} vs {base_length})"
 
             if is_duplicate:
-                print(f"[dirsearch] 过滤重复路径: {path_url} - {duplicate_reason}")
+                print(f"[dirsearch] ❌ 过滤重复: {path_url} - {duplicate_reason}")
             else:
+                print(f"[dirsearch] ✅ 保留: {path_url} (length={path_length})")
                 unique_paths.append(path_info)
                 if path_hash:
                     seen_hashes.add(path_hash)

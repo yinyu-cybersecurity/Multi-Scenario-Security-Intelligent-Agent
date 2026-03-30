@@ -45,7 +45,10 @@ except ImportError:
     # 降级定义
     StrategicContext = dict
     ATTACK_PHASES = {
-        "internal": ["立足点", "侦察", "横向移动", "权限提升", "FLAG"]
+        "web": ["侦察", "分析", "攻击", "验证", "FLAG"],
+        "internal": ["立足点", "侦察", "横向移动", "权限提升", "FLAG"],
+        "cloud": ["侦察", "枚举", "利用", "提权", "FLAG"],
+        "ai": ["检测", "探测", "注入", "泄露", "FLAG"],
     }
 
     def get_default_strategic_context() -> Dict:
@@ -124,11 +127,21 @@ class StrategicPlanner:
 
         # 构建战略上下文
         context = get_default_strategic_context()
-        context["position_type"] = "internal"
+
+        # [关键修复] 根据当前模式设置position_type
+        if state.get("internal_mode"):
+            context["position_type"] = "internal"
+        elif state.get("cloud_mode"):
+            context["position_type"] = "cloud"
+        elif state.get("ai_mode"):
+            context["position_type"] = "ai"
+        else:
+            context["position_type"] = "web"
+
         context["position_detail"] = f"hosts={len(internal_hosts)}, creds={len(credentials)}, sessions={len(active_sessions)}"
-        context["attack_chain"] = ATTACK_PHASES.get("internal", [])
+        context["attack_chain"] = ATTACK_PHASES.get(context["position_type"], ATTACK_PHASES["internal"])
         context["current_step"] = phase["step"]
-        context["total_steps"] = len(ATTACK_PHASES.get("internal", []))
+        context["total_steps"] = len(ATTACK_PHASES.get(context["position_type"], ATTACK_PHASES["internal"]))
 
         # 资源映射
         context["credential_access"] = self._map_credential_access(credentials)
