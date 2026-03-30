@@ -374,9 +374,36 @@ class WriteupRetriever:
         return self.search_by_text(query, top_k)
 
     def search_by_cve(self, cve_id: str) -> List[Dict]:
-        """按CVE编号检索"""
-        query = f"CVE ID: {cve_id}"
-        return self.search_by_text(query, top_k=3)
+        """按CVE编号检索 - 优先精确匹配"""
+        # 标准化CVE ID格式
+        cve_id_normalized = cve_id.upper().strip()
+
+        # 1. 先尝试精确匹配（如果使用统一检索器）
+        if self._use_unified and hasattr(self._unified, 'nuclei_collection') and self._unified.nuclei_collection:
+            try:
+                exact_results = self._unified.nuclei_collection.get(
+                    where={"cve_id": cve_id_normalized},
+                    include=["documents", "metadatas"]
+                )
+                if exact_results and exact_results['ids']:
+                    results = []
+                    for i, doc_id in enumerate(exact_results['ids']):
+                        results.append({
+                            "id": doc_id,
+                            "content": exact_results['documents'][i] if exact_results['documents'] else "",
+                            "metadata": exact_results['metadatas'][i] if exact_results['metadatas'] else {},
+                            "similarity": 1.0,
+                            "source": "nuclei"
+                        })
+                    print(f"[RAG] CVE精确匹配: {cve_id_normalized}")
+                    return results
+            except Exception as e:
+                print(f"[RAG] CVE精确匹配失败: {e}")
+
+        # 2. 精确匹配失败，使用语义搜索
+        print(f"[RAG] CVE精确匹配未找到，使用语义搜索: {cve_id_normalized}")
+        query = f"CVE ID: {cve_id_normalized}"
+        return self.search_by_text(query, top_k=5, caller="search_by_cve")
 
 
 # 全局单例（避免重复加载模型）
@@ -438,6 +465,40 @@ def retrieve_relevant_knowledge(query: str, sources: list = None, top_k: int = 5
 
     # 限制查询长度，允许较长的脚本和payload
     query = query.strip()[:5000]  # 增加到5000字符，支持完整脚本
+
+    # 检测是否包含CVE ID，优先精确匹配
+    import re
+    cve_pattern = r'CVE-\d{4}-\d{4,}'
+    cve_match = re.search(cve_pattern, query, re.IGNORECASE)
+    if cve_match:
+        cve_id = cve_match.group(0).upper()
+        print(f"[RAG] 检测到CVE ID: {cve_id}，使用精确匹配")
+
+        # 尝试精确匹配
+        if UNIFIED_RETRIEVER_AVAILABLE:
+            try:
+                retriever = get_unified_retriever()
+                if hasattr(retriever, 'nuclei_collection') and retriever.nuclei_collection:
+                    exact_results = retriever.nuclei_collection.get(
+                        where={"cve_id": cve_id},
+                        include=["documents", "metadatas"]
+                    )
+                    if exact_results and exact_results['ids']:
+                        results = []
+                        for i, doc_id in enumerate(exact_results['ids']):
+                            results.append({
+                                "content": exact_results['documents'][i] if exact_results['documents'] else "",
+                                "similarity": 1.0,
+                                "metadata": exact_results['metadatas'][i] if exact_results['metadatas'] else {},
+                                "source": "nuclei",
+                                "disclaimer": "检索结果仅供参考，不一定适用于当前场景，请结合实际情况判断。"
+                            })
+                        print(f"[RAG] CVE精确匹配成功: {cve_id}")
+                        return results
+            except Exception as e:
+                print(f"[RAG] CVE精确匹配失败: {e}")
+
+        print(f"[RAG] CVE精确匹配未找到: {cve_id}，使用语义搜索")
 
     if sources is None:
         sources = ["writeups", "security_resources"]

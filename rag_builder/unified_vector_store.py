@@ -670,9 +670,37 @@ class UnifiedRetriever:
         return self.search(query, top_k)
 
     def search_by_cve(self, cve_id: str) -> Dict:
-        """按CVE编号检索"""
-        query = f"CVE ID: {cve_id}"
-        return self.search(query, top_k=3)
+        """按CVE编号检索 - 优先精确匹配metadata"""
+        # 标准化CVE ID格式
+        cve_id_normalized = cve_id.upper().strip()
+
+        # 1. 先尝试精确匹配 metadata
+        if self.nuclei_collection:
+            try:
+                # 使用 where 过滤精确匹配 cve_id
+                exact_results = self.nuclei_collection.get(
+                    where={"cve_id": cve_id_normalized},
+                    include=["documents", "metadatas"]
+                )
+                if exact_results and exact_results['ids']:
+                    # 找到精确匹配
+                    results = []
+                    for i, doc_id in enumerate(exact_results['ids']):
+                        results.append({
+                            "id": doc_id,
+                            "content": exact_results['documents'][i] if exact_results['documents'] else "",
+                            "metadata": exact_results['metadatas'][i] if exact_results['metadatas'] else {},
+                            "similarity": 1.0  # 精确匹配，相似度为1
+                        })
+                    print(f"[RAG] CVE精确匹配: {cve_id_normalized}")
+                    return {"nuclei": results, "total": len(results)}
+            except Exception as e:
+                print(f"[RAG] CVE精确匹配失败: {e}")
+
+        # 2. 精确匹配失败，使用语义搜索作为备选
+        print(f"[RAG] CVE精确匹配未找到，使用语义搜索: {cve_id_normalized}")
+        query = f"CVE ID: {cve_id_normalized}"
+        return self.search(query, top_k=5)
 
 
 # 全局单例
