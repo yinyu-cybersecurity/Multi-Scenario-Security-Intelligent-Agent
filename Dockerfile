@@ -189,14 +189,12 @@ RUN pip install --upgrade pip && \
     pip install -r requirements.txt && \
     pip install -r /app/thirdparty/dirsearch/requirements.txt 2>/dev/null || true
 
-# 预下载 RAG Embedding 模型（国内镜像）
-ENV HF_ENDPOINT=https://hf-mirror.com
-ENV HF_HOME=/app/.cache/huggingface
-RUN python3.11 -c "from huggingface_hub import snapshot_download; \
+# 预下载 RAG Embedding 模型（ModelScope国内镜像）
+RUN pip install modelscope && \
+    python3.11 -c "from modelscope import snapshot_download; \
     snapshot_download('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', \
-    local_dir='/app/.cache/huggingface/models--paraphrase-multilingual-MiniLM-L12-v2', \
-    local_dir_use_symlinks=False)" && \
-    echo "RAG model downloaded"
+    cache_dir='/app/.cache/huggingface')" && \
+    echo "RAG model downloaded from ModelScope"
 
 COPY app/*.py ./
 COPY app/state_types ./state_types/
