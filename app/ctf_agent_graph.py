@@ -3574,21 +3574,20 @@ def verifier_node(state: CTFState) -> Dict:
             }
 
             tactical_guidance = f"执行Fallback: {fallback_action.get('description', '未知')[:80]}"
-            guidance_type = "continue"
-            enforce_change = False
 
             result_dict = {
-                "failure_weighted_score": max(0, state.get("failure_weighted_score", 0) - 0.3),  # 有fallback方案，减少失败惩罚
-                "attack_batch": [fallback_attack],  # 直接生成fallback攻击
+                "continue_attack": True,  # [关键修复] 设置标志，路由直接去attacker
+                "failure_weighted_score": max(0, state.get("failure_weighted_score", 0) - 0.3),
+                "attack_batch": [fallback_attack],
                 "latest_tactical_guidance": tactical_guidance,
-                "guidance_type": guidance_type,
-                "enforce_change": enforce_change,
+                "guidance_type": "continue",
+                "enforce_change": False,
                 "guidance_reason": "Fallback方案执行",
                 "guidance_target_url": "",
                 "execution_steps": state.get("execution_steps", 0) + 1,
                 "node_attack_status": node_status,
                 "vuln_candidates": candidates,
-                "fallback_plans": remaining_fallbacks,  # 更新剩余fallback列表
+                "fallback_plans": remaining_fallbacks,
                 "scene_attack_attempts": scene_attack_attempts
             }
             if failed_payloads:
