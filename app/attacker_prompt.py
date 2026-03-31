@@ -116,7 +116,6 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
                         attack_history: List[Dict] = None,
                         task_info: Dict = None,
                         tactical_guidance: str = None,
-                        analyst_intel: str = None,
                         known_facts: str = None,
                         failed_payloads: List[str] = None,
                         human_hint: str = None,
@@ -124,9 +123,8 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
                         stage_info: dict = None,
                         strategic_context: dict = None) -> str:
     """
-    [P3优化版] 生成攻击兵提示词
-    移除了 reflector_guidance，由 verifier 统一输出 tactical_guidance
-    增加了 Payload 参考支持
+    [简化版] 生成攻击兵提示词
+    移除了analyst_intel参数，相关信息已合并到vuln_candidates的reason字段
     """
     # 历史攻击记录
     history_desc = "无"
@@ -226,12 +224,13 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
 {hint_desc}
 
 {stage_section}{strategic_section}
-## 分析情报
-{analyst_intel if analyst_intel else "无"}
+## 已知事实
 {facts_desc}
 
 ## 攻击目标
 {json.dumps(vuln_candidates, ensure_ascii=False, indent=2)}
+
+注：关键情报已合并到漏洞候选的reason字段中。
 
 ## 历史攻击
 {history_desc}

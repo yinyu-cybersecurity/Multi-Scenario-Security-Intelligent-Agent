@@ -194,7 +194,7 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
 - 是否需要绕过WAF/过滤？
 - 有哪些备选Payload？
 
-## 输出格式 (JSON)
+## 输出格式 (JSON) - 简化版
 ```json
 {{
   "candidates": [
@@ -202,35 +202,15 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
       "type": "漏洞类型",
       "location": "具体URL和参数",
       "confidence": 0.85,
-      "reason": "判断依据",
-      "attack_approach": "攻击思路：如何构造Payload、预期触发什么行为",
+      "reason": "判断依据（含关键情报）",
       "recommended_tools": ["工具名"],
-      "context": {{}},
-      "expected_outcome": "预期结果：成功后获得什么",
-      "fallback_plan": "失败备选方案"
+      "context": {{}}
     }}
   ],
-  "key_intel": "关键发现",
   "attack_strategy": "推荐攻击策略",
-  "retrieval_requests": [
-    {{
-      "query": "检索关键词",
-      "source": "payloads|nuclei|writeups|security_resources",
-      "reason": "为什么需要检索这个"
-    }}
-  ],
-  "structured_guidance": {{
-    "action": "具体执行动作描述",
-    "guidance_type": "continue|switch_scene|enforce_attack|fallback|need_dirsearch",
-    "enforce_change": false,
-    "target_url": "建议切换的目标URL（仅switch_scene时有效）",
-    "reason": "给出此指导的原因",
-    "params": {{
-      "method": "GET|POST",
-      "url": "目标URL",
-      "data": {{}}
-    }}
-  }}
+  "tactical_guidance": "具体执行动作描述（自然语言）",
+  "guidance_type": "continue|switch_scene|need_dirsearch",
+  "target_url": "建议切换的目标URL（switch_scene时必填）"
 }}
 ```
 

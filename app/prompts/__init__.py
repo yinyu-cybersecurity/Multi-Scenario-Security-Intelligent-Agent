@@ -202,7 +202,7 @@ def _auto_register():
                 get_attacker_prompt(
                     vuln_candidates or [],
                     tool_definitions,
-                    **{k: v for k, v in kw.items() if k in ['attack_history', 'task_info', 'tactical_guidance', 'analyst_intel', 'known_facts']}
+                    **{k: v for k, v in kw.items() if k in ['attack_history', 'task_info', 'tactical_guidance', 'known_facts']}
                 ),
             aliases=['web_attacker']
         )
@@ -219,7 +219,7 @@ def _auto_register():
                 get_verifier_prompt(
                     attack_batch or [],
                     results or [],
-                    **{k: v for k, v in kw.items() if k in ['analyst_intel', 'node_info', 'known_facts', 'human_hint']}
+                    **{k: v for k, v in kw.items() if k in ['node_info', 'known_facts', 'human_hint']}
                 ),
             aliases=['web_verifier']
         )

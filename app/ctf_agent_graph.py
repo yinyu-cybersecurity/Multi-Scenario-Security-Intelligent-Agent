@@ -1225,7 +1225,6 @@ def recon_node(state: CTFState) -> Dict:
         "scanned_ips": scanned_ips,
         "scanned_urls": scanned_urls,
         "execution_steps": state.get("execution_steps", 0) + 1,
-        "analyst_intel": "\n".join(analyst_intel_parts) if analyst_intel_parts else None,
         "detected_scenes": detected_scenes,
         "focused_scene": focused_scene,
         "scene_attack_attempts": scene_attack_attempts,
@@ -1540,22 +1539,17 @@ def analyst_node(state: CTFState) -> Dict:
         result = json.loads(response_text)
         candidates = result.get("candidates", [])
 
-        # [断点1修复] 提取结构化战术指导
-        structured_guidance = result.get("structured_guidance", {})
-        if structured_guidance:
-            guidance_action = structured_guidance.get("action", "")
-            guidance_type = structured_guidance.get("guidance_type", "continue")
-            enforce_change = structured_guidance.get("enforce_change", False)
-            guidance_target_url = structured_guidance.get("target_url", "")
-            guidance_reason = structured_guidance.get("reason", "")
-            guidance_params = structured_guidance.get("params", {})
-            log(f"   📋 战术指导: {guidance_type}, 强制执行: {enforce_change}")
-            if guidance_action:
-                log(f"   🎯 建议动作: {guidance_action[:100]}")
-            if guidance_target_url:
-                log(f"   🔗 建议目标URL: {guidance_target_url}")
+        # [简化格式] 战术指导现在是字符串，guidance_type是单独字段
+        tactical_guidance = result.get("tactical_guidance", "")
+        guidance_type = result.get("guidance_type", "continue")
+        guidance_target_url = result.get("target_url", "")
+        log(f"   📋 战术指导: {guidance_type}")
+        if tactical_guidance:
+            log(f"   🎯 建议动作: {tactical_guidance[:100]}")
+        if guidance_target_url:
+            log(f"   🔗 建议目标URL: {guidance_target_url}")
 
-        # 提取分析兵的关键情报（源码、过滤规则等）
+        # [简化] 将关键情报合并到第一个漏洞候选的reason字段
         key_intel_parts = []
         meta = result.get("meta_analysis", "")
         if meta:
@@ -1572,16 +1566,22 @@ def analyst_node(state: CTFState) -> Dict:
             # 将 key_code 也纳入 intel 汇总
             key_code = ctx.get("key_code", "")
             if key_code:
-                key_intel_parts.append(f"[{cand.get('type','?')}@{cand.get('location','?')}] 关键代码:\n{key_code}")
+                key_intel_parts.append(f"[{cand.get('type','?')}@{cand.get('location','?')}] 关键代码:\n{key_code[:500]}")  # 限制长度
             formatted_candidates.append({
                 "type": cand.get("type", "unknown"),
                 "location": cand.get("location", ""),
                 "confidence": float(cand.get("confidence", 0.5)),
                 "context": ctx,
-                "reason": cand.get("reason", ""), # 保留分析理由
+                "reason": cand.get("reason", ""),
                 "recommended_tools": cand.get("recommended_tools", ctx.get("recommended_tools", [])),
-                "url": current_url # [核心修复] 绑定当前 URL
+                "url": current_url
             })
+
+        # [核心改进] 将key_intel合并到第一个候选的reason字段，避免冗余
+        if formatted_candidates and key_intel_parts:
+            first_reason = formatted_candidates[0].get("reason", "")
+            intel_str = "; ".join(key_intel_parts[:3])  # 限制情报数量
+            formatted_candidates[0]["reason"] = f"{intel_str}\n{first_reason}" if first_reason else intel_str
             
         # [拓扑驱动] 按拓扑优先级排序漏洞候选
         priority_dict = {url: score for url, score in topology_priority}
@@ -1631,25 +1631,21 @@ def analyst_node(state: CTFState) -> Dict:
             log("   ⚠️ 未识别到漏洞候选，触发探索模式")
             return {
                 "vuln_candidates": [],
-                "analyst_intel": "\n\n".join(key_intel_parts) if key_intel_parts else None,
                 "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.5,
                 "exploit_keywords": exploit_keywords if exploit_keywords else {}
             }
 
-        analyst_intel = "\n\n".join(key_intel_parts) if key_intel_parts else None
         res = {
-            "vuln_candidates": formatted_candidates,
-            "analyst_intel": analyst_intel,
+            "vuln_candidates": formatted_candidates,  # key_intel已合并到第一个候选的reason字段
             "exploit_keywords": exploit_keywords if exploit_keywords else {}
         }
-        # [断点1修复] 将结构化战术指导传递给状态
-        if structured_guidance:
-            res["structured_guidance"] = structured_guidance
-            res["latest_tactical_guidance"] = structured_guidance.get("action", "")
-            res["guidance_type"] = structured_guidance.get("guidance_type", "continue")
-            res["enforce_change"] = structured_guidance.get("enforce_change", False)
-            if structured_guidance.get("target_url"):
-                res["guidance_target_url"] = structured_guidance.get("target_url")
+        # [简化格式] 将战术指导传递给状态
+        if tactical_guidance:
+            res["latest_tactical_guidance"] = tactical_guidance
+        if guidance_type:
+            res["guidance_type"] = guidance_type
+        if guidance_target_url:
+            res["guidance_target_url"] = guidance_target_url
         log_node_data("analyst", {"prompt": prompt}, res)
         return res
 
@@ -1710,9 +1706,8 @@ def analyst_node(state: CTFState) -> Dict:
 
         log(f"   📋 降级生成 {len(default_candidates)} 个默认漏洞候选")
         return {
-            "vuln_candidates": default_candidates,  # [断点3修复] 返回默认候选而非空
-            "analyst_intel": "降级分析：JSON解析失败，已生成基础探测候选",
-            "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,  # 减少惩罚，因为有降级动作
+            "vuln_candidates": default_candidates,  # 降级信息已合并到reason字段
+            "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
             "exploit_keywords": exploit_keywords if exploit_keywords else {}
         }
 
@@ -2138,22 +2133,19 @@ def execute_single_attack(action: Dict, current_url: str, page_history: Dict, ti
 
             diff_analysis = page_diff_manager.compare_and_analyze(target, content, page_history)
 
-            # [核心修复] 将 diff_analysis 中的 extracted_flag 提升到顶层 result
+            # [简化] 仅保留核心字段，移除冗余字段
             result = {
-                "action_id": f"req_{int(time.time())}_{hash(str(params))%1000}",
                 "tool": "requests",
-                "target": target,
-                "payload": payload,
                 "status": resp.status_code,
                 "output": short_output,
-                "file_path": file_path,
-                "duration": duration,
-                "diff_analysis": diff_analysis,
+                "payload": payload[:500] if payload else "",  # 限制payload长度
                 "is_exploit": diff_analysis.get("changed", False)
             }
-            # [核心修复] extracted_flag 需要提升到顶层，确保 verifier 能直接读取
+            # extracted_flag和file_path仅在有值时添加
             if diff_analysis.get("extracted_flag"):
                 result["extracted_flag"] = diff_analysis["extracted_flag"]
+            if file_path:
+                result["file_path"] = file_path
             return result
             
         else:
@@ -2161,13 +2153,13 @@ def execute_single_attack(action: Dict, current_url: str, page_history: Dict, ti
             exec_result = ToolRegistry.execute_cached(tool_name, target, params)
             
             if "error" in exec_result:
+                # [简化] 仅保留核心字段
                 return {
-                    "action_id": f"{tool_name}_err_{int(time.time())}",
-                    "tool": tool_name, 
-                    "payload": payload,
-                    "error": exec_result["error"], 
+                    "tool": tool_name,
                     "status": 500,
-                    "diff_analysis": {"changed": False}
+                    "output": f"Error: {exec_result['error']}",
+                    "payload": payload[:500] if payload else "",
+                    "is_exploit": False
                 }
             
             tool_res = exec_result.get("result", {})
@@ -2205,42 +2197,32 @@ def execute_single_attack(action: Dict, current_url: str, page_history: Dict, ti
                         extracted_flag = f["flag"]
                         break
 
+            # [简化] 仅保留核心字段
             result = {
-                "action_id": f"{tool_name}_{int(time.time())}_{hash(str(params))%1000}",
                 "tool": tool_name,
-                "target": target,
-                "payload": payload,
                 "status": 200 if (tool_res.get("success") or vulnerable) else 500,
-                "output": display_output, # 简短的结构化输出
-                "file_path": tool_res.get("full_log_path"),
-                "duration": exec_result.get("duration", 0),
-                "is_exploit": vulnerable,
-                "diff_analysis": {"changed": vulnerable, "reason": tool_res.get("summary", "Tool findings")},
-                # 保留AI解析的结构化数据
-                "vulnerabilities": tool_res.get("vulnerabilities", []),
-                "hosts": tool_res.get("hosts", []),
-                "credentials": tool_res.get("credentials", []),
-                "attack_paths": tool_res.get("attack_paths", []),
-                "domain_info": tool_res.get("domain_info", {}),
-                "summary": tool_res.get("summary", "")
+                "output": display_output[:2000],  # 限制输出长度
+                "payload": payload[:500] if payload else "",
+                "is_exploit": vulnerable
             }
+            # 仅在有值时添加可选字段
             if extracted_flag:
                 result["extracted_flag"] = extracted_flag
+            if tool_res.get("full_log_path"):
+                result["file_path"] = tool_res["full_log_path"]
             return result
     except Exception as e:
         # [核心修复] 将详细报错信息放入 output，让核验兵能识别出具体错误
         error_msg = f"Execution Exception: {str(e)}\n{traceback.format_exc()}"
         log(f"❌ [Executor] 攻击动作执行失败: {tool_name}\n{error_msg}")
         
+        # [简化] 仅保留核心字段
         return {
-            "action_id": f"err_{tool_name}_{int(time.time())}_{hash(str(action))%1000}",
             "tool": tool_name,
-            "target": target,
-            "payload": payload,
             "status": 500,
-            "error": str(e),
-            "output": error_msg,
-            "diff_analysis": {"changed": False}
+            "output": f"Exception: {str(e)}",
+            "payload": payload[:500] if payload else "",
+            "is_exploit": False
         }
 
 def attacker_node(state: CTFState) -> Dict:
@@ -2485,13 +2467,13 @@ def attacker_node(state: CTFState) -> Dict:
         history,
         task_info=task_info,
         tactical_guidance=state.get("latest_tactical_guidance"),
-        analyst_intel=state.get("analyst_intel"),
+        # analyst_intel已合并到vuln_candidates，不再单独传递
         known_facts=state.get("known_facts", ""),
         failed_payloads=state.get("failed_payloads", []),
         human_hint=human_hint,
         stage_info=stage_info,
         strategic_context=strategic_context
-    ) # 增加题目背景与战术指引
+    )
 
     try:
         response_text = llm_client.call_chat_completion(
@@ -2646,7 +2628,8 @@ def attacker_node(state: CTFState) -> Dict:
                     "tool": action.get("tool"),
                     "status": 500,
                     "output": f"Internal Error: {str(e)}",
-                    "diff_analysis": {"changed": False}
+                    "payload": str(action.get("params", ""))[:500],
+                    "is_exploit": False
                 })
         
         # 处理超时的任务
@@ -2655,11 +2638,12 @@ def attacker_node(state: CTFState) -> Dict:
             log(f"⚠️ [Attacker] 任务执行超时已取消: {action.get('tool')}")
             # 注意：concurrent.futures 无法强制杀掉正在运行的线程，但我们可以不再等待它
             attack_results.append({
-                "tool": action.get("tool"),
-                "status": 408,
-                "output": "Task timed out and backgrounded.",
-                "diff_analysis": {"changed": False}
-            })
+                    "tool": action.get("tool"),
+                    "status": 408,
+                    "output": "Task timed out",
+                    "payload": str(action.get("params", ""))[:500],
+                    "is_exploit": False
+                })
 
     except KeyboardInterrupt:
         log("\n🛑 [Attacker] 用户中断执行，正在尝试收尾...")
@@ -3198,9 +3182,6 @@ def verifier_node(state: CTFState) -> Dict:
         for res in recent_results:
             if res.get("extracted_flag"):
                 pre_captured_flags.append(res["extracted_flag"])
-            diff = res.get("diff_analysis", {})
-            if diff.get("extracted_flag"):
-                pre_captured_flags.append(diff["extracted_flag"])
             output_text = res.get("output", "")
             if isinstance(output_text, str):
                 found = extract_flags(output_text, decode=True)
@@ -3240,11 +3221,11 @@ def verifier_node(state: CTFState) -> Dict:
             except Exception as e:
                 log(f"⚠️ [Verifier] 读取文件失败: {e}")
 
-        diff = res.get("diff_analysis", {})
+        # [简化] 直接使用is_exploit字段
         res["diff_metrics"] = {
-            "is_significant_change": diff.get("changed", False),
-            "exploit_confidence": diff.get("confidence", 0.0),
-            "change_reason": diff.get("reason", "")
+            "is_significant_change": res.get("is_exploit", False),
+            "exploit_confidence": "high" if res.get("is_exploit") else "unknown",
+            "change_reason": ""
         }
 
     # [P3合并] 构建节点信息供AI决策
@@ -3284,7 +3265,7 @@ def verifier_node(state: CTFState) -> Dict:
     prompt = get_verifier_prompt(
         attack_batch,
         recent_results,
-        analyst_intel=state.get("analyst_intel"),
+        # analyst_intel已合并到vuln_candidates
         node_info=node_info,
         known_facts=state.get("known_facts", ""),
         human_hint=human_hint,
@@ -3328,30 +3309,23 @@ def verifier_node(state: CTFState) -> Dict:
         found_flag = result.get("found_flag", False)
         potential_flag = result.get("potential_flag", "")
         evidence = result.get("exploit_evidence", "")
-        failure_severity = result.get("failure_severity", 0.5)
+        failure_level = result.get("failure_level", "minor")  # 改为定性描述
         is_exploit_successful = result.get("is_exploit_successful", False)
-        # [断点1修复] 处理结构化的tactical_guidance
-        tactical_guidance_raw = result.get("tactical_guidance", "")
-        if isinstance(tactical_guidance_raw, dict):
-            # 新格式：结构化指导
-            tactical_guidance = tactical_guidance_raw.get("action", "")
-            guidance_type = tactical_guidance_raw.get("guidance_type", "continue")
-            enforce_change = tactical_guidance_raw.get("enforce_change", False)
-            guidance_reason = tactical_guidance_raw.get("reason", "")
-            guidance_target_url = tactical_guidance_raw.get("target_url", "")
-            log(f"   📋 战术指导类型: {guidance_type}, 强制执行: {enforce_change}")
-            if guidance_target_url:
-                log(f"   🎯 建议目标URL: {guidance_target_url}")
-        else:
-            # 兼容旧格式：纯文本
-            tactical_guidance = tactical_guidance_raw if isinstance(tactical_guidance_raw, str) else str(tactical_guidance_raw)
-            guidance_type = "continue"
-            enforce_change = False
-            guidance_reason = ""
-            guidance_target_url = ""
+
+        # [简化格式处理] tactical_guidance现在是字符串，guidance_type是单独字段
+        tactical_guidance = result.get("tactical_guidance", "")
+        guidance_type = result.get("guidance_type", "continue")
+        guidance_target_url = result.get("target_url", "")
+        enforce_change = guidance_type == "switch_scene"  # switch_scene时强制执行
+
+        log(f"   📋 战术指导类型: {guidance_type}")
+        if guidance_target_url:
+            log(f"   🎯 建议目标URL: {guidance_target_url}")
+
         updated_known_facts = result.get("updated_known_facts", "")
         node_decision = result.get("node_decision", "continue")
         failure_analysis = result.get("failure_analysis", "")
+        new_discoveries = result.get("new_discoveries", [])
 
         # 预捕获Flag优先
         if pre_captured_flag:

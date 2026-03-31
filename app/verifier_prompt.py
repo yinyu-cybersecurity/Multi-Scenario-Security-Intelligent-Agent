@@ -10,14 +10,14 @@ from prompts.scene_framework import (
 # Base64 正则匹配
 BASE64_PATTERN = re.compile(r'[A-Za-z0-9+/]{20,}={0,2}')
 
-def get_verifier_prompt(attack_batch: list, results: list, analyst_intel: str = None,
+def get_verifier_prompt(attack_batch: list, results: list,
                         node_info: dict = None, known_facts: str = None,
                         human_hint: str = None,
                         stage_info: dict = None,
                         strategic_context: dict = None) -> str:
     """
-    构建核验兵的 Prompt [P3合并版]
-    合并了原verifier和reflector的职责，一次LLM调用完成所有判断
+    构建核验兵的 Prompt [简化版]
+    移除了analyst_intel参数，相关信息已合并到vuln_candidates
     """
     formatted_results = []
     for i, res in enumerate(results):
@@ -53,11 +53,11 @@ def get_verifier_prompt(attack_batch: list, results: list, analyst_intel: str = 
             content = content + "\n\n" + "\n".join(encoding_hints)
 
         formatted_results.append({
-            "action_id": res.get("action_id", f"action_{i}"),
             "tool": res.get("tool", "unknown"),
-            "payload": res.get("payload", "N/A"),
+            "payload": res.get("payload", "N/A")[:200],  # 限制payload长度
             "status_code": res.get("status", "?"),
-            "response": str(content)[:2000]  # 限制长度避免prompt过大
+            "is_exploit": res.get("is_exploit", False),
+            "response": str(content)[:1500]  # 限制长度避免prompt过大
         })
 
     # 节点信息
@@ -127,8 +127,7 @@ def get_verifier_prompt(attack_batch: list, results: list, analyst_intel: str = 
 ## 任务
 分析攻击结果，判断成功程度，决定后续策略。
 
-## 分析情报
-{analyst_intel if analyst_intel else "无"}
+## 已知事实
 {facts_context}
 {hint_context}
 {node_context}
@@ -181,28 +180,19 @@ def get_verifier_prompt(attack_batch: list, results: list, analyst_intel: str = 
 - **continue**: 有明确进展，值得继续尝试新方法
 - **abandon**: 连续多次无实质进展、重复相同失败模式、触发热熔断
 
-## 输出 JSON（必须包含完整结构化字段）
+## 输出 JSON（简化版，使用定性描述）
 {{
     "found_flag": true/false,
     "potential_flag": "FLAG或空",
     "is_exploit_successful": true/false,
     "exploit_evidence": "成功证据简述",
-    "failure_severity": 0.0-1.0,
+    "failure_level": "critical/major/minor",  // 改为定性描述
     "node_decision": "continue或abandon",
     "failure_analysis": "失败原因分析（如有失败）",
-    "strategic_progress": {{
-        "closer_to_goal": true/false,
-        "new_discoveries": ["发现1", "发现2"],
-        "remaining_blockers": ["障碍1"],
-        "attack_phase": "信息收集/漏洞确认/利用执行/后渗透"
-    }},
-    "tactical_guidance": {{
-        "action": "具体可执行的战术指导内容",
-        "guidance_type": "switch_scene/continue/deepen/abort",
-        "enforce_change": true/false,
-        "reason": "为什么给出这个指导",
-        "target_url": "建议访问的具体URL（如有）"
-    }},
+    "new_discoveries": ["发现1", "发现2"],
+    "tactical_guidance": "具体可执行的战术指导（自然语言描述）",
+    "guidance_type": "switch_scene/continue/deepen/abort",
+    "target_url": "建议访问的具体URL（switch_scene时必填）",
     "updated_known_facts": "发现的关键信息（如果成功）"
 }}
 
@@ -210,9 +200,5 @@ def get_verifier_prompt(attack_batch: list, results: list, analyst_intel: str = 
 - **switch_scene**: 切换到新场景/新路径，必须填写target_url
 - **continue**: 继续当前攻击策略，调整参数
 - **deepen**: 深入当前发现，进一步挖掘
-- **abort**: 放弃当前节点，标记为abandoned
-
-### enforce_change 说明：
-- **true**: 强制执行该战术指导，忽略之前的历史攻击
-- **false**: 建议性指导，可与历史攻击结合
+- **abort**: 放弃当前节点
 """
