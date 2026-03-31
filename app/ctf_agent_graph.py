@@ -1786,7 +1786,8 @@ def attacker_node(state: CTFState) -> Dict:
             model=config.ATTACKER_MODEL if hasattr(config, 'ATTACKER_MODEL') else config.ANALYST_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3, # 略微提高随机性，增加 Payload 的多样性
-            json_mode=True
+            json_mode=True,
+            max_tokens=4096  # 确保有足够空间输出完整的payload
         )
         if "```json" in response_text:
             response_text = response_text.split("```json")[1].split("```")[0]
