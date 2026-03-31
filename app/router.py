@@ -449,14 +449,8 @@ def route_mode(state: CTFState, current_node: str) -> str:
             logger.info(f"[ModuleManager] 检测到场景切换: {current_memory_mode} -> {target_mode}")
             updates = module_manager.switch_mode(target_mode, dict(state))
 
-    # [核心修复] 检查当前 URL 是否已经过侦察
-    current_url = state.get("current_url")
-    visited_urls = state.get("visited_urls", [])
-
-    # 如果当前 URL 没在访问列表中，且当前不是在进行探索或创新模式，强制先去侦察
-    if current_url and current_url not in visited_urls and next_node not in ["explore", "innovate"]:
-        logger.info(f"检测到新 URL: {current_url}，强制切换至侦察模式")
-        return "recon"
+    # [简化] 移除侦察模式切换，analyst_node已合并recon功能
+    # 现在直接进入正常路由流程
 
     # 1. [断点7修复] 死循环检测 - 现在返回建议节点
     is_loop, suggested_node = _route_guard.check_dead_loop(current_node, next_node, state)
@@ -470,11 +464,7 @@ def route_mode(state: CTFState, current_node: str) -> str:
     # temp_rules 是 innovator_node 执行后生成的，不应在进入前检查
     # 如果 innovator 执行后没有生成有效规则，会在 strategy_filter 中处理
 
-    # 3. 安全检查：探索模式但已经探索很多轮，考虑切回
-    if next_node == "explore" and state.get("exploration_rounds", 0) > config.EXPLORE_ROUNDS_FOR_INNOVATE:
-        if not state.get("site_topology"):  # 没有发现新路径
-            logger.info("探索多轮无发现，尝试攻击模式")
-            return "exploit"
+    # [简化] 移除探索模式检查（explore模式已移除）
 
     return next_node
 
