@@ -18,35 +18,25 @@ from urllib.parse import urlparse
 
 def normalize_target_url(url_str: str) -> str:
     """
-    [加固版] 极度鲁棒的 URL 清洗逻辑，专门对付 LLM 产生的各类噪音
-
-    Args:
-        url_str: 原始URL字符串，可能包含各种噪音
-
-    Returns:
-        清洗后的干净URL
+    URL清洗 - 移除LLM产生的噪音，保留完整payload
     """
     if not url_str:
         return ""
 
     s = str(url_str).strip()
 
-    # 1. 暴力移除所有已知的干扰字符
+    # 移除干扰字符（保留单引号，它是payload的一部分）
     for char in ["`", "\\", "\n", "\r", "\t"]:
         s = s.replace(char, "")
 
-    # 2. 精准提取第一个 http(s) 链接
-    # 只排除空白字符和换行符，其他字符都可能是URL的一部分
-    # 例如: http://target/?url=system('ls') 这里的引号和括号都是payload的一部分
+    # 提取http(s)链接，遇到空白停止（保留单引号和双引号，它们是payload的一部分）
     match = re.search(r'(https?://[^\s]+)', s)
     if match:
-        clean_url = match.group(1)
-        # 3. 剥离末尾可能残留的标点符号（常见的结束标点）
-        # 但保留括号、引号等可能是payload一部分的字符
-        return clean_url.strip().rstrip(".").rstrip(",").rstrip(";")
+        url = match.group(1).strip()
+        # 只移除末尾的句号和逗号（JSON噪音），保留分号
+        return url.rstrip(".").rstrip(",")
 
-    # 4. 如果没找到协议头，尝试二次清理后返回
-    return s.strip("'").strip('"').strip()
+    return s
 
 
 def normalize_url(url: str) -> str:
