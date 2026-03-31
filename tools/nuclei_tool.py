@@ -136,8 +136,8 @@ class NucleiTool(CommandLineTool):
         else:
             cmd.extend(["-u", target])
 
-        # 输出格式
-        cmd.extend(["-json", "-silent"])
+        # 输出格式 (使用 -j 替代 -json，兼容新版本nuclei)
+        cmd.extend(["-j", "-silent"])
 
         # 严重级别过滤
         severity = params.get("severity", "medium")

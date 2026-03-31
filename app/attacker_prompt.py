@@ -240,6 +240,8 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
 
 **注意**: 如需其他工具，在输出中添加 `query_tools` 字段列出工具名，系统将返回详情。
 
+**端口扫描建议**: 外网打点时优先使用 fscan 进行端口扫描，它能发现开放端口、识别服务、检测弱口令和潜在漏洞。
+
 {payload_ref}
 
 {flag_location_strategy}
