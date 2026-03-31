@@ -883,93 +883,15 @@ def analyst_node(state: CTFState) -> Dict:
             # 提取基本特征
             from scene_detector import SceneDetector
             detector = SceneDetector()
-            page_features = detector.extract_features(resp.text, current_url)
-            log(f"   ✅ 页面数据获取完成 (状态码: {resp.status_code})")
-        except Exception as e:
-            log(f"   ⚠️ 页面获取失败: {e}")
-            raw_html = ""
-            page_features = {"tech_stack": [], "input_vectors": []}
-
-    # 1. 准备输入数据
-    task_name = state.get("task_name", "Unknown Task")
-    task_description = state.get("task_description", "No description provided")
-
-    # 规则引擎的初步结果（如果有）
-    rule_candidates = state.get("vuln_candidates", [])
-
-    # 获取场景信息
-    detected_scenes = state.get("detected_scenes", {})
-
-    # 获取场景聚焦信息
-    focused_scene = state.get("focused_scene", "")
-    scene_exhausted = state.get("scene_exhausted", False)
-
-    # 获取拓扑信息
-    critical_nodes = state.get("critical_nodes", [])
-    topology_priority = state.get("topology_priority", [])
-    current_url = state.get("current_url", "")
-
-    # =====================================================
-    # [内网模式增强] 简化漏扫（移除硬编码函数）
-    # =====================================================
-    scan_vulns = []
-    exploit_keywords = {}
-
-    if internal_mode and current_url:
-        log("   🔬 [内网模式] 执行简化漏扫...")
-
-        # 从配置获取扫描工具列表（移除硬编码）
-        scan_tools = config.DEFAULT_SCAN_TOOLS
-        executor = get_executor()
-        scan_futures = []
-    """
-    分析兵 - 调用大模型进行深度漏洞分析
-
-    [简化] 合并原recon_node功能，首次访问时自动获取页面数据
-
-    内网模式增强:
-    - 执行并行漏扫（nuclei + xray）
-    - 输出 exploit_keywords 供攻击兵检索
-    """
-    log("🔍 [分析] 解析页面特征...")
-
-    # 导入hybrid_detector用于置信度分级检测
-    try:
-        from hybrid_detector import hybrid_detector, quick_detect, full_detect
-    except ImportError:
-        hybrid_detector = None
-        quick_detect = None
-        full_detect = None
-
-    # 检查是否为内网模式
-    internal_mode = state.get("internal_mode", False)
-    current_url = state.get("current_url", state.get("target_url", ""))
-
-    # =====================================================
-    # [合并recon] 检查并获取缺失的页面数据
-    # =====================================================
-    page_features = state.get("page_features", {})
-    raw_html = state.get("raw_html_snippet", "")
-    baseline_response = state.get("baseline_response", {})
-
-    if not page_features or not raw_html:
-        log("   📡 首次访问，获取页面数据...")
-        try:
-            # 快速HTTP请求获取页面
-            resp = requests.get(current_url, timeout=10, verify=False, headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            })
-            raw_html = resp.text[:5000]  # 限制长度
-            baseline_response = {
-                "status_code": resp.status_code,
-                "headers": dict(resp.headers),
-                "final_url": resp.url
+            # 先手动提取基础page_features
+            basic_features = {
+                "tech_stack": [],
+                "input_vectors": [],
+                "sensitive_paths": [],
+                "text_content": resp.text[:2000]
             }
-
-            # 提取基本特征
-            from scene_detector import SceneDetector
-            detector = SceneDetector()
-            page_features = detector.extract_features(resp.text, current_url)
+            # 然后使用detect方法提取场景信息
+            page_features = detector.detect(basic_features, baseline_response, resp.text)
             log(f"   ✅ 页面数据获取完成 (状态码: {resp.status_code})")
         except Exception as e:
             log(f"   ⚠️ 页面获取失败: {e}")
