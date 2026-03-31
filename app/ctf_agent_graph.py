@@ -804,38 +804,14 @@ def recon_node(state: CTFState) -> Dict:
             log(f"   ⏭️ [fscan] IP {target_ip} 已扫描过，跳过")
 
     # =========================================================================
-    # 新增: 对 Web 目标执行 dirsearch 扫描
+    # dirsearch 由分析兵决策是否需要，不在此处自动执行
+    # 分析兵可通过 structured_guidance.guidance_type="need_dirsearch" 请求扫描
     # =========================================================================
     dirsearch_paths = []
-    # 确定扫描目标 URL（去掉参数和片段）
+    # 记录扫描状态，避免重复
     scan_url = url.split('?')[0].split('#')[0]
-    if scan_url not in scanned_urls and (scan_url.startswith('http')):
-        log(f"   📂 [dirsearch] 目录扫描: {scan_url}")
-        try:
-            dirsearch_result = ToolRegistry.execute_cached("dirsearch", scan_url, {
-                "extensions": config.DEFAULT_SCAN_EXTENSIONS,
-                "exclude_status": "404,403,400",
-                "threads": 20,
-                "timeout": 60
-            })
-            if dirsearch_result and dirsearch_result.get("result", {}).get("success"):
-                # dirsearch 返回 critical_paths 列表
-                critical_paths = dirsearch_result.get("result", {}).get("critical_paths", [])
-                if critical_paths:
-                    dirsearch_paths = [p.get("url", "") for p in critical_paths if p.get("url")]
-                    log(f"   ✅ dirsearch 发现 {len(dirsearch_paths)} 条路径")
-                    for p in critical_paths[:5]:
-                        status = p.get("status", "?")
-                        reason = p.get("reason", "")[:50]
-                        log(f"      - [{status}] {p.get('url', '?')} ({reason})")
-                # 检查是否有漏洞
-                if dirsearch_result.get("result", {}).get("vulnerable"):
-                    log(f"   🔥 dirsearch 发现敏感路径或配置泄露!")
-        except Exception as e:
-            log(f"   ⚠️ [dirsearch] 扫描失败: {e}")
+    if scan_url not in scanned_urls and scan_url.startswith('http'):
         scanned_urls = scanned_urls + [scan_url]
-    elif scan_url in scanned_urls:
-        log(f"   ⏭️ [dirsearch] URL {scan_url} 已扫描过，跳过")
 
     # =========================================================================
     # 1. 发起 HTTP 请求获取原始 HTML

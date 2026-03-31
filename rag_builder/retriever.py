@@ -500,6 +500,48 @@ def retrieve_relevant_knowledge(query: str, sources: list = None, top_k: int = 5
 
         print(f"[RAG] CVE精确匹配未找到: {cve_id}，使用语义搜索")
 
+    # 检测框架版本（如 thinkphp 5.0.23, spring 4.3.0）
+    framework_pattern = r'([a-zA-Z][a-zA-Z0-9_-]*)\s+(\d+\.\d+(?:\.\d+)?)'
+    framework_match = re.search(framework_pattern, query, re.IGNORECASE)
+    if framework_match:
+        framework_name = framework_match.group(1).lower()
+        framework_version = framework_match.group(2)
+        print(f"[RAG] 检测到框架版本: {framework_name} {framework_version}")
+
+        # 尝试在writeups中精确匹配框架名
+        if UNIFIED_RETRIEVER_AVAILABLE and "writeups" in (sources or ["writeups"]):
+            try:
+                retriever = get_unified_retriever()
+                if hasattr(retriever, 'writeups_collection') and retriever.writeups_collection:
+                    # 使用 $contains 搜索框架名
+                    framework_results = retriever.writeups_collection.get(
+                        where={"$and": [
+                            {"type": "writeup"}
+                        ]},
+                        include=["documents", "metadatas"]
+                    )
+                    # 手动过滤匹配框架名和版本的
+                    matched = []
+                    if framework_results and framework_results['ids']:
+                        for i, doc_id in enumerate(framework_results['ids']):
+                            content = framework_results['documents'][i] if framework_results['documents'] else ""
+                            metadata = framework_results['metadatas'][i] if framework_results['metadatas'] else {}
+                            # 检查内容是否包含框架名和版本
+                            content_lower = content.lower()
+                            if framework_name in content_lower and framework_version in content_lower:
+                                matched.append({
+                                    "content": content,
+                                    "similarity": 0.95,  # 高相似度但非完美匹配
+                                    "metadata": metadata,
+                                    "source": "writeups",
+                                    "disclaimer": "检索结果仅供参考，不一定适用于当前场景，请结合实际情况判断。"
+                                })
+                    if matched:
+                        print(f"[RAG] 框架版本匹配成功: {framework_name} {framework_version}，找到 {len(matched)} 条")
+                        return matched[:top_k]
+            except Exception as e:
+                print(f"[RAG] 框架版本匹配失败: {e}")
+
     if sources is None:
         sources = ["writeups", "security_resources"]
 

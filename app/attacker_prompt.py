@@ -245,6 +245,35 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
 {encoding_tips}
 {path_discovery_tips}
 
+## 知识库检索决策
+
+你可以在输出中添加 `need_rag` 和 `rag_query` 字段请求从知识库检索。
+
+### 何时应该请求检索
+
+1. 有明确漏洞指向（CVE编号、特定框架版本如thinkphp 5.0.23）
+2. 需要具体利用脚本但不确定构造方式
+3. 需要绕过特定防护（WAF、过滤）
+
+### 何时不应该请求检索
+
+- 信息充足，已有明确攻击思路
+- 漏洞类型通用，可手工构造
+- 已检索过相同内容
+
+### 输出格式扩展
+
+```json
+{{
+  "attack_actions": [...],
+  "need_rag": true,
+  "rag_query": "CVE-2025-24813 tomcat rce",
+  "rag_source": "nuclei"
+}}
+```
+
+rag_source 可选: payloads, nuclei, writeups, security_resources
+
 ## 输出要求
 返回 JSON，包含 attack_actions 数组，每个动作包含 tool、params、reasoning 字段。
 

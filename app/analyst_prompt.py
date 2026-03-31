@@ -220,7 +220,7 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
   ],
   "structured_guidance": {{
     "action": "具体执行动作描述",
-    "guidance_type": "continue|switch_scene|enforce_attack|fallback",
+    "guidance_type": "continue|switch_scene|enforce_attack|fallback|need_dirsearch",
     "enforce_change": false,
     "target_url": "建议切换的目标URL（仅switch_scene时有效）",
     "reason": "给出此指导的原因",
@@ -233,27 +233,26 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
 }}
 ```
 
+## 目录扫描决策
+
+设置 `structured_guidance.guidance_type = "need_dirsearch"` 请求目录扫描：
+
+1. 页面内容过少，可能存在隐藏路径
+2. 未发现明显漏洞入口，需要扩展攻击面
+3. 响应包含目录列表特征
+
 ## 知识库检索
 
-你可以请求从知识库检索信息辅助攻击。在输出中添加`retrieval_requests`字段。
-
-⚠️ **重要提醒**：检索结果仅供参考，不一定适用于当前场景。请结合目标实际情况判断payload和技术的可行性，不要盲目照搬。
+可在输出中添加`retrieval_requests`字段请求检索。
 
 ### 可用数据源
 
 | 数据源 | 用途 | 示例查询 |
 |--------|------|---------|
 | payloads | 获取具体攻击载荷 | "ssti jinja", "xss dom" |
-| nuclei | CVE漏洞模板 | "CVE-2023-44487", "log4j" |
+| nuclei | CVE漏洞模板 | "CVE-2025-24813", "log4j" |
 | writeups | CTF历史题解 | "spring ssti", "file upload" |
 | security_resources | 攻击技术文档 | "deserialization", "ssrf" |
-
-### 何时请求检索
-
-- 发现漏洞但不确定具体payload
-- 需要绕过特定防护
-- 遇到不熟悉的漏洞类型
-- 需要CVE模板参数
 
 注意: candidates不能为空，必须给出明确的攻击方向。
 """
