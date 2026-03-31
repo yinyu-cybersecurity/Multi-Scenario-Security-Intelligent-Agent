@@ -307,18 +307,101 @@ def get_default_state(task_name: str, task_description: str, target_url: str) ->
 
     # 覆盖必需字段
     state.update({
+        # 基础字段
         "task_name": task_name,
         "task_description": task_description,
         "target_url": target_url,
         "current_url": target_url,
         "start_time": time.time(),
         "current_mode": "exploit",
-        # 战略上下文字段默认值
+
+        # 战略上下文字段
         "strategic_context": {},
         "active_modules": ["app.llm_client", "app.logger", "app.config"],
-        "memory_mode": "minimal",  # 初始minimal，由类型检测器决定实际模式
-        # [断点8修复] strategic_decisions默认值
+        "memory_mode": "minimal",
         "strategic_decisions": [],
+
+        # Web字段 - 防止None值
+        "page_features": {
+            "tech_stack": [],
+            "input_vectors": [],
+            "sensitive_paths": [],
+            "dom_structure_hash": "",
+            "form_structure": [],
+            "scripts": [],
+            "cookies": {},
+            "headers": {},
+            "html_extraction": {
+                "hidden_fields": {},
+                "form_endpoints": [],
+                "script_endpoints": [],
+                "comments": [],
+                "meta_tags": {},
+                "data_attributes": {},
+                "api_endpoints": [],
+            }
+        },
+        "raw_html_snippet": "",
+        "baseline_response": {},
+        "detected_scenes": {},
+        "attack_summary": "",
+        "guidance_type": "continue",
+        "guidance_reason": "",
+        "guidance_target_url": "",
+        "hint_level": 0,
+        "known_facts": "",
+        "focused_scene": "",
+        "scene_attack_attempts": 0,
+        "scene_exhausted": False,
+
+        # 内网字段 - 防止None值
+        "internal_mode": False,
+        "internal_network_range": "",
+        "socks5_port": 0,
+        "upload_status": "pending",
+        "tunnel_status": "pending",
+        "post_exploit_status": "no_shell",
+        "current_internal_target": "",
+        "domain_controller": "",
+        "ad_domain": "",
+        "current_compromise_phase": "flag_search",
+        "persistence_established": False,
+        "pivot_host": "",
+        "proxy_info": None,
+
+        # 云/AI字段
+        "cloud_mode": False,
+        "cloud_provider": "",
+        "cloud_phase": "recon",
+        "ai_mode": False,
+        "target_model": "",
+        "target_endpoint": "",
+        "detected_ai_type": "",
+        "prompt_injection_success": False,
+        "jailbreak_success": False,
+        "leaked_system_prompt": "",
+        "ai_phase": "detect",
+
+        # 其他场景字段
+        "crypto_mode": False,
+        "crypto_analysis": {},
+        "pwn_mode": False,
+        "binary_path": "",
+        "binary_info": {},
+        "exploit_script": "",
+        "exploit_info": {},
+        "pwn_analysis": {},
+        "reverse_mode": False,
+        "reverse_info": {},
+        "decompiled_code": "",
+        "algorithm_type": "",
+        "key_findings": "",
+        "misc_mode": False,
+        "misc_file": "",
+        "file_info": {},
+        "steg_results": {},
+        "media_analysis": {},
+        "misc_analysis": {},
     })
 
     return state

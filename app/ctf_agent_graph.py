@@ -1075,7 +1075,14 @@ def analyst_node(state: CTFState) -> Dict:
     if not response_text:
         log("   ⚠️ LLM 无响应，使用规则引擎结果")
         log_node_data("analyst", {"prompt": prompt}, {"error": "LLM failed"})
-        return {"vuln_candidates": rule_candidates} # 降级：使用规则引擎的结果
+        return {
+            "vuln_candidates": rule_candidates,
+            "exploit_keywords": exploit_keywords if exploit_keywords else {},
+            "page_features": page_features,
+            "raw_html_snippet": raw_html,
+            "baseline_response": baseline_response,
+            "detected_scenes": page_features  # detected_scenes 使用 page_features
+        }
 
     # 4. 解析结果
     try:
