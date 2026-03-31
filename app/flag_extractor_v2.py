@@ -33,6 +33,9 @@ class AIFlagExtractor:
     # 最小化预过滤规则（仅用于快速判断，不依赖特定平台）
     PRE_FILTER = re.compile(r'[a-zA-Z0-9_]+\{[^\}]{5,100}\}')
 
+    # 排除CSS样式的模式
+    CSS_PATTERNS = re.compile(r'(margin|padding|font|color|background|border|width|height|display|position|line-height|text-align|overflow):\s*[0-9a-zA-Z#\-\.\s%]+', re.IGNORECASE)
+
     # 常见编码检测（轻量级）
     ENCODING_HINTS = {
         'base64': re.compile(r'[A-Za-z0-9+/]{20,}={0,2}'),
@@ -107,6 +110,9 @@ class AIFlagExtractor:
         # 通用模式
         matches = self.PRE_FILTER.findall(text)
         for m in matches:
+            # 排除CSS样式（包含CSS属性）
+            if self.CSS_PATTERNS.search(m):
+                continue
             results.append((m, "universal"))
 
         return results
