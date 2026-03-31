@@ -893,14 +893,23 @@ def analyst_node(state: CTFState) -> Dict:
             # 然后使用detect方法提取场景信息
             page_features = detector.detect(basic_features, baseline_response, resp.text)
             log(f"   ✅ 页面数据获取完成 (状态码: {resp.status_code})")
+
+            # [拓扑初始化] 首次访问时初始化拓扑数据
+            if current_url and not state.get("site_topology"):
+                site_topology = {current_url: []}
+                log(f"   📍 初始化拓扑: {current_url}")
         except Exception as e:
             log(f"   ⚠️ 页面获取失败: {e}")
             raw_html = ""
             page_features = {"tech_stack": [], "input_vectors": []}
+            site_topology = state.get("site_topology", {})
 
     # 1. 准备输入数据
     task_name = state.get("task_name", "Unknown Task")
     task_description = state.get("task_description", "No description provided")
+
+    # 获取拓扑数据（确保已初始化）
+    site_topology = state.get("site_topology", {})
 
     # 规则引擎的初步结果（如果有）
     rule_candidates = state.get("vuln_candidates", [])
@@ -1081,7 +1090,8 @@ def analyst_node(state: CTFState) -> Dict:
             "page_features": page_features,
             "raw_html_snippet": raw_html,
             "baseline_response": baseline_response,
-            "detected_scenes": page_features  # detected_scenes 使用 page_features
+            "detected_scenes": page_features,  # detected_scenes 使用 page_features
+            "site_topology": site_topology  # 拓扑数据
         }
 
     # 4. 解析结果
@@ -1188,12 +1198,14 @@ def analyst_node(state: CTFState) -> Dict:
             return {
                 "vuln_candidates": [],
                 "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.5,
-                "exploit_keywords": exploit_keywords if exploit_keywords else {}
+                "exploit_keywords": exploit_keywords if exploit_keywords else {},
+                "site_topology": site_topology
             }
 
         res = {
             "vuln_candidates": formatted_candidates,  # key_intel已合并到第一个候选的reason字段
-            "exploit_keywords": exploit_keywords if exploit_keywords else {}
+            "exploit_keywords": exploit_keywords if exploit_keywords else {},
+            "site_topology": site_topology
         }
         # [简化格式] 将战术指导传递给状态
         if tactical_guidance:
@@ -1264,7 +1276,8 @@ def analyst_node(state: CTFState) -> Dict:
         return {
             "vuln_candidates": default_candidates,  # 降级信息已合并到reason字段
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
-            "exploit_keywords": exploit_keywords if exploit_keywords else {}
+            "exploit_keywords": exploit_keywords if exploit_keywords else {},
+            "site_topology": site_topology
         }
 
 
