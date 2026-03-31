@@ -36,12 +36,13 @@ def normalize_target_url(url_str: str) -> str:
         s = s.replace(char, "")
 
     # 2. 精准提取第一个 http(s) 链接
-    # 排除空格、引号、括号、尖括号、中括号
-    match = re.search(r'(https?://[^\s\'"<>\[\]\(\)]+)', s)
+    # 注意：不要排除括号()，因为payload中可能包含函数调用如 system('ls')
+    # 只排除空白、引号、尖括号、中括号
+    match = re.search(r"(https?://[^\s'\"<>\[\]]+)", s)
     if match:
         clean_url = match.group(1)
-        # 3. 剥离末尾可能残留的标点符号
-        return clean_url.strip().rstrip(".").rstrip(",").rstrip("/")
+        # 3. 剥离末尾可能残留的标点符号（但不剥离括号）
+        return clean_url.strip().rstrip(".").rstrip(",")
 
     # 4. 如果没找到协议头，尝试二次清理后返回
     return s.strip("'").strip('"').strip()
