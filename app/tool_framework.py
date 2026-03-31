@@ -868,6 +868,84 @@ class ToolRegistry:
         return "\n".join(info_lines)
 
     @classmethod
+    def get_all_tools_info(cls, scenes: Dict = None) -> str:
+        """
+        获取所有注册工具的能力声明，用于构建 LLM Prompt。
+
+        Args:
+            scenes: 可选的场景信息，用于在输出中标记相关工具
+
+        输出格式增强:
+        - 工具名称和功能描述
+        - 适用场景 (best_for)
+        - 不适用场景 (not_for)
+        - 前提条件 (prerequisite)
+        - 时间成本 (cost)
+        """
+        info_lines = []
+        seen_tools = set()
+
+        # requests 工具的能力声明（含场景信息）
+        info_lines.append("## Tool: requests")
+        info_lines.append("### 功能: 手工HTTP请求工具")
+        if HAS_SCENARIOS and "requests" in TOOL_SCENARIOS:
+            scenario = TOOL_SCENARIOS["requests"]
+            info_lines.append(f"- **适用场景**: {', '.join(scenario.get('best_for', []))}")
+            info_lines.append(f"- **不适用**: {', '.join(scenario.get('not_for', []))}")
+            info_lines.append(f"- **前提条件**: {scenario.get('prerequisite', '目标URL可访问')}")
+            info_lines.append(f"- **时间成本**: {scenario.get('cost', '低')}")
+        else:
+            info_lines.append("- **适用场景**: 手工Payload构造、绕过检测、文件上传攻击、验证新路径")
+            info_lines.append("- **不适用**: 需要浏览器环境执行JavaScript的场景")
+            info_lines.append("- **前提条件**: 目标URL可访问")
+            info_lines.append("- **时间成本**: 低")
+        info_lines.append("")
+        seen_tools.add("requests")
+
+        for tools in cls._tools.values():
+            for tool in tools:
+                if tool.name() in seen_tools:
+                    continue
+                seen_tools.add(tool.name())
+
+                tool_name = tool.name()
+                info_lines.append(f"## Tool: {tool_name}")
+                info_lines.append(f"### 功能: {tool.description()}")
+
+                # 添加场景说明
+                if HAS_SCENARIOS and tool_name in TOOL_SCENARIOS:
+                    scenario = TOOL_SCENARIOS[tool_name]
+                    best_for = scenario.get('best_for', [])
+                    not_for = scenario.get('not_for', [])
+                    prerequisite = scenario.get('prerequisite', '无特殊前提条件')
+                    cost = scenario.get('cost', '可变')
+
+                    if best_for:
+                        info_lines.append(f"- **适用场景**:")
+                        for bf in best_for[:5]:  # 最多显示5条
+                            info_lines.append(f"  - {bf}")
+                    if not_for:
+                        info_lines.append(f"- **不适用场景**:")
+                        for nf in not_for[:3]:  # 最多显示3条
+                            info_lines.append(f"  - {nf}")
+                    info_lines.append(f"- **前提条件**: {prerequisite}")
+                    info_lines.append(f"- **时间成本**: {cost}")
+                else:
+                    # 默认场景描述
+                    info_lines.append("- **适用场景**: 安全测试")
+                    info_lines.append("- **前提条件**: 目标可访问")
+                    info_lines.append("- **时间成本**: 可变")
+
+                # 支持的漏洞类型
+                info_lines.append(f"- **支持漏洞类型**: {', '.join(tool.supported_vulns())}")
+                info_lines.append(f"- **参数规范**: {json.dumps(tool.expected_params(), ensure_ascii=False)}")
+                info_lines.append("")
+                info_lines.append(f"> 能力声明: {tool.capability_statement()}")
+                info_lines.append("")
+
+        return "\n".join(info_lines)
+
+    @classmethod
     def check_tool_prerequisites(cls, tool_name: str, state: Dict) -> Dict:
         """
         检查工具的前置条件是否满足

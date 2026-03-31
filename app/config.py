@@ -128,7 +128,8 @@ class Config:
     TOOL_RETRY_COUNT: int = 2
 
     # LLM并发限制（同时进行的LLM请求数）
-    LLM_MAX_CONCURRENT: int = 5
+    # 需要容纳：analyst, attacker, verifier, FlowController, router等多个节点的并发调用
+    LLM_MAX_CONCURRENT: int = 10
 
     # =========================================================================
     # 决策阈值 - 控制模式切换（根据时间限制调整）

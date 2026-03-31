@@ -129,8 +129,8 @@ class LLMRateLimiter:
         return status
 
 
-# 全局限流器
-_rate_limiter = LLMRateLimiter(max_concurrent=5)
+# 全局限流器（使用配置值）
+_rate_limiter = LLMRateLimiter(max_concurrent=config.LLM_MAX_CONCURRENT)
 
 # 启动时加载历史Token数据
 if TOKEN_PERSISTENCE_AVAILABLE:
@@ -230,8 +230,9 @@ class LLMClient:
         start_time = time.time()
         tokens_used = 0
 
-        # 并发控制
-        if not self.rate_limiter.acquire(timeout=60):
+        # 并发控制（等待时间应小于请求timeout）
+        acquire_timeout = min(30, timeout * 0.5 if timeout else 30)
+        if not self.rate_limiter.acquire(timeout=acquire_timeout):
             return LLMResult(
                 "",
                 LLMErrorType.RATE_LIMIT,

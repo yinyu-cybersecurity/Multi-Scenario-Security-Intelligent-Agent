@@ -1344,9 +1344,6 @@ def analyst_node(state: CTFState) -> Dict:
     # 获取场景信息
     detected_scenes = state.get("detected_scenes", {})
 
-    # 获取工具信息
-    tools_info = ToolRegistry.get_all_tools_info()
-
     # 获取场景聚焦信息
     focused_scene = state.get("focused_scene", "")
     scene_exhausted = state.get("scene_exhausted", False)
@@ -1495,7 +1492,6 @@ def analyst_node(state: CTFState) -> Dict:
         task_description=task_description,
         baseline_response=baseline_response,
         detected_scenes=detected_scenes,
-        tools_info=tools_info,
         focused_scene=focused_scene,
         scene_tested=scene_exhausted,
         topology_hint=topology_hint,  # 拓扑提示
