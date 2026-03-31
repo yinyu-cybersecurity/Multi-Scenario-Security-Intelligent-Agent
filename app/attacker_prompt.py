@@ -118,7 +118,6 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
                         tactical_guidance: str = None,
                         known_facts: str = None,
                         failed_payloads: List[str] = None,
-                        human_hint: str = None,
                         include_payloads: bool = True,
                         stage_info: dict = None,
                         strategic_context: dict = None) -> str:
@@ -150,16 +149,9 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
     # 战术指引
     guidance_desc = ""
     if tactical_guidance:
-        guidance_desc = f"\n战术建议: {tactical_guidance}"
-
-    # 人工提示
-    hint_desc = ""
-    if human_hint:
-        hint_desc = f"""
-
-## ⚠️ 人工指导（必须遵循）
-{human_hint}
-请严格按照以上人工指导生成攻击动作！
+        guidance_desc = f"""
+## 🎯 战术建议
+{tactical_guidance}
 """
 
     # 失败payload列表 - 必须避免重复
@@ -221,7 +213,6 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
 ## 任务
 {task_desc}
 {guidance_desc}
-{hint_desc}
 
 {stage_section}{strategic_section}
 ## 已知事实

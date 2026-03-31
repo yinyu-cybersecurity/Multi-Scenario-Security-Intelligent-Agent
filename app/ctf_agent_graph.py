@@ -1448,13 +1448,15 @@ def execute_single_attack(action: Dict, current_url: str, page_history: Dict, ti
 
             diff_analysis = page_diff_manager.compare_and_analyze(target, content, page_history)
 
-            # [简化] 仅保留核心字段，移除冗余字段
+            # [修复] is_exploit 应该使用 diff_analysis 中的 is_exploit 字段，而不是 changed
+            # changed 只表示内容是否变化，is_exploit 才表示是否成功利用
             result = {
                 "tool": "requests",
                 "status": resp.status_code,
                 "output": short_output,
-                "payload": payload[:500] if payload else "",  # 限制payload长度
-                "is_exploit": diff_analysis.get("changed", False)
+                "payload": payload[:500] if payload else "",
+                "is_exploit": diff_analysis.get("is_exploit", diff_analysis.get("changed", False)),
+                "diff_reason": diff_analysis.get("reason", "")
             }
             # extracted_flag和file_path仅在有值时添加
             if diff_analysis.get("extracted_flag"):
@@ -1681,22 +1683,25 @@ def attacker_node(state: CTFState) -> Dict:
     guidance_type = state.get("guidance_type", "continue")
     enforce_change = state.get("enforce_change", False)
     tactical_guidance = state.get("latest_tactical_guidance", "")
+    guidance_target_url = state.get("guidance_target_url", "")  # [断点修复] 获取精确目标URL
 
     # 如果有强制切换场景的指导，优先执行
-    if guidance_type == "switch_scene" and enforce_change and tactical_guidance:
-        # 从指导中提取目标URL（如果指导是结构化的dict）
-        guidance_target = None
-        if isinstance(tactical_guidance, dict):
-            guidance_target = tactical_guidance.get("target_url", "")
-        elif isinstance(tactical_guidance, str) and "http" in tactical_guidance:
-            # 尝试从文本中提取URL
-            import re
-            url_match = re.search(r'https?://[^\s<>"]+', tactical_guidance)
-            if url_match:
-                guidance_target = url_match.group()
+    if guidance_type == "switch_scene" and enforce_change:
+        # [断点修复] 优先使用guidance_target_url字段，而不是从字符串提取
+        guidance_target = guidance_target_url if guidance_target_url else None
+
+        # 如果没有精确URL，尝试从tactical_guidance中提取
+        if not guidance_target and tactical_guidance:
+            if isinstance(tactical_guidance, dict):
+                guidance_target = tactical_guidance.get("target_url", "")
+            elif isinstance(tactical_guidance, str) and "http" in tactical_guidance:
+                # 尝试从文本中提取URL
+                url_match = re.search(r'https?://[^\s<>"]+', tactical_guidance)
+                if url_match:
+                    guidance_target = url_match.group()
 
         if guidance_target:
-            log(f"   🔄 [强制指导] 切换到新目标: {guidance_target}")
+            log(f"   🔄 [强制指导] 使用精确URL: {guidance_target}")
             # 直接生成访问新URL的攻击动作
             forced_attack = {
                 "tool": "requests",
@@ -1704,16 +1709,17 @@ def attacker_node(state: CTFState) -> Dict:
                     "method": "GET",
                     "url": guidance_target
                 },
-                "reasoning": f"强制执行战术指导: {tactical_guidance[:100]}"
+                "reasoning": f"执行精确攻击URL: {guidance_target}"
             }
             # 返回强制攻击，绕过LLM生成
             return {
                 "attack_batch": [forced_attack],
                 "attack_results": [],
-                "current_url": guidance_target,  # 更新当前URL
+                "current_url": guidance_target if guidance_type == "switch_scene" else current_url,
                 "execution_steps": state.get("execution_steps", 0) + 1,
                 "guidance_type": "",  # 清空指导，已执行
-                "enforce_change": False
+                "enforce_change": False,
+                "guidance_target_url": ""  # 清空，已使用
             }
 
     # =====================================================
@@ -1748,14 +1754,6 @@ def attacker_node(state: CTFState) -> Dict:
         "topology_priority": current_priority  # 新增：传递优先级信息
     }
 
-    # 获取最新的人工提示
-    human_hint = None
-    hint_history = state.get("hint_history", [])
-    if hint_history:
-        latest_hint = hint_history[-1]
-        if latest_hint.get("source") == "human":
-            human_hint = latest_hint.get("content")
-
     # 获取战略上下文和阶段信息
     strategic_context = state.get("strategic_context", {})
 
@@ -1777,10 +1775,8 @@ def attacker_node(state: CTFState) -> Dict:
         history,
         task_info=task_info,
         tactical_guidance=state.get("latest_tactical_guidance"),
-        # analyst_intel已合并到vuln_candidates，不再单独传递
         known_facts=state.get("known_facts", ""),
         failed_payloads=state.get("failed_payloads", []),
-        human_hint=human_hint,
         stage_info=stage_info,
         strategic_context=strategic_context
     )
@@ -2474,14 +2470,6 @@ def verifier_node(state: CTFState) -> Dict:
             "recent_codes": status.get("last_status_codes", [])[-5:]
         }
 
-    # 获取最新的人工提示
-    human_hint = None
-    hint_history = state.get("hint_history", [])
-    if hint_history:
-        latest_hint = hint_history[-1]
-        if latest_hint.get("source") == "human":
-            human_hint = latest_hint.get("content")
-
     # 获取战略上下文和阶段信息
     strategic_context = state.get("strategic_context", {})
 
@@ -2501,10 +2489,8 @@ def verifier_node(state: CTFState) -> Dict:
     prompt = get_verifier_prompt(
         attack_batch,
         recent_results,
-        # analyst_intel已合并到vuln_candidates
         node_info=node_info,
         known_facts=state.get("known_facts", ""),
-        human_hint=human_hint,
         stage_info=stage_info,
         strategic_context=strategic_context
     )

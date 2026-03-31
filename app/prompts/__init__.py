@@ -219,7 +219,7 @@ def _auto_register():
                 get_verifier_prompt(
                     attack_batch or [],
                     results or [],
-                    **{k: v for k, v in kw.items() if k in ['node_info', 'known_facts', 'human_hint']}
+                    **{k: v for k, v in kw.items() if k in ['node_info', 'known_facts']}
                 ),
             aliases=['web_verifier']
         )

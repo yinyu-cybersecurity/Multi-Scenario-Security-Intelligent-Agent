@@ -12,12 +12,10 @@ BASE64_PATTERN = re.compile(r'[A-Za-z0-9+/]{20,}={0,2}')
 
 def get_verifier_prompt(attack_batch: list, results: list,
                         node_info: dict = None, known_facts: str = None,
-                        human_hint: str = None,
                         stage_info: dict = None,
                         strategic_context: dict = None) -> str:
     """
     构建核验兵的 Prompt [简化版]
-    移除了analyst_intel参数，相关信息已合并到vuln_candidates
     """
     formatted_results = []
     for i, res in enumerate(results):
@@ -54,10 +52,11 @@ def get_verifier_prompt(attack_batch: list, results: list,
 
         formatted_results.append({
             "tool": res.get("tool", "unknown"),
-            "payload": res.get("payload", "N/A")[:200],  # 限制payload长度
+            "payload": res.get("payload", "N/A"),  # 不截断，完整显示payload
             "status_code": res.get("status", "?"),
             "is_exploit": res.get("is_exploit", False),
-            "response": str(content)[:1500]  # 限制长度避免prompt过大
+            "diff_reason": res.get("diff_reason", ""),  # 新增：变化原因
+            "response": str(content)[:2000]  # 增加响应长度
         })
 
     # 节点信息
@@ -76,15 +75,6 @@ def get_verifier_prompt(attack_batch: list, results: list,
         facts_context = f"""
 ## 已知事实
 {known_facts}
-"""
-
-    # 人工提示
-    hint_context = ""
-    if human_hint:
-        hint_context = f"""
-## ⚠️ 人工指导（必须遵循）
-{human_hint}
-请根据以上人工指导调整战术建议和攻击方向。
 """
 
     # 阶段成功标准检查
@@ -129,7 +119,6 @@ def get_verifier_prompt(attack_batch: list, results: list,
 
 ## 已知事实
 {facts_context}
-{hint_context}
 {node_context}
 {success_criteria_section}{strategic_section}
 ## 攻击结果
@@ -186,19 +175,13 @@ def get_verifier_prompt(attack_batch: list, results: list,
     "potential_flag": "FLAG或空",
     "is_exploit_successful": true/false,
     "exploit_evidence": "成功证据简述",
-    "failure_level": "critical/major/minor",  // 改为定性描述
+    "failure_level": "critical/major/minor",
     "node_decision": "continue或abandon",
     "failure_analysis": "失败原因分析（如有失败）",
     "new_discoveries": ["发现1", "发现2"],
-    "tactical_guidance": "具体可执行的战术指导（自然语言描述）",
+    "tactical_guidance": "攻击参数建议，如 ?url=system('ls')",
     "guidance_type": "switch_scene/continue/deepen/abort",
-    "target_url": "建议访问的具体URL（switch_scene时必填）",
-    "updated_known_facts": "发现的关键信息（如果成功）"
+    "target_url": "目标页面URL（switch_scene时填写新路径，否则留空）",
+    "updated_known_facts": "发现的关键信息"
 }}
-
-### guidance_type 说明：
-- **switch_scene**: 切换到新场景/新路径，必须填写target_url
-- **continue**: 继续当前攻击策略，调整参数
-- **deepen**: 深入当前发现，进一步挖掘
-- **abort**: 放弃当前节点
 """
