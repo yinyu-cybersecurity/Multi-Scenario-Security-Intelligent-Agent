@@ -507,7 +507,7 @@ class AdvancedRetriever:
         """打印检索质量报告"""
         total = results.get("total", 0)
         if total == 0:
-            print(f"[RAG] ⚠️ No results for '{query[:30]}...' (threshold={SIMILARITY_THRESHOLD})")
+            print(f"[RAG] [WARN] No results for '{query[:30]}...' (threshold={SIMILARITY_THRESHOLD})")
             return
 
         # 计算平均相似度
@@ -520,7 +520,7 @@ class AdvancedRetriever:
             avg_sim = sum(r.get("similarity", r.get("quality_score", 0)) for r in all_items) / len(all_items)
             max_sim = max(r.get("similarity", r.get("quality_score", 0)) for r in all_items)
 
-            print(f"[RAG] ✓ Query '{query[:30]}...'")
+            print(f"[RAG] [OK] Query '{query[:30]}...'")
             print(f"     Total: {total} results, Avg similarity: {avg_sim:.2f}, Best: {max_sim:.2f}")
 
             # 打印各来源结果数
