@@ -866,6 +866,9 @@ def analyst_node(state: CTFState) -> Dict:
     raw_html = state.get("raw_html_snippet", "")
     baseline_response = state.get("baseline_response") or {}  # [防御性修复] 处理 None 值
 
+    # [拓扑初始化] 提前定义，确保在所有代码路径中可用
+    site_topology = state.get("site_topology") or {}
+
     if not page_features or not raw_html:
         log("   📡 首次访问，获取页面数据...")
         try:
@@ -895,21 +898,31 @@ def analyst_node(state: CTFState) -> Dict:
             log(f"   ✅ 页面数据获取完成 (状态码: {resp.status_code})")
 
             # [拓扑初始化] 首次访问时初始化拓扑数据
-            if current_url and not state.get("site_topology"):
+            if current_url and current_url not in site_topology:
                 site_topology = {current_url: []}
                 log(f"   📍 初始化拓扑: {current_url}")
         except Exception as e:
             log(f"   ⚠️ 页面获取失败: {e}")
             raw_html = ""
             page_features = {"tech_stack": [], "input_vectors": []}
-            site_topology = state.get("site_topology", {})
+            # 如果连目标URL都没有，用target_url初始化
+            if not site_topology:
+                target_url = state.get("target_url", "")
+                if target_url:
+                    site_topology = {target_url: []}
+
+    # [关键修复] 确保 site_topology 始终被初始化
+    # 如果上面没有进入初始化块（page_features 和 raw_html 已有值），需要在这里初始化
+    if not site_topology:
+        target_url = state.get("target_url", "")
+        current_url_for_topo = state.get("current_url", target_url)
+        if current_url_for_topo:
+            site_topology = {current_url_for_topo: []}
+            log(f"   📍 补充初始化拓扑: {current_url_for_topo}")
 
     # 1. 准备输入数据
     task_name = state.get("task_name", "Unknown Task")
     task_description = state.get("task_description", "No description provided")
-
-    # 获取拓扑数据（确保已初始化）
-    site_topology = state.get("site_topology", {})
 
     # 规则引擎的初步结果（如果有）
     rule_candidates = state.get("vuln_candidates", [])
