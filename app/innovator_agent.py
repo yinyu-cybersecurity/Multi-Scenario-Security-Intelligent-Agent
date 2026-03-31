@@ -83,7 +83,7 @@ def innovator_node(state: CTFState) -> Dict:
     [头脑风暴] (RAG增强 + LLM推理)
     """
     logger.info("Starting RAG brainstorming...")
-    features = state.get("page_features", {})
+    features = state.get("page_features") or {}  # [防御性修复] 处理 None 值
     attack_results = state.get("attack_results", [])
     trace = [{"type": r.get("tool", "unknown"), "target": r.get("target", "")}
              for r in attack_results[-10:]] if attack_results else []

@@ -324,7 +324,7 @@ def strategy_filter_node(state: CTFState) -> Dict:
         return {}
 
     # 获取页面特征和技术栈
-    features = state.get("page_features", {})
+    features = state.get("page_features") or {}  # [防御性修复] 处理 None 值
     tech_stack = features.get("tech_stack", [])
 
     # 获取临时规则（来自头脑风暴）

@@ -271,6 +271,7 @@ def get_default_state(task_name: str, task_description: str, target_url: str) ->
     """
     import time
     from typing import get_origin, get_args
+    from typing_extensions import TypedDict  # [修复] 导入TypedDict用于类型检查
 
     # 基本类型默认值映射
     defaults = {
@@ -293,6 +294,10 @@ def get_default_state(task_name: str, task_description: str, target_url: str) ->
         if inner_type == list or (hasattr(inner_type, '__origin__') and inner_type.__origin__ == list):
             state[field_name] = []
         elif inner_type == dict or (hasattr(inner_type, '__origin__') and inner_type.__origin__ == dict):
+            state[field_name] = {}
+        # [修复] TypedDict类型应该返回空字典，而不是None
+        elif isinstance(inner_type, type) and issubclass(inner_type, dict):
+            # TypedDict是dict的子类，返回空字典
             state[field_name] = {}
         elif inner_type in defaults:
             state[field_name] = defaults[inner_type]

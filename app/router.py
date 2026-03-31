@@ -345,10 +345,15 @@ class RouteGuard:
         fallback_plans = state.get("fallback_plans", [])
         if fallback_plans and len(fallback_plans) > 0:
             fallback = fallback_plans[0]
-            fallback_node = fallback.get("node", "mode_manager")
-            logger.info(f"[断点7修复] 使用降级计划: {fallback_node}")
-            self.reset_loop_count(fallback_node)
-            return fallback_node
+            # [安全检查] 确保fallback是字典类型
+            if isinstance(fallback, dict):
+                fallback_node = fallback.get("node", "mode_manager")
+                logger.info(f"[断点7修复] 使用降级计划: {fallback_node}")
+                self.reset_loop_count(fallback_node)
+                return fallback_node
+            else:
+                logger.warning(f"[断点7修复] fallback_plans元素类型异常: {type(fallback)}")
+                # 跳过异常元素，继续检查下一个备选方案
 
         # 5. 检查是否有可回退节点（拓扑分析）
         try:

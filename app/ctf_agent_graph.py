@@ -862,9 +862,9 @@ def analyst_node(state: CTFState) -> Dict:
     # =====================================================
     # [合并recon] 检查并获取缺失的页面数据
     # =====================================================
-    page_features = state.get("page_features", {})
+    page_features = state.get("page_features") or {}  # [防御性修复] 处理 None 值
     raw_html = state.get("raw_html_snippet", "")
-    baseline_response = state.get("baseline_response", {})
+    baseline_response = state.get("baseline_response") or {}  # [防御性修复] 处理 None 值
 
     if not page_features or not raw_html:
         log("   📡 首次访问，获取页面数据...")
@@ -2222,7 +2222,8 @@ def explorer_node(state: CTFState) -> Dict:
 
     # 5.3 找到从入口到敏感页面的最短攻击路径
     target_url = state.get("target_url")
-    sensitive_paths = state.get("page_features", {}).get("sensitive_paths", [])
+    page_features = state.get("page_features") or {}  # [防御性修复] 处理 None 值
+    sensitive_paths = page_features.get("sensitive_paths", [])
     if sensitive_paths and target_url:
         attack_path = analyzer.find_shortest_attack_path(target_url, sensitive_paths)
         if attack_path:
