@@ -53,17 +53,8 @@ class BaseCTFState(TypedDict):
     # 总执行步数
     execution_steps: int
 
-    # 当前工作模式
-    current_mode: Literal['exploit', 'explore', 'innovate', 'end']
-
-    # 失败加权分数（用于模式切换决策）
-    failure_weighted_score: float
-
-    # 探索模式已执行轮次
-    exploration_rounds: int
-
-    # 规则引擎连续未命中次数
-    rule_miss_count: int
+    # 当前工作模式（简化：只有exploit和end）
+    current_mode: Literal['exploit', 'end']
 
     # =========================================================================
     # 结果状态字段

@@ -1341,22 +1341,17 @@ def analyst_node(state: CTFState) -> Dict:
 
 def mode_manager_node(state: CTFState) -> Dict:
     """
-    模式决策器 - 简化版（无AI调用，仅阈值判断）
+    模式决策器 - 极简版
 
-    决策规则：
-    1. 时间超时 → end
-    2. 失败分超过阈值 → explore
-    3. 其他情况 → exploit
-
-    内网渗透只按时间超时结束，不受失败分影响
+    唯一规则：时间超时 → end，否则 → exploit
+    - CTF模式: 30分钟超时
+    - 内网模式: 1小时超时
     """
-    score = state.get("failure_weighted_score", 0)
     start_time = state.get("start_time", time.time())
     internal_mode = state.get("internal_mode", False)
 
     # 尊重上游设置的end模式
-    preset_mode = state.get("current_mode")
-    if preset_mode == "end":
+    if state.get("current_mode") == "end":
         return {"current_mode": "end"}
 
     # 时间超时检查
@@ -1366,19 +1361,6 @@ def mode_manager_node(state: CTFState) -> Dict:
     if elapsed_time >= timeout:
         log_mode_manager(f"任务超时: {elapsed_time/60:.1f}分钟")
         return {"current_mode": "end"}
-
-    # 内网模式：只按时间结束，不受失败分影响
-    if internal_mode:
-        log_mode_manager(f"内网模式继续渗透 (已运行:{elapsed_time/60:.1f}分钟)")
-        return {"current_mode": "exploit"}
-
-    # Web CTF模式切换
-    if score >= config.FAILURE_SCORE_ABANDON:
-        log_mode_manager(f"失败分过高({score:.1f})，结束任务")
-        return {"current_mode": "end"}
-    elif score >= config.FAILURE_SCORE_FOR_EXPLORE:
-        log_mode_manager(f"失败分达到阈值({score:.1f})，切换探索模式")
-        return {"current_mode": "explore"}
 
     return {"current_mode": "exploit"}
 

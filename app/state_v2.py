@@ -68,10 +68,7 @@ class CTFStateV2(TypedDict):
     start_time: float
     current_round: int
     execution_steps: int
-    current_mode: Literal['exploit', 'explore', 'innovate', 'end']
-    failure_weighted_score: float
-    exploration_rounds: int
-    rule_miss_count: int
+    current_mode: Literal['exploit', 'end']
     found_flag: bool
     final_flag: str
     visited_urls: Annotated[List[str], visited_urls_reducer]
