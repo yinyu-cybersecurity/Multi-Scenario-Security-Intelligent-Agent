@@ -277,28 +277,20 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
 rag_source 可选: payloads, nuclei, writeups, security_resources
 
 ## 输出要求
-返回 JSON，包含 attack_actions 数组，每个动作包含 tool、params、reasoning 字段。
+返回 JSON，包含 attack_actions 数组。
 
-## 攻击决策推理
-
-### 在生成攻击动作前，必须思考：
-1. **预期结果**: "如果成功，我将获得[具体内容]"
-2. **备选路径**: "如果失败，B计划是[方案]"
-3. **冗余自检**: 检查 failed_payloads 避免重复
-4. **优先级判断**: 当前动作是否是最高效的路径？
-
-### 每个攻击动作应包含：
+### 核心要求
 - **tool**: 工具名称
-- **params**: 参数配置
-- **reasoning**: 为什么选择这个攻击
-- **expected_outcome**: 预期结果
-- **fallback**: 失败后的备选方案
-- **priority**: high/medium/low
+- **params**: 完整参数（URL必须包含完整payload）
 
 示例:
-{{"attack_actions": [{{"tool": "requests", "params": {{"method": "POST", "url": "..."}}, "reasoning": "尝试SQL注入获取数据库内容", "expected_outcome": "获取用户表数据", "fallback": "尝试时间盲注", "priority": "high"}}]}}
+```json
+{{"attack_actions": [
+  {{"tool": "requests", "params": {{"method": "GET", "url": "http://target/index.php?cmd=ls"}}}}
+]}}
+```
 
-**重要**: attack_actions 不能为空，必须根据漏洞候选生成攻击动作。
+**关键**: params.url 必须是完整可执行的攻击URL，直接复制使用payload_examples中的示例。
 
 {scene_framework}
 {tool_principles}
