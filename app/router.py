@@ -1194,7 +1194,7 @@ def update_strategic_context_after_node(state: CTFState, node_name: str, result:
 
 
 # ==============================================================================
-# [断点8修复] AI决策记录辅助函数
+# AI决策记录辅助函数
 # ==============================================================================
 
 def record_strategic_decision(state: CTFState, decision: Dict) -> Dict:
@@ -1219,20 +1219,6 @@ def record_strategic_decision(state: CTFState, decision: Dict) -> Dict:
 
     Returns:
         状态更新字典，包含新增的strategic_decisions记录
-
-    使用示例:
-        from app.router import record_strategic_decision
-
-        # 在节点执行后记录
-        decision_record = {
-            "node": "attacker",
-            "decision_type": "attack",
-            "action": "sqli_payload",
-            "reason": "检测到SQL注入特征",
-            "confidence": 0.85,
-            "outcome": "pending",
-        }
-        updates = record_strategic_decision(state, decision_record)
     """
     import time
 
@@ -1260,8 +1246,6 @@ def record_strategic_decision(state: CTFState, decision: Dict) -> Dict:
     # 限制数量（最多50条）
     if len(new_decisions) > 50:
         new_decisions = new_decisions[-50:]
-
-    logger.info(f"[断点8修复] 记录AI决策: {record['node']}/{record['decision_type']} -> {record['action']}")
 
     return {"strategic_decisions": new_decisions}
 

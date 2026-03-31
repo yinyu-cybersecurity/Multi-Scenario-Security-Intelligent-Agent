@@ -1124,7 +1124,7 @@ def analyst_node(state: CTFState) -> Dict:
         guidance_target_url = result.get("target_url", "")
         log(f"   📋 战术指导: {guidance_type}")
         if tactical_guidance:
-            log(f"   🎯 建议动作: {tactical_guidance[:100]}")
+            log(f"   🎯 建议动作: {tactical_guidance}")  # 不截断，完整显示
         if guidance_target_url:
             log(f"   🔗 建议目标URL: {guidance_target_url}")
 
@@ -2561,10 +2561,13 @@ def verifier_node(state: CTFState) -> Dict:
         # [简化格式处理] tactical_guidance现在是字符串，guidance_type是单独字段
         tactical_guidance = result.get("tactical_guidance", "")
         guidance_type = result.get("guidance_type", "continue")
+        guidance_reason = result.get("guidance_reason", "")  # 添加guidance_reason
         guidance_target_url = result.get("target_url", "")
         enforce_change = guidance_type == "switch_scene"  # switch_scene时强制执行
 
         log(f"   📋 战术指导类型: {guidance_type}")
+        if tactical_guidance:
+            log(f"   💡 分析: {tactical_guidance[:200]}")  # 增加截断长度
         if guidance_target_url:
             log(f"   🎯 建议目标URL: {guidance_target_url}")
 
@@ -2914,11 +2917,11 @@ def verifier_node(state: CTFState) -> Dict:
 
         if node_decision == "abandon" and current_url and current_url in node_status:
             log(f"   🛑 AI决策: 放弃节点 {current_url}")
-            log(f"   💡 原因: {failure_analysis[:100] if failure_analysis else 'N/A'}")
+            log(f"   💡 原因: {failure_analysis}")  # 不截断
             node_status[current_url]["status"] = "abandoned"
         elif tactical_guidance:
-            log(f"   💡 分析: {failure_analysis[:100] if failure_analysis else 'N/A'}")
-            log(f"   🎯 建议: {tactical_guidance[:100]}")
+            log(f"   💡 分析: {failure_analysis}")  # 不截断
+            log(f"   🎯 建议: {tactical_guidance}")  # 不截断
 
         # 如果有聚焦场景，显示进度
         if focused_scene:
