@@ -548,6 +548,33 @@ def challenge_type_detector_node(state: CTFState) -> Dict:
         log("   [Default] Assuming Web challenge")
         result = {}
 
+    # 根据检测到的类型设置内存模式并切换模块
+    if result.get("internal_mode"):
+        target_mode = "internal"
+    elif result.get("cloud_mode") or result.get("ai_mode"):
+        target_mode = "cloud"
+    elif result.get("crypto_mode"):
+        target_mode = "crypto"
+    elif result.get("pwn_mode"):
+        target_mode = "pwn"
+    elif result.get("reverse_mode"):
+        target_mode = "reverse"
+    elif result.get("misc_mode"):
+        target_mode = "misc"
+    else:
+        target_mode = "web"
+
+    result["memory_mode"] = target_mode
+
+    # 直接切换模块管理器模式
+    try:
+        from module_manager import module_manager
+        if module_manager.memory_mode != target_mode:
+            log(f"   [ModuleManager] 初始化模式: {target_mode}")
+            module_manager.switch_mode(target_mode, result)
+    except ImportError:
+        pass
+
     result["execution_steps"] = state.get("execution_steps", 0) + 1
     return result
 

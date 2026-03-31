@@ -315,7 +315,7 @@ def get_default_state(task_name: str, task_description: str, target_url: str) ->
         # 战略上下文字段默认值
         "strategic_context": {},
         "active_modules": ["app.llm_client", "app.logger", "app.config"],
-        "memory_mode": "minimal",
+        "memory_mode": "minimal",  # 初始minimal，由类型检测器决定实际模式
         # [断点8修复] strategic_decisions默认值
         "strategic_decisions": [],
     })
