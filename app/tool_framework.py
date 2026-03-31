@@ -228,9 +228,9 @@ class CTFTool(ABC):
 
         # 检查shell会话
         if self.REQUIRES_SHELL_SESSION:
-            shell_sessions = state.get("shell_sessions", {})
-            if not shell_sessions:
-                missing.append("shell_session")
+            active_sessions = state.get("active_sessions", [])
+            if not active_sessions:
+                missing.append("active_session")
 
         met = len(missing) == 0
         hint = ""
@@ -1370,6 +1370,7 @@ class ToolRegistry:
         if session_info:
             params = params.copy()  # 不修改原始参数
             params['session'] = session_info.get('session_id') or session_info.get('id')
+            # 兼容旧工具的参数名
             params['shell_session'] = session_info
             logger.info(f"[ToolRegistry] Auto-injected session {params['session']} for tool '{tool.name()}'")
 
@@ -1381,7 +1382,7 @@ class ToolRegistry:
         从状态中获取可用的会话
 
         优先级:
-        1. state["shell_session"] - 当前主会话
+        1. state["active_sessions"] - 活跃会话列表中最新
         2. state["active_sessions"] - 活跃会话列表中最新
 
         Args:
@@ -1391,13 +1392,7 @@ class ToolRegistry:
         Returns:
             会话信息字典或 None
         """
-        # 1. 检查 shell_session
-        shell_session = state.get('shell_session')
-        if shell_session and isinstance(shell_session, dict):
-            if shell_session.get('session_id') or shell_session.get('id'):
-                return shell_session
-
-        # 2. 检查 active_sessions
+        # 1. 检查 active_sessions
         active_sessions = state.get('active_sessions', [])
         if active_sessions:
             # 获取最新的活跃会话
@@ -1407,7 +1402,7 @@ class ToolRegistry:
                 return admin_sessions[0]
             return active_sessions[0]
 
-        # 3. 尝试从 session_manager 获取
+        # 2. 尝试从 session_manager 获取
         try:
             from remote_executor.session_manager import get_session_manager
 
@@ -1455,13 +1450,9 @@ class ToolRegistry:
         # 备选：从 state 获取
         if state:
             sessions = []
-            shell_session = state.get('shell_session')
-            if shell_session:
-                sessions.append(f"主会话: {shell_session.get('type', 'unknown')} -> {shell_session.get('target', 'unknown')}")
-
             active_sessions = state.get('active_sessions', [])
             for s in active_sessions[:3]:
-                sessions.append(f"会话: {s.get('type', 'unknown')} -> {s.get('target', 'unknown')}")
+                sessions.append(f"会话: {s.get('type', 'unknown')} -> {s.get('host', s.get('target', 'unknown'))}")
 
             if sessions:
                 return "当前会话:\n" + "\n".join(f"  - {s}" for s in sessions)

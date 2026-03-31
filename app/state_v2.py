@@ -151,7 +151,7 @@ class CTFStateV2(TypedDict):
     internal_hosts: Annotated[List[InternalHost], internal_hosts_reducer]
     credentials: Annotated[List[Credential], credentials_reducer]
     domain_info: Dict[str, Any]
-    shell_session: Optional[Dict[str, Any]]
+    # [简化] 合并会话相关字段：移除shell_session，统一使用active_sessions
     active_sessions: Annotated[List[Dict[str, Any]], _make_cap_reducer(config.MAX_ACTIVE_SESSIONS)]
     socks5_port: int
     uploaded_tools: Annotated[List[str], _make_cap_reducer(config.MAX_UPLOADED_TOOLS)]
@@ -182,8 +182,7 @@ class CTFStateV2(TypedDict):
     # [I] 内网渗透扩展字段 - 多主机Flag搜索
     # =====================================================
     found_flags: Annotated[List[str], dedupe_list_reducer]  # 所有发现的flag
-    compromised_hosts: Annotated[List[str], _make_cap_reducer(config.MAX_COMPROMISED_HOSTS)]  # 已攻陷的主机IP
-    failed_lateral_hosts: Annotated[List[str], dedupe_list_reducer]  # 横向移动失败的主机IP
+    # [简化] 移除compromised_hosts和failed_lateral_hosts，状态由internal_hosts.status管理
     current_compromise_phase: str  # 当前阶段: flag_search/lateral_move/complete
     persistence_established: bool  # 是否已建立持久化
     persistence_results: Annotated[List[Dict[str, Any]], _make_cap_reducer(config.MAX_PERSISTENCE_RESULTS)]  # 持久化结果记录

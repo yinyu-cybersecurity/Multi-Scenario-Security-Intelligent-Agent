@@ -137,7 +137,7 @@ def internal_recon_node(state: Dict) -> Dict:
     pivot_host = state.get("pivot_host", "")
     current_url = state.get("current_url", "")
     proxy_info = state.get("proxy_info", {})
-    shell_session = state.get("shell_session", {})
+    active_sessions = state.get("active_sessions", [])
 
     # 从当前URL提取目标IP
     target_ip = ""
@@ -182,7 +182,7 @@ def internal_recon_node(state: Dict) -> Dict:
     # 执行扫描
     try:
         # 方式1: 通过跳板机上的工具扫描 (推荐)
-        session_id = shell_session.get("session_id", "")
+        session_id = active_sessions[0].get("session_id", "") if active_sessions else ""
         if session_id and REMOTE_EXEC_AVAILABLE:
             logger.info(f"通过跳板机扫描...")
             result = _scan_via_pivot(state, network_range, scan_strategy)
@@ -325,9 +325,9 @@ def _scan_via_pivot(state: Dict, network_range: str, strategy: Dict) -> Dict:
 
     在跳板机上执行fscan等工具
     """
-    shell_session = state.get("shell_session", {})
-    session_id = shell_session.get("session_id", "")
-    os_type = shell_session.get("os_type", "linux")
+    active_sessions = state.get("active_sessions", [])
+    session_id = active_sessions[0].get("session_id", "") if active_sessions else ""
+    os_type = active_sessions[0].get("os_type", "linux") if active_sessions else "linux"
 
     if not session_id or not REMOTE_EXEC_AVAILABLE:
         return {"success": False, "error": "无可用的跳板机会话"}
@@ -635,8 +635,7 @@ def _ai_try_connect_with_credentials(state: Dict, discovered_credentials: List[D
                 "credentials": state.get("credentials", []) + [{
                     "username": username, "password": password, "host": ip, "port": port, "service": "ssh"
                 }],
-                "active_sessions": state.get("active_sessions", []) + [session_dict],
-                "shell_session": session_dict if not state.get("shell_session") else state.get("shell_session")
+                "active_sessions": state.get("active_sessions", []) + [session_dict]
             }
 
     except Exception as e:
@@ -658,7 +657,9 @@ def _ai_select_next_target(hosts: List[Dict], state: Dict) -> str:
     """
     active_sessions = state.get("active_sessions") or []
     compromised = [s.get("host") for s in active_sessions if s.get("host")]
-    failed_hosts = state.get("failed_lateral_hosts") or []
+    # 从internal_hosts获取失败的主机
+    internal_hosts = state.get("internal_hosts") or []
+    failed_hosts = [h.get("ip") for h in internal_hosts if isinstance(h, dict) and h.get("status") == "failed"]
 
     # 排除已攻陷和失败的主机
     excluded_hosts = set(compromised + failed_hosts)
@@ -831,14 +832,14 @@ def lateral_move_node(state: Dict) -> Dict:
     internal_hosts = state.get("internal_hosts") or []
     active_sessions = state.get("active_sessions") or []
     proxy_info = state.get("proxy_info", {})
-    shell_session = state.get("shell_session", {})
-    failed_hosts = state.get("failed_lateral_hosts") or []
+    # 从internal_hosts获取失败的主机
+    failed_hosts = [h.get("ip") for h in internal_hosts if isinstance(h, dict) and h.get("status") == "failed"]
 
     if not target:
         # AI选择下一个目标（排除失败主机）
         target = _ai_select_next_target(
             internal_hosts,
-            {"failed_lateral_hosts": failed_hosts, "active_sessions": active_sessions}
+            {"failed_hosts": failed_hosts, "active_sessions": active_sessions}
         )
 
     if not target:
@@ -878,14 +879,17 @@ def lateral_move_node(state: Dict) -> Dict:
     method = move_strategy.get("method", "psexec")
     cred = move_strategy.get("credential", credentials[0] if credentials else {})
 
+    # 获取第一个活跃会话（如果有）
+    first_session = active_sessions[0] if active_sessions else {}
+
     try:
         # 根据是否需要代理选择执行方式
         if proxy_info and REMOTE_EXEC_AVAILABLE:
             # 通过代理执行
             result = _execute_lateral_via_proxy(target, method, cred, proxy_info)
-        elif shell_session.get("session_id") and REMOTE_EXEC_AVAILABLE:
+        elif first_session.get("session_id") and REMOTE_EXEC_AVAILABLE:
             # 通过跳板机执行
-            result = _execute_lateral_via_pivot(target, method, cred, shell_session)
+            result = _execute_lateral_via_pivot(target, method, cred, first_session)
         else:
             # 本地直接执行
             if method in ["psexec", "wmiexec", "smbexec"]:
@@ -948,27 +952,37 @@ def lateral_move_node(state: Dict) -> Dict:
 
         logger.warning(f"失败: {error_msg}")
 
-        # 记录失败主机，避免重复尝试
-        new_failed_hosts = failed_hosts + [target]
+        # 更新失败主机状态（更新internal_hosts）
+        updated_hosts = []
+        for h in internal_hosts:
+            if isinstance(h, dict) and h.get("ip") == target:
+                h["status"] = "failed"
+            updated_hosts.append(h)
 
         # 选择下一个目标（排除失败主机）
         next_target = _ai_select_next_target(
             internal_hosts,
-            {"failed_lateral_hosts": new_failed_hosts, "active_sessions": active_sessions}
+            {"failed_hosts": [target], "active_sessions": active_sessions}
         )
 
         return {
             "error": error_msg,
-            "failed_lateral_hosts": [target],
+            "internal_hosts": updated_hosts,
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.0,
             "current_internal_target": next_target
         }
 
     except Exception as e:
         logger.warning(f"异常: {e}")
+        # 更新失败主机状态
+        updated_hosts = []
+        for h in internal_hosts:
+            if isinstance(h, dict) and h.get("ip") == target:
+                h["status"] = "failed"
+            updated_hosts.append(h)
         return {
             "error": f"横向移动异常: {str(e)}",
-            "failed_lateral_hosts": [target],
+            "internal_hosts": updated_hosts,
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 1.0
         }
 
@@ -1110,12 +1124,12 @@ def _execute_lateral_via_proxy(target: str, method: str, cred: Dict, proxy_info:
     return {"error": f"不支持的代理方法: {method}"}
 
 
-def _execute_lateral_via_pivot(target: str, method: str, cred: Dict, shell_session: Dict) -> Dict:
+def _execute_lateral_via_pivot(target: str, method: str, cred: Dict, session_info: Dict) -> Dict:
     """通过跳板机执行横向移动"""
     if not REMOTE_EXEC_AVAILABLE:
         return {"error": "远程执行模块不可用"}
 
-    session_id = shell_session.get("session_id", "")
+    session_id = session_info.get("session_id", "")
     if not session_id:
         return {"error": "无有效会话"}
 
@@ -1241,9 +1255,8 @@ def privilege_escalation_node(state: Dict) -> Dict:
     """
     active_sessions = state.get("active_sessions") or []
     credentials = state.get("credentials") or []
-    shell_session = state.get("shell_session", {})
 
-    if not active_sessions and not shell_session:
+    if not active_sessions:
         return {
             "error": "没有活跃会话可用于提权",
             "internal_mode": False,
@@ -1251,9 +1264,9 @@ def privilege_escalation_node(state: Dict) -> Dict:
         }
 
     # 选择会话进行提权
-    session = active_sessions[0] if active_sessions else shell_session
+    session = active_sessions[0]
     target = session.get("host", "")
-    os_type = session.get("os_type", shell_session.get("os_type", "linux"))
+    os_type = session.get("os_type", "linux")
     is_admin = session.get("is_admin", False)
 
     logger.info(f"AI分析 {target} ({os_type}) 的提权路径...")
@@ -1261,20 +1274,20 @@ def privilege_escalation_node(state: Dict) -> Dict:
     # 已有管理员权限，直接凭据转储
     if is_admin:
         logger.info(f"已有管理员权限，执行凭据转储")
-        return _ai_credential_dump(state, session, active_sessions, credentials, shell_session)
+        return _ai_credential_dump(state, session, active_sessions, credentials)
 
     # AI决策提权策略（包含备选方法）
     priv_strategy = _ai_decide_privesc_strategy(target, os_type, session, state)
     logger.info(f"AI决策: {priv_strategy.get('method')} - {priv_strategy.get('reason', '')}")
 
     # 执行提权（支持自动切换）
-    result = _execute_privesc_with_fallback(state, shell_session, priv_strategy, os_type, session)
+    result = _execute_privesc_with_fallback(state, session, priv_strategy, os_type, session)
 
     if result.get("success"):
         logger.info(f"提权成功！方法: {result.get('method_used', priv_strategy.get('method'))}")
         session["is_admin"] = True
         session["is_system"] = result.get("is_system", False)
-        return _ai_credential_dump(state, session, active_sessions, credentials, shell_session)
+        return _ai_credential_dump(state, session, active_sessions, credentials)
 
     # 所有方法都失败
     logger.warning(f"提权失败: {result.get('error', '')}，已尝试 {result.get('attempts', 0)} 种方法")
@@ -1290,8 +1303,8 @@ def privilege_escalation_node(state: Dict) -> Dict:
 def _ai_decide_privesc_strategy(target: str, os_type: str, session: Dict, state: Dict) -> Dict:
     """AI决策提权策略 - 智能环境感知，支持失败自动切换"""
     is_admin = session.get("is_admin", False)
-    shell_session = state.get("shell_session", {})
-    session_id = shell_session.get("session_id", "")
+    active_sessions = state.get("active_sessions", [])
+    session_id = active_sessions[0].get("session_id", "") if active_sessions else ""
 
     # 收集详细环境信息
     env_info = _collect_privesc_env_info(session_id, os_type)
@@ -1398,7 +1411,7 @@ def _fallback_privesc_strategy(os_type: str, env_info: Dict, methods: List[Dict]
 
 
 
-def _execute_privesc_with_fallback(state: Dict, shell_session: Dict, strategy: Dict, os_type: str, session: Dict) -> Dict:
+def _execute_privesc_with_fallback(state: Dict, session_info: Dict, strategy: Dict, os_type: str, session: Dict) -> Dict:
     """执行提权 - 支持失败后自动切换备选方法"""
     attempted_methods = []
     all_methods = strategy.get("all_methods", [])
@@ -1415,7 +1428,7 @@ def _execute_privesc_with_fallback(state: Dict, shell_session: Dict, strategy: D
             method_config = {"name": method_name, "cmd": ""}
 
         # 执行提权
-        result = _try_single_privesc_method(state, shell_session, method_config, os_type, session)
+        result = _try_single_privesc_method(state, session_info, method_config, os_type, session)
         attempted_methods.append({"method": method_name, "success": result.get("success"), "error": result.get("error", "")})
 
         if result.get("success"):
@@ -1426,10 +1439,10 @@ def _execute_privesc_with_fallback(state: Dict, shell_session: Dict, strategy: D
     return {"success": False, "error": "所有方法失败", "attempts": len(attempted_methods), "attempted_methods": attempted_methods}
 
 
-def _try_single_privesc_method(state: Dict, shell_session: Dict, method: Dict, os_type: str, session: Dict) -> Dict:
+def _try_single_privesc_method(state: Dict, session_info: Dict, method: Dict, os_type: str, session: Dict) -> Dict:
     """尝试单个提权方法"""
-    if shell_session.get("session_id") and REMOTE_EXEC_AVAILABLE:
-        return _execute_privesc_via_session(shell_session, {"commands": [method.get("cmd", "")], "method": method["name"]}, os_type)
+    if session_info.get("session_id") and REMOTE_EXEC_AVAILABLE:
+        return _execute_privesc_via_session(session_info, {"commands": [method.get("cmd", "")], "method": method["name"]}, os_type)
     elif ADVANCED_OPS_AVAILABLE:
         result = PrivilegeEscalation.attempt_escalation(session, method["name"])
         return {"success": result.status == OperationStatus.SUCCESS, "is_system": result.status == OperationStatus.SUCCESS, "error": result.message if result.status != OperationStatus.SUCCESS else ""}
@@ -1453,12 +1466,11 @@ def _execute_privesc_advanced(session: Dict, strategy: Dict) -> Dict:
 
 
 def _ai_credential_dump(state: Dict, session: Dict,
-                        active_sessions: List, credentials: List,
-                        shell_session: Dict) -> Dict:
+                        active_sessions: List, credentials: List) -> Dict:
     """AI驱动的凭据转储"""
     new_credentials = list(credentials)
     target = session.get("host", "")
-    os_type = session.get("os_type", shell_session.get("os_type", "linux"))
+    os_type = session.get("os_type", "linux")
 
     logger.info(f"AI决策凭据收集策略...")
 
@@ -1499,13 +1511,13 @@ def _ai_credential_dump(state: Dict, session: Dict,
         strategy = {"methods": ["默认"], "commands": []}
 
     # 执行凭据收集
-    if shell_session.get("session_id") and REMOTE_EXEC_AVAILABLE:
+    if session.get("session_id") and REMOTE_EXEC_AVAILABLE:
         session_manager = get_session_manager()
-        exec_session = session_manager.get_session(shell_session["session_id"])
+        exec_session = session_manager.get_session(session["session_id"])
 
         if exec_session:
             # 检查会话健康状态
-            health = session_manager.check_session_health(shell_session["session_id"])
+            health = session_manager.check_session_health(session["session_id"])
             if not health.get("alive"):
                 logger.warning(f"会话已断开: {health.get('status')}")
             else:
@@ -1657,7 +1669,7 @@ def credential_gather_node(state: Dict) -> Dict:
     target = state.get("current_internal_target", "")
     internal_hosts = state.get("internal_hosts") or []
     proxy_info = state.get("proxy_info", {})
-    shell_session = state.get("shell_session", {})
+    active_sessions = state.get("active_sessions", [])
 
     if not target:
         return {"error": "没有指定目标"}
@@ -1714,8 +1726,8 @@ def credential_gather_node(state: Dict) -> Dict:
                 }
 
         elif method == "session_dump":
-            if shell_session.get("session_id") and REMOTE_EXEC_AVAILABLE:
-                result = _execute_session_cred_dump(shell_session)
+            if active_sessions and active_sessions[0].get("session_id") and REMOTE_EXEC_AVAILABLE:
+                result = _execute_session_cred_dump(active_sessions[0])
                 new_credentials.extend(result.get("credentials", []))
 
         elif method == "kerberoast":
@@ -2062,10 +2074,10 @@ def flag_search_node(state: Dict) -> Dict:
         5. 标记主机已完成flag搜索
     """
     active_sessions = state.get("active_sessions") or []
-    shell_session = state.get("shell_session", {})
-    compromised_hosts = state.get("compromised_hosts") or []
     found_flags = state.get("found_flags") or []
     internal_hosts = state.get("internal_hosts") or []
+    # 从internal_hosts获取已攻陷主机
+    compromised_hosts = [h.get("ip") for h in internal_hosts if isinstance(h, dict) and h.get("status") == "compromised"]
 
     # ========== 终止条件1：时间限制检查 ==========
     start_time = state.get("start_time", 0)
@@ -2079,7 +2091,7 @@ def flag_search_node(state: Dict) -> Dict:
             "execution_steps": state.get("execution_steps", 0) + 1
         }
 
-    if not active_sessions and not shell_session:
+    if not active_sessions:
         return {
             "error": "没有可用的会话进行Flag搜索",
             "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5
@@ -2092,9 +2104,10 @@ def flag_search_node(state: Dict) -> Dict:
     newly_compromised = []
 
     # 获取会话信息
-    session_id = shell_session.get("session_id", "")
-    os_type = shell_session.get("os_type", "linux")
-    current_target = shell_session.get("target", "")
+    first_session = active_sessions[0]
+    session_id = first_session.get("session_id", "")
+    os_type = first_session.get("os_type", "linux")
+    current_target = first_session.get("host", "")
 
     if REMOTE_EXEC_AVAILABLE and session_id:
         session_manager = get_session_manager()
@@ -2151,6 +2164,13 @@ def flag_search_node(state: Dict) -> Dict:
     unexplored = [h.get("ip") for h in internal_hosts
                   if isinstance(h, dict) and h.get("ip") not in all_compromised]
 
+    # 更新internal_hosts状态
+    updated_hosts = []
+    for h in internal_hosts:
+        if isinstance(h, dict) and h.get("ip") in newly_compromised:
+            h["status"] = "compromised"
+        updated_hosts.append(h)
+
     # 检查是否所有主机都已攻陷且找到flag
     if len(internal_hosts) > 0 and len(all_compromised) >= len(internal_hosts):
         if len(total_flags) >= len(all_compromised):
@@ -2158,7 +2178,7 @@ def flag_search_node(state: Dict) -> Dict:
             logger.info(f"任务完成: {len(all_compromised)}台主机攻陷, {len(total_flags)}个flag")
             return {
                 "found_flags": new_flags,
-                "compromised_hosts": newly_compromised,
+                "internal_hosts": updated_hosts,
                 "current_compromise_phase": "complete",
                 "execution_steps": state.get("execution_steps", 0) + 1
             }
@@ -2189,7 +2209,7 @@ def flag_search_node(state: Dict) -> Dict:
 
     return {
         "found_flags": new_flags,
-        "compromised_hosts": newly_compromised,
+        "internal_hosts": updated_hosts,
         "current_compromise_phase": next_phase,
         "execution_steps": state.get("execution_steps", 0) + 1
     }
@@ -2430,9 +2450,13 @@ def get_next_internal_target(state: Dict) -> str:
     3. 空字符串 (所有主机已攻陷或已失败)
     """
     internal_hosts = state.get("internal_hosts") or []
-    compromised_hosts = state.get("compromised_hosts") or []
     active_sessions = state.get("active_sessions") or []
-    failed_hosts = state.get("failed_lateral_hosts") or []
+
+    # 从internal_hosts获取已攻陷和失败的主机
+    compromised_hosts = [h.get("ip") for h in internal_hosts
+                        if isinstance(h, dict) and h.get("status") == "compromised"]
+    failed_hosts = [h.get("ip") for h in internal_hosts
+                   if isinstance(h, dict) and h.get("status") == "failed"]
 
     # 从活跃会话中也获取已攻陷主机
     session_hosts = [s.get("host") for s in active_sessions if s.get("host")]

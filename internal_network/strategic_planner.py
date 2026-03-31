@@ -128,7 +128,8 @@ class StrategicPlanner:
         credentials = state.get("credentials") or []
         active_sessions = state.get("active_sessions") or []
         found_flags = state.get("found_flags") or []
-        compromised_hosts = state.get("compromised_hosts") or []
+        # 从internal_hosts获取已攻陷主机
+        compromised_hosts = [h.get("ip") for h in internal_hosts if isinstance(h, dict) and h.get("status") == "compromised"]
 
         # 确定当前阶段
         phase = self._determine_phase(state)

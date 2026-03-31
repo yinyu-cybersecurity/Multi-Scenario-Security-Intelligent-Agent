@@ -102,16 +102,18 @@ def has_valid_shell_session(state: Dict) -> bool:
         if has_valid_shell_session(state):
             # 有会话时的处理
     """
-    shell_session = state.get("shell_session")
+    active_sessions = state.get("active_sessions", [])
 
-    if not shell_session:
+    if not active_sessions:
         return False
 
-    if not isinstance(shell_session, dict):
+    # 检查第一个会话是否有有效session_id
+    session = active_sessions[0]
+    if not isinstance(session, dict):
         return False
 
     # 检测多种可能的session_id字段名
-    session_id = shell_session.get("session_id") or shell_session.get("id")
+    session_id = session.get("session_id") or session.get("id")
 
     if not session_id:
         return False
@@ -147,19 +149,20 @@ def get_shell_session_info(state: Dict) -> Dict[str, Any]:
         }
         如果无有效会话，返回空字典 {}
     """
-    if not has_valid_shell_session(state):
+    active_sessions = state.get("active_sessions", [])
+    if not active_sessions:
         return {}
 
-    shell_session = state.get("shell_session")
+    session = active_sessions[0]
 
     # 标准化字段名
     result = {
-        "session_id": shell_session.get("session_id") or shell_session.get("id"),
-        "type": shell_session.get("type", shell_session.get("shell_type", "unknown")),
-        "os_type": shell_session.get("os_type", "linux"),
-        "target": shell_session.get("target", shell_session.get("host", "")),
-        "is_admin": shell_session.get("is_admin", False),
-        "status": shell_session.get("status", "active"),
+        "session_id": session.get("session_id") or session.get("id"),
+        "type": session.get("type", session.get("shell_type", "unknown")),
+        "os_type": session.get("os_type", "linux"),
+        "target": session.get("host", session.get("target", "")),
+        "is_admin": session.get("is_admin", False),
+        "status": session.get("status", "active"),
     }
 
     return result

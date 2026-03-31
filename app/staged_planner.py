@@ -822,8 +822,8 @@ class StagedPlanner:
             if len(internal_hosts) == 0:
                 strategies.append("扩大扫描范围，使用更多端口")
 
-            shell_session = state.get("shell_session")
-            if not shell_session:
+            active_sessions = state.get("active_sessions", [])
+            if not active_sessions:
                 strategies.append("检查隧道状态，重新建立连接")
 
         return strategies

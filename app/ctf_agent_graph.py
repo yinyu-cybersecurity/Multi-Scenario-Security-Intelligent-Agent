@@ -36,7 +36,6 @@ def log(msg: str, node: str = "main", level: str = "info"):
     node_log(node, msg, level)
 
 # 节点日志快捷函数
-def log_recon(msg: str): log(msg, node="recon")
 def log_analyst(msg: str): log(msg, node="analyst")
 def log_attacker(msg: str): log(msg, node="attacker")
 def log_verifier(msg: str): log(msg, node="verifier")
@@ -758,495 +757,8 @@ def _llm_detect_challenge_type(task_name: str, task_desc: str,
         return {}
 
 
-def recon_node(state: CTFState) -> Dict:
-    """
-    [侦察兵] (LLM 驱动的特征提取 + 自动化扫描)
-
-    职责:
-        1. 获取原始页面内容 (HTTP)
-        2. 对 IP 目标执行 fscan 快速扫描
-        3. 执行 dirsearch 目录扫描
-        4. 计算页面指纹用于去重
-        5. 调用 LLM 进行深度特征提取
-    """
-    url = state.get('current_url', state['target_url'])
-    task_name = state.get("task_name", "")
-    task_desc = state.get("task_description", "")
-
-    # 获取已扫描记录，防止重复扫描
-    scanned_ips = state.get("scanned_ips", []) or []
-    scanned_urls = state.get("scanned_urls", []) or []
-
-    log(f"📡 [侦察] {url}")
-
-    # =========================================================================
-    # 新增: 检测是否是纯 IP 目标，执行 fscan 扫描
-    # =========================================================================
-    ip_match = re.match(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$', url.split('/')[0].split('?')[0])
-    if not ip_match:
-        # 尝试从 URL 中提取 IP
-        ip_match = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', url)
-
-    fscan_findings = []
-    if ip_match:
-        target_ip = ip_match.group(1)
-        if target_ip not in scanned_ips:
-            log(f"   🔍 [fscan] 扫描目标 IP: {target_ip}")
-            try:
-                fscan_result = ToolRegistry.execute_cached("fscan", target_ip, {
-                    "scan_type": "quick"
-                })
-                if fscan_result and fscan_result.get("result", {}).get("success"):
-                    result_data = fscan_result.get("result", {})
-                    # fscan 返回 hosts 和 vulnerabilities (由 AI 解析)
-                    hosts = result_data.get("hosts", [])
-                    vulns = result_data.get("vulnerabilities", [])
-                    # 合并为findings格式
-                    findings = []
-                    for v in vulns:
-                        # 兼容两种格式：AI解析返回 target，正则解析返回 ip
-                        vuln_target = v.get("target") or v.get("ip", target_ip)
-                        # 提取端口（可能是数字或 "ip:port" 格式）
-                        vuln_port = v.get("port", "?")
-                        if isinstance(vuln_target, str) and ":" in vuln_target:
-                            parts = vuln_target.split(":")
-                            vuln_target = parts[0]
-                            vuln_port = parts[1] if len(parts) > 1 else vuln_port
-
-                        findings.append({
-                            "type": v.get("type", "vulnerability"),
-                            "target": vuln_target,
-                            "port": vuln_port,
-                            "info": v.get("info", v.get("description", "")),
-                            "severity": v.get("severity", "high"),
-                            "poc": v.get("poc", ""),
-                            "cve": v.get("cve", "")
-                        })
-                    for h in hosts:
-                        for p in h.get("ports", []):
-                            findings.append({
-                                "type": "port",
-                                "target": h.get("ip", "?"),
-                                "port": p.get("port", "?"),
-                                "info": f"{p.get('service', 'unknown')} {p.get('state', '')}"
-                            })
-                    fscan_findings = findings
-                    if findings:
-                        log(f"   🔥 fscan 发现 {len(findings)} 个潜在漏洞/服务")
-                        for f in findings[:5]:
-                            vuln_type = f.get("type", "unknown")
-                            port = f.get("port", "?")
-                            info = f.get("info", "")[:50]
-                            log(f"      - [{vuln_type}] {target_ip}:{port} {info}")
-            except Exception as e:
-                log(f"   ⚠️ [fscan] 扫描失败: {e}")
-            scanned_ips = scanned_ips + [target_ip]
-        else:
-            log(f"   ⏭️ [fscan] IP {target_ip} 已扫描过，跳过")
-
-    # =========================================================================
-    # dirsearch 由分析兵决策是否需要，不在此处自动执行
-    # 分析兵可通过 structured_guidance.guidance_type="need_dirsearch" 请求扫描
-    # =========================================================================
-    dirsearch_paths = []
-    # 记录扫描状态，避免重复
-    scan_url = url.split('?')[0].split('#')[0]
-    if scan_url not in scanned_urls and scan_url.startswith('http'):
-        scanned_urls = scanned_urls + [scan_url]
-
-    # =========================================================================
-    # 1. 发起 HTTP 请求获取原始 HTML
-    # =========================================================================
-    # 如果是纯 IP 且没有 HTTP 前缀，尝试添加
-    http_url = url
-    if ip_match and not url.startswith('http'):
-        http_url = f"http://{url}"
-
-    try:
-        import requests
-        resp = requests.get(http_url, timeout=config.HTTP_GET_TIMEOUT, verify=False, allow_redirects=True)
-        raw_html = resp.text
-
-        # 记录重定向信息
-        redirect_chain = []
-        final_url = resp.url
-        if resp.history:
-            for r in resp.history:
-                redirect_chain.append({
-                    "status_code": r.status_code,
-                    "url": r.url,
-                    "location": r.headers.get('Location', '')
-                })
-            log(f"   🔀 重定向: {http_url} -> {final_url}")
-            if "?" in final_url:
-                log(f"   📌 发现参数: {final_url.split('?', 1)[1]}")
-
-        # 记录基准响应信息
-        baseline = {
-            "status_code": resp.status_code,
-            "content_length": len(raw_html),
-            "response_time": resp.elapsed.total_seconds(),
-            "final_url": final_url,
-            "redirect_chain": redirect_chain,
-            "server": resp.headers.get("Server", ""),
-            "x_powered_by": resp.headers.get("X-Powered-By", "")
-        }
-        log(f"   状态码: {resp.status_code}, 长度: {len(raw_html)}")
-
-        # 检测常见框架指纹 - 增强版
-        server_header = resp.headers.get("Server", "").lower()
-        x_powered_by = resp.headers.get("X-Powered-By", "").lower()
-        html_lower = raw_html.lower()
-
-        detected_frameworks = []
-
-        # Tomcat检测
-        if "tomcat" in server_header or "tomcat" in html_lower:
-            version_match = re.search(r'tomcat[/\s]*(\d+\.\d+\.\d+)', server_header + raw_html, re.I)
-            version = version_match.group(1) if version_match else "unknown"
-            detected_frameworks.append({"name": "Tomcat", "version": version})
-            log(f"   🔥 检测到 Apache Tomcat/{version}!")
-
-        # Spring检测
-        if "spring" in x_powered_by or "spring" in html_lower or "whitelabel error page" in html_lower:
-            detected_frameworks.append({"name": "Spring"})
-            log(f"   🔥 检测到 Spring 框架!")
-
-        # ThinkPHP检测
-        if "thinkphp" in html_lower or "thinkphp" in server_header or "thinkphp" in x_powered_by:
-            detected_frameworks.append({"name": "ThinkPHP"})
-            log(f"   🔥 检测到 ThinkPHP 框架!")
-
-        # Laravel检测
-        if "laravel" in html_lower or "laravel" in x_powered_by:
-            detected_frameworks.append({"name": "Laravel"})
-            log(f"   🔥 检测到 Laravel 框架!")
-
-        # WebLogic检测
-        if "weblogic" in server_header or "weblogic" in html_lower:
-            detected_frameworks.append({"name": "WebLogic"})
-            log(f"   🔥 检测到 WebLogic!")
-
-        # Shiro检测 (rememberMe cookie)
-        if "rememberme" in str(resp.cookies).lower() or "shiro" in html_lower:
-            detected_frameworks.append({"name": "Shiro"})
-            log(f"   🔥 检测到 Shiro 框架!")
-
-        # 存储检测到的框架，供后续使用
-        if detected_frameworks:
-            baseline["detected_frameworks"] = detected_frameworks
-
-    except Exception as e:
-        log(f"   ❌ 请求失败: {e}")
-        raw_html = "<html><body><!-- Connection Failed --></body></html>"
-        baseline = {"status_code": 0, "content_length": 0, "response_time": 0}
-
-    fingerprint = calculate_dom_fingerprint(raw_html)
-
-    # =========================================================================
-    # [P0 Critical] 结构化HTML提取 - 在截断之前进行
-    # =========================================================================
-    # 提取关键攻击面信息：隐藏字段、表单端点、JS端点、注释、meta标签
-    # 这些信息可能因截断而丢失，必须先提取再存储
-    html_extraction = extract_structured_html(raw_html)
-
-    # 记录提取结果摘要
-    extraction_summary = []
-    if html_extraction["hidden_fields"]:
-        extraction_summary.append(f"隐藏字段: {len(html_extraction['hidden_fields'])}个")
-        for name, value in list(html_extraction["hidden_fields"].items())[:5]:
-            log(f"      📋 hidden[{name}] = '{value[:50]}...'" if len(value) > 50 else f"      📋 hidden[{name}] = '{value}'")
-    if html_extraction["form_endpoints"]:
-        extraction_summary.append(f"表单: {len(html_extraction['form_endpoints'])}个")
-        for form in html_extraction["form_endpoints"][:3]:
-            log(f"      📝 form[{form.get('action', 'N/A')}] method={form.get('method', 'GET')} fields={len(form.get('fields', []))}")
-    if html_extraction["script_endpoints"]:
-        extraction_summary.append(f"JS端点: {len(html_extraction['script_endpoints'])}个")
-    if html_extraction["comments"]:
-        extraction_summary.append(f"注释: {len(html_extraction['comments'])}个")
-        for comment in html_extraction["comments"][:3]:
-            log(f"      💬 <!-- {comment[:100]}... -->" if len(comment) > 100 else f"      💬 <!-- {comment} -->")
-    if html_extraction["api_endpoints"]:
-        extraction_summary.append(f"API端点: {len(html_extraction['api_endpoints'])}个")
-
-    if extraction_summary:
-        log(f"   ✅ 结构化提取: {', '.join(extraction_summary)}")
-
-    # 去重检查
-    visited_fps = state.get("visited_fingerprints") or []
-    if fingerprint in visited_fps:
-        log(f"   ⏭️ 页面重复，跳过 LLM 分析")
-        return {
-            "visited_urls": [url],
-            "scanned_ips": scanned_ips,
-            "scanned_urls": scanned_urls
-        }
-
-    # =========================================================================
-    # 2. 构建 LLM 提示，包含扫描结果
-    # =========================================================================
-    # 构建扫描结果摘要
-    scan_summary = ""
-    if fscan_findings:
-        scan_summary += f"\n### fscan 扫描发现 ({len(fscan_findings)} 项)\n"
-        for f in fscan_findings[:10]:
-            scan_summary += f"- [{f.get('type', '?')}] {f.get('target', '?')}:{f.get('port', '?')} {f.get('info', '')[:100]}\n"
-
-    if dirsearch_paths:
-        scan_summary += f"\n### dirsearch 发现的路径 ({len(dirsearch_paths)} 条)\n"
-        for p in dirsearch_paths[:15]:
-            scan_summary += f"- {p}\n"
-
-    # 构建响应头信息
-    headers_info = ""
-    if baseline.get("server"):
-        headers_info += f"Server: {baseline['server']}\n"
-    if baseline.get("x_powered_by"):
-        headers_info += f"X-Powered-By: {baseline['x_powered_by']}\n"
-
-    # 2. 调用 LLM 进行智能特征提取
-
-    # 构建结构化提取摘要（用于LLM提示）
-    extraction_info = ""
-    if html_extraction["hidden_fields"]:
-        extraction_info += f"\n### 预提取的隐藏字段 ({len(html_extraction['hidden_fields'])}个)\n"
-        for name, value in html_extraction["hidden_fields"].items():
-            extraction_info += f"- hidden[{name}] = \"{value[:100]}...\"\n" if len(value) > 100 else f"- hidden[{name}] = \"{value}\"\n"
-    if html_extraction["form_endpoints"]:
-        extraction_info += f"\n### 预提取的表单信息 ({len(html_extraction['form_endpoints'])}个)\n"
-        for form in html_extraction["form_endpoints"]:
-            fields_str = ", ".join([f"{f['name']}({f['type']})" for f in form.get("fields", [])])
-            extraction_info += f"- form action=\"{form.get('action', '#')}\" method=\"{form.get('method', 'GET')}\" fields=[{fields_str}]\n"
-    if html_extraction["script_endpoints"]:
-        extraction_info += f"\n### 预提取的JS端点 ({len(html_extraction['script_endpoints'])}个)\n"
-        for endpoint in html_extraction["script_endpoints"][:20]:
-            extraction_info += f"- {endpoint}\n"
-    if html_extraction["comments"]:
-        extraction_info += f"\n### HTML注释 ({len(html_extraction['comments'])}个)\n"
-        for comment in html_extraction["comments"][:10]:
-            extraction_info += f"- <!-- {comment[:200]} -->\n" if len(comment) > 200 else f"- <!-- {comment} -->\n"
-    if html_extraction["api_endpoints"]:
-        extraction_info += f"\n### 预提取的API端点 ({len(html_extraction['api_endpoints'])}个)\n"
-        for endpoint in html_extraction["api_endpoints"][:20]:
-            extraction_info += f"- {endpoint}\n"
-    if html_extraction["meta_tags"]:
-        extraction_info += f"\n### Meta标签\n"
-        for name, content in html_extraction["meta_tags"].items():
-            extraction_info += f"- meta[{name}] = \"{content[:100]}\"\n" if len(content) > 100 else f"- meta[{name}] = \"{content}\"\n"
-
-    recon_prompt = f"""
-你是一个高级 Web 渗透测试侦察专家。你的任务是从 HTML 源码中提取攻击面。
-特别注意：如果题目名称或描述中提到了特定的参数名，请务必将其包含在 input_vectors 中。
-
-### 题目背景
-- 名称: {task_name}
-- 描述: {task_desc}
-
-### 响应头信息
-{headers_info if headers_info else "无特殊响应头"}
-{scan_summary}
-{extraction_info if extraction_info else ""}
-### 待分析源码（已截断，请结合预提取信息）
-```html
-{raw_html[:config.HTML_MAX_LENGTH] if config.USE_LARGE_CONTEXT else raw_html[:config.HTML_TRUNCATE_LENGTH]}
-```
-
-### 输出要求 (JSON ONLY)
-{{
-  "tech_stack": ["识别到的技术框架"],
-  "input_vectors": ["格式 type:name, 如 GET:id, POST:username，务必包含预提取的隐藏字段"],
-  "sensitive_paths": ["发现的敏感路径，结合预提取的API端点"],
-  "vuln_hints": ["可能的漏洞提示，结合扫描结果和预提取信息"],
-  "framework": "识别到的主要框架，如 thinkphp, laravel, spring 等"
-}}
-"""
-
-    try:
-        response_text = llm_client.call_chat_completion(
-            model=config.EXPLORER_MODEL,
-            messages=[{"role": "user", "content": recon_prompt}],
-            temperature=0.1,
-            json_mode=True
-        )
-
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0]
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0]
-
-        recon_data = json.loads(response_text)
-    except Exception as e:
-        log(f"❌ [Recon] LLM 提取失败: {e}")
-        recon_data = {}
-
-    # 合并 dirsearch 发现的敏感路径
-    discovered_paths = recon_data.get("sensitive_paths", [])
-    if dirsearch_paths:
-        for p in dirsearch_paths:
-            if p not in discovered_paths:
-                discovered_paths.append(p)
-
-    features: PageFeatures = {
-        "tech_stack": recon_data.get("tech_stack", []),
-        "input_vectors": recon_data.get("input_vectors", []),
-        "sensitive_paths": discovered_paths[:20],  # 限制数量
-        "dom_structure_hash": fingerprint,
-        "form_structure": html_extraction["form_endpoints"],  # 使用结构化提取的表单数据
-        "scripts": [],
-        "cookies": {},
-        "headers": {"server": baseline.get("server", ""), "x_powered_by": baseline.get("x_powered_by", "")},
-        "html_extraction": html_extraction  # [P0] 存储完整的结构化提取数据
-    }
-
-    page_history = state.get("page_history", {})
-    page_diff_manager.save_page(http_url, raw_html.encode('utf-8'), page_history)
-
-    # 如果发现框架，记录到 analyst_intel 并自动触发CVE扫描
-    framework = recon_data.get("framework", "")
-    vuln_hints = recon_data.get("vuln_hints", [])
-    analyst_intel_parts = []
-
-    # 并行扫描发现的漏洞候选（用于传递给analyst）
-    parallel_scan_vuln_candidates = []
-
-    # 处理检测到的框架
-    detected_frameworks = baseline.get("detected_frameworks", [])
-    if detected_frameworks:
-        for fw in detected_frameworks:
-            fw_name = fw.get("name", "")
-            fw_version = fw.get("version", "")
-            analyst_intel_parts.append(f"[框架识别] {fw_name}" + (f"/{fw_version}" if fw_version else ""))
-
-            # [已移除] 自动触发并行CVE扫描的硬编码逻辑
-            # 改为通过知识库检索获取扫描策略
-            # if fw_name in ["Tomcat", "Spring", "WebLogic", "Shiro", "ThinkPHP"]:
-            #     ... 原硬编码扫描逻辑已删除 ...
-
-    if framework and framework not in [fw.get("name") for fw in detected_frameworks]:
-        analyst_intel_parts.append(f"[框架识别] {framework}")
-    if fscan_findings:
-        analyst_intel_parts.append(f"[fscan发现] {len(fscan_findings)} 个潜在漏洞点")
-    if vuln_hints:
-        analyst_intel_parts.append(f"[漏洞提示] {'; '.join(vuln_hints[:5])}")
-
-    # 场景检测
-    scene_detector = SceneDetector()
-    detected_scenes = scene_detector.detect(features, baseline, raw_html)
-
-    # 确定聚焦场景（优先级：检测到的框架 > LLM识别的框架 > None）
-    focused_scene = None
-    if detected_frameworks:
-        # 取第一个检测到的框架作为聚焦场景
-        fw = detected_frameworks[0]
-        fw_name = fw.get("name", "")
-        fw_version = fw.get("version", "")
-        focused_scene = f"{fw_name}/{fw_version}" if fw_version else fw_name
-    elif framework:
-        focused_scene = framework
-
-    # 如果识别到新场景，重置场景攻击计数
-    prev_focused_scene = state.get("focused_scene", "")
-    if focused_scene and focused_scene != prev_focused_scene:
-        log(f"   🎯 新的聚焦场景: {focused_scene}")
-        scene_attack_attempts = 0
-        scene_exhausted = False
-    else:
-        scene_attack_attempts = state.get("scene_attack_attempts", 0)
-        scene_exhausted = state.get("scene_exhausted", False)
-
-    # 如果发生重定向，同时记录最终 URL
-    visited_urls = [url]
-    if baseline.get("final_url") and baseline["final_url"] != url:
-        visited_urls.append(baseline["final_url"])
-        page_diff_manager.save_page(baseline["final_url"], raw_html.encode('utf-8'), page_history)
-
-    # 将 fscan 发现的漏洞转换为 vuln_candidates 格式
-    fscan_vuln_candidates = []
-    for f in fscan_findings:
-        vuln_type = f.get("type", "unknown")
-        target = f.get("target", "")
-        port = f.get("port", "")
-        info = f.get("info", "")
-
-        # 根据漏洞类型确定置信度
-        confidence = 0.7  # 默认置信度
-        if vuln_type == "weak_password":
-            confidence = 0.95  # 弱口令置信度很高
-        elif vuln_type == "unauthorized":
-            confidence = 0.9
-        elif vuln_type == "vulnerability":
-            confidence = 0.85
-        elif vuln_type == "port":
-            confidence = 0.5  # 仅端口开放，置信度较低
-
-        # [核心修复] 确定 URL 绑定
-        # Web 端口列表 - 使用配置
-        web_ports = config.WEB_PORTS
-        port_num = port if isinstance(port, int) else (int(port) if str(port).isdigit() else 0)
-
-        if port_num in web_ports or vuln_type in config.WEB_VULN_TYPES:
-            # Web 漏洞，绑定到 http_url
-            vuln_url = http_url
-        elif target:
-            # 非 Web 漏洞，构造协议 URL
-            if port_num == 22:
-                vuln_url = f"ssh://{target}:{port}" if port else f"ssh://{target}"
-            elif port_num in config.DATABASE_PORTS:
-                vuln_url = f"db://{target}:{port}"
-            elif port_num in config.MAIL_PORTS:
-                vuln_url = f"tcp://{target}:{port}"
-            else:
-                vuln_url = f"http://{target}:{port}" if port else f"http://{target}"
-        else:
-            vuln_url = http_url
-
-        fscan_vuln_candidates.append({
-            "type": vuln_type,
-            "location": f"{target}:{port}" if port else target,
-            "description": info,
-            "confidence": confidence,
-            "source": "fscan",
-            "evidence": info,
-            "url": vuln_url
-        })
-
-    # [核心修复] 合并 fscan 发现和并行扫描发现的漏洞候选
-    all_vuln_candidates = fscan_vuln_candidates + parallel_scan_vuln_candidates
-
-    res = {
-        "page_features": features,
-        "raw_html_snippet": raw_html[:config.HTML_MAX_LENGTH] if config.USE_LARGE_CONTEXT else raw_html[:config.HTML_TRUNCATE_LENGTH],
-        "baseline_response": baseline,
-        "page_history": page_history,
-        "visited_urls": visited_urls,
-        "visited_fingerprints": [fingerprint],
-        "scanned_ips": scanned_ips,
-        "scanned_urls": scanned_urls,
-        "execution_steps": state.get("execution_steps", 0) + 1,
-        "detected_scenes": detected_scenes,
-        "focused_scene": focused_scene,
-        "scene_attack_attempts": scene_attack_attempts,
-        "scene_exhausted": scene_exhausted,
-        "vuln_candidates": all_vuln_candidates,  # 合并所有漏洞候选
-        # 拓扑初始化 - 添加入口URL（即使没有dirsearch路径也初始化入口节点）
-        "site_topology": {http_url: dirsearch_paths[:20] if dirsearch_paths else []},
-        "node_metadata": {
-            http_url: {
-                "status": baseline.get("status_code", 200),
-                "title": recon_data.get("title", ""),
-                "tech_stack": features.get("tech_stack", []),
-                "last_seen": time.time()
-            }
-        }
-    }
-
-    # [关键修复] 如果发现了漏洞，直接添加攻击动作
-    if all_vuln_candidates:
-        log(f"   🎯 发现 {len(all_vuln_candidates)} 个漏洞候选，优先处理")
-        # 高置信度漏洞已在 all_vuln_candidates 中，会被传递给 analyst_node
-
-    log_node_data("recon", {"url": url}, res)
-    return res
+# [已移除] recon_node - 功能已合并到 analyst_node 开头
+# recon_node 原有的页面获取、框架检测、特征提取功能现在由 analyst_node 自动执行
 
 
 def _ai_analyze_exploit_chain(vuln_candidates: List[Dict], page_features: Dict) -> Optional[Dict]:
@@ -1295,7 +807,7 @@ def _ai_analyze_exploit_chain(vuln_candidates: List[Dict], page_features: Dict) 
     "type": "single/chain",
     "description": "漏洞链描述",
     "steps": [
-        {{"step": 1, "vuln_type": "类型", "action": "利用动作", "expected": "预期结果"}}
+        {{\"step\": 1, \"vuln_type\": \"类型\", \"action\": \"利用动作\", \"expected\": \"预期结果\"}}
     ],
     "final_goal": "最终目标(flag/shell等)"
 }}"""
@@ -1327,6 +839,8 @@ def analyst_node(state: CTFState) -> Dict:
     """
     分析兵 - 调用大模型进行深度漏洞分析
 
+    [简化] 合并原recon_node功能，首次访问时自动获取页面数据
+
     内网模式增强:
     - 执行并行漏扫（nuclei + xray）
     - 输出 exploit_keywords 供攻击兵检索
@@ -1343,13 +857,128 @@ def analyst_node(state: CTFState) -> Dict:
 
     # 检查是否为内网模式
     internal_mode = state.get("internal_mode", False)
+    current_url = state.get("current_url", state.get("target_url", ""))
 
-    # 1. 准备输入数据
+    # =====================================================
+    # [合并recon] 检查并获取缺失的页面数据
+    # =====================================================
     page_features = state.get("page_features", {})
     raw_html = state.get("raw_html_snippet", "")
+    baseline_response = state.get("baseline_response", {})
+
+    if not page_features or not raw_html:
+        log("   📡 首次访问，获取页面数据...")
+        try:
+            # 快速HTTP请求获取页面
+            resp = requests.get(current_url, timeout=10, verify=False, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            })
+            raw_html = resp.text[:5000]  # 限制长度
+            baseline_response = {
+                "status_code": resp.status_code,
+                "headers": dict(resp.headers),
+                "final_url": resp.url
+            }
+
+            # 提取基本特征
+            from scene_detector import SceneDetector
+            detector = SceneDetector()
+            page_features = detector.extract_features(resp.text, current_url)
+            log(f"   ✅ 页面数据获取完成 (状态码: {resp.status_code})")
+        except Exception as e:
+            log(f"   ⚠️ 页面获取失败: {e}")
+            raw_html = ""
+            page_features = {"tech_stack": [], "input_vectors": []}
+
+    # 1. 准备输入数据
     task_name = state.get("task_name", "Unknown Task")
     task_description = state.get("task_description", "No description provided")
-    baseline_response = state.get("baseline_response", {})  # 包含重定向信息
+
+    # 规则引擎的初步结果（如果有）
+    rule_candidates = state.get("vuln_candidates", [])
+
+    # 获取场景信息
+    detected_scenes = state.get("detected_scenes", {})
+
+    # 获取场景聚焦信息
+    focused_scene = state.get("focused_scene", "")
+    scene_exhausted = state.get("scene_exhausted", False)
+
+    # 获取拓扑信息
+    critical_nodes = state.get("critical_nodes", [])
+    topology_priority = state.get("topology_priority", [])
+    current_url = state.get("current_url", "")
+
+    # =====================================================
+    # [内网模式增强] 简化漏扫（移除硬编码函数）
+    # =====================================================
+    scan_vulns = []
+    exploit_keywords = {}
+
+    if internal_mode and current_url:
+        log("   🔬 [内网模式] 执行简化漏扫...")
+
+        # 从配置获取扫描工具列表（移除硬编码）
+        scan_tools = config.DEFAULT_SCAN_TOOLS
+        executor = get_executor()
+        scan_futures = []
+    """
+    分析兵 - 调用大模型进行深度漏洞分析
+
+    [简化] 合并原recon_node功能，首次访问时自动获取页面数据
+
+    内网模式增强:
+    - 执行并行漏扫（nuclei + xray）
+    - 输出 exploit_keywords 供攻击兵检索
+    """
+    log("🔍 [分析] 解析页面特征...")
+
+    # 导入hybrid_detector用于置信度分级检测
+    try:
+        from hybrid_detector import hybrid_detector, quick_detect, full_detect
+    except ImportError:
+        hybrid_detector = None
+        quick_detect = None
+        full_detect = None
+
+    # 检查是否为内网模式
+    internal_mode = state.get("internal_mode", False)
+    current_url = state.get("current_url", state.get("target_url", ""))
+
+    # =====================================================
+    # [合并recon] 检查并获取缺失的页面数据
+    # =====================================================
+    page_features = state.get("page_features", {})
+    raw_html = state.get("raw_html_snippet", "")
+    baseline_response = state.get("baseline_response", {})
+
+    if not page_features or not raw_html:
+        log("   📡 首次访问，获取页面数据...")
+        try:
+            # 快速HTTP请求获取页面
+            resp = requests.get(current_url, timeout=10, verify=False, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            })
+            raw_html = resp.text[:5000]  # 限制长度
+            baseline_response = {
+                "status_code": resp.status_code,
+                "headers": dict(resp.headers),
+                "final_url": resp.url
+            }
+
+            # 提取基本特征
+            from scene_detector import SceneDetector
+            detector = SceneDetector()
+            page_features = detector.extract_features(resp.text, current_url)
+            log(f"   ✅ 页面数据获取完成 (状态码: {resp.status_code})")
+        except Exception as e:
+            log(f"   ⚠️ 页面获取失败: {e}")
+            raw_html = ""
+            page_features = {"tech_stack": [], "input_vectors": []}
+
+    # 1. 准备输入数据
+    task_name = state.get("task_name", "Unknown Task")
+    task_description = state.get("task_description", "No description provided")
 
     # 规则引擎的初步结果（如果有）
     rule_candidates = state.get("vuln_candidates", [])
@@ -2093,7 +1722,7 @@ def attacker_node(state: CTFState) -> Dict:
                 decision_context = {
                     "vuln_type": candidates[0].get("type", "unknown"),
                     "os_type": "unknown",
-                    "has_shell": bool(state.get("shell_session")),
+                    "has_shell": bool(state.get("active_sessions")),
                     "target_url": current_url,
                     "attacker_ip": config.LOCAL_PUBLIC_IP or "127.0.0.1"
                 }
@@ -3206,7 +2835,9 @@ def verifier_node(state: CTFState) -> Dict:
             if new_known_facts:
                 result_dict["known_facts"] = new_known_facts
             if shell_session_info:
-                result_dict["shell_session"] = shell_session_info
+                # 添加到active_sessions而不是设置shell_session
+                current_sessions = state.get("active_sessions", [])
+                result_dict["active_sessions"] = current_sessions + [shell_session_info]
 
             # [战略上下文更新] 攻击成功时更新战略上下文
             updated_context = update_strategic_context_after_node(state, "verifier", result_dict)
@@ -3334,18 +2965,16 @@ def verifier_node(state: CTFState) -> Dict:
 
         if internal_mode:
             # 检查是否有活跃的shell会话
-            shell_session = state.get("shell_session")
             active_sessions = state.get("active_sessions", [])
 
-            if shell_session:
-                log(f"   ✅ [内网] 检测到活跃Shell会话")
+            if active_sessions:
+                log(f"   ✅ [内网] 检测到活跃Shell会话 ({len(active_sessions)}个)")
                 # 有shell会话，进入后渗透阶段
                 result_dict = {
                     "failure_weighted_score": max(0, state.get("failure_weighted_score", 0) - 0.5),
                     "execution_steps": state.get("execution_steps", 0) + 1,
                     "node_attack_status": node_status,
                     "vuln_candidates": candidates,
-                    "shell_session": shell_session,
                     # [断点1修复] 添加结构化指导字段
                     "guidance_type": guidance_type,
                     "enforce_change": enforce_change,
@@ -3509,10 +3138,10 @@ def wrap_node(name: str, func: Callable) -> Callable:
     """包装节点函数，支持运行时禁用"""
     return create_disabled_wrapper(name, func)
 
-# 添加所有兵种节点 [P3优化: 移除reflector]
+# 添加所有兵种节点 [P3优化: 移除reflector和recon]
 # 注意：所有节点都通过 wrap_node 包装，支持运行时禁用
 workflow.add_node("challenge_type_detector", wrap_node("challenge_type_detector", challenge_type_detector_node))  # type: ignore # CTF类型检测器
-workflow.add_node("recon", wrap_node("recon", recon_node))  # type: ignore # 侦察兵
+# [简化] recon功能已合并到analyst_node
 workflow.add_node("analyst", wrap_node("analyst", analyst_node))  # type: ignore # 分析兵
 workflow.add_node("strategy_filter", wrap_node("strategy_filter", strategy_filter_node))  # type: ignore # 策略过滤器
 workflow.add_node("mode_manager", wrap_node("mode_manager", mode_manager_node))  # type: ignore # 模式决策器
@@ -3590,11 +3219,11 @@ def _route_from_challenge_detector(state: CTFState) -> str:
     if state.get("ai_mode", False) and AI_SECURITY_AVAILABLE:
         return "ai_detect"
     # 默认走Web流程
-    return "recon"
+    return "analyst"
 
-# 构建类型检测器的路由映射
+# 构建类型检测器的路由映射（移除recon）
 _detector_routes = {
-    "recon": "recon"  # Web模式默认走侦察
+    "analyst": "analyst"  # Web模式直接走分析
 }
 
 if INTERNAL_NETWORK_AVAILABLE:
@@ -3619,8 +3248,7 @@ workflow.add_conditional_edges(
     _detector_routes
 )
 
-# 1. 线性分析流: 侦察 -> 分析 -> 过滤 -> 决策
-workflow.add_edge("recon", "analyst")
+# 1. 线性分析流: 分析 -> 过滤 -> 决策 (移除recon)
 workflow.add_edge("analyst", "strategy_filter")
 workflow.add_edge("strategy_filter", "mode_manager")
 
@@ -3665,7 +3293,7 @@ def _route_from_mode_manager(state: CTFState) -> str:
 _mode_manager_routes = {
     "exploit": "attacker",
     "explore": "explorer",
-    "recon": "recon", # 支持跳转回侦察兵
+    "recon": "analyst", # [简化] recon已合并到analyst
     "end": END
 }
 

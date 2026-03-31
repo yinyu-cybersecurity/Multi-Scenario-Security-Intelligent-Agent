@@ -757,14 +757,15 @@ def _get_tools_status() -> Dict:
 
 def _get_sessions_status(state: CTFState) -> Dict:
     """获取会话状态"""
-    session = state.get("shell_session")
-    if not session:
+    active_sessions = state.get("active_sessions", [])
+    if not active_sessions:
         return {"active": False}
 
+    session = active_sessions[0]
     return {
         "active": True,
-        "type": str(session.get("session_type", "unknown")),
-        "target": session.get("target", ""),
+        "type": str(session.get("session_type", session.get("type", "unknown"))),
+        "target": session.get("host", session.get("target", "")),
         "os": session.get("os_type", "unknown")
     }
 

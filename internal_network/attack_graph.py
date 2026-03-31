@@ -343,7 +343,9 @@ class AttackGraph:
 
         # 添加已攻陷节点
         sessions = state.get("active_sessions") or []
-        compromised_hosts = state.get("compromised_hosts") or []
+        internal_hosts = state.get("internal_hosts") or []
+        # 从internal_hosts获取已攻陷主机
+        compromised_hosts = [h.get("ip") for h in internal_hosts if isinstance(h, dict) and h.get("status") == "compromised"]
 
         for session in sessions:
             host = session.get("host", "")
@@ -358,7 +360,6 @@ class AttackGraph:
                 graph.add_node(node)
 
         # 添加发现的内网主机
-        internal_hosts = state.get("internal_hosts") or []
         for host in internal_hosts:
             if not isinstance(host, dict):
                 continue

@@ -495,12 +495,12 @@ def route_verify(state: CTFState, current_node: str) -> str:
         "evolution" / "post_exploit" / "attacker" / "mode_manager"
     """
     # 1. 检查是否获取了shell且需要后渗透处理
-    shell_session = state.get("shell_session")
+    active_sessions = state.get("active_sessions", [])
     post_exploit_status = state.get("post_exploit_status", "")
 
     # 如果有shell会话且还没执行过后渗透处理，进入post_exploit
-    if shell_session and not post_exploit_status:
-        logger.info("检测到shell会话，进入后渗透处理")
+    if active_sessions and not post_exploit_status:
+        logger.info(f"检测到{len(active_sessions)}个shell会话，进入后渗透处理")
         return "post_exploit"
 
     # 2. 检查是否找到flag
@@ -588,8 +588,8 @@ def route_internal_mode(state: CTFState, current_node: str) -> str:
         下一节点名称
     """
     # [修复] 检查是否有shell会话，有则强制进入内网模式
-    shell_session = state.get("shell_session")
-    has_shell = shell_session and shell_session.get("session_id")
+    active_sessions = state.get("active_sessions", [])
+    has_shell = bool(active_sessions)
 
     # 如果内网模式已关闭且无shell，返回Web模式
     if not state.get("internal_mode", False) and not has_shell:
@@ -647,11 +647,12 @@ def _ai_route_internal_decision(context: Dict, state: CTFState) -> str:
     """
     # 收集AI决策所需的状态信息
     active_sessions = state.get("active_sessions") or []
-    compromised_hosts = state.get("compromised_hosts") or []
     found_flags = state.get("found_flags") or []
     internal_hosts = state.get("internal_hosts") or []
     session_hosts = [s.get("host") for s in active_sessions if s.get("host")]
-    all_compromised = set(compromised_hosts + session_hosts)
+    # 从internal_hosts获取已攻陷主机
+    compromised_from_hosts = [h.get("ip") for h in internal_hosts if isinstance(h, dict) and h.get("status") == "compromised"]
+    all_compromised = set(compromised_from_hosts + session_hosts)
     unexplored_count = sum(1 for h in internal_hosts
                           if isinstance(h, dict) and h.get("ip") and h.get("ip") not in all_compromised)
     current_phase = state.get("current_compromise_phase", "")
@@ -836,18 +837,19 @@ def route_internal_to_web(state: CTFState) -> str:
 
     # 收集状态信息
     internal_hosts = state.get("internal_hosts") or []
-    compromised_hosts = state.get("compromised_hosts") or []
     found_flags = state.get("found_flags") or []
     active_sessions = state.get("active_sessions") or []
-    shell_session = state.get("shell_session")
 
     # [修复1] 检查是否有活跃shell会话，无shell则继续内网模式
-    if shell_session and shell_session.get("session_id"):
-        logger.debug("[InternalRoute] 有活跃shell会话，继续内网渗透")
+    if active_sessions:
+        logger.debug(f"[InternalRoute] 有{len(active_sessions)}个活跃shell会话，继续内网渗透")
         return "internal"
 
+    # 获取已攻陷主机（从internal_hosts.status或active_sessions推断）
     session_hosts = [s.get("host") for s in active_sessions if s.get("host")]
-    all_compromised = set(compromised_hosts + session_hosts)
+    compromised_from_hosts = [h.get("ip") for h in internal_hosts
+                              if isinstance(h, dict) and h.get("status") == "compromised"]
+    all_compromised = set(compromised_from_hosts + session_hosts)
 
     unexplored = [h for h in internal_hosts
                   if isinstance(h, dict) and h.get("ip") and h.get("ip") not in all_compromised]
@@ -887,7 +889,7 @@ def route_internal_to_web(state: CTFState) -> str:
     except Exception as e:
         logger.warning(f"[InternalRoute] AI验证异常: {e}")
         # 异常时保守策略：有shell会话或无flag则继续
-        if shell_session or len(found_flags) == 0:
+        if active_sessions or len(found_flags) == 0:
             return "internal"
 
     logger.info(f"[InternalRoute] 所有主机已攻陷，AI验证通过")

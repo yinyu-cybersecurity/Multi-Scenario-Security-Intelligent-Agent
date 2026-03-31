@@ -156,10 +156,9 @@ class InternalNetworkOrchestrator:
 
         # 获取会话信息
         active_sessions = state.get("active_sessions", [])
-        shell_session = state.get("shell_session", {})
         credentials = state.get("credentials", [])
 
-        if not active_sessions and not shell_session.get("session_id"):
+        if not active_sessions:
             logger.warning("[PrivEsc] 无可用会话进行提权")
             self.phase = InternalPhase.COMPLETE
             return {
@@ -168,14 +167,14 @@ class InternalNetworkOrchestrator:
             }
 
         # 检查是否已有管理员权限
-        session = active_sessions[0] if active_sessions else shell_session
+        session = active_sessions[0]
         is_admin = session.get("is_admin", False)
 
         if is_admin:
             logger.info("[PrivEsc] 已有管理员权限，跳过提权")
             # 尝试凭据转储
             from .nodes import _ai_credential_dump
-            result = _ai_credential_dump(state, session, active_sessions, credentials, shell_session)
+            result = _ai_credential_dump(state, session, active_sessions, credentials)
 
             self.phase = InternalPhase.COMPLETE
             return {

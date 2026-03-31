@@ -230,11 +230,11 @@ class AIFlowController:
             return FlowDecision.REPORT_FLAG, f"发现FLAG: {flag_content[:50]}"
 
         # 2. 检查Shell获取（内网模式）
-        shell_session = state.get("shell_session")
-        if shell_session and shell_session.get("session_id"):
+        active_sessions = state.get("active_sessions", [])
+        if active_sessions:
             if state.get("internal_mode"):
                 self._stats["shell_obtained"] += 1
-                logger.info("[FlowController] 获取Shell会话，内网模式继续攻击")
+                logger.info(f"[FlowController] 获取{len(active_sessions)}个Shell会话，内网模式继续攻击")
                 return FlowDecision.CONTINUE_ATTACK, "获取Shell，进入内网渗透流程"
 
         # 3. 检查凭据获取
@@ -755,7 +755,9 @@ def decide_internal_flow(state: Dict, attack_result: Optional[Dict] = None) -> F
         # 如果发现FLAG但还有未攻陷主机，继续攻击
         if decision == FlowDecision.REPORT_FLAG:
             internal_hosts = state.get("internal_hosts") or []
-            compromised = state.get("compromised_hosts") or []
+            # 从internal_hosts.status统计已攻陷主机
+            compromised = [h for h in internal_hosts
+                          if isinstance(h, dict) and h.get("status") == "compromised"]
             unexplored = len(internal_hosts) - len(compromised)
 
             if unexplored > 0:

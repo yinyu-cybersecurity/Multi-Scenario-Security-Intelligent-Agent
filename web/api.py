@@ -782,7 +782,7 @@ def run_task(task_id, target_url):
                         "attack_results": state.get("attack_results", [])[-5:],
                         "found_flag": state.get("found_flag", False),
                         "final_flag": state.get("final_flag", ""),
-                        "shell_session": state.get("shell_session", {}),
+                        "active_sessions": state.get("active_sessions", []),
                         "current_mode": state.get("current_mode", "exploit"),
                         "failure_weighted_score": state.get("failure_weighted_score", 0),
                         "execution_steps": state.get("execution_steps", 0),
