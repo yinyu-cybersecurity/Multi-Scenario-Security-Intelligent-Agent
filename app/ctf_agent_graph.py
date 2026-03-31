@@ -41,7 +41,6 @@ def log_analyst(msg: str): log(msg, node="analyst")
 def log_attacker(msg: str): log(msg, node="attacker")
 def log_verifier(msg: str): log(msg, node="verifier")
 def log_explorer(msg: str): log(msg, node="explorer")
-def log_innovator(msg: str): log(msg, node="innovator")
 def log_detector(msg: str): log(msg, node="challenge_type_detector")
 def log_mode_manager(msg: str): log(msg, node="mode_manager")
 def log_system(msg: str): log(msg, node="system")
@@ -102,7 +101,6 @@ from scene_detector import SceneDetector
 
 from evolution import evolution_node
 from strategy_filter import strategy_filter_node
-from innovator_agent import innovator_node
 from router import (
     route_mode,
     route_verify,
@@ -1712,297 +1710,48 @@ def analyst_node(state: CTFState) -> Dict:
         }
 
 
-def _ai_decide_mode_switch(state: Dict) -> Optional[Dict]:
-    """
-    AI决策模式切换
-
-    综合考虑：失败分、探索进度、场景匹配度、剩余时间
-
-    Returns:
-        None: AI决策不可用或失败，使用硬编码规则
-        Dict: AI决策结果，包含 current_mode 和决策理由
-    """
-    # 检查是否启用AI决策
-    if not config.USE_AI_MODE_DECISION:
-        return None
-
-    # 检查决策间隔，避免频繁调用LLM
-    last_ai_decision_time = state.get("last_ai_decision_time", 0)
-    current_time = time.time()
-    if current_time - last_ai_decision_time < config.AI_MODE_DECISION_INTERVAL:
-        return None
-
-    # 收集决策上下文
-    score = state.get("failure_weighted_score", 0)
-    steps = state.get("execution_steps", 0)
-    current_mode = state.get("current_mode", "exploit")
-    start_time = state.get("start_time", time.time())
-    internal_mode = state.get("internal_mode", False)
-    visited_urls = state.get("visited_urls", [])
-    vuln_candidates = state.get("vuln_candidates", [])
-    focused_scene = state.get("focused_scene", "")
-    scene_attack_attempts = state.get("scene_attack_attempts", 0)
-    explore_rounds = state.get("explore_rounds", 0)
-    current_round = state.get("current_round", 0)
-    flags_found = state.get("flags_found", [])
-
-    # 计算剩余时间
-    timeout = config.INTERNAL_TASK_TIMEOUT if internal_mode else config.TASK_TIMEOUT
-    elapsed_time = current_time - start_time
-    remaining_time = timeout - elapsed_time
-    remaining_minutes = remaining_time / 60
-
-    # 计算探索进度
-    total_urls = len(visited_urls)
-    high_value_urls = sum(1 for url in visited_urls if any(kw in url.lower() for kw in ["admin", "login", "api", "upload", "config", "backup", "debug"]))
-    vuln_count = len(vuln_candidates)
-
-    # 构建AI决策提示
-    prompt = f"""你是一个CTF攻击模式决策专家。请根据当前状态决定下一步应该切换到什么模式。
-
-## 当前状态
-- 当前模式: {current_mode}
-- 失败分数: {score:.1f} (越高表示攻击越不顺利)
-- 执行步数: {steps}
-- 当前轮次: {current_round}
-- 剩余时间: {remaining_minutes:.1f} 分钟
-- 环境类型: {'内网渗透' if internal_mode else 'Web CTF'}
-
-## 探索进度
-- 已访问URL数: {total_urls}
-- 高价值URL数: {high_value_urls}
-- 漏洞候选数: {vuln_count}
-- 探索轮数: {explore_rounds}
-
-## 场景聚焦
-- 聚焦场景: {focused_scene or '无'}
-- 场景攻击次数: {scene_attack_attempts}/{config.MAX_SCENE_ATTEMPTS}
-
-## 已发现Flag
-- Flag数量: {len(flags_found)}
-
-## 可选模式
-1. **exploit**: 继续攻击当前目标或漏洞候选
-   - 适合：有明确的攻击目标、漏洞候选、或场景聚焦
-
-2. **explore**: 探索新目标
-   - 适合：当前目标无进展、需要发现新攻击面
-
-3. **innovate**: 创新思维模式
-   - 适合：常规方法失效、需要尝试非常规思路
-
-4. **end**: 结束任务
-   - 适合：时间耗尽、已获得Flag、或确实无解
-
-## 决策原则
-1. 内网渗透模式只按时间结束，不受失败分影响
-2. 有聚焦场景时优先深度挖掘，直到场景穷尽
-3. 失败分高时考虑切换模式，但不要过于激进
-4. 时间不足时，优先快速验证高价值目标
-5. 已发现Flag时，考虑是否需要继续寻找其他Flag
-
-## 输出格式 (JSON)
-{{
-  "mode": "exploit/explore/innovate/end",
-  "confidence": 0.0-1.0,
-  "reasoning": "简要说明决策理由",
-  "factors": {{
-    "failure_score_weight": 0.0-1.0,
-    "time_pressure": 0.0-1.0,
-    "exploration_progress": 0.0-1.0,
-    "vuln_potential": 0.0-1.0
-  }}
-}}
-"""
-
-    try:
-        log_mode_manager("🤖 调用AI决策模式切换...")
-        response = llm_client.call_chat_completion(
-            model=config.ANALYST_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-            json_mode=True
-        )
-
-        if not response:
-            log_mode_manager("   ⚠️ AI决策无响应")
-            return None
-
-        # 解析响应
-        if "```json" in response:
-            response = response.split("```json")[1].split("```")[0]
-
-        result = json.loads(response.strip())
-        mode = result.get("mode", "exploit")
-        confidence = result.get("confidence", 0.5)
-        reasoning = result.get("reasoning", "")
-
-        # 验证模式有效性
-        valid_modes = ["exploit", "explore", "innovate", "end"]
-        if mode not in valid_modes:
-            log_mode_manager(f"   ⚠️ AI返回无效模式: {mode}")
-            return None
-
-        # 置信度过低时使用硬编码规则
-        if confidence < 0.4:
-            log_mode_manager(f"   ⚠️ AI置信度过低: {confidence:.2f}，使用硬编码规则")
-            return None
-
-        log_mode_manager(f"   ✅ AI决策: {mode} (置信度: {confidence:.2f})")
-        log_mode_manager(f"   📝 理由: {reasoning}")
-
-        return {
-            "current_mode": mode,
-            "ai_decision_reasoning": reasoning,
-            "ai_decision_confidence": confidence,
-            "last_ai_decision_time": current_time,
-            "ai_decision_factors": result.get("factors", {})
-        }
-
-    except json.JSONDecodeError as e:
-        log_mode_manager(f"   ❌ AI决策JSON解析失败: {e}")
-        return None
-    except Exception as e:
-        log_mode_manager(f"   ❌ AI决策异常: {e}")
-        return None
-
-
 def mode_manager_node(state: CTFState) -> Dict:
     """
-    模式决策器 - 增强版（AI决策 + 硬编码规则降级）
+    模式决策器 - 简化版（无AI调用，仅阈值判断）
 
-    决策优先级：
-    1. 预设模式（上游已决定）
-    2. AI决策（如果启用）
-    3. 硬编码规则（降级方案）
+    决策规则：
+    1. 时间超时 → end
+    2. 失败分超过阈值 → explore
+    3. 其他情况 → exploit
 
-    结束条件：只有时间超时
-    - 外网打点：30分钟 (TASK_TIMEOUT)
-    - 内网渗透：50分钟 (INTERNAL_TASK_TIMEOUT)
+    内网渗透只按时间超时结束，不受失败分影响
     """
     score = state.get("failure_weighted_score", 0)
-    steps = state.get("execution_steps", 0)
-    current_url = state.get("current_url")
-    node_status = state.get("node_attack_status", {})
     start_time = state.get("start_time", time.time())
     internal_mode = state.get("internal_mode", False)
 
-    # 获取场景聚焦信息
-    focused_scene = state.get("focused_scene", "")
-    scene_attack_attempts = state.get("scene_attack_attempts", 0)
-    scene_exhausted = state.get("scene_exhausted", False)
-
-    # 0. 尊重上游设置的模式
+    # 尊重上游设置的end模式
     preset_mode = state.get("current_mode")
     if preset_mode == "end":
-        log_mode_manager("保持预设模式: end")
         return {"current_mode": "end"}
-    elif preset_mode == "explore":
-        log_mode_manager("保持预设模式: explore")
-        return {"current_mode": "explore"}
-    elif preset_mode == "innovate":
-        log_mode_manager("创新模式已执行，重置分数并切回攻击模式")
-        return {
-            "current_mode": "exploit",
-            "failure_weighted_score": 0,
-            "current_round": state.get("current_round", 0) + 1
-        }
-
-    # 1. [优先] AI决策模式切换
-    if config.USE_AI_MODE_DECISION:
-        ai_decision = _ai_decide_mode_switch(state)
-        if ai_decision:
-            # AI决策成功，检查是否需要进一步验证
-            ai_mode = ai_decision.get("current_mode")
-            ai_confidence = ai_decision.get("ai_decision_confidence", 0)
-
-            # AI决策高置信度时直接采用
-            if ai_confidence >= 0.7:
-                log_mode_manager(f"AI高置信度决策: {ai_mode} (置信度: {ai_confidence:.2f})")
-                return ai_decision
-
-            # 中等置信度时，结合硬编码规则验证
-            # 特别关注：时间超时检查不可跳过
-            elapsed_time = time.time() - start_time
-            timeout = config.INTERNAL_TASK_TIMEOUT if internal_mode else config.TASK_TIMEOUT
-
-            if elapsed_time >= timeout:
-                log_mode_manager(f"时间超时优先于AI决策: {elapsed_time/60:.1f}分钟 >= {timeout/60:.0f}分钟")
-                return {"current_mode": "end"}
-
-            # 中等置信度时采用AI建议，但记录降级情况
-            log_mode_manager(f"AI中等置信度决策: {ai_mode} (置信度: {ai_confidence:.2f})")
-            return ai_decision
-
-    # 2. [降级] 硬编码规则决策
-    log_mode_manager("使用硬编码规则决策")
 
     # 时间超时检查
     elapsed_time = time.time() - start_time
     timeout = config.INTERNAL_TASK_TIMEOUT if internal_mode else config.TASK_TIMEOUT
 
     if elapsed_time >= timeout:
-        log_mode_manager(f"任务超时: {elapsed_time/60:.1f}分钟 >= {timeout/60:.0f}分钟")
+        log_mode_manager(f"任务超时: {elapsed_time/60:.1f}分钟")
         return {"current_mode": "end"}
 
-    # 剩余时间提醒
-    remaining = timeout - elapsed_time
-    if remaining < 300:  # 剩余不足5分钟
-        log_mode_manager(f"剩余时间: {remaining/60:.1f}分钟")
+    # 内网模式：只按时间结束，不受失败分影响
+    if internal_mode:
+        log_mode_manager(f"内网模式继续渗透 (已运行:{elapsed_time/60:.1f}分钟)")
+        return {"current_mode": "exploit"}
 
-    # 场景聚焦判断
-    MAX_SCENE_ATTEMPTS = config.MAX_SCENE_ATTEMPTS
-
-    if focused_scene and not scene_exhausted:
-        if scene_attack_attempts < MAX_SCENE_ATTEMPTS:
-            log_mode_manager(f"聚焦场景 [{focused_scene}] 继续攻击 ({scene_attack_attempts}/{MAX_SCENE_ATTEMPTS})")
-            return {"current_mode": "exploit"}
-        else:
-            log_mode_manager(f"场景 [{focused_scene}] 已穷尽 {scene_attack_attempts} 次攻击，切换探索模式")
-            return {
-                "current_mode": "explore",
-                "scene_exhausted": True
-            }
-
-    # 创新模式检查 (仅Web CTF)
-    if not internal_mode and (steps >= config.MAX_STEPS_BEFORE_INNOVATE or score >= config.FAILURE_SCORE_FOR_INNOVATE):
-        log_mode_manager(f"自动进入创新模式 (步数:{steps}, 失败分:{score:.1f})")
-        return {"current_mode": "innovate"}
-    elif internal_mode:
-        log_mode_manager(f"内网模式，继续渗透 (已运行:{elapsed_time/60:.1f}分钟, 失败分:{score:.1f})")
-
-    # 节点状态管理 - 智能放弃判断
-    # 不再仅凭 attempt_count 判断，而是看最近的攻击是否有进展
-    # 如果最近有成功的攻击（状态码200且有输出变化），则不放弃
-    if current_url and current_url in node_status:
-        status = node_status[current_url]
-        attempts = status.get("attempt_count", 0)
-        recent_codes = status.get("last_status_codes", [])[-5:]
-
-        # 检查最近是否有有效的攻击（非404/500的状态码占比超过50%）
-        if attempts > 10 and recent_codes:
-            success_rate = sum(1 for c in recent_codes if c not in [404, 500, 0]) / len(recent_codes)
-            if success_rate < 0.3:  # 最近5次攻击中，成功率低于30%才放弃
-                status["status"] = "abandoned"
-                log_mode_manager(f"放弃节点（成功率低）: {current_url}")
-            else:
-                log_mode_manager(f"节点仍有进展（成功率 {success_rate*100:.0f}%），继续攻击")
-
-    # 模式切换 - 简化阈值
-    # [重要] 头脑风暴和探索模式只在Web CTF模式下触发
-    # 内网渗透只按时间超时结束，不受失败分影响
-    if score >= config.FAILURE_SCORE_FOR_INNOVATE and not internal_mode:
-        log_mode_manager(f"创新模式 (失败分:{score:.1f})")
-        return {"current_mode": "innovate"}
-    elif score >= config.FAILURE_SCORE_FOR_EXPLORE and not internal_mode:
-        log_mode_manager(f"探索模式 (失败分:{score:.1f})")
+    # Web CTF模式切换
+    if score >= config.FAILURE_SCORE_ABANDON:
+        log_mode_manager(f"失败分过高({score:.1f})，结束任务")
+        return {"current_mode": "end"}
+    elif score >= config.FAILURE_SCORE_FOR_EXPLORE:
+        log_mode_manager(f"失败分达到阈值({score:.1f})，切换探索模式")
         return {"current_mode": "explore"}
-    else:
-        return {
-            "current_mode": "exploit",
-            "current_round": state.get("current_round", 0) + 1,
-            "node_attack_status": node_status
-        }
+
+    return {"current_mode": "exploit"}
 
 
 def execute_single_attack(action: Dict, current_url: str, page_history: Dict, timeout: int = None) -> Dict:
@@ -2832,16 +2581,6 @@ def _run_exploration_tool(tool_name: str, target: str, options: dict = None) -> 
     return result
 
 
-def _should_switch_to_innovate(exploration_rounds: int, found_count: int) -> tuple:
-    """判断是否应该切换到创新模式"""
-    min_rounds = getattr(config, 'EXPLORE_ROUNDS_FOR_INNOVATE', 8)
-    if exploration_rounds < min_rounds:
-        return False, f"轮次 {exploration_rounds}/{min_rounds}"
-    if found_count > 0:
-        return False, f"仍有发现({found_count})"
-    return True, f"探索{exploration_rounds}轮后无新发现"
-
-
 def explorer_node(state: CTFState) -> Dict:
     """
     [探索兵] (多工具组合扫描 + 图数据库更新)
@@ -2856,7 +2595,6 @@ def explorer_node(state: CTFState) -> Dict:
         - 第一轮: dirsearch 目录扫描
         - 第二轮: ffuf 模糊测试
         - 第三轮+: nuclei 漏洞扫描
-        - 达到 EXPLORE_ROUNDS_FOR_INNOVATE 后才允许切换创新模式
     """
     log("🗺️ [探索] 启动多工具组合扫描...")
     target_url = state.get("target_url")
@@ -2870,12 +2608,10 @@ def explorer_node(state: CTFState) -> Dict:
     if scan_target in visited_urls:
         log(f"   📦 已扫描过: {scan_target}")
         exploration_rounds += 1
-        should_switch, reason = _should_switch_to_innovate(exploration_rounds, 0)
-        if should_switch:
-            log(f"   🔄 {reason}，切换创新模式")
-            return {"exploration_rounds": exploration_rounds,
-                    "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
-                    "current_mode": "innovate"}
+        # 简化：不再切换innovate，直接返回explore继续
+        return {"exploration_rounds": exploration_rounds,
+                "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.5,
+                "current_mode": "explore"}
         log(f"   ⏭️ {reason}，跳过")
 
     new_paths = {}
@@ -2923,13 +2659,7 @@ def explorer_node(state: CTFState) -> Dict:
         else:
             log("   ⚠️ 本轮未发现新路径")
 
-        # 延迟切换创新模式
-        should_switch, reason = _should_switch_to_innovate(exploration_rounds + 1, total_found)
-        if should_switch:
-            log(f"   🔄 {reason}，切换创新模式")
-            return {"exploration_rounds": exploration_rounds + 1,
-                    "failure_weighted_score": state.get("failure_weighted_score", 0) + 0.3,
-                    "current_mode": "innovate"}
+    # 简化：移除innovate模式切换，继续探索
 
     # 1. 初始化图构建器
     builder = TopologyBuilder()
@@ -3788,7 +3518,6 @@ workflow.add_node("strategy_filter", wrap_node("strategy_filter", strategy_filte
 workflow.add_node("mode_manager", wrap_node("mode_manager", mode_manager_node))  # type: ignore # 模式决策器
 workflow.add_node("attacker", wrap_node("attacker", attacker_node))  # type: ignore # 攻击兵
 workflow.add_node("explorer", wrap_node("explorer", explorer_node))  # type: ignore # 探索兵
-workflow.add_node("innovator", wrap_node("innovator", innovator_node))  # type: ignore # 头脑风暴
 workflow.add_node("verifier", wrap_node("verifier", verifier_node))  # type: ignore # 核验兵 [P3合并]
 workflow.add_node("evolution", wrap_node("evolution", evolution_node))  # type: ignore # 进化闭环
 
@@ -3932,11 +3661,10 @@ def _route_from_mode_manager(state: CTFState) -> str:
 
     return next_node
 
-# 构建基础路由映射
+# 构建基础路由映射（移除innovate模式）
 _mode_manager_routes = {
     "exploit": "attacker",
     "explore": "explorer",
-    "innovate": "innovator",
     "recon": "recon", # 支持跳转回侦察兵
     "end": END
 }
@@ -3983,7 +3711,6 @@ else:
 
 # 3. 分支回归逻辑
 workflow.add_edge("explorer", "mode_manager")  # 探索后重新决策
-workflow.add_edge("innovator", "strategy_filter")  # 创新后注入规则到过滤器
 
 # 3.5 [智能流转] attacker 条件路由 - 支持绕过 verifier
 def _route_from_attacker(state: CTFState) -> str:

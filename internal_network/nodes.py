@@ -218,7 +218,7 @@ def internal_recon_node(state: Dict) -> Dict:
                     "internal_hosts": hosts,
                     "internal_mode": True,
                     "current_internal_target": first_target,
-                    "analyst_intel": analysis,
+                    # analyst_intel已移除，关键信息合并到hosts[0].context
                     "scan_strategy": scan_strategy,
                     "execution_steps": state.get("execution_steps", 0) + 1,
                     **ssh_updates  # 合并SSH连接结果
@@ -1708,7 +1708,7 @@ def credential_gather_node(state: Dict) -> Dict:
                 new_credentials.extend(result.get("credentials", []))
                 return {
                     "credentials": credentials + new_credentials,
-                    "analyst_intel": result.get("intel", ""),
+                    # analyst_intel已移除，intel信息合并到attack_paths描述中
                     "attack_paths": result.get("attack_paths", []),
                     "execution_steps": state.get("execution_steps", 0) + 1
                 }

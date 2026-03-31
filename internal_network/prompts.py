@@ -108,7 +108,7 @@ def get_internal_recon_prompt(
 
 ### 3. 下一步建议
 
-## 输出格式 (JSON)
+## 输出格式 (JSON) - 简化版
 {{
   "high_value_targets": [
     {{
@@ -121,8 +121,7 @@ def get_internal_recon_prompt(
     {{
       "source": "跳板机",
       "target": "目标IP",
-      "method": "攻击方法",
-      "confidence": 0.8
+      "method": "攻击方法"
     }}
   ],
   "next_steps": ["下一步操作列表"],
@@ -192,7 +191,7 @@ def get_credential_analysis_prompt(
 ### 3. 成功概率评估
 评估凭据利用的成功概率
 
-## 输出格式 (JSON)
+## 输出格式 (JSON) - 简化版
 {{
   "usable_credentials": [
     {{
@@ -202,7 +201,6 @@ def get_credential_analysis_prompt(
     }}
   ],
   "recommended_method": "psexec/wmiexec/ssh/rdp",
-  "success_probability": 0.7,
   "alternative_methods": ["备选方法"],
   "potential_issues": ["可能遇到的问题"]
 }}
@@ -344,26 +342,28 @@ def get_ad_analysis_prompt(
 ### 3. 横向移动建议
 基于AD信息建议横向移动策略
 
-## 输出格式 (JSON)
+## 输出格式 (JSON) - 简化版
 {{
   "high_privilege_accounts": [
     {{
       "username": "用户名",
-      "groups": ["所属组"],
-      "risk": "high/medium/low"
+      "groups": ["所属组"]
     }}
   ],
-  "kerberoastable_accounts": ["可Kerberoast的账户"],
-  "asrep_roastable_accounts": ["可AS-REP Roast的账户"],
-  "delegation_abuse": [
+  "roastable_targets": [
+    {{
+      "account": "账户",
+      "type": "kerberoast/asrep"
+    }}
+  ],
+  "delegation_attacks": [
     {{
       "account": "账户",
       "type": "委托类型",
       "target": "可访问的资源"
     }}
   ],
-  "recommended_attacks": ["建议的攻击方法"],
-  "priority_targets": ["优先攻击目标"]
+  "priority_order": ["优先攻击目标"]
 }}
 """
 
@@ -427,13 +427,12 @@ def get_privilege_escalation_prompt(
 ### 3. UAC绕过
 检查UAC绕过可能性
 
-## 输出格式 (JSON)
+## 输出格式 (JSON) - 简化版
 {{
   "privilege_escalation_paths": [
     {{
       "method": "提权方法",
       "command": "具体命令",
-      "success_probability": 0.8,
       "requirements": ["所需条件"]
     }}
   ],
@@ -633,18 +632,16 @@ def get_persistence_prompt(
 ### 5. SSH密钥 (Linux)
 植入SSH公钥实现持久化
 
-## 输出格式 (JSON)
+## 输出格式 (JSON) - 简化版
 {{
   "persistence_methods": [
     {{
       "method": "方法名称",
       "command": "执行命令",
-      "cleanup_command": "清理命令",
-      "detection_risk": "low/medium/high"
+      "cleanup_command": "清理命令"
     }}
   ],
-  "recommended_order": ["按优先级排序的方法"],
-  "stealth_options": ["隐蔽性选项"]
+  "recommended_order": ["按优先级排序的方法"]
 }}
 """
 
@@ -705,17 +702,15 @@ def get_credential_gather_prompt(
 - 数据库连接字符串
 - 应用程序配置
 
-## 输出格式 (JSON)
+## 输出格式 (JSON) - 简化版
 {{
   "collection_methods": [
     {{
       "method": "方法名称",
       "command": "执行命令",
-      "privilege_required": "所需权限",
-      "detection_risk": "low/medium/high"
+      "privilege_required": "所需权限"
     }}
   ],
-  "priority_order": ["按优先级排序的方法"],
-  "expected_credentials": ["预期获取的凭据类型"]
+  "priority_order": ["按优先级排序的方法"]
 }}
 """
