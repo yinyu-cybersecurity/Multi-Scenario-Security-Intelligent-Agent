@@ -57,7 +57,7 @@ def get_verifier_prompt(attack_batch: list, results: list, analyst_intel: str = 
             "tool": res.get("tool", "unknown"),
             "payload": res.get("payload", "N/A"),
             "status_code": res.get("status", "?"),
-            "response": str(content)[:6000]  # 缩短以腾出空间给更多上下文
+            "response": str(content)[:2000]  # 限制长度避免prompt过大
         })
 
     # 节点信息

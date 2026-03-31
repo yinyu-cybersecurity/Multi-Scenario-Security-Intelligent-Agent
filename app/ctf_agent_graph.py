@@ -3231,16 +3231,21 @@ def verifier_node(state: CTFState) -> Dict:
     # 取第一个作为预捕获flag（向后兼容）
     pre_captured_flag: Optional[str] = pre_captured_flags[0] if pre_captured_flags else None
 
-    # 读取日志文件并附加差异分析
+    # 读取日志文件并附加差异分析（限制总大小避免prompt过大）
+    total_log_size = 0
+    MAX_TOTAL_LOG = 4000
     for res in recent_results:
         if res.get("file_path") and os.path.exists(res["file_path"]):
             try:
-                with open(res["file_path"], 'rb') as f:
-                    content = f.read(6000).decode('utf-8', errors='ignore')
-                    if isinstance(res.get("output"), str) and res["output"].strip().startswith("{"):
-                        res["output"] = f"Cleaned Info: {res['output']}\n\nRaw Logs:\n{content}"
-                    else:
-                        res["output"] = content
+                read_size = min(2000, MAX_TOTAL_LOG - total_log_size)
+                if read_size > 0:
+                    with open(res["file_path"], 'rb') as f:
+                        content = f.read(read_size).decode('utf-8', errors='ignore')
+                        total_log_size += len(content)
+                        if isinstance(res.get("output"), str) and res["output"].strip().startswith("{"):
+                            res["output"] = f"Cleaned Info: {res['output'][:500]}\n\nRaw Logs:\n{content}"
+                        else:
+                            res["output"] = content
             except Exception as e:
                 log(f"⚠️ [Verifier] 读取文件失败: {e}")
 
@@ -3300,7 +3305,8 @@ def verifier_node(state: CTFState) -> Dict:
         model=config.VERIFIER_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
-        json_mode=True
+        json_mode=True,
+        timeout=60  # 核验应快速完成
     )
 
     candidates = state.get("vuln_candidates", [])
