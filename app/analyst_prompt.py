@@ -86,14 +86,15 @@ def get_analyst_prompt(page_features: dict, raw_html: str, rule_candidates: list
     rule_candidates_json = json.dumps(rule_candidates, indent=2, ensure_ascii=False)[:500]
     topology_section = f"## 拓扑分析\n{topology_hint}\n" if topology_hint else ""
 
-    # [关键修复] 添加源码到提示词 - CTF页面一般小于10KB
+    # 页面源码（精简版，完整源码可存文件按需查询）
     source_code_section = ""
     if raw_html:
         source_code_section = f"""
-## 页面源码
+## 页面源码摘要
 ```
-{raw_html[:10000]}
+{raw_html[:3000]}
 ```
+{"...(源码过长已截断)" if len(raw_html) > 3000 else ""}
 """
 
     # hybrid_detector检测结果格式化

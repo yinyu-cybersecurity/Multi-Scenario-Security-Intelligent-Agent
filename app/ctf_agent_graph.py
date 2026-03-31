@@ -214,14 +214,29 @@ from dataclasses import dataclass
 # ==============================================================================
 
 def log_node_data(node_name: str, input_data: Any, output_data: Any):
-    """最简单的日志记录：将节点输入输出写入 log 文件夹"""
+    """精简日志记录：避免输出过大内容"""
     os.makedirs("log", exist_ok=True)
     log_file = os.path.join("log", f"{node_name}_{int(time.time())}.log")
+
+    def _truncate_large(obj, max_str=500):
+        """递归截断大字符串和列表"""
+        if isinstance(obj, dict):
+            return {k: _truncate_large(v, max_str) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [_truncate_large(item, max_str) for item in obj[:10]] + (["..."] if len(obj) > 10 else [])
+        elif isinstance(obj, str) and len(obj) > max_str:
+            return obj[:max_str] + f"...({len(obj)} chars)"
+        return obj
+
+    # 精简输入输出
+    input_trimmed = _truncate_large(input_data)
+    output_trimmed = _truncate_large(output_data)
+
     with open(log_file, "w", encoding="utf-8") as f:
         f.write(f"=== [{node_name}] INPUT ===\n")
-        f.write(json.dumps(input_data, indent=2, ensure_ascii=False, default=str))
+        f.write(json.dumps(input_trimmed, indent=2, ensure_ascii=False, default=str))
         f.write(f"\n\n=== [{node_name}] OUTPUT ===\n")
-        f.write(json.dumps(output_data, indent=2, ensure_ascii=False, default=str))
+        f.write(json.dumps(output_trimmed, indent=2, ensure_ascii=False, default=str))
     log(f"📝 [Log] {node_name} 数据已写入 {log_file}")
 
 def calculate_dom_fingerprint(html_content: str) -> str:
@@ -2413,9 +2428,16 @@ def attacker_node(state: CTFState) -> Dict:
     # LLM生成攻击Payload
     # =====================================================
 
-    # 1. 扩容动作数量：实现饱和测试（高优先级目标增加动作数量）
-    # 动态获取所有注册工具的详细定义（含参数规范）
-    tools_info = ToolRegistry.get_all_tools_info()
+    # 1. 获取推荐工具详情（按需），不再传递全部工具描述
+    recommended_tools = set()
+    for c in candidates[:5]:
+        for t in c.get("recommended_tools", []):
+            recommended_tools.add(t)
+    # 确保requests始终可用
+    recommended_tools.add("requests")
+    tools_info = ToolRegistry.get_tool_detail(list(recommended_tools))
+    if not tools_info:
+        tools_info = ToolRegistry.get_tool_names()  # 降级为名称列表
 
     # 根据拓扑优先级动态调整攻击动作数量
     max_actions = 15 if current_priority > 0.7 else 10
@@ -2555,50 +2577,19 @@ def attacker_node(state: CTFState) -> Dict:
             attack_actions.append(action)
             seen_action_hashes.add(action_hash)
 
-            # [fallback修复] 提取并存储fallback方案
+            # [fallback修复] 提取并存储fallback方案（AI驱动，不硬编码转换）
             fallback = action.get("fallback", "")
             if fallback and isinstance(fallback, str) and fallback.strip():
-                # 尝试将fallback转换为具体的攻击动作
-                fallback_action = {
-                    "tool": tool,  # 默认使用相同工具
-                    "params": action.get("params", {}),
-                    "reasoning": f"Fallback方案: {fallback}",
-                    "source_action_id": f"fallback_{idx}_{tool}",
-                    "fallback_description": fallback
-                }
-                # 如果fallback中包含工具切换提示，尝试解析
-                if "时间盲注" in fallback or "sleep" in fallback.lower():
-                    fallback_action["params"] = {
-                        "method": "POST",
-                        "url": action.get("params", {}).get("url", current_url),
-                        "data": {"sleep": "5"}
+                fallback_plans.append({
+                    "tool": tool,
+                    "description": fallback,  # 保留AI的fallback描述
+                    "context": {
+                        "original_params": action.get("params", {}),
+                        "target": action.get("params", {}).get("url", current_url)
                     }
-                    fallback_action["reasoning"] = "Fallback: 切换到时间盲注"
-                elif "union" in fallback.lower():
-                    fallback_action["params"] = {
-                        "method": "GET",
-                        "url": action.get("params", {}).get("url", current_url),
-                        "params": {"id": "1' UNION SELECT 1,2,3--"}
-                    }
-                    fallback_action["reasoning"] = "Fallback: 切换到UNION注入"
-                elif "布尔盲注" in fallback or "boolean" in fallback.lower():
-                    fallback_action["params"] = {
-                        "method": "GET",
-                        "url": action.get("params", {}).get("url", current_url),
-                        "params": {"id": "1' AND 1=1--"}
-                    }
-                    fallback_action["reasoning"] = "Fallback: 切换到布尔盲注"
-                elif "错误注入" in fallback or "error" in fallback.lower():
-                    fallback_action["params"] = {
-                        "method": "GET",
-                        "url": action.get("params", {}).get("url", current_url),
-                        "params": {"id": "1' AND extractvalue(1,concat(0x7e,version()))--"}
-                    }
-                    fallback_action["reasoning"] = "Fallback: 切换到错误注入"
-                fallback_plans.append(fallback_action)
+                })
                 log(f"   📋 收集Fallback方案: {fallback[:50]}")
 
-        # [fallback修复] 记录收集到的fallback方案数量
         if fallback_plans:
             log(f"   ✅ 共收集 {len(fallback_plans)} 个Fallback方案")
 
@@ -3562,31 +3553,27 @@ def verifier_node(state: CTFState) -> Dict:
 
         if fallback_plans:
             log(f"   🔄 检查Fallback方案... (共 {len(fallback_plans)} 个)")
-            # 找到第一个未被尝试的fallback方案
             for fb in fallback_plans:
-                fb_desc = fb.get("fallback_description", "")
+                fb_desc = fb.get("description", "")
                 fb_tool = fb.get("tool", "")
-                # 检查是否已被尝试（通过failed_payloads或历史记录）
                 if fb_desc and fb_desc not in [p[:50] for p in failed_payloads]:
                     fallback_action = fb
                     log(f"   ✅ 找到可用Fallback: {fb_tool} - {fb_desc[:50]}")
                     break
 
-        # 如果有fallback方案，生成fallback攻击动作
         if fallback_action:
             log(f"   🔀 执行Fallback方案切换")
-            # 从fallback_plans中移除已使用的方案
             remaining_fallbacks = [fb for fb in fallback_plans if fb != fallback_action]
 
-            # 构建fallback攻击动作
+            # 从fallback描述构建攻击动作
+            fb_context = fallback_action.get("context", {})
             fallback_attack = {
                 "tool": fallback_action.get("tool", "requests"),
-                "params": fallback_action.get("params", {}),
-                "reasoning": fallback_action.get("reasoning", "Fallback方案执行")
+                "params": fb_context.get("original_params", {"url": current_url}),
+                "reasoning": f"Fallback: {fallback_action.get('description', '')}"
             }
 
-            # 更新战术指导，说明正在执行fallback
-            tactical_guidance = f"原攻击失败，正在执行Fallback方案: {fallback_action.get('fallback_description', '未知')}"
+            tactical_guidance = f"执行Fallback: {fallback_action.get('description', '未知')[:80]}"
             guidance_type = "continue"
             enforce_change = False
 

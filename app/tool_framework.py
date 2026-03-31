@@ -868,6 +868,51 @@ class ToolRegistry:
         return "\n".join(info_lines)
 
     @classmethod
+    def get_tool_names(cls) -> str:
+        """获取所有工具名称列表（简洁版，用于attacker快速参考）"""
+        tools = cls.get_all_tools()
+        categories = {
+            "Web扫描": [], "目录发现": [], "漏洞利用": [],
+            "密码攻击": [], "内网渗透": [], "辅助工具": []
+        }
+        web_tools = {"nuclei", "xray", "nmap", "httpx", "subfinder"}
+        dir_tools = {"dirsearch", "ffuf", "gobuster"}
+        vuln_tools = {"sqlmap", "ysoserial", "marshalsec", "gopherus", "phpggc"}
+        pass_tools = {"hydra", "john"}
+        internal_tools = {"mimikatz", "bloodhound", "crackmapexec", "impacket", "frp"}
+
+        for tool in tools:
+            name = tool.name()
+            if name in web_tools:
+                categories["Web扫描"].append(name)
+            elif name in dir_tools:
+                categories["目录发现"].append(name)
+            elif name in vuln_tools:
+                categories["漏洞利用"].append(name)
+            elif name in pass_tools:
+                categories["密码攻击"].append(name)
+            elif name in internal_tools:
+                categories["内网渗透"].append(name)
+            else:
+                categories["辅助工具"].append(name)
+
+        lines = ["## 可用工具（按需查询详情）"]
+        for cat, tools_list in categories.items():
+            if tools_list:
+                lines.append(f"- {cat}: {', '.join(tools_list)}")
+        return "\n".join(lines)
+
+    @classmethod
+    def get_tool_detail(cls, tool_names: List[str]) -> str:
+        """获取指定工具的详细信息（按需查询）"""
+        details = []
+        for name in tool_names[:5]:  # 最多5个工具详情
+            tool = cls.get_tool_by_name(name)
+            if tool:
+                details.append(f"## {name}\n{tool.description()}\n参数: {json.dumps(tool.expected_params(), ensure_ascii=False)[:200]}")
+        return "\n\n".join(details) if details else ""
+
+    @classmethod
     def get_all_tools_info(cls, scenes: Dict = None) -> str:
         """
         获取所有注册工具的能力声明，用于构建 LLM Prompt。

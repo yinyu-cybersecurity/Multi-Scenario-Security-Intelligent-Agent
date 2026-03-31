@@ -240,6 +240,8 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
 ## 可用工具
 {tool_definitions}
 
+**注意**: 如需其他工具，在输出中添加 `query_tools` 字段列出工具名，系统将返回详情。
+
 {payload_ref}
 
 {encoding_tips}
