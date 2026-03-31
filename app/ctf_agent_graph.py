@@ -1536,12 +1536,7 @@ def attacker_node(state: CTFState) -> Dict:
     2. 然后使用手工payload进行攻击
     3. 综合两种方式的结果
     """
-    # [智能流转] 导入AI流转控制器
-    try:
-        from ai_flow_controller import ai_flow_controller, FlowDecision
-    except ImportError:
-        ai_flow_controller = None
-        FlowDecision = None
+    # [简化] 移除智能流转，直接流转到verifier
 
     current_url = state.get("current_url")
     target_url = state.get("target_url", current_url)  # 原始目标URL
@@ -2023,7 +2018,6 @@ def attacker_node(state: CTFState) -> Dict:
         log(f"   📝 生成攻击摘要: {new_attack_summary[:100]}")
 
     res = {
-        "flow_decision": "",  # [关键] 重置流转标志，避免死循环
         "attack_batch": attack_actions,
         "attack_results": attack_results,
         # [断点4修复] 添加攻击摘要
@@ -2040,63 +2034,8 @@ def attacker_node(state: CTFState) -> Dict:
     if fallback_plans:
         res["fallback_plans"] = fallback_plans
 
-    # =========================================================================
-    # [智能流转] AI流转决策 - 根据攻击结果智能决定下一步流向
-    # =========================================================================
-    if ai_flow_controller and attack_results:
-        try:
-            # 综合所有攻击结果进行决策
-            combined_result = {
-                "attack_count": len(attack_results),
-                "success_count": sum(1 for r in attack_results if r.get("is_exploit")),
-                "vulns_found": len(discovered_vulns),
-                "creds_found": len(discovered_creds),
-                "hosts_found": len(discovered_hosts),
-                "has_progress": len(discovered_vulns) > 0 or len(discovered_creds) > 0 or len(discovered_hosts) > 0
-            }
-
-            flow_decision, decision_reason = ai_flow_controller.decide(
-                state=state,
-                attack_result=combined_result,
-                current_node="attacker"
-            )
-
-            log(f"   🧠 [智能流转] 决策: {flow_decision.value if hasattr(flow_decision, 'value') else flow_decision}")
-            log(f"      理由: {decision_reason}")
-
-            # 根据决策设置流转标志
-            if flow_decision == FlowDecision.CONTINUE_ATTACK:
-                # 有明显进展，可以绕过verifier直接继续
-                res["skip_verifier"] = True
-                res["flow_decision"] = "continue_attack"
-                res["flow_reason"] = decision_reason
-                log("      → 绕过verifier，直接继续攻击")
-
-            elif flow_decision == FlowDecision.REPORT_FLAG:
-                # 发现FLAG，直接报告
-                res["skip_verifier"] = True
-                res["flow_decision"] = "report_flag"
-                res["flow_reason"] = decision_reason
-                log("      → 发现FLAG，准备报告")
-
-            elif flow_decision == FlowDecision.SWITCH_STRATEGY:
-                # 需要切换策略
-                res["flow_decision"] = "switch_strategy"
-                res["flow_reason"] = decision_reason
-                # 增加失败分触发策略切换
-                res["failure_weighted_score"] = state.get("failure_weighted_score", 0) + 3.0
-                log("      → 切换攻击策略")
-
-            else:
-                # GO_VERIFIER - 正常流转
-                res["flow_decision"] = "go_verifier"
-                res["flow_reason"] = decision_reason
-                log("      → 正常流转到verifier")
-
-        except Exception as e:
-            log(f"   ⚠️ [智能流转] 决策异常: {e}")
-            # 异常时保持默认流转（不设置skip_verifier）
-
+    # [简化] 移除智能流转，直接流转到verifier
+    # verifier会判断攻击是否有效并给出下一步指导
     log_node_data("attacker", {"prompt": prompt, "actions": attack_actions}, res)
     return res
 
@@ -2595,6 +2534,16 @@ def verifier_node(state: CTFState) -> Dict:
         evidence = result.get("exploit_evidence", "")
         failure_level = result.get("failure_level", "minor")  # 改为定性描述
         is_exploit_successful = result.get("is_exploit_successful", False)
+
+        # [修复] 将failure_level转换为failure_severity数值
+        failure_severity_map = {
+            "none": 0.0,
+            "minor": 0.2,
+            "moderate": 0.5,
+            "major": 0.8,
+            "critical": 1.0
+        }
+        failure_severity = failure_severity_map.get(failure_level, 0.2)
 
         # [简化格式处理] tactical_guidance现在是字符串，guidance_type是单独字段
         tactical_guidance = result.get("tactical_guidance", "")
@@ -3265,44 +3214,8 @@ else:
 # 3. 分支回归逻辑
 workflow.add_edge("explorer", "mode_manager")  # 探索后重新决策
 
-# 3.5 [智能流转] attacker 条件路由 - 支持绕过 verifier
-def _route_from_attacker(state: CTFState) -> str:
-    """
-    attacker 后智能路由
-
-    根据 ai_flow_controller 的决策决定下一步：
-    - flow_decision='continue_attack' -> 直接返回 attacker 继续攻击
-    - flow_decision='report_flag' -> 进化流程
-    - 默认 -> verifier 验证
-    """
-    # 检查 flow_decision（从state读取，attacker_node已设置）
-    flow_decision = state.get("flow_decision", "")
-
-    if flow_decision == "continue_attack":
-        # 重置标志，避免重复路由
-        logger.info("[智能流转] 绕过 verifier，直接继续攻击")
-        # 返回attacker前重置flow_decision，避免死循环
-        # 注意：这里返回的更新会在下一次attacker调用前合并
-        return "attacker"
-
-    if flow_decision == "report_flag":
-        logger.info("[智能流转] 发现 FLAG，进入进化流程")
-        return "evolution"
-
-    # 默认进入 verifier
-    return "verifier"
-
-_attacker_routes = {
-    "verifier": "verifier",
-    "attacker": "attacker",  # 绕过 verifier 继续攻击
-    "evolution": "evolution",  # 发现 FLAG 直接进化
-}
-
-workflow.add_conditional_edges(
-    "attacker",
-    _route_from_attacker,
-    _attacker_routes
-)
+# 3.5 [简化] attacker 直接流转到 verifier
+workflow.add_edge("attacker", "verifier")
 
 # 4. [P3优化] 验证后分流: 成功则进化，shell则后渗透，失败则回到mode_manager
 _verifier_routes = {
