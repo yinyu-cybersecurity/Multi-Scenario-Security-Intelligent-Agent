@@ -709,7 +709,8 @@ def _llm_detect_challenge_type(task_name: str, task_desc: str,
             model=config.ANALYST_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
-            json_mode=True
+            json_mode=True,
+            timeout=30  # 类型检测应快速完成
         )
 
         if "```json" in response:
@@ -2745,6 +2746,7 @@ def attacker_node(state: CTFState) -> Dict:
         log(f"   📝 生成攻击摘要: {new_attack_summary[:100]}")
 
     res = {
+        "flow_decision": "",  # [关键] 重置流转标志，避免死循环
         "attack_batch": attack_actions,
         "attack_results": attack_results,
         # [断点4修复] 添加攻击摘要
@@ -4023,18 +4025,20 @@ def _route_from_attacker(state: CTFState) -> str:
     attacker 后智能路由
 
     根据 ai_flow_controller 的决策决定下一步：
-    - skip_verifier=True -> 直接返回 attacker 继续攻击
+    - flow_decision='continue_attack' -> 直接返回 attacker 继续攻击
     - flow_decision='report_flag' -> 进化流程
     - 默认 -> verifier 验证
     """
-    # 检查是否应该绕过 verifier
-    if state.get("skip_verifier"):
+    # 检查 flow_decision（从state读取，attacker_node已设置）
+    flow_decision = state.get("flow_decision", "")
+
+    if flow_decision == "continue_attack":
         # 重置标志，避免重复路由
         logger.info("[智能流转] 绕过 verifier，直接继续攻击")
+        # 返回attacker前重置flow_decision，避免死循环
+        # 注意：这里返回的更新会在下一次attacker调用前合并
         return "attacker"
 
-    # 检查 flow_decision
-    flow_decision = state.get("flow_decision", "")
     if flow_decision == "report_flag":
         logger.info("[智能流转] 发现 FLAG，进入进化流程")
         return "evolution"

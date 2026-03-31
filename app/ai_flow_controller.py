@@ -326,15 +326,31 @@ class AIFlowController:
 ## 最近攻击结果
 {context.get('attack_summary', '无攻击结果')}
 
+## 重要判断原则
+
+### 优先使用GO_VERIFIER
+当攻击结果为以下情况时，**必须**选择GO_VERIFIER进行验证：
+- 结果显示"无有效信息"、"无攻击结果"、"请求失败"
+- 状态码为403/404/500/超时
+- 响应内容无明显变化或只有错误信息
+- 无法确认攻击是否成功
+
+### 使用CONTINUE_ATTACK的条件
+**仅在明确满足以下条件之一时**才选择CONTINUE_ATTACK：
+- 获取了Shell/凭据（检查state中shell_session/credentials）
+- 页面内容有明显变化（如发现新路径、新内容）
+- 响应中包含FLAG线索或敏感信息
+- 攻击链有实质进展（不只是"有响应"）
+
+### 使用SWITCH_STRATEGY的条件
+- 连续多次攻击无效果
+- 失败分累积超过阈值
+- 当前策略已穷尽可能性
+
 ## 决策选项
-1. CONTINUE_ATTACK: 攻击有效，绕过verifier继续攻击
-   - 条件: 有潜在突破口、攻击链有进展、页面有细微变化
-
-2. GO_VERIFIER: 正常流转到verifier验证
-   - 条件: 攻击结果需要验证、无明显进展
-
+1. GO_VERIFIER: 正常流转到verifier验证（推荐，除非有明确进展）
+2. CONTINUE_ATTACK: 攻击有效，绕过verifier继续攻击
 3. SWITCH_STRATEGY: 切换攻击策略
-   - 条件: 多次失败、策略失效、需要新思路
 
 ## 输出格式 (JSON)
 ```json
@@ -349,12 +365,6 @@ class AIFlowController:
     }}
 }}
 ```
-
-## 分析要点
-1. 即使没有直接成果，攻击是否在推进状态
-2. 是否存在潜在的突破口可以继续尝试
-3. 当前策略是否已经穷尽可能性
-4. 失败分累积是否接近阈值
 """
 
         try:
