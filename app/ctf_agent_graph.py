@@ -2754,11 +2754,14 @@ def verifier_node(state: CTFState) -> Dict:
         existing_failed = state.get("failed_payloads", [])
         failed_payloads = list(existing_failed)  # 复制已有记录
         for action in attack_batch:
-            # 从 params 中提取 payload
+            # 从 params 中提取 payload（包括URL和data）
             params = action.get("params", {})
             url = params.get("url", "")
-            if url and url not in failed_payloads:
-                failed_payloads.append(url)
+            data = params.get("data", "")
+            # 组合URL和data作为唯一标识
+            payload_key = f"{url}|{data[:100]}" if data else url
+            if payload_key and payload_key not in failed_payloads:
+                failed_payloads.append(payload_key)
         # 保留最近50条，避免过长
         failed_payloads = failed_payloads[-50:]
 
