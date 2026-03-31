@@ -26,22 +26,22 @@ TOOL_SCENARIOS = {
     },
 
     "python-exec": {
-        "function": "在隔离环境中执行Python代码片段",
+        "function": "执行Python代码处理编码解码、加密解密、数据处理等精确任务",
         "best_for": [
-            "快速编写漏洞利用脚本（如加密解密、编码转换）",
-            "分析序列化数据、构造payload",
-            "进行数据分析和格式转换",
-            "编写一次性利用脚本验证漏洞",
+            "编码解码（base64、URL、十六进制、Unicode等）",
+            "加密解密（MD5、SHA、AES、RSA等）",
+            "正则提取复杂内容、数据处理",
+            "需要精确执行的多步骤操作",
             "解密题目中的自定义加密算法"
         ],
         "not_for": [
-            "需要持久化运行的服务",
-            "需要外部依赖库较多的复杂脚本",
-            "需要访问文件系统的深度操作"
+            "简单的HTTP请求（用requests工具更直接）",
+            "已知漏洞利用（用对应专业工具）",
+            "单步攻击动作（直接构造payload）"
         ],
         "prerequisite": "熟悉Python语法，能编写正确的代码片段",
         "cost": "低",
-        "example": "执行代码解密题目密文: exec(open('decrypt.py').read()) 或直接执行解密代码"
+        "example": "base64解码: import base64; print(base64.b64decode('XXX').decode())"
     },
 
     # ==================== 漏洞扫描工具 ====================

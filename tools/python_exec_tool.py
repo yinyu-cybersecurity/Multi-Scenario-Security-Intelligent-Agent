@@ -442,22 +442,18 @@ class PythonExecTool(CTFTool):
         return "python-exec"
 
     def description(self) -> str:
-        return ("Python 脚本执行工具。当需要精确处理编码、解码、加密、解密、数据处理、"
-                "正则提取、数学计算等任务时，编写 Python 代码执行。比 AI 直接输出更准确！"
-                "增强功能：可通过 env API 访问状态、调用工具、保存凭据、报告FLAG。"
-                "支持exec_mode参数：subprocess(本地)或docker(容器内执行)。")
+        return ("Python脚本执行工具。适用于：编码解码、加密解密、正则提取、数据处理等需要精确执行的场景。"
+                "简单HTTP请求请用requests工具，已知漏洞利用请用专业工具。"
+                "增强功能：env API支持状态访问、工具调用、凭据保存、FLAG报告。")
 
     def supported_vulns(self) -> list:
         return ["Data Processing", "Encoding", "Decoding", "Cryptography", "Calculation"]
 
     def capability_statement(self) -> str:
-        return ("Python脚本执行器。编写代码处理编码解码、加密解密、数据处理、正则提取。"
-                "适合：发现编码数据、需要精确计算、写利用脚本。"
-                "执行模式：exec_mode=subprocess(本地)或docker(容器内)。"
-                "增强env API：env.get_state(key)获取状态、env.call_tool(name,target,params)调用工具、"
-                "env.save_credential(cred)保存凭据、env.report_flag(flag)报告FLAG、env.log(msg)记录日志。"
-                "新增env API：env.env_download(url,path)下载文件、env.env_extract(file,dest)解压文件、"
-                "env.env_exec_cmd(cmd,timeout)执行命令、env.env_check_file(path)检查文件、env.env_list_dir(path)列出目录。")
+        return ("Python脚本执行器。适用：编码解码、加密解密、正则提取、数据处理。"
+                "不适用：简单HTTP请求(用requests)、已知漏洞利用(用专业工具)。"
+                "env API: env.get_state(key)获取状态、env.call_tool()调用工具、"
+                "env.report_flag(flag)报告FLAG。")
 
     def check_available(self) -> bool:
         return True  # Python 总是可用

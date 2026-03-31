@@ -104,22 +104,49 @@ SCENE_TOOL_MAPPING: Dict[str, List[str]] = {
 }
 
 # =============================================================================
+# FLAG定位策略（新增）
+# =============================================================================
+
+FLAG_LOCATION_STRATEGY = """
+## 🎯 FLAG定位策略
+
+命令执行类攻击的标准流程：
+1. **先列出目录**: `ls /` 查看根目录，`ls` 查看当前目录
+2. **发现可疑文件后读取**: 注意非常规文件名如 flllllaaaaaaggggggg
+3. **常见位置**: 根目录 `/flag`、当前目录 `flag.php`、环境变量
+
+## Payload精确性
+
+- 代码注入类：语句必须完整，注意结束符
+- 存在过滤时：尝试编码、拼接、替代函数等绕过方式
+"""
+
+# =============================================================================
 # 编码处理提示
 # =============================================================================
 
 ENCODING_TIPS = """
-涉及精确计算的场景必须使用 `python-exec` 工具写脚本执行，不要自己猜测：
+## 编码/解码处理
 
-1. **编码解码**: base64、URL编码、十六进制、Unicode、ROT13等
-   ```json
-   {"tool": "python-exec", "params": {"code": "import base64; result = base64.b64decode('XXXXX').decode()", "description": "base64解码"}}
-   ```
+**python-exec工具的正确使用场景**：
+1. 编码解码（base64、URL、十六进制、Unicode等复杂编码）
+2. 加密解密（MD5、SHA、AES、RSA等）
+3. 正则提取复杂内容
+4. 数学计算和数据处理
+5. 需要精确执行的多步骤操作
 
-2. **加密解密**: MD5、SHA、AES等哈希或加密操作
+**不应该使用python-exec的场景**：
+- 简单的HTTP请求 → 直接用 requests 工具
+- 已知的漏洞利用 → 用对应的专业工具
+- 单步攻击动作 → 用 requests 直接构造payload
 
+示例：
+```json
+{"tool": "python-exec", "params": {"code": "import base64; result = base64.b64decode('XXXXX').decode()", "description": "base64解码"}}
+```
 
-**错误示例** : 看到 base64 就直接脑补解码结果
-**正确示例** : 用 python-exec 写脚本精确解码
+**错误示例**: 看到 base64 就直接脑补解码结果
+**正确示例**: 用 python-exec 写脚本精确解码
 """
 
 # =============================================================================
@@ -266,6 +293,16 @@ def get_encoding_tips(stage_info: Dict = None, strategic_context: Dict = None) -
 ### 当前障碍: {', '.join(blockers[:3]) if blockers else '无'}
 """
     return stage_section + ENCODING_TIPS
+
+def get_flag_location_strategy(stage_info: Dict = None, strategic_context: Dict = None) -> str:
+    """获取FLAG定位策略"""
+    stage_section = ""
+    if stage_info:
+        stage_section = f"""
+## 当前阶段: {stage_info.get('stage_name', '')}
+### 阶段目标: {stage_info.get('goal', '')}
+"""
+    return stage_section + FLAG_LOCATION_STRATEGY
 
 def get_new_path_discovery_tips(stage_info: Dict = None, strategic_context: Dict = None) -> str:
     """获取新路径发现提示"""

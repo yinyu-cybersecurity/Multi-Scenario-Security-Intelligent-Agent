@@ -4,7 +4,8 @@ import re
 from prompts.scene_framework import (
     get_encoding_tips,
     get_new_path_discovery_tips,
-    get_success_criteria
+    get_success_criteria,
+    get_flag_location_strategy
 )
 
 # Base64 正则匹配
@@ -111,6 +112,7 @@ def get_verifier_prompt(attack_batch: list, results: list,
 
     # 获取共享的提示模块
     success_criteria = get_success_criteria()
+    flag_strategy = get_flag_location_strategy()
 
     return f"""# CTF 核验官
 
@@ -124,64 +126,41 @@ def get_verifier_prompt(attack_batch: list, results: list,
 ## 攻击结果
 {json.dumps(formatted_results, indent=2, ensure_ascii=False)}
 
-## 重要提示：精确处理
+## 攻击失败分析要点
 
-当响应中包含以下内容时，**必须**建议使用 `python-exec` 工具进行精确处理：
-- Base64/URL编码/十六进制等编码内容 → 解码
-- 需要精确计算（如字符数、哈希值）→ 计算
-- 需要正则提取复杂内容 → 提取
-- 任何容易出错的操作 → 写脚本执行
+当攻击返回与基准相同或无有效输出时，分析可能原因：
+1. **payload格式错误** - 语法不完整、缺少必要字符
+2. **被过滤/拦截** - 存在WAF或关键词过滤
+3. **攻击路径错误** - 目标目录/文件不存在
+4. **函数被禁用** - 需要换其他函数
 
-不要自己猜测解码结果，让 python-exec 工具执行！
+{flag_strategy}
 
-## ⚠️ 关键：发现新路径必须访问！
+## ⚠️ 发现新路径必须访问！
 
-当攻击结果中**发现新的文件路径或URL**时（如解码后得到 `/test2222222222222222.php`）：
-1. **立即建议直接访问该URL**，如 `http://目标域名/test2222222222222222.php`
-2. **不要继续证明漏洞存在**，应该去新路径寻找FLAG
-3. 在 `tactical_guidance` 中明确写出完整的访问URL
-
-错误示例: 继续用文件包含证明漏洞存在
-正确示例: 直接访问 `http://node7.anna.nssctf.cn:22856/test2222222222222222.php`
+当结果中发现新文件路径时，立即访问而非继续验证漏洞。
 
 ## 评判标准
 
 {success_criteria}
 
-## 战略评估
-
-### 1. 进度评估
-分析当前攻击相对于目标的位置：
-- 距离FLAG：[更近 / 不变 / 更远]
-- 新获得了什么信息？
-- 剩余障碍是什么？
-
-### 2. 策略调整
-- 当前策略是否有效？
-- 是否需要换方向？
-- 有没有遗漏的攻击面？
-
-### 3. 资源优化
-- 是否有更高效的攻击路径？
-- 当前工具是否最适合？
-
 ### 节点决策 (node_decision)
-- **continue**: 有明确进展，值得继续尝试新方法
-- **abandon**: 连续多次无实质进展、重复相同失败模式、触发热熔断
+- **continue**: 有明确进展，值得继续
+- **abandon**: 连续多次无实质进展、重复相同失败
 
-## 输出 JSON（简化版，使用定性描述）
+## 输出 JSON
 {{
     "found_flag": true/false,
     "potential_flag": "FLAG或空",
     "is_exploit_successful": true/false,
-    "exploit_evidence": "成功证据简述",
+    "exploit_evidence": "成功证据",
     "failure_level": "critical/major/minor",
     "node_decision": "continue或abandon",
-    "failure_analysis": "失败原因分析（如有失败）",
+    "failure_analysis": "失败原因分析",
     "new_discoveries": ["发现1", "发现2"],
-    "tactical_guidance": "攻击参数建议，如 ?url=system('ls')",
+    "tactical_guidance": "具体攻击建议",
     "guidance_type": "switch_scene/continue/deepen/abort",
-    "target_url": "目标页面URL（switch_scene时填写新路径，否则留空）",
+    "target_url": "新目标URL（switch_scene时填写）",
     "updated_known_facts": "发现的关键信息"
 }}
 """

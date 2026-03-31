@@ -2749,12 +2749,17 @@ def verifier_node(state: CTFState) -> Dict:
         scene_attack_attempts = state.get("scene_attack_attempts", 0) + 1
         focused_scene = state.get("focused_scene", "")
 
-        # 记录失败的payload
-        failed_payloads = []
+        # 记录失败的payload（累加模式）
+        existing_failed = state.get("failed_payloads", [])
+        failed_payloads = list(existing_failed)  # 复制已有记录
         for action in attack_batch:
-            payload_str = action.get("payload", "")
-            if payload_str:
-                failed_payloads.append(payload_str)
+            # 从 params 中提取 payload
+            params = action.get("params", {})
+            url = params.get("url", "")
+            if url and url not in failed_payloads:
+                failed_payloads.append(url)
+        # 保留最近50条，避免过长
+        failed_payloads = failed_payloads[-50:]
 
         # =====================================================
         # [fallback修复] 检查是否有备选方案可用
@@ -2799,10 +2804,9 @@ def verifier_node(state: CTFState) -> Dict:
                 "node_attack_status": node_status,
                 "vuln_candidates": candidates,
                 "fallback_plans": remaining_fallbacks,
-                "scene_attack_attempts": scene_attack_attempts
+                "scene_attack_attempts": scene_attack_attempts,
+                "failed_payloads": failed_payloads  # 传递失败记录
             }
-            if failed_payloads:
-                result_dict["failed_payloads"] = failed_payloads
 
             # [战略上下文更新] Fallback方案执行时更新战略上下文
             updated_context = update_strategic_context_after_node(state, "verifier", result_dict)
@@ -2926,10 +2930,9 @@ def verifier_node(state: CTFState) -> Dict:
             "guidance_target_url": guidance_target_url,
             "scene_attack_attempts": scene_attack_attempts,
             "continue_attack": continue_attack,
-            "remaining_payloads": remaining_payloads
+            "remaining_payloads": remaining_payloads,
+            "failed_payloads": failed_payloads  # 始终返回，即使为空
         }
-        if failed_payloads:
-            result_dict["failed_payloads"] = failed_payloads
 
         # [战略上下文更新] 更新战略上下文
         updated_context = update_strategic_context_after_node(state, "verifier", result_dict)

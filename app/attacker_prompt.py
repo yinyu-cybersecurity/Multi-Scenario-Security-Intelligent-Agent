@@ -5,7 +5,8 @@ from prompts.scene_framework import (
     get_scene_framework_for_attacker,
     get_encoding_tips,
     get_new_path_discovery_tips,
-    get_tool_selection_principles
+    get_tool_selection_principles,
+    get_flag_location_strategy
 )
 
 
@@ -160,8 +161,14 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
         failed_items = "\n".join([f"- {p[:100]}" for p in failed_payloads[-20:]])
         failed_desc = f"""
 ## ⛔ 已失败的Payload（严禁重复）
-以下payload已被证明无效，请勿再次尝试：
+以下payload已被证明无效，请勿再次尝试相同或极其相似的内容：
 {failed_items}
+
+**重要**：如果攻击方向正确但执行失败，应该：
+1. 检查payload格式是否精确（语法完整性、编码正确性）
+2. 分析是否存在过滤/拦截，尝试绕过技术
+3. 换不同的函数/方法实现相同目标
+4. 扩大或改变攻击范围（不同目录、不同参数、不同路径）
 """
 
     # 阶段信息注入
@@ -204,6 +211,7 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
     encoding_tips = get_encoding_tips()
     path_discovery_tips = get_new_path_discovery_tips()
     tool_principles = get_tool_selection_principles()
+    flag_location_strategy = get_flag_location_strategy()
 
     return f"""# CTF 攻击手
 
@@ -233,6 +241,8 @@ def get_attacker_prompt(vuln_candidates: List[Dict], tool_definitions: str,
 **注意**: 如需其他工具，在输出中添加 `query_tools` 字段列出工具名，系统将返回详情。
 
 {payload_ref}
+
+{flag_location_strategy}
 
 {encoding_tips}
 {path_discovery_tips}
@@ -273,14 +283,21 @@ rag_source 可选: payloads, nuclei, writeups, security_resources
 - **tool**: 工具名称
 - **params**: 完整参数（URL必须包含完整payload）
 
+### Payload格式要求
+确保payload语法正确、格式完整：
+- 代码注入类：语句完整，注意结束符
+- 命令注入类：注意特殊字符编码
+- 注入类攻击：注意引号闭合和注释
+- 路径类攻击：使用正确的路径格式
+
 示例:
 ```json
 {{"attack_actions": [
-  {{"tool": "requests", "params": {{"method": "GET", "url": "http://target/index.php?cmd=ls"}}}}
+  {{"tool": "requests", "params": {{"method": "GET", "url": "http://target/index.php?param=payload"}}}}
 ]}}
 ```
 
-**关键**: params.url 必须是完整可执行的攻击URL，直接复制使用payload_examples中的示例。
+**关键**: params.url 必须是完整可执行的攻击URL。
 
 {scene_framework}
 {tool_principles}
