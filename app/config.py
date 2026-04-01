@@ -3,7 +3,7 @@
 # 使用方式：from config import config
 #
 # 配置常量集中化：所有魔法值统一管理，每个常量有注释说明用途
-from typing import List
+from typing import List, Dict
 from dataclasses import dataclass,field
 import os
 import yaml
@@ -402,6 +402,30 @@ class Config:
         "wordlists": os.environ.get("WORDLISTS_PATH", "/app/data/security_resources/SecLists-master"),
         "data_dir": os.environ.get("DATA_DIR", "/app/data"),
     })
+
+    # =========================================================================
+    # Docker配置 - 工具容器化
+    # =========================================================================
+
+    # Docker是否启用
+    DOCKER_ENABLED: bool = True
+
+    # Docker不可用时降级本地执行
+    DOCKER_FALLBACK_TO_LOCAL: bool = True
+
+    # 容器池配置
+    DOCKER_CONTAINER_POOLS: Dict[str, int] = field(default_factory=lambda: {
+        "web": 3,
+        "pwn": 2,
+    })
+
+    # Docker超时配置
+    DOCKER_CONTAINER_START_TIMEOUT: int = 30
+    DOCKER_EXECUTION_TIMEOUT: int = 300
+
+    # Docker资源限制
+    DOCKER_MEMORY_LIMIT: str = "1g"
+    DOCKER_CPU_QUOTA: int = 50000  # 50%
 
     # =========================================================================
     # LLM 配置

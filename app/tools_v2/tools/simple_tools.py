@@ -948,7 +948,8 @@ async def run_command(
     cmd: list,
     timeout: int = 300,
     interactive: bool = False,
-    inputs: list = None
+    inputs: list = None,
+    use_docker: bool = True  # 新增参数：是否尝试Docker执行
 ) -> Dict[str, Any]:
     """执行命令并返回结果
 
@@ -957,10 +958,36 @@ async def run_command(
         timeout: 超时时间（秒）
         interactive: 是否需要交互式输入
         inputs: 自动输入列表（按顺序发送给进程）
+        use_docker: 是否尝试Docker执行
 
     Returns:
         包含success, stdout, stderr的字典
     """
+    from ..tool_images import is_docker_tool
+    from ..docker_executor import get_docker_executor
+
+    tool_name = cmd[0] if cmd else None
+
+    # 检查是否应该用Docker执行
+    if use_docker and tool_name and is_docker_tool(tool_name):
+        executor = get_docker_executor()
+        return await executor.execute(
+            tool_name=tool_name,
+            command=cmd,
+            timeout=timeout
+        )
+
+    # 本地执行（降级模式或非Docker工具）
+    return await _run_local_command(cmd, timeout, interactive, inputs)
+
+
+async def _run_local_command(
+    cmd: list,
+    timeout: int = 300,
+    interactive: bool = False,
+    inputs: list = None
+) -> Dict[str, Any]:
+    """本地执行命令（原run_command的逻辑）"""
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -989,6 +1016,8 @@ async def run_command(
         }
     except asyncio.TimeoutError:
         return {"success": False, "error": "超时"}
+    except FileNotFoundError:
+        return {"success": False, "error": f"工具未安装: {cmd[0] if cmd else 'unknown'}"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 

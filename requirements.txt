@@ -39,3 +39,6 @@ python-magic>=0.4.27
 
 # MCP (Model Context Protocol)
 mcp>=1.0.0
+
+# Docker SDK
+docker>=7.0.0

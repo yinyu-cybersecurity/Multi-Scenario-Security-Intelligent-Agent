@@ -31,6 +31,29 @@ from .concurrency_config import (
     is_read_only_command,
 )
 
+# Docker工具容器支持
+from .tool_images import (
+    ToolImageConfig,
+    TOOL_IMAGE_MAPPING,
+    CONTAINER_POOL_CONFIG,
+    get_tool_config,
+    is_docker_tool,
+    get_pool_config,
+    get_all_required_images,
+)
+
+from .container_pool import (
+    ContainerPool,
+    PooledContainer,
+    get_container_pool,
+)
+
+from .docker_executor import (
+    DockerToolExecutor,
+    get_docker_executor,
+    initialize_docker_executor,
+)
+
 __all__ = [
     # 核心类
     "CTFToolV2",
@@ -57,4 +80,19 @@ __all__ = [
     "get_max_concurrent",
     "classify_tools_for_parallel",
     "is_read_only_command",
+
+    # Docker工具容器
+    "ToolImageConfig",
+    "TOOL_IMAGE_MAPPING",
+    "CONTAINER_POOL_CONFIG",
+    "get_tool_config",
+    "is_docker_tool",
+    "get_pool_config",
+    "get_all_required_images",
+    "ContainerPool",
+    "PooledContainer",
+    "get_container_pool",
+    "DockerToolExecutor",
+    "get_docker_executor",
+    "initialize_docker_executor",
 ]

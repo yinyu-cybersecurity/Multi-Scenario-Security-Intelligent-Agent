@@ -32,23 +32,47 @@
 
 ## 快速开始
 
-### Docker部署（推荐）
+### 本地运行 + Docker工具容器（推荐）
 
 ```bash
-# 构建镜像
-docker build -t ctf-agent:2.0 .
+# 1. 安装Python依赖
+pip install -r requirements.txt
 
-# 运行容器
-docker run -d \
-  --name ctf-agent \
-  -p 8000:8000 \
-  -p 54565:54565 \
-  -v $(pwd)/config.yaml:/app/config.yaml \
-  ctf-agent:2.0
+# 2. 构建Docker工具镜像
+chmod +x scripts/build-images.sh
+./scripts/build-images.sh
 
-# 进入容器
-docker exec -it ctf-agent bash
+# 3. 配置API密钥
+cp config.yaml.example config.yaml
+# 编辑config.yaml，填入LLM API密钥
+
+# 4. 运行Agent
+python -m app.main
 ```
+
+### 工具镜像构建
+
+```bash
+# 构建所有镜像
+docker build -t ctf-tools-web:latest -f docker/web-tools/Dockerfile .
+docker build -t ctf-tools-pwn:latest -f docker/pwn-tools/Dockerfile .
+docker build -t ctf-tools-ad:latest -f docker/ad-tools/Dockerfile .
+docker build -t ctf-tools-deser:latest -f docker/deser-tools/Dockerfile .
+docker build -t ctf-tools-misc:latest -f docker/misc-tools/Dockerfile .
+
+# 或使用构建脚本
+./scripts/build-images.sh
+```
+
+### Docker工具镜像列表
+
+| 镜像名 | 工具 | 大小 | 用途 |
+|--------|------|------|------|
+| ctf-tools-web | nmap, nuclei, httpx, fscan, sqlmap... | ~800MB | Web安全扫描 |
+| ctf-tools-pwn | pwntools, ROPgadget, pwndbg | ~300MB | 二进制利用 |
+| ctf-tools-ad | crackmapexec, impacket, bloodhound | ~400MB | AD域渗透 |
+| ctf-tools-deser | ysoserial, marshalsec, JNDIExploit | ~200MB | 反序列化攻击 |
+| ctf-tools-misc | jwt_tool, ssrfmap, gopherus | ~150MB | 杂项工具 |
 
 ### 本地开发
 

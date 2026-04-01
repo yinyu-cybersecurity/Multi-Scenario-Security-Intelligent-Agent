@@ -20,3 +20,21 @@ INTERNAL_TASK_TIMEOUT: 3000  # 内网渗透: 50分钟
 # ===== Internal Network Configuration =====
 # 框架运行在VPS服务器上，填写公网IP
 LOCAL_PUBLIC_IP: ""
+
+# ===== Docker Configuration =====
+# 工具容器化配置
+DOCKER_ENABLED: true
+DOCKER_FALLBACK_TO_LOCAL: true  # Docker不可用时降级本地执行
+
+# 容器池大小
+DOCKER_CONTAINER_POOLS:
+  web: 3  # Web工具持久容器数
+  pwn: 2  # Pwn工具持久容器数
+
+# Docker超时（秒）
+DOCKER_CONTAINER_START_TIMEOUT: 30
+DOCKER_EXECUTION_TIMEOUT: 300
+
+# Docker资源限制
+DOCKER_MEMORY_LIMIT: "1g"
+DOCKER_CPU_QUOTA: 50000  # 50% CPU
