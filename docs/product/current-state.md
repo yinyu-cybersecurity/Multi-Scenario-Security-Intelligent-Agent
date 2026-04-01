@@ -47,6 +47,18 @@
 
 - `docs/runbooks/security.md`
 
+### 5. 审计问题已形成正式修复计划，但尚未执行完
+
+当前已经有正式 spec 用于驱动全面重构与修复：
+
+- `specs/audit-remediation-program/spec.md`
+
+这意味着：
+
+- 审计问题不再只是“报告结论”
+- 后续修复应按 workstream 和原子 PR 执行
+- 修复完成前，当前风险仍然真实存在
+
 ---
 
 ## 当前工作方式

@@ -27,17 +27,23 @@
 
 ## Next
 
-### 1. CI 统一到 Makefile
+### 1. 审计问题系统性修复
+
+- 以 `specs/audit-remediation-program/spec.md` 为总契约推进多 PR 修复
+- 覆盖 Web 控制面、凭据与会话处理、高危执行边界、ToolRegistry、测试与 CI
+- 每个 workstream 都要求机器可判定验收
+
+### 2. CI 统一到 Makefile
 
 - 让 workflow 使用统一入口，而不是仓库内到处散落命令
 - 去掉吞错逻辑，恢复失败即失败
 
-### 2. 测试分层
+### 3. 测试分层
 
 - 定义 `smoke`、`unit`、`integration`、`security`
 - 让测试失败能快速定位到层级，而不是一锅烩
 
-### 3. 规格驱动开发
+### 4. 规格驱动开发
 
 - 新 feature 和重要 bug 都要求绑定 `specs/*/spec.md`
 - PR 必须引用 spec 或 issue
