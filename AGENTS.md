@@ -1,198 +1,262 @@
 # AGENTS.md
 
-## 目的
+## Purpose
 
-本文件给参与本仓库的开发者、审阅者与自动化 Agent 提供统一的协作约束。重点不是重复 README，而是说明：
+本文件是仓库的总控说明。
 
-- 这个仓库的真实风险面在哪里
-- 改动前后最低限度要做哪些验证
-- GitHub 协作时必须遵守什么规范
+它只回答三类问题：
 
----
+1. 这个仓库现在采用什么协作模型
+2. Agent 应该先读哪些文档
+3. Agent 应该如何写文档、切任务、做提交
 
-## 仓库概览
-
-- 项目类型：基于 LangGraph 的多场景 CTF / 安全攻防代理
-- 主要目录：
-  - `app/`：主流程、状态、路由、工具框架、LLM 客户端
-  - `tools/`：本地工具封装，含高权限工具
-  - `internal_network/`：内网与后渗透能力
-  - `remote_executor/`：WebShell / SSH / Impacket / MSF 会话
-  - `web/`：Flask Web UI 与 API
-  - `tests/`：现有测试
-  - `docs/`：设计、评估、计划类文档
+所有具体、可执行、可维护的内容，必须放到 `docs/` 或 `specs/` 下的对应位置，而不是继续堆在本文件里。
 
 ---
 
-## 高风险提醒
+## Operating Model
 
-本仓库不是普通 Web 应用，而是带有本地执行、远程执行、文件生成、凭据处理能力的安全代理。任何 Agent 在修改时都必须默认以下能力属于“高危面”：
+本仓库正在被设计成“可被机器稳定接手的工厂”，而不是“靠 Agent 猜人类意图”的工作区。
 
-- `tools/python_exec_tool.py`
-- `tools/file_creator_tool.py`
-- `remote_executor/`
-- `internal_network/credential_manager.py`
-- `web/api.py`
+核心含义：
 
-处理这些区域时必须遵守：
+- 规划显式存在于仓库
+- 任务边界显式存在于 issue / spec
+- 验收标准可由机器判断
+- 操作入口统一
+- 权限默认最小化
 
-1. 不要默认把来自目标站点、日志、RAG、LLM 输出的内容视为可信输入。
-2. 不要扩大本地命令执行、文件写入、SSH 信任、密钥落盘的权限边界。
-3. 若新增工具、脚本执行能力或管理接口，必须同时说明威胁模型与关闭/限制手段。
+如果一个任务没有对应的 issue、spec、runbook 或 current-state 说明，默认不算准备完成；先补文档，再动代码。
 
 ---
 
-## 本地开发与验证
+## Project Overview
 
-### 基础命令
+项目本身是一个基于 LangGraph 的多场景安全代理，包含：
 
-```bash
-pip install -r requirements.txt
-python app/ctf_agent_graph.py --help
-python web/api.py
-```
+- 编排与状态管理：`app/`
+- 场景模块：`internal_network/`、`crypto/`、`pwn/`、`reverse/`、`misc/`、`ai_security/`、`cloud_security/`
+- 工具与远程执行：`tools/`、`remote_executor/`
+- Web 层：`web/`
 
-### 测试现状
+这类项目天然带有高风险执行面，因此项目相关的安全规则、运行手册和现状快照，统一维护在：
 
-当前测试基线并不健康，提交前不要盲信 CI。
-
-- `pytest -q` 当前会因 `tests/test_topology_viz.py` 依赖 `networkx` 而在收集阶段失败。
-- `pytest -q tests/test_tool_framework.py tests/test_state_types.py` 当前可运行，但仍有工具注册相关失败。
-- `.github/workflows/ci.yml` 里的测试步骤目前会吞掉 `pytest` 失败，不能作为“绿灯即安全”的依据。
-
-### 建议的提交前检查
-
-如果你改的是文档：
-
-```bash
-git diff --check
-```
-
-如果你改的是 Python 代码：
-
-```bash
-pytest -q tests/test_tool_framework.py tests/test_state_types.py
-python verify_system.py
-```
-
-如果你改了 `web/`、`remote_executor/`、`tools/`、`internal_network/`：
-
-- 在 PR 描述中写明风险影响面
-- 写明是否涉及本地执行、远程执行、凭据、文件写入、开放接口
-- 明确回归验证方式
+- `docs/product/current-state.md`
+- `docs/runbooks/security.md`
+- `docs/architecture/module-boundaries.md`
 
 ---
 
-## GitHub 协作规范
+## Reading Order
 
-### 分支命名
+### 开始任何任务前
 
-优先使用以下前缀：
+按下面顺序读取：
 
-- `feature/<topic>`：新功能
-- `fix/<topic>`：缺陷修复
-- `docs/<topic>`：文档更新
-- `refactor/<topic>`：重构
-- `test/<topic>`：测试修复或补充
-- `chore/<topic>`：基础设施、依赖、脚本
+1. `README.md`
+2. `docs/product/current-state.md`
+3. `docs/product/vision.md`
+4. `docs/architecture/system-overview.md`
+5. `docs/architecture/module-boundaries.md`
+6. `docs/runbooks/security.md`
+7. 与本次任务对应的 `specs/*/spec.md`
 
-说明：
+### 如果任务涉及发布或环境
 
-- 仓库现有 `docs/CONTRIBUTING.md` 使用 `docs/*` 作为文档分支前缀。
-- 若任务明确要求 `doc/*`，可以按任务要求执行，但默认规范仍建议 `docs/*`。
+继续读：
 
-### Commit 规范
+1. `docs/runbooks/local-dev.md`
+2. `docs/runbooks/release.md`
+3. `docs/runbooks/rollback.md`
 
-统一使用 Conventional Commits：
+### 如果任务涉及设计或跨模块接口
 
-- `feat:`
-- `fix:`
-- `docs:`
-- `refactor:`
-- `test:`
-- `chore:`
+继续读：
 
-额外要求：
-
-- 一个 commit 只做一类事情，避免“代码修复 + 格式化全仓 + 文档更新”混在一起。
-- 做完一个可验证的最小变更单元后，应及时提交，不要长时间堆积在本地工作区。
-- 默认要求及时推送到远程分支，避免只有本地副本。
-- 如果一次任务修改了大量文件，必须按原子化提交准则拆分：
-  - 每个 commit 只表达一个明确目的
-  - 代码修复、测试补充、文档更新、重构拆开提交
-  - 每个 commit 都应尽量处于可审阅、可回滚、可解释状态
-- 不要提交生成物、密钥、会话文件、本地缓存。
-
-### Pull Request 规范
-
-PR 描述至少包含：
-
-1. 变更目的
-2. 影响范围
-3. 验证方式
-4. 风险与回滚方式
-
-如果改动涉及以下区域，必须额外说明：
-
-- `web/api.py`：是否新增暴露接口、认证、配置入口
-- `remote_executor/`：是否影响 SSH / WebShell / 会话持久化
-- `tools/`：是否引入新的执行器、路径写入点、外部依赖
-- `app/tool_framework.py`：是否影响工具注册、选择、兼容接口
-
-### Review 与合并
-
-- 至少 1 个 Reviewer 批准再合并
-- 不要在未说明测试现状的情况下声称“CI 已通过”
-- 优先 `Squash and merge`
-- 合并后删除分支
+1. `docs/architecture/tech-decisions/`
 
 ---
 
-## Agent 工作约束
+## Documentation Rules
 
-### 修改前
+### 总原则
 
-- 先读 `README.md`
-- 再读目标模块的直接依赖文件
-- 涉及工具系统时，先确认 `tools/__init__.py` 与 `app/tool_framework.py` 的当前行为
+- 事实写在 docs，不写在聊天里
+- 契约写在 specs，不写在模糊描述里
+- 操作步骤写在 runbook，不写在口头习惯里
 
-### 修改时
+### 文档分工
 
-- 优先小改动，避免无关重排
-- 不要顺手“修格式”整仓
-- 不要把安全工具的“攻击能力”误当成普通字符串处理逻辑
-- 不要把凭据、session、日志样本写入可提交路径
+- `docs/product/`
+  - 回答为什么做、现在是什么状态、接下来做什么
+- `docs/architecture/`
+  - 回答系统如何分层、模块边界是什么、为什么做某个技术决策
+- `docs/runbooks/`
+  - 回答怎么启动、怎么验证、怎么发布、怎么回滚、怎么控权
+- `specs/`
+  - 回答这次任务的边界、非目标、验收标准和验证命令
 
-### 修改后
+### 文档编写要求
 
-- 说明实际执行了哪些验证
-- 如果没法跑通测试，要明确写原因
-- 如果发现现有测试或 CI 本身有问题，要在 PR 中单独标注，不要略过
-- 除非任务明确要求暂存本地，否则应在完成当前阶段后及时 `commit` 并 `push`
+写文档时遵守：
+
+1. 用明确词，不用“优化一下”“尽量”“更好”这种无法判定的词。
+2. 验收标准必须机器可判定。
+3. 变更影响到行为边界时，必须同步更新相应 docs。
+4. 如果本次任务改变了流程、发布、回滚、安全、模块边界，不允许只改代码不改文档。
+
+### specs 编写要求
+
+每个 spec 至少写清楚：
+
+1. Problem
+2. Goal
+3. Non-goals
+4. Scope
+5. Proposed Changes
+6. Machine-checkable Acceptance Criteria
+7. Validation Commands
+8. Rollout / Rollback Notes
 
 ---
 
-## 当前已知仓库问题
+## Execution Rules
 
-截至 2026-04-01，至少存在以下需要特别注意的现状：
+### 任务切分
 
-1. Web 管理面缺少认证与来源限制。
-2. 会话信息存在明文持久化风险。
-3. SSH 主机指纹校验被关闭。
-4. 工具系统存在懒加载与测试预期不一致的问题。
-5. 拓扑相关依赖未在 `requirements.txt` 中完整体现。
-6. CI 测试步骤会吞掉失败结果。
+- 单次任务最好只改一个 feature、一个 bug 或一类依赖
+- 如果一次改动涉及很多文件，必须按原子提交准则拆分
+- 如果需求本身太大，先写 spec，再拆里程碑
 
-这些问题意味着：
+### 统一入口
 
-- 不要把当前默认部署方式当成生产安全基线。
-- 不要在未加隔离的主机上直接对不可信目标运行完整代理。
+优先使用仓库统一入口，而不是临时拼命令：
+
+- `make help`
+- `make install`
+- `make install-dev`
+- `make test`
+- `make security`
+- `make run-web`
+
+### 验收
+
+所有任务都应有显式验证命令。
+
+如果仓库当前测试不健康，也要把失败显式记录在：
+
+- `docs/product/current-state.md`
+- 对应 spec
+- PR 描述
+
+而不是静默跳过。
 
 ---
 
-## 禁止项
+## GitHub Collaboration Rules
 
-- 禁止提交 `.env`、`config.yaml`、`data/sessions.json`、私钥、密码、外部平台 Token
-- 禁止为了“让测试变绿”而删除失败断言或在 CI 中继续吞错
-- 禁止在未说明理由的情况下新增 `shell=True`、任意路径写入、关闭 TLS 校验、关闭 SSH 主机校验
-- 禁止把高危接口直接暴露到公网而不加认证
+### Branches
+
+推荐使用：
+
+- `feature/<topic>`
+- `fix/<topic>`
+- `docs/<topic>`
+- `refactor/<topic>`
+- `test/<topic>`
+- `chore/<topic>`
+
+如果任务要求使用其他前缀，可以按任务要求执行，但必须在 PR 中说明原因。
+
+### Commits
+
+统一使用 Conventional Commits。
+
+强制要求：
+
+- 做完一个可验证的最小单元后及时提交
+- 及时推送到远端分支
+- 大任务拆成多个原子提交
+- 不把文档、重构、修复、测试补充混成一个无法审阅的大提交
+
+### Pull Requests
+
+每个 PR 都应能回答：
+
+1. 关联的 issue / spec 是什么
+2. 改动范围是什么
+3. 验收命令是什么
+4. 风险是什么
+5. 回滚方式是什么
+6. 更新了哪些 docs
+
+---
+
+## Permission Model
+
+Agent 默认权限是：
+
+- 建分支
+- 改文件
+- 跑本地命令
+- 跑测试和扫描
+- 提交
+- 推送分支
+- 准备 PR
+
+Agent 默认没有：
+
+- 生产发布权限
+- 生产环境直连权限
+- 秘钥管理权限
+- 绕过审查直接合并受保护分支的权限
+
+具体安全规则见：
+
+- `docs/runbooks/security.md`
+
+---
+
+## What To Update When You Change Things
+
+### 改产品方向或当前事实
+
+更新：
+
+- `docs/product/current-state.md`
+- `docs/product/roadmap.md`
+
+### 改模块边界、流程或公共接口
+
+更新：
+
+- `docs/architecture/system-overview.md`
+- `docs/architecture/module-boundaries.md`
+- 必要时新增 `docs/architecture/tech-decisions/*.md`
+
+### 改启动、测试、发布、回滚或安全操作方式
+
+更新：
+
+- `docs/runbooks/*.md`
+
+### 做 feature / bug / refactor
+
+更新：
+
+- 对应 `specs/*/spec.md`
+- 必要时同步更新 `docs/`
+
+---
+
+## Bottom Line
+
+如果某个重要事实、规则、步骤、验收标准只存在于聊天记录里，那这个仓库就还没有进入工厂模式。
+
+Agent 的默认动作应该是：
+
+1. 找文档
+2. 补文档
+3. 再改代码
+
+而不是先猜。

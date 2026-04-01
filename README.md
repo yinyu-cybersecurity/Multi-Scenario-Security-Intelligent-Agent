@@ -4,6 +4,31 @@
 
 ---
 
+## Factory Mode
+
+本仓库正在从“高能力工作区”整理成“可被机器稳定接手的工厂”。
+
+如果你要理解现在的协作方式，请优先看：
+
+- `AGENTS.md`
+- `docs/product/current-state.md`
+- `docs/product/vision.md`
+- `docs/architecture/system-overview.md`
+- `docs/runbooks/local-dev.md`
+- `specs/`
+
+统一入口：
+
+```bash
+make help
+make install-dev
+make run-web
+make test
+make security
+```
+
+---
+
 ## 项目简介
 
 CTF-Agent 是一个智能化的渗透测试代理，能够自主完成从信息侦察到漏洞利用的全流程。系统通过 LLM 驱动多兵种节点协同工作，支持 **Web安全、内网渗透、密码学、逆向、Pwn、Misc、AI安全、云安全** 八大方向。
