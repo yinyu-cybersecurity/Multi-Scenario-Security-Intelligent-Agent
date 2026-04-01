@@ -507,6 +507,45 @@ TOOL_SCHEMAS = {
             },
             "required": ["action"]
         }
+    },
+    "hydra": {
+        "name": "hydra",
+        "description": "密码爆破工具，支持多种服务协议（SSH, FTP, SMB, RDP, MySQL等）",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target": {
+                    "type": "string",
+                    "description": "目标IP或主机名"
+                },
+                "service": {
+                    "type": "string",
+                    "enum": ["ssh", "ftp", "smb", "rdp", "mysql", "mssql", "postgres", "telnet", "smtp", "pop3", "imap"],
+                    "description": "服务协议类型"
+                },
+                "username": {
+                    "type": "string",
+                    "description": "用户名"
+                },
+                "username_file": {
+                    "type": "string",
+                    "description": "用户名字典文件路径"
+                },
+                "password": {
+                    "type": "string",
+                    "description": "密码"
+                },
+                "password_file": {
+                    "type": "string",
+                    "description": "密码字典文件路径"
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "端口号（可选）"
+                }
+            },
+            "required": ["target", "service"]
+        }
     }
 }
 
@@ -1065,6 +1104,89 @@ async def bloodhound_handler(
     return result
 
 
+async def hydra_handler(
+    target: str,
+    service: str,
+    username: str = None,
+    username_file: str = None,
+    password: str = None,
+    password_file: str = None,
+    port: int = None
+) -> Dict:
+    """hydra执行 - 密码爆破工具"""
+    if not shutil.which("hydra"):
+        return {"success": False, "error": "hydra未安装"}
+
+    # 目标验证
+    is_valid, error = validate_target(target)
+    if not is_valid:
+        return {"success": False, "error": error}
+
+    # service白名单
+    allowed_services = ["ssh", "ftp", "smb", "rdp", "mysql", "mssql", "postgres", "telnet", "smtp", "pop3", "imap"]
+    if service not in allowed_services:
+        return {"success": False, "error": f"不支持的service: {service}。支持: {', '.join(allowed_services)}"}
+
+    # 至少需要用户名或用户名字典
+    if not username and not username_file:
+        return {"success": False, "error": "需要username或username_file参数"}
+
+    # 至少需要密码或密码字典
+    if not password and not password_file:
+        return {"success": False, "error": "需要password或password_file参数"}
+
+    cmd = ["hydra", "-f", "-q"]  # -f: 找到第一个有效密码后停止, -q: 安静模式
+
+    # 用户名或用户名字典
+    if username_file:
+        cmd.extend(["-L", username_file])
+    else:
+        cmd.extend(["-l", username])
+
+    # 密码或密码字典
+    if password_file:
+        cmd.extend(["-P", password_file])
+    else:
+        cmd.extend(["-p", password])
+
+    # 端口
+    if port:
+        cmd.extend(["-s", str(port)])
+
+    # 目标和服务
+    cmd.append(f"{service}://{target}")
+
+    result = await run_command(cmd, timeout=600)
+
+    if result["success"]:
+        # 解析hydra输出
+        output = result.get("output", "")
+        credentials = []
+
+        # 提取成功爆破的凭据
+        for line in output.split('\n'):
+            if 'login:' in line.lower() and 'password:' in line.lower():
+                # 格式: [22][ssh] login: admin   password: admin123
+                parts = line.split()
+                for i, part in enumerate(parts):
+                    if part == 'login:':
+                        username = parts[i+1] if i+1 < len(parts) else ''
+                    if part == 'password:':
+                        password = parts[i+1] if i+1 < len(parts) else ''
+
+                if username and password:
+                    credentials.append({
+                        "service": service,
+                        "username": username,
+                        "password": password
+                    })
+
+        result["credentials"] = credentials
+        result["found"] = len(credentials) > 0
+
+    return result
+
+
 # ============================================
 # 工具注册表
 # ============================================
@@ -1082,6 +1204,7 @@ HANDLERS = {
     "crackmapexec": crackmapexec_handler,
     "impacket": impacket_handler,
     "bloodhound": bloodhound_handler,
+    "hydra": hydra_handler,
 }
 
 

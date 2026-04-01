@@ -510,8 +510,8 @@ class IncrementalMemorySystem:
 _memory_system: Optional[IncrementalMemorySystem] = None
 
 
-def get_memory_system() -> IncrementalMemorySystem:
-    """获取全局记忆系统"""
+def get_incremental_memory() -> IncrementalMemorySystem:
+    """获取全局增量记忆系统"""
     global _memory_system
     if _memory_system is None:
         _memory_system = IncrementalMemorySystem()
@@ -520,7 +520,7 @@ def get_memory_system() -> IncrementalMemorySystem:
 
 # 使用示例
 if __name__ == "__main__":
-    memory = get_memory_system()
+    memory = get_incremental_memory()
 
     # 添加记忆
     mid1 = memory.add_memory(

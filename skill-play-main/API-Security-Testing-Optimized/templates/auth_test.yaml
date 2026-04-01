@@ -1,0 +1,308 @@
+# 认证安全测试工作流
+#
+# ⚠️ 参考说明：本文件为参考测试流程模板
+# - 实际测试应根据目标认证机制选择性地执行阶段
+# - 测试技术和 payload 应根据认证类型动态调整
+# - 本文件仅供参考，非固定测试流程
+
+name: 认证安全测试
+version: 3.0
+description: 针对 API 认证机制的安全测试流程（参考模板）
+
+stages:
+  # 阶段 1: 认证端点识别
+  - name: 认证端点识别
+    description: 发现所有与认证相关的端点
+    tasks:
+      - name: find_login_endpoints
+        description: 查找登录端点
+        tool: api_tester
+        params:
+          action: discover_paths
+          paths:
+            - /login
+            - /signin
+            - /auth
+            - /api/auth
+            - /api/login
+            - /oauth
+            - /token
+            - /session
+
+      - name: find_token_endpoints
+        description: 查找 Token 相关端点
+        tool: api_tester
+        params:
+          action: discover_paths
+          paths:
+            - /api/token
+            - /oauth/token
+            - /access_token
+            - /refresh_token
+
+      - name: find_session_endpoints
+        description: 查找会话管理端点
+        tool: api_tester
+        params:
+          action: discover_paths
+          paths:
+            - /api/session
+            - /api/logout
+            - /api/me
+
+  # 阶段 2: 认证机制分析
+  - name: 认证机制分析
+    description: 分析目标使用的认证机制
+    tasks:
+      - name: analyze_auth_headers
+        description: 分析认证相关响应头
+        tool: api_tester
+        params:
+          action: analyze_response_headers
+          check:
+            - WWW-Authenticate
+            - Authorization
+            - X-Auth-Token
+            - X-CSRF-Token
+            - Set-Cookie
+
+      - name: detect_auth_type
+        description: 检测认证类型
+        tool: api_tester
+        params:
+          action: auth_type_detection
+          types:
+            - Basic Auth
+            - Bearer Token
+            - JWT
+            - OAuth 2.0
+            - API Key
+            - Session Cookie
+
+      - name: analyze_jwt
+        description: 分析 JWT 结构
+        tool: api_tester
+        params:
+          action: jwt_analysis
+          check:
+            - algorithm
+            - expiration
+            - secret_key_weakness
+            - none_algorithm
+
+  # 阶段 3: 认证绕过测试
+  - name: 认证绕过测试
+    description: 测试各种认证绕过技术
+    tasks:
+      - name: test_empty_credentials
+        description: 测试空凭据
+        tool: api_tester
+        params:
+          action: test_auth_bypass
+          payloads:
+            - username=admin&password=
+            - username=&password=admin
+            - username=&password=
+
+      - name: test_sql_injection_auth
+        description: SQL 注入绕过认证
+        tool: api_tester
+        params:
+          action: test_sqli_bypass
+          payloads:
+            - "' OR '1'='1"
+            - "' OR '1'='1' --"
+            - "admin'--"
+            - "' OR 1=1 #"
+
+      - name: test_default_credentials
+        description: 测试默认凭据
+        tool: api_tester
+        params:
+          action: test_default_creds
+          common_creds:
+            - admin/admin
+            - admin/password
+            - admin/123456
+            - root/root
+            - test/test
+            - user/user
+
+      - name: test_bearer_token
+        description: 测试 Bearer Token 绕过
+        tool: api_tester
+        params:
+          action: test_auth_bypass
+          headers:
+            - Authorization: Bearer
+            - X-Auth-Token: empty
+            - Authorization: Basic YWRtaW46YWRtaW4=
+
+  # 阶段 4: JWT 安全测试
+  - name: JWT 安全测试
+    description: 针对 JWT 的专项测试
+    tasks:
+      - name: test_jwt_none_algorithm
+        description: 测试 None 算法
+        tool: api_tester
+        params:
+          action: test_jwt_alg_none
+
+      - name: test_jwt_weak_secret
+        description: 测试弱密钥
+        tool: api_tester
+        params:
+          action: test_jwt_weak_secret
+          secrets:
+            - secret
+            - secretkey
+            - password
+            - 123456
+
+      - name: test_jwt_algorithm_confusion
+        description: 测试算法混淆
+        tool: api_tester
+        params:
+          action: test_jwt_alg_confusion
+
+      - name: test_jwt_expiration
+        description: 测试 Token 过期
+        tool: api_tester
+        params:
+          action: test_jwt_expiration
+
+  # 阶段 5: 会话安全测试
+  - name: 会话安全测试
+    description: 测试会话管理安全性
+    tasks:
+      - name: test_session_fixation
+        description: 测试会话固定
+        tool: api_tester
+        params:
+          action: test_session_fixation
+
+      - name: test_session_timeout
+        description: 测试会话超时
+        tool: api_tester
+        params:
+          action: test_session_timeout
+          wait_time: 1800
+
+      - name: test_concurrent_sessions
+        description: 测试并发会话
+        tool: api_tester
+        params:
+          action: test_concurrent_sessions
+          max_sessions: 1
+
+      - name: test_logout
+        description: 测试登出功能
+        tool: api_tester
+        params:
+          action: test_logout_functionality
+          check:
+            - session_invalidated
+            - token_revoked
+
+  # 阶段 6: 暴力攻击防护测试
+  - name: 暴力攻击防护测试
+    description: 测试暴力破解防护机制
+    tasks:
+      - name: test_brute_force_protection
+        description: 测试暴力破解防护
+        tool: api_tester
+        params:
+          action: test_brute_force
+          attempts: 50
+          delay: 0
+
+      - name: test_rate_limiting
+        description: 测试速率限制
+        tool: api_tester
+        params:
+          action: test_rate_limit
+          requests_per_minute: 100
+
+      - name: test_account_lockout
+        description: 测试账户锁定
+        tool: api_tester
+        params:
+          action: test_account_lockout
+          failed_attempts: 10
+
+      - name: test_captcha_bypass
+        description: 测试验证码绕过
+        tool: api_tester
+        params:
+          action: test_captcha_bypass
+
+  # 阶段 7: 密码安全测试
+  - name: 密码安全测试
+    description: 测试密码策略安全性
+    tasks:
+      - name: test_password_policy
+        description: 测试密码策略
+        tool: api_tester
+        params:
+          action: test_password_policy
+          checks:
+            - minimum_length
+            - complexity_requirements
+            - password_history
+
+      - name: test_password_reset
+        description: 测试密码重置
+        tool: api_tester
+        params:
+          action: test_password_reset
+          check:
+            - token_exposure
+            - weak_reset_token
+            - account_takeover_risk
+
+      - name: test_password_change
+        description: 测试密码修改
+        tool: api_tester
+        params:
+          action: test_password_change
+          check:
+            - current_password_required
+            - token_in_url
+
+  # 阶段 8: OAuth 安全测试
+  - name: OAuth 安全测试
+    description: 测试 OAuth 2.0 安全性
+    tasks:
+      - name: test_oauth_csrf
+        description: 测试 OAuth CSRF
+        tool: api_tester
+        params:
+          action: test_oauth_csrf
+          check:
+            - state_parameter
+            - redirect_uri_validation
+
+      - name: test_oauth_redirect_uri
+        description: 测试 redirect_uri 验证
+        tool: api_tester
+        params:
+          action: test_oauth_redirect_uri
+          uris:
+            - https://legitimate.com/callback
+            - https://evil.com/callback
+            - http://internal.network/callback
+
+      - name: test_oauth_token_exposure
+        description: 测试 Token 泄露
+        tool: api_tester
+        params:
+          action: test_oauth_token_exposure
+
+# 输出配置
+output:
+  format: json
+  include:
+    - vulnerability_details
+    - attack_sequences
+    - remediation_steps
+  severity_threshold: medium

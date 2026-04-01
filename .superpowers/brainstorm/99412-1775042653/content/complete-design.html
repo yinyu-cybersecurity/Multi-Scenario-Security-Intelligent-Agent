@@ -1,0 +1,197 @@
+<h2>CTF-Agent 2.0 完善方案</h2>
+<p class="subtitle">基于最新工具和Claude Code架构改进</p>
+
+<div class="section">
+  <h3>模块1: 工具迁移完善</h3>
+  <div class="mockup" style="background: #0f172a; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+    <h4 style="color: #4ade80; margin: 0 0 0.5rem 0;">P1级别 - Web渗透</h4>
+    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem;">
+      <div style="background: #1e293b; padding: 0.75rem; border-radius: 4px;">
+        <strong>ffuf</strong> - 快速Web模糊测试<br>
+        <span style="color: #94a3b8; font-size: 0.85rem;">目录枚举、参数发现、子域名爆破</span>
+      </div>
+      <div style="background: #1e293b; padding: 0.75rem; border-radius: 4px;">
+        <strong>dirsearch</strong> - 高级目录扫描<br>
+        <span style="color: #94a3b8; font-size: 0.85rem;">递归扫描、扩展名枚举</span>
+      </div>
+      <div style="background: #1e293b; padding: 0.75rem; border-radius: 4px;">
+        <strong>gobuster</strong> - 多协议爆破<br>
+        <span style="color: #94a3b8; font-size: 0.85rem;">目录、DNS、S3存储桶</span>
+      </div>
+      <div style="background: #1e293b; padding: 0.75rem; border-radius: 4px;">
+        <strong>whatweb</strong> - 技术栈识别<br>
+        <span style="color: #94a3b8; font-size: 0.85rem;">CMS、框架、中间件检测</span>
+      </div>
+    </div>
+    <h4 style="color: #fbbf24; margin: 1rem 0 0.5rem 0;">P2级别 - 内网渗透</h4>
+    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem;">
+      <div style="background: #1e293b; padding: 0.75rem; border-radius: 4px;">
+        <strong>mimikatz</strong> - 凭据提取<br>
+        <span style="color: #94a3b8; font-size: 0.85rem;">内存密码、Kerberos票据</span>
+      </div>
+      <div style="background: #1e293b; padding: 0.75rem; border-radius: 4px;">
+        <strong>crackmapexec</strong> - 内网横向<br>
+        <span style="color: #94a3b8; font-size: 0.85rem;">SMB、WinRM、MSSQL</span>
+      </div>
+      <div style="background: #1e293b; padding: 0.75rem; border-radius: 4px;">
+        <strong>bloodhound</strong> - 域分析<br>
+        <span style="color: #94a3b8; font-size: 0.85rem;">AD攻击路径可视化</span>
+      </div>
+      <div style="background: #1e293b; padding: 0.75rem; border-radius: 4px;">
+        <strong>impacket</strong> - 协议利用<br>
+        <span style="color: #94a3b8; font-size: 0.85rem;">SMB、LDAP、Kerberos</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>模块2: Skill系统完善</h3>
+  <div class="cards">
+    <div class="card" style="background: #1e293b;">
+      <div class="card-body">
+        <h4 style="color: #f472b6; margin: 0 0 0.5rem 0;">Pwn技能包</h4>
+        <ul style="margin: 0; padding-left: 1.2rem; color: #cbd5e1;">
+          <li>二进制漏洞利用流程</li>
+          <li>栈溢出、堆利用技术</li>
+          <li>ROP/Ret2libc构造</li>
+          <li>pwntools工作流</li>
+        </ul>
+      </div>
+    </div>
+    <div class="card" style="background: #1e293b;">
+      <div class="card-body">
+        <h4 style="color: #a78bfa; margin: 0 0 0.5rem 0;">Crypto技能包</h4>
+        <ul style="margin: 0; padding-left: 1.2rem; color: #cbd5e1;">
+          <li>古典密码分析</li>
+          <li>现代密码攻击</li>
+          <li>RSA/ECDSA漏洞利用</li>
+          <li>SageMath工作流</li>
+        </ul>
+      </div>
+    </div>
+    <div class="card" style="background: #1e293b;">
+      <div class="card-body">
+        <h4 style="color: #34d399; margin: 0 0 0.5rem 0;">Reverse技能包</h4>
+        <ul style="margin: 0; padding-left: 1.2rem; color: #cbd5e1;">
+          <li>静态分析流程</li>
+          <li>动态调试技巧</li>
+          <li>反混淆/反编译</li>
+          <li>Ghidra/IDA工作流</li>
+        </ul>
+      </div>
+    </div>
+    <div class="card" style="background: #1e293b;">
+      <div class="card-body">
+        <h4 style="color: #fbbf24; margin: 0 0 0.5rem 0;">AI安全技能包</h4>
+        <ul style="margin: 0; padding-left: 1.2rem; color: #cbd5e1;">
+          <li>Prompt注入攻击</li>
+          <li>模型对抗样本</li>
+          <li>LLM越狱技术</li>
+          <li>多模态攻击</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>模块3: 缺失模块补全</h3>
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">报告生成器</div>
+      <div class="mockup-body" style="background: #1e293b; padding: 0.5rem;">
+        <ul style="margin: 0; padding-left: 1rem; font-size: 0.85rem;">
+          <li>攻击路径时间线</li>
+          <li>漏洞详情Markdown</li>
+          <li>PDF/HTML导出</li>
+          <li>Flag提交记录</li>
+        </ul>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">结果可视化</div>
+      <div class="mockup-body" style="background: #1e293b; padding: 0.5rem;">
+        <ul style="margin: 0; padding-left: 1rem; font-size: 0.85rem;">
+          <li>攻击树状图</li>
+          <li>网络拓扑图</li>
+          <li>Token消耗统计</li>
+          <li>工具调用热力图</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>模块4: Claude Code架构改进</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4 style="color: #4ade80;">借鉴优势</h4>
+      <ul>
+        <li><strong>AgenticLoop</strong><br>思考→选工具→执行→反思→继续</li>
+        <li><strong>Prompt Cache</strong><br>共享上下文，节省90% Token</li>
+        <li><strong>并行派发</strong><br>多Agent协同，asyncio并发</li>
+        <li><strong>自主恢复</strong><br>错误后自动调整策略</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4 style="color: #f87171;">待改进点</h4>
+      <ul>
+        <li><strong>上下文压缩</strong><br>长对话Token优化</li>
+        <li><strong>增量记忆</strong><br>避免重复发现</li>
+        <li><strong>多模态输入</strong><br>图片/文件理解</li>
+        <li><strong>实时反馈</strong><br>流式输出状态</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>模块5: 前端界面设计</h3>
+  <div style="background: #0f172a; border-radius: 8px; overflow: hidden;">
+    <div style="background: #1e293b; padding: 0.5rem 1rem; display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-weight: bold;">CTF-Agent Dashboard</span>
+      <span style="color: #4ade80;">● Running</span>
+    </div>
+    <div style="display: grid; grid-template-columns: 250px 1fr 300px; gap: 1px; background: #334155;">
+      <div style="background: #0f172a; padding: 1rem;">
+        <div style="color: #94a3b8; font-size: 0.75rem; margin-bottom: 0.5rem;">NAVMENU</div>
+        <div style="padding: 0.5rem; background: #1e293b; border-radius: 4px; margin-bottom: 0.5rem;">📊 攻击概览</div>
+        <div style="padding: 0.5rem; background: #1e293b; border-radius: 4px; margin-bottom: 0.5rem;">🎯 目标管理</div>
+        <div style="padding: 0.5rem; background: #1e293b; border-radius: 4px; margin-bottom: 0.5rem;">🔧 工具配置</div>
+        <div style="padding: 0.5rem; background: #1e293b; border-radius: 4px; margin-bottom: 0.5rem;">📝 结果报告</div>
+      </div>
+      <div style="background: #0f172a; padding: 1rem;">
+        <div style="color: #94a3b8; font-size: 0.75rem; margin-bottom: 0.5rem;">实时攻击流程</div>
+        <div style="background: #1e293b; border-radius: 4px; padding: 1rem; font-family: monospace; font-size: 0.8rem;">
+          <div style="color: #4ade80;">[09:45:12] 🎯 Starting attack on target: 192.168.1.100</div>
+          <div style="color: #60a5fa;">[09:45:15] 🔍 Running nmap scan...</div>
+          <div style="color: #fbbf24;">[09:45:32] 📊 Found open ports: 22, 80, 443</div>
+          <div style="color: #60a5fa;">[09:45:33] 🛠️ Running nuclei on http://192.168.1.100</div>
+          <div style="color: #f472b6;">[09:46:01] 🔴 Found vulnerability: CVE-2024-1234</div>
+          <div style="color: #a78bfa;">[09:46:05] 💀 Attempting exploitation...</div>
+        </div>
+      </div>
+      <div style="background: #0f172a; padding: 1rem;">
+        <div style="color: #94a3b8; font-size: 0.75rem; margin-bottom: 0.5rem;">发现面板</div>
+        <div style="background: #1e293b; border-radius: 4px; padding: 0.75rem; margin-bottom: 0.5rem;">
+          <div style="font-size: 0.8rem; color: #4ade80;">🏆 Flags: 2</div>
+        </div>
+        <div style="background: #1e293b; border-radius: 4px; padding: 0.75rem; margin-bottom: 0.5rem;">
+          <div style="font-size: 0.8rem; color: #fbbf24;">🔓 Vulns: 5</div>
+        </div>
+        <div style="background: #1e293b; border-radius: 4px; padding: 0.75rem; margin-bottom: 0.5rem;">
+          <div style="font-size: 0.8rem; color: #60a5fa;">📡 Ports: 12</div>
+        </div>
+        <div style="background: #1e293b; border-radius: 4px; padding: 0.75rem;">
+          <div style="font-size: 0.8rem; color: #a78bfa;">🔑 Creds: 3</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p style="margin-top: 1.5rem; padding: 1rem; background: #1e293b; border-radius: 8px; color: #cbd5e1;">
+  💡 <strong>设计完成</strong> - 以上方案基于最新安全工具和Claude Code架构最佳实践。确认后在终端回复继续。
+</p>

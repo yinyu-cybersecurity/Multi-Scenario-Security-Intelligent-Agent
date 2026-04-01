@@ -53,7 +53,7 @@ from .incremental_memory import (
     MemoryUpdate,
     MemoryType,
     MemoryPriority,
-    get_memory_system
+    get_incremental_memory
 )
 
 __all__ = [
@@ -98,5 +98,5 @@ __all__ = [
     "MemoryUpdate",
     "MemoryType",
     "MemoryPriority",
-    "get_memory_system",
+    "get_incremental_memory",
 ]

@@ -1,8 +1,8 @@
-# CTF-Agent Configuration Template
-# Copy this file to config.yaml and update the values
+# CTF-Agent Configuration
+# Edit the values below
 
 # ===== LLM Configuration =====
-LLM_API_KEY: "your-api-key-here"
+LLM_API_KEY: "sk-9b037d6ba1314ba48c858c530bd70b09"
 LLM_BASE_URL: "https://api.deepseek.com/v1"
 
 # ===== Model Configuration =====
@@ -12,49 +12,18 @@ VERIFIER_MODEL: "deepseek-chat"
 EXPLORER_MODEL: "deepseek-chat"
 INNOVATOR_MODEL: "deepseek-chat"
 
-# ===== VPS Configuration =====
-# 框架运行在VPS服务器上，需要配置公网IP
-# 本机公网IP (用于生成隧道配置、回调地址等)
-LOCAL_PUBLIC_IP: ""
-
-# HTTP文件服务器端口 (本机提供工具下载服务)
-HTTP_SERVER_PORT: 8000
-
-# frp配置 (frps运行在本机)
-FRP_SERVER_PORT: 7000      # frps监听端口
-FRP_SOCKS5_PORT: 10800     # SOCKS5代理端口
-
-# 工具目录
-TOOLS_DIR: "/opt/tools"
-FRP_DIR: "/opt/frp"
-
-# ===== Out-of-Band Configuration =====
-OOB_HOST: "127.0.0.1"
-
-# ===== Timeout Configuration =====
-NODE_TIMEOUT: 1800         # 单个节点最大执行时间(秒)
-TASK_TIMEOUT: 1200         # Web CTF任务最大执行时间(秒)
-INTERNAL_TASK_TIMEOUT: 3000  # 内网渗透任务最大执行时间(秒)
-TOOL_TIMEOUT_DEFAULT: 300  # 工具默认超时(秒)
-TOOL_TIMEOUT_NETWORK: 600  # 网络扫描超时(秒)
-LLM_TIMEOUT: 120           # LLM调用超时(秒)
-DECISION_INTERVAL: 360     # AI决策间隔(秒)
-
-# ===== Retry Configuration =====
-LLM_RETRY_COUNT: 3         # LLM调用重试次数
-TOOL_RETRY_COUNT: 2        # 工具执行重试次数
-LLM_MAX_CONCURRENT: 5      # LLM并发限制
+# ===== Task Timeout =====
+# Web CTF / 外网打点: 30分钟
+TASK_TIMEOUT: 1800
+# 内网渗透: 50分钟
+INTERNAL_TASK_TIMEOUT: 3000
 
 # ===== System Control =====
-MAX_TOTAL_ROUNDS: 60
-MAX_VISITED_URLS: 100
-MAX_VISITED_PAGES: 100
-MAX_VULN_CANDIDATES: 10
-MAX_ATTACK_RESULTS: 20
-MAX_TOOL_CALLS: 100
-MAX_FAILED_PAYLOADS: 50
+MAX_VISITED_PAGES: 200
+MAX_VULN_CANDIDATES: 20
 
-# ===== Mode Switch Thresholds =====
+# ===== Mode Switch Thresholds (Web CTF Only) =====
+# 内网渗透不受这些阈值影响，只按时间超时结束
 FAILURE_SCORE_FOR_EXPLORE: 5.0
 FAILURE_SCORE_FOR_INNOVATE: 10.0
 FAILURE_SCORE_ABANDON: 15.0
@@ -79,16 +48,31 @@ SCORE_NO_CHANGE: 0.5
 SCORE_CHANGE_NOT_EXPLOIT: 0.2
 SCORE_CHANGE_EXPLOIT: 0.0
 
-# ===== Graph Configuration =====
-GRAPH_MAX_DEPTH: 5
-GRAPH_MAX_NODES: 1000
-GRAPH_ENABLE_VISUALIZATION: false
+# ===== OOB Configuration =====
+OOB_HOST: "127.0.0.1"
 
-# ===== Memory Optimization =====
-# 启动时最小加载模式（只加载核心工具）
-MINIMAL_STARTUP: true
-# RAG延迟加载（首次使用时才加载模型，节省约200MB内存）
-RAG_LAZY_LOAD: true
-# 预加载模块（留空则按需加载）
-# 可选: crypto, pwn, reverse, misc, ai_security, cloud_security
-PRELOAD_MODULES: []
+# ===== RAG Configuration =====
+RAG_ENABLED: true
+RAG_FOR_WEB_ONLY: true
+
+# ===== Internal Network Configuration =====
+# 框架直接运行在VPS服务器上
+# 请将LOCAL_PUBLIC_IP改为你的VPS公网IP
+LOCAL_PUBLIC_IP: ""
+
+# HTTP文件服务器端口 (用于工具分发)
+# 服务目录为 /opt/tools，包含所有Windows工具
+HTTP_SERVER_PORT: 8000
+
+# 工具目录 (根据Dockerfile)
+TOOLS_DIR: "/opt/tools"
+FRP_DIR: "/opt/frp"
+
+# Linux工具在系统PATH中 (fscan, nuclei, xray等)
+# Windows工具在 /opt/tools/windows/
+# Potato工具在 /opt/tools/potato/
+# mimikatz在 /opt/tools/x64/
+
+# FRP配置
+FRP_SERVER_PORT: 7000
+FRP_SOCKS5_PORT: 10800

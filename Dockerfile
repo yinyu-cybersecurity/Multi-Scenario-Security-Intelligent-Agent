@@ -39,6 +39,11 @@ RUN go install github.com/hahwul/dalfox/v2@latest && \
     cp /root/go/bin/dalfox /usr/local/bin/dalfox && \
     chmod +x /usr/local/bin/dalfox || true
 
+# 安装 gobuster (目录爆破工具)
+RUN go install github.com/OJ/gobuster/v3@latest && \
+    cp /root/go/bin/gobuster /usr/local/bin/gobuster && \
+    chmod +x /usr/local/bin/gobuster || true
+
 # 安装 Metasploit Framework (使用国内镜像加速)
 RUN apt-get update && apt-get install -y gnupg2 && \
     (curl --connect-timeout 30 --max-time 300 -fsSL https://ghproxy.net/https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb > /tmp/msfinstall && \
@@ -100,7 +105,7 @@ RUN (crackmapexec --version 2>/dev/null || cme --version 2>/dev/null || echo "cr
 
 # Ruby gems 国内镜像
 RUN gem sources --add https://gems.ruby-china.com/ --remove https://rubygems.org/ || true
-RUN gem install zsteg one_gadget || true
+RUN gem install zsteg one_gadget whatweb || true
 
 WORKDIR /app
 

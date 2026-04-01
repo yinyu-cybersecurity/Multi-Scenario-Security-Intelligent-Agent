@@ -5,6 +5,11 @@
 - Read/Write/Edit/Bash/Glob/Grep作为Agent默认能力
 - Schema驱动，LLM自动构造调用
 - 支持本地文件和远程URL
+
+安全特性:
+- 路径遍历防护 - 所有文件操作验证路径在workspace内
+- 命令注入防护 - Bash使用参数化执行
+- 危险命令黑名单
 """
 
 import os
@@ -13,6 +18,9 @@ import fnmatch
 import asyncio
 import aiofiles
 import glob as glob_module
+import shlex
+import ipaddress
+from urllib.parse import urlparse
 from enum import Enum
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
@@ -248,6 +256,78 @@ FOUNDATION_SCHEMAS = {
 }
 
 
+def validate_path(path: str, workspace: str) -> tuple[bool, str, str]:
+    """
+    验证路径安全性，防止路径遍历攻击
+
+    Args:
+        path: 待验证的路径
+        workspace: 工作目录边界
+
+    Returns:
+        (is_valid, resolved_path, error_message)
+    """
+    try:
+        # 解析为绝对路径
+        resolved = os.path.abspath(path) if os.path.isabs(path) else os.path.abspath(os.path.join(workspace, path))
+
+        # 规范化路径（解析 .. 等）
+        resolved = os.path.normpath(resolved)
+        workspace_norm = os.path.normpath(workspace)
+
+        # 检查是否在workspace内
+        if not resolved.startswith(workspace_norm + os.sep) and resolved != workspace_norm:
+            return False, "", f"路径遍历攻击被阻止: {path}"
+
+        return True, resolved, ""
+    except Exception as e:
+        return False, "", f"路径验证错误: {str(e)}"
+
+
+def validate_url_for_ssrf(url: str, allow_private: bool = False) -> tuple[bool, str]:
+    """
+    验证URL防止SSRF攻击
+
+    Args:
+        url: 待验证的URL
+        allow_private: 是否允许私有IP（内网场景）
+
+    Returns:
+        (is_valid, error_message)
+    """
+    try:
+        parsed = urlparse(url)
+
+        # 检查协议
+        if parsed.scheme not in ['http', 'https']:
+            return False, f"不支持的协议: {parsed.scheme}"
+
+        # 获取主机名
+        hostname = parsed.hostname
+        if not hostname:
+            return False, "无效的URL：缺少主机名"
+
+        # 解析IP
+        try:
+            ip = ipaddress.ip_address(hostname)
+
+            # 检查是否为私有IP
+            if not allow_private and ip.is_private:
+                return False, f"SSRF防护：禁止访问私有IP {hostname}"
+
+            # 检查回环地址
+            if ip.is_loopback and not allow_private:
+                return False, f"SSRF防护：禁止访问回环地址"
+
+        except ValueError:
+            # 不是IP地址，可能是域名
+            pass
+
+        return True, ""
+    except Exception as e:
+        return False, f"URL验证错误: {str(e)}"
+
+
 def ensure_result_format(result: Dict) -> Dict:
     """
     确保结果格式规范
@@ -369,25 +449,30 @@ class FoundationCapability:
 
         # 支持URL
         if file_path.startswith(("http://", "https://")):
+            # SSRF防护
+            is_valid, error = validate_url_for_ssrf(file_path)
+            if not is_valid:
+                return {"success": False, "error": error}
             return await self._read_url(file_path)
 
-        # 解析路径
-        if not os.path.isabs(file_path):
-            file_path = os.path.join(self.workspace, file_path)
+        # 路径遍历防护
+        is_valid, resolved_path, error = validate_path(file_path, self.workspace)
+        if not is_valid:
+            return {"success": False, "error": error}
 
         # 检查是否存在
-        if not os.path.exists(file_path):
+        if not os.path.exists(resolved_path):
             return {
                 "success": False,
-                "error": f"文件不存在: {file_path}"
+                "error": f"文件不存在: {resolved_path}"
             }
 
         # 目录列表
-        if os.path.isdir(file_path):
-            return await self._list_directory(file_path)
+        if os.path.isdir(resolved_path):
+            return await self._list_directory(resolved_path)
 
         # 读取文件
-        return await self._read_file(file_path, offset, limit)
+        return await self._read_file(resolved_path, offset, limit)
 
     async def _read_file(
         self,
@@ -500,24 +585,25 @@ class FoundationCapability:
         file_path = params["file_path"]
         content = params["content"]
 
-        # 解析路径
-        if not os.path.isabs(file_path):
-            file_path = os.path.join(self.workspace, file_path)
+        # 路径遍历防护
+        is_valid, resolved_path, error = validate_path(file_path, self.workspace)
+        if not is_valid:
+            return {"success": False, "error": error}
 
         try:
             # 创建父目录
-            parent_dir = os.path.dirname(file_path)
+            parent_dir = os.path.dirname(resolved_path)
             if parent_dir and not os.path.exists(parent_dir):
                 os.makedirs(parent_dir, exist_ok=True)
 
             # 写入文件
-            async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
+            async with aiofiles.open(resolved_path, 'w', encoding='utf-8') as f:
                 await f.write(content)
 
             return {
                 "success": True,
                 "data": {
-                    "path": file_path,
+                    "path": resolved_path,
                     "size": len(content),
                     "lines": content.count('\n') + 1
                 }
@@ -540,20 +626,21 @@ class FoundationCapability:
         old_string = params["old_string"]
         new_string = params["new_string"]
 
-        # 解析路径
-        if not os.path.isabs(file_path):
-            file_path = os.path.join(self.workspace, file_path)
+        # 路径遍历防护
+        is_valid, resolved_path, error = validate_path(file_path, self.workspace)
+        if not is_valid:
+            return {"success": False, "error": error}
 
         # 检查文件存在
-        if not os.path.exists(file_path):
+        if not os.path.exists(resolved_path):
             return {
                 "success": False,
-                "error": f"文件不存在: {file_path}"
+                "error": f"文件不存在: {resolved_path}"
             }
 
         try:
             # 读取现有内容
-            async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
+            async with aiofiles.open(resolved_path, 'r', encoding='utf-8') as f:
                 content = await f.read()
 
             # 检查匹配
@@ -575,13 +662,13 @@ class FoundationCapability:
             new_content = content.replace(old_string, new_string)
 
             # 写回文件
-            async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
+            async with aiofiles.open(resolved_path, 'w', encoding='utf-8') as f:
                 await f.write(new_content)
 
             return {
                 "success": True,
                 "data": {
-                    "path": file_path,
+                    "path": resolved_path,
                     "old_length": len(old_string),
                     "new_length": len(new_string)
                 }
@@ -602,12 +689,16 @@ class FoundationCapability:
         - 同步执行（默认）
         - 后台执行
         - 超时控制
+
+        安全:
+        - 使用create_subprocess_exec参数化执行，防止命令注入
+        - 危险命令黑名单
         """
         command = params["command"]
         timeout = params.get("timeout", 60000)  # 默认60秒
         background = params.get("background", False)
 
-        # 安全检查
+        # 安全检查：危险命令黑名单
         for dangerous in self._dangerous_commands:
             if dangerous in command:
                 return {
@@ -616,10 +707,26 @@ class FoundationCapability:
                 }
 
         try:
+            # 使用shlex.split进行安全的参数解析
+            # 这正确处理引号包裹的参数，防止注入
+            try:
+                cmd_args = shlex.split(command)
+            except ValueError as e:
+                return {
+                    "success": False,
+                    "error": f"命令解析错误: {str(e)}"
+                }
+
+            if not cmd_args:
+                return {
+                    "success": False,
+                    "error": "空命令"
+                }
+
             if background:
-                # 后台执行
-                proc = await asyncio.create_subprocess_shell(
-                    command,
+                # 后台执行 - 使用exec避免shell注入
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd_args,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     cwd=self.workspace
@@ -633,9 +740,9 @@ class FoundationCapability:
                     }
                 }
             else:
-                # 同步执行
-                proc = await asyncio.create_subprocess_shell(
-                    command,
+                # 同步执行 - 使用exec避免shell注入
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd_args,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     cwd=self.workspace
@@ -664,6 +771,11 @@ class FoundationCapability:
                     }
                 }
 
+        except FileNotFoundError:
+            return {
+                "success": False,
+                "error": f"命令未找到: {cmd_args[0] if 'cmd_args' in dir() else 'unknown'}"
+            }
         except Exception as e:
             return {
                 "success": False,
@@ -683,23 +795,27 @@ class FoundationCapability:
         pattern = params["pattern"]
         path = params.get("path", self.workspace)
 
-        # 解析路径
-        if not os.path.isabs(path):
-            path = os.path.join(self.workspace, path)
+        # 路径遍历防护
+        is_valid, resolved_path, error = validate_path(path, self.workspace)
+        if not is_valid:
+            return {"success": False, "error": error}
 
         try:
             # 执行glob搜索
-            full_pattern = os.path.join(path, pattern)
+            full_pattern = os.path.join(resolved_path, pattern)
             matches = glob_module.glob(full_pattern, recursive=True)
 
-            # 转换为相对路径
+            # 转换为相对路径并验证每个匹配
             relative_matches = []
             for match in matches:
-                try:
-                    rel_path = os.path.relpath(match, self.workspace)
-                    relative_matches.append(rel_path)
-                except ValueError:
-                    relative_matches.append(match)
+                # 验证匹配结果也在workspace内
+                is_valid, _, _ = validate_path(match, self.workspace)
+                if is_valid:
+                    try:
+                        rel_path = os.path.relpath(match, self.workspace)
+                        relative_matches.append(rel_path)
+                    except ValueError:
+                        relative_matches.append(match)
 
             return {
                 "success": True,
@@ -707,7 +823,7 @@ class FoundationCapability:
                     "files": relative_matches,
                     "count": len(relative_matches),
                     "pattern": pattern,
-                    "path": path
+                    "path": resolved_path
                 }
             }
         except Exception as e:
@@ -731,9 +847,10 @@ class FoundationCapability:
         path = params.get("path", self.workspace)
         glob_pattern = params.get("glob", "*")
 
-        # 解析路径
-        if not os.path.isabs(path):
-            path = os.path.join(self.workspace, path)
+        # 路径遍历防护
+        is_valid, resolved_path, error = validate_path(path, self.workspace)
+        if not is_valid:
+            return {"success": False, "error": error}
 
         try:
             # 编译正则
@@ -742,13 +859,18 @@ class FoundationCapability:
             results = []
 
             # 遍历目录
-            for root, dirs, files in os.walk(path):
+            for root, dirs, files in os.walk(resolved_path):
                 for file in files:
                     # 文件过滤
                     if not fnmatch.fnmatch(file, glob_pattern):
                         continue
 
                     file_path = os.path.join(root, file)
+
+                    # 验证文件路径
+                    is_valid_file, _, _ = validate_path(file_path, self.workspace)
+                    if not is_valid_file:
+                        continue
 
                     try:
                         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:

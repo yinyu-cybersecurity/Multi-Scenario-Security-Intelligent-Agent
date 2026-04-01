@@ -1,0 +1,56 @@
+{
+  "query": "Spring SSTI vulnerability",
+  "sources": [
+    "writeups",
+    "security_resources"
+  ],
+  "top_k": 3,
+  "timestamp": 1774965437.5427694,
+  "results": [
+    {
+      "id": "sec_patt_601aacea9c24",
+      "content": "\nCategory: CVE Exploits\nSource: PayloadsAllTheThings\nContent: ---\nname: CVE Exploits\ndescription: 重大CVE漏洞利用集合，包含EternalBlue、Log4Shell、Heartbleed、Shellshock等历史高危漏洞\ncategory: Vulnerabilities\ntags: [cve, exploits, eternalblue, shellshock, heartbleed, vulnerability]\nseverity: critical\ntype: cheatsheet\n---\n\n# Common Vulnerabilities and Exposures\n\n> A CVE (Common Vulnerabilities and Exposures) is a unique identifier assigned to a publicly known cybersecurity vulnerability. CVEs help standardize the naming and tracking of vulnerabilities, making it easier for organizations, security professionals, and software vendors to share information and manage risks associated with these vulnerabilities. Each CVE entry includes a brief description of the vulnerability, its potential impact, and details about affected software or systems.\n\n## Summary\n\n* [Tools](#tools)\n* [Big CVEs in the last 15 years](#big-cves-in-the-last-15-years)\n    * [CVE-2017-0144 - EternalBlue](#cve-2017-0144---eternalblue)\n    * [CVE-2017-5638 - Apache Struts 2](#cve-2017-5638---apache-struts-2)\n    * [CVE-2018-7600 - Drupalgeddon 2](#cve-2018-7600---drupalgeddon-2)\n    * [CVE-2019-0708 - BlueKeep](#cve-2019-0708---bluekeep)\n    * [CVE-2019-19781 - Citrix ADC Netscaler](#cve-2019-19781---citrix-adc-netscaler)\n    * [CVE-2014-0160 - Heartbleed](#cve-2014-0160---heartbleed)\n    * [CVE-2014-6271 - Shellshock](#cve-2014-6271---shellshock)\n* [References](#references)\n\n## Tools\n\n* [Trickest CVE Repository - Automated collection of CVEs and PoC's](https://github.com/trickest/cve)\n* [Nuc\n",
+      "metadata": {
+        "source": "PayloadsAllTheThings",
+        "category": "CVE Exploits",
+        "path": "D:\\LangGraph2.0\\langGraph\\deploy\\data\\security_resources\\PayloadsAllTheThings-4.2\\CVE Exploits\\README.md",
+        "type": "security_resource",
+        "size": 5928
+      },
+      "similarity": 0.431,
+      "query": "Spring SSTI vulnerability",
+      "quality_score": 0.3586,
+      "source": "security_resources"
+    },
+    {
+      "id": "sec_patt_ab9afaf5dffb",
+      "content": "\nCategory: Java RMI\nSource: PayloadsAllTheThings\nContent: ---\nname: Java RMI Exploitation\ndescription: Java RMI远程方法调用漏洞利用，包含beanshooter/mjet/sjet工具使用、RCE攻击方法\ncategory: Web Security\ntags: [java, rmi, rce, serialization, web-security]\nseverity: critical\ntype: cheatsheet\n---\n\n# Java RMI\n\n> Java RMI (Remote Method Invocation) is a Java API that allows an object running in one JVM (Java Virtual Machine) to invoke methods on an object running in another JVM, even if they're on different physical machines. RMI provides a mechanism for Java-based distributed computing.\n\n## Summary\n\n* [Tools](#tools)\n* [Detection](#detection)\n* [Methodology](#methodology)\n    * [RCE using beanshooter](#rce-using-beanshooter)\n    * [RCE using sjet/mjet](#rce-using-sjet-or-mjet)\n    * [RCE using Metasploit](#rce-using-metasploit)\n* [References](#references)\n\n## Tools\n\n* [siberas/sjet](https://github.com/siberas/sjet) - siberas JMX exploitation toolkit\n* [mogwailabs/mjet](https://github.com/mogwailabs/mjet) - MOGWAI LABS JMX exploitation toolkit\n* [qtc-de/remote-method-guesser](https://github.com/qtc-de/remote-method-guesser) - Java RMI Vulnerability Scanner\n* [qtc-de/beanshooter](https://github.com/qtc-de/beanshooter) - JMX enumeration and attacking tool.\n\n## Detection\n\n* Using [nmap](https://nmap.org/):\n\n  ```powershell\n  $ nmap -sV --script \"rmi-dumpregistry or rmi-vuln-classloader\" -p TARGET_PORT TARGET_IP -Pn -v\n  1089/tcp open  java-rmi Java RMI\n  | rmi-vuln-classloader:\n  |   VULNERABLE:\n  |   RMI registry default configuration remote code execution vuln\n",
+      "metadata": {
+        "category": "Java RMI",
+        "source": "PayloadsAllTheThings",
+        "path": "D:\\LangGraph2.0\\langGraph\\deploy\\data\\security_resources\\PayloadsAllTheThings-4.2\\Java RMI\\README.md",
+        "size": 7230,
+        "type": "security_resource"
+      },
+      "similarity": 0.349,
+      "query": "Spring SSTI vulnerability",
+      "quality_score": 0.30939999999999995,
+      "source": "security_resources"
+    },
+    {
+      "id": "sec_patt_d272a4ca9712",
+      "content": "\nCategory: Mass Assignment\nSource: PayloadsAllTheThings\nContent: ---\nname: Mass Assignment\ndescription: 批量赋值漏洞利用，包含权限提升、属性覆盖、ORM框架攻击方法\ncategory: Web Security\ntags: [mass-assignment, orm, privilege-escalation, web-security]\nseverity: high\ntype: cheatsheet\n---\n\n# Mass Assignment\n\n> A mass assignment attack is a security vulnerability that occurs when a web application automatically assigns user-supplied input values to properties or variables of a program object. This can become an issue if a user is able to modify attributes they should not have access to, like a user's permissions or an admin flag.\n\n## Summary\n\n* [Methodology](#methodology)\n* [Labs](#labs)\n* [References](#references)\n\n## Methodology\n\nMass assignment vulnerabilities are most common in web applications that use Object-Relational Mapping (ORM) techniques or functions to map user input to object properties, where properties can be updated all at once instead of individually. Many popular web development frameworks such as Ruby on Rails, Django, and Laravel (PHP) offer this functionality.\n\nFor instance, consider a web application that uses an ORM and has a user object with the attributes `username`, `email`, `password`, and `isAdmin`. In a normal scenario, a user might be able to update their own username, email, and password through a form, which the server then assigns to the user object.\n\nHowever, an attacker may attempt to add an `isAdmin` parameter to the incoming data like so:\n\n```json\n{\n    \"username\": \"attacker\",\n    \"email\": \"attacker@email.com\",\n    \"password\": \"unsaf\n",
+      "metadata": {
+        "category": "Mass Assignment",
+        "type": "security_resource",
+        "path": "D:\\LangGraph2.0\\langGraph\\deploy\\data\\security_resources\\PayloadsAllTheThings-4.2\\Mass Assignment\\README.md",
+        "size": 2557,
+        "source": "PayloadsAllTheThings"
+      },
+      "similarity": 0.32,
+      "query": "Spring SSTI vulnerability",
+      "quality_score": 0.292,
+      "source": "security_resources"
+    }
+  ]
+}

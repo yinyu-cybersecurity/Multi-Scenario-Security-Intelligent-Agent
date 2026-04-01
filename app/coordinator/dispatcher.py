@@ -505,6 +505,182 @@ class CoordinatorDispatcher:
             "aggregated_findings": len(session.aggregated_findings),
         }
 
+    async def monitor_agent_execution(
+        self,
+        session_id: str,
+        agent_id: str,
+        check_interval: float = 1.0
+    ) -> Dict:
+        """
+        监控Agent执行状态
+
+        实现实时状态监控，检测异常情况
+
+        Args:
+            session_id: 会话ID
+            agent_id: Agent ID
+            check_interval: 检查间隔（秒）
+
+        Returns:
+            监控结果
+        """
+        session = self._sessions.get(session_id)
+        if not session:
+            return {"success": False, "error": "Session not found"}
+
+        # 监控指标
+        metrics = {
+            "start_time": datetime.now().timestamp(),
+            "iterations": 0,
+            "tool_calls": 0,
+            "errors": 0,
+            "findings": 0,
+        }
+
+        # 异常检测阈值
+        thresholds = {
+            "max_iterations": 100,
+            "max_errors": 5,
+            "max_duration": 3600,  # 1小时
+            "stuck_threshold": 60,  # 60秒无进展视为卡住
+        }
+
+        last_progress_time = datetime.now().timestamp()
+
+        while True:
+            await asyncio.sleep(check_interval)
+
+            # 检查任务状态
+            task = session.fork_tasks.get(agent_id)
+            if not task:
+                break
+
+            if task.status in ["completed", "failed"]:
+                break
+
+            # 更新指标
+            metrics["iterations"] += 1
+
+            # 检测异常
+            anomalies = []
+
+            # 1. 无限循环检测
+            if metrics["iterations"] >= thresholds["max_iterations"]:
+                anomalies.append({
+                    "type": "infinite_loop",
+                    "message": f"超过最大迭代次数 {thresholds['max_iterations']}"
+                })
+
+            # 2. 错误率检测
+            if metrics["errors"] >= thresholds["max_errors"]:
+                anomalies.append({
+                    "type": "high_error_rate",
+                    "message": f"错误次数过多: {metrics['errors']}"
+                })
+
+            # 3. 执行时间检测
+            duration = datetime.now().timestamp() - metrics["start_time"]
+            if duration >= thresholds["max_duration"]:
+                anomalies.append({
+                    "type": "timeout",
+                    "message": f"执行时间超过限制: {duration:.1f}秒"
+                })
+
+            # 4. 进展检测
+            current_findings = len(session.aggregated_findings)
+            if current_findings > metrics["findings"]:
+                metrics["findings"] = current_findings
+                last_progress_time = datetime.now().timestamp()
+            else:
+                stuck_duration = datetime.now().timestamp() - last_progress_time
+                if stuck_duration >= thresholds["stuck_threshold"]:
+                    anomalies.append({
+                        "type": "stuck",
+                        "message": f"无进展时间过长: {stuck_duration:.1f}秒"
+                    })
+
+            # 发现异常时中断
+            if anomalies:
+                return {
+                    "success": False,
+                    "anomalies": anomalies,
+                    "metrics": metrics,
+                    "action": "terminate"
+                }
+
+        # 正常结束
+        metrics["end_time"] = datetime.now().timestamp()
+        metrics["duration"] = metrics["end_time"] - metrics["start_time"]
+
+        return {
+            "success": True,
+            "metrics": metrics,
+            "action": "completed"
+        }
+
+    async def detect_anomalies(self, session_id: str) -> List[Dict]:
+        """
+        检测会话异常
+
+        扫描整个会话，发现潜在问题
+
+        Args:
+            session_id: 会话ID
+
+        Returns:
+            异常列表
+        """
+        session = self._sessions.get(session_id)
+        if not session:
+            return [{"type": "session_not_found"}]
+
+        anomalies = []
+
+        # 1. 任务失败率
+        total = len(session.fork_tasks)
+        failed = sum(1 for t in session.fork_tasks.values() if t.status == "failed")
+        if total > 0 and failed / total > 0.5:
+            anomalies.append({
+                "type": "high_failure_rate",
+                "severity": "high",
+                "message": f"任务失败率过高: {failed}/{total} ({failed/total*100:.1f}%)"
+            })
+
+        # 2. 资源泄漏检测
+        running = sum(1 for t in session.fork_tasks.values() if t.status == "running")
+        if running > self._max_concurrent:
+            anomalies.append({
+                "type": "resource_leak",
+                "severity": "medium",
+                "message": f"运行任务数超过并发限制: {running} > {self._max_concurrent}"
+            })
+
+        # 3. Memory写入冲突
+        if len(session.memory_writes) > 100:
+            anomalies.append({
+                "type": "memory_bloat",
+                "severity": "low",
+                "message": f"Memory写入过多: {len(session.memory_writes)}"
+            })
+
+        # 4. 结果冲突
+        finding_topics = {}
+        for finding in session.aggregated_findings:
+            topic = finding.get("topic", "general")
+            if topic not in finding_topics:
+                finding_topics[topic] = []
+            finding_topics[topic].append(finding)
+
+        for topic, findings in finding_topics.items():
+            if len(findings) > 10:
+                anomalies.append({
+                    "type": "finding_flood",
+                    "severity": "low",
+                    "message": f"主题 '{topic}' 发现过多: {len(findings)}"
+                })
+
+        return anomalies
+
     def cleanup_session(self, session_id: str):
         """清理会话"""
         self._sessions.pop(session_id, None)
@@ -528,17 +704,24 @@ def get_coordinator_dispatcher() -> CoordinatorDispatcher:
 async def run_autonomous_attack_coordinated(
     target: str,
     objective: str = "",
-    max_iterations: int = 50
+    max_iterations: int = 50,
+    enable_monitoring: bool = True
 ) -> Dict:
     """
     使用AutonomousAgent执行自主攻击
 
     简化入口：输入目标地址，自动完成攻击
 
+    集成功能:
+    - 状态监控
+    - 异常检测
+    - Memory同步
+
     Args:
         target: 目标地址
         objective: 攻击目标描述
         max_iterations: 最大迭代次数
+        enable_monitoring: 是否启用监控
 
     Returns:
         攻击结果
@@ -551,19 +734,60 @@ async def run_autonomous_attack_coordinated(
         max_iterations=max_iterations
     )
 
-    result = await agent.run()
+    # 创建监控任务
+    monitor_task = None
+    if enable_monitoring:
+        # 获取或创建dispatcher用于监控
+        dispatcher = get_coordinator_dispatcher()
+        session_id = await dispatcher.create_session([])
 
-    # 同步到Memory
-    if result.get("success"):
-        memory = AgentMemorySystem()
-        await memory.write_finding(
-            AgentType.COORDINATOR,
-            target,
-            "attack_result",
-            result
-        )
+        # 异步启动监控
+        async def monitor():
+            return await dispatcher.monitor_agent_execution(
+                session_id,
+                "autonomous_agent",
+                check_interval=2.0
+            )
 
-    return result
+        monitor_task = asyncio.create_task(monitor())
+
+    try:
+        # 执行攻击
+        result = await agent.run()
+
+        # 同步到Memory
+        if result.get("success"):
+            memory = AgentMemorySystem()
+            await memory.write_finding(
+                AgentType.COORDINATOR,
+                target,
+                "attack_result",
+                result
+            )
+
+        # 检查监控结果
+        if monitor_task:
+            try:
+                monitor_result = await asyncio.wait_for(
+                    monitor_task,
+                    timeout=1.0
+                )
+                result["monitoring"] = monitor_result
+            except asyncio.TimeoutError:
+                pass
+
+        return result
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "target": target
+        }
+    finally:
+        # 清理监控任务
+        if monitor_task and not monitor_task.done():
+            monitor_task.cancel()
 
 
 async def parallel_scan_targets(

