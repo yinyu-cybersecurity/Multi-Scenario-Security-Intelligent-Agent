@@ -1,41 +1,100 @@
 name: internal_network
-description: 内网渗透技能，涵盖主机发现、凭据获取、横向移动
-domain: internal
+description: 内网渗透技能，涵盖信息收集、凭据窃取、横向移动、权限提升、域渗透
+domain: intranet
 
-version: "1.0"
+version: "2.0"
 tags:
-  - internal
-  - smb
-  - rdp
-  - credential
-  - lateral
+  - intranet
+  - active-directory
+  - lateral-movement
+  - privilege-escalation
+  - credential-theft
 
 knowledge: |
   ## 内网渗透方法论
 
-  ### 1. 主机发现
-  - 存活探测：ICMP、TCP、ARP
-  - 端口扫描：服务识别
-  - 域环境：域控制器、域用户
+  ### 1. 信息收集
+  - 网络拓扑发现：存活主机、网段划分
+  - 端口服务识别：445/3389/8080等关键端口
+  - 域环境识别：DC定位、域用户枚举
+  - 权限识别：当前用户权限、组 memberships
 
-  ### 2. 凭据获取
-  - 密码喷洒：常见弱密码
-  - 凭据转储：LSASS、SAM
-  - 票据攻击：Kerberos
-  - 哈希传递：PtH、PtT
+  ### 2. 凭据窃取
+  - Mimikatz：内存密码、Kerberos票据
+  - SAM数据库：本地用户Hash
+  - LSASS进程：内存凭据提取
+  - 浏览器密码：Chrome/Firefox存储
+  - 配置文件：Web.config、连接字符串
 
   ### 3. 横向移动
-  - SMB：psexec, wmi
-  - RDP：远程桌面
-  - WinRM：远程管理
-  - SSH：密钥利用
+  - SMB协议：PsExec、IPC$共享
+  - WMI执行：远程命令执行
+  - WinRM服务：PowerShell远程
+  - RDP会话：会话劫持
+  - 计划任务：AT/Schtasks
 
-  ### 4. 权限维持
-  - 黄金票据：域持久化
-  - 骨架密钥：后门
-  - DCSync：域同步
+  ### 4. 权限提升
+  - 内核漏洞：系统补丁缺失
+  - 配置错误：弱权限、服务路径
+  - Token窃取：Impersonate权限
+  - UAC绕过：AlwaysNotify配置
+  - DLL劫持：程序加载路径
+
+  ### 5. 域渗透
+  - BloodHound：攻击路径分析
+  - Kerberoasting：SPN服务票据
+  - AS-REP Roasting：预认证禁用
+  - DCSync：域控同步攻击
+  - 黄金票据：KRBTGT Hash
+  - 白银票据：服务账户Hash
+
+  ### 6. 专业知识库
+  **完整Payload库位于**: `skill-play-main/security-testing/data/intranet/`
+
+  - AD攻击: `ad-attack/ad-attack-detail.md`
+  - 凭据窃取: `cred theft/credential-theft-detail.md`
+  - 横向移动: `lateral/lateral-detail.md`
+  - 权限提升: `privesc/privesc-detail.md`
+  - 隧道代理: `tunnel/tunnel-detail.md`
+  - 免杀规避: `evasion/evasion-detail.md`
+  - Exchange攻击: `exchange-attack/exchange-detail.md`
 
 workflows:
+  - name: domain_compromise_workflow
+    description: 域渗透完整流程
+    steps:
+      - description: 域环境信息收集
+        suggested_tools: ["bloodhound", "ldapsearch", "powerview"]
+        expected_output: "域控、域用户、组策略信息"
+      - description: 凭据窃取
+        suggested_tools: ["mimikatz", "lazagne", "browser_password"]
+        expected_output: "用户Hash、明文密码、票据"
+      - description: Kerberoasting攻击
+        suggested_tools: ["rubeus", "impacket-GetUserSPNs"]
+        expected_output: "SPN服务账户Hash"
+      - description: 横向移动到域控
+        suggested_tools: ["crackmapexec", "impacket-psexec", "wmiexec"]
+        expected_output: "域控Shell访问"
+      - description: 持久化与权限维持
+        suggested_tools: ["golden_ticket", "skeleton_key", "dsync"]
+        expected_output: "长期访问权限"
+
+  - name: lateral_movement_workflow
+    description: 横向移动流程
+    steps:
+      - description: 发现内网资产
+        suggested_tools: ["nmap", "fscan", "netscan"]
+        expected_output: "存活主机列表"
+      - description: 尝试已有凭据
+        suggested_tools: ["crackmapexec", "hydra"]
+        expected_output: "可访问主机"
+      - description: 执行横向技术
+        suggested_tools: ["psexec", "wmiexec", "winrm"]
+        expected_output: "目标主机访问权限"
+      - description: 权限提升
+        suggested_tools: ["privesc", "potato", "bypassuac"]
+        expected_output: "SYSTEM权限"
+
   - name: network_discovery_workflow
     description: 内网主机发现流程
     steps:
@@ -49,35 +108,22 @@ workflows:
         suggested_tools: ["bloodhound", "ldapsearch"]
         expected_output: "域信息和用户列表"
 
-  - name: lateral_movement_workflow
-    description: 横向移动流程
-    steps:
-      - description: 获取初始凭据
-        suggested_tools: ["mimikatz", "crackmapexec"]
-        expected_output: "用户名和密码/哈希"
-      - description: 凭据验证
-        suggested_tools: ["crackmapexec"]
-        expected_output: "有效凭据列表"
-      - description: 横向移动
-        suggested_tools: ["crackmapexec", "impacket"]
-        expected_output: "新主机访问权限"
-
 tool_preferences:
-  fscan:
-    score: 0.95
-    reason: "内网综合扫描工具，速度快"
   crackmapexec:
-    score: 0.9
-    reason: "内网渗透瑞士军刀"
-  mimikatz:
-    score: 0.85
-    reason: "Windows凭据提取"
-  impacket:
-    score: 0.8
-    reason: "Python内网工具集"
+    score: 0.98
+    reason: "内网密码爆破和命令执行神器"
   bloodhound:
-    score: 0.75
-    reason: "域环境分析"
+    score: 0.95
+    reason: "域攻击路径可视化分析"
+  mimikatz:
+    score: 0.95
+    reason: "Windows凭据提取瑞士军刀"
+  impacket:
+    score: 0.92
+    reason: "网络协议工具包，psexec/wmiexec等"
+  fscan:
+    score: 0.88
+    reason: "内网综合扫描工具"
 
 examples:
   - scenario: 内网主机发现
@@ -86,3 +132,9 @@ examples:
   - scenario: 获取Windows凭据
     solution: 使用mimikatz提取LSASS内存
     tools_used: ["mimikatz"]
+  - scenario: 域攻击路径分析
+    solution: 使用BloodHound可视化域权限关系
+    tools_used: ["bloodhound"]
+  - scenario: Kerberoasting攻击
+    solution: 使用Rubeus请求SPN票据并离线破解
+    tools_used: ["rubeus", "hashcat"]

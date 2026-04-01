@@ -1,0 +1,157 @@
+name: api_security_testing
+description: 深度API安全测试引擎，支持REST/GraphQL/WebSocket/API发现与漏洞检测
+domain: api
+
+version: "2.0"
+tags:
+  - api
+  - rest
+  - graphql
+  - websocket
+  - cloud-storage
+
+knowledge: |
+  ## API安全测试方法论
+
+  ### 1. 资产发现
+  - JS文件分析：提取API端点、路由、参数
+  - 无头浏览器爬取：发现SPA动态路由
+  - 流量捕获：拦截XHR/Fetch请求
+  - Swagger/OpenAPI：解析API文档
+
+  ### 2. 漏洞检测矩阵
+
+  #### 2.1 认证与授权
+  - 未授权访问：匿名访问受保护端点
+  - IDOR越权：跨用户数据访问
+  - Token绕过：JWT/Session验证缺陷
+  - 权限提升：普通用户→管理员
+
+  #### 2.2 注入攻击
+  - SQL注入：API参数注入点
+  - NoSQL注入：MongoDB/Redis注入
+  - 命令注入：OS命令执行
+  - LDAP注入：目录服务攻击
+
+  #### 2.3 数据暴露
+  - 敏感数据泄露：密码/Token/密钥
+  - 过度返回：响应包含多余字段
+  - 错误信息泄露：堆栈跟踪/路径
+
+  #### 2.4 业务逻辑
+  - 批量操作：绕过限制批量请求
+  - 条件竞争：并发操作漏洞
+  - 支付逻辑：价格篡改/重放攻击
+
+  ### 3. 云存储安全
+
+  #### 3.1 云厂商识别
+  - 阿里云OSS：*.oss-*.aliyuncs.com
+  - 腾讯云COS：*.cos.myqcloud.com
+  - AWS S3：*.s3.amazonaws.com
+  - 华为云OBS：*.obs.myhwclouds.com
+  - MinIO：端口9000/9001
+
+  #### 3.2 云存储漏洞
+  - 公开可列目录：GET / 返回文件列表
+  - 匿名上传：PUT/POST无认证
+  - 匿名删除：DELETE无认证
+  - 敏感文件泄露：.env/.git/.sql等
+
+  ### 4. GraphQL安全
+  - Introspection泄露：Schema暴露
+  - 深度查询：无限制嵌套DoS
+  - 字段枚举：敏感字段查询
+  - Mutation权限：未授权写入
+
+  ### 5. WebSocket安全
+  - 未授权连接：无Token验证
+  - 数据泄露：敏感信息传输
+  - 注入攻击：消息内容注入
+  - CSRF：跨站WebSocket劫持
+
+workflows:
+  - name: full_api_assessment
+    description: 完整API安全评估流程
+    steps:
+      - description: 前置环境检查
+        suggested_tools: ["python", "playwright"]
+        expected_output: "依赖已安装，模块可导入"
+      - description: 资产发现与JS分析
+        suggested_tools: ["deep_api_tester", "browser_tester"]
+        expected_output: "API端点列表、敏感数据"
+      - description: 多维度漏洞检测
+        suggested_tools: ["api_fuzzer", "nuclei"]
+        expected_output: "漏洞列表与证据"
+      - description: 云存储专项测试
+        suggested_tools: ["cloud_storage_tester"]
+        expected_output: "云存储安全报告"
+      - description: 报告生成
+        suggested_tools: ["markdown"]
+        expected_output: "Markdown格式测试报告"
+
+  - name: cloud_storage_assessment
+    description: 云存储安全评估
+    steps:
+      - description: 识别云厂商
+        suggested_tools: ["cloud_storage_tester"]
+        expected_output: "OSS/COS/S3等厂商识别"
+      - description: 公开访问测试
+        suggested_tools: ["curl", "cloud_storage_tester"]
+        expected_output: "文件列表/访问权限"
+      - description: 上传权限测试
+        suggested_tools: ["curl", "cloud_storage_tester"]
+        expected_output: "PUT/POST测试结果"
+      - description: 敏感文件扫描
+        suggested_tools: ["cloud_storage_tester"]
+        expected_output: "泄露的敏感文件列表"
+
+  - name: graphql_assessment
+    description: GraphQL安全评估
+    steps:
+      - description: Introspection查询
+        suggested_tools: ["curl", "graphiql"]
+        expected_output: "Schema结构"
+      - description: 字段权限分析
+        suggested_tools: ["manual", "graphql-playground"]
+        expected_output: "敏感字段列表"
+      - description: 深度限制测试
+        suggested_tools: ["graphql-fuzzer"]
+        expected_output: "DoS风险评估"
+      - description: Mutation测试
+        suggested_tools: ["curl", "api_fuzzer"]
+        expected_output: "未授权写入漏洞"
+
+tool_preferences:
+  deep_api_tester:
+    score: 0.98
+    reason: "深度API测试引擎，自动发现端点和漏洞"
+  browser_tester:
+    score: 0.95
+    reason: "无头浏览器，分析SPA和动态内容"
+  api_fuzzer:
+    score: 0.90
+    reason: "API模糊测试，发现注入漏洞"
+  cloud_storage_tester:
+    score: 0.92
+    reason: "云存储专项测试，支持OSS/COS/S3"
+  nuclei:
+    score: 0.88
+    reason: "CVE模板扫描，快速漏洞发现"
+  curl:
+    score: 0.75
+    reason: "HTTP请求工具，手动测试必备"
+
+examples:
+  - scenario: 发现SPA应用的API端点
+    solution: 使用browser_tester执行JS，deep_api_tester分析JS文件提取端点
+    tools_used: ["browser_tester", "deep_api_tester"]
+  - scenario: 测试云存储公开访问
+    solution: 使用cloud_storage_tester检测公开可列目录、匿名上传权限
+    tools_used: ["cloud_storage_tester", "curl"]
+  - scenario: GraphQL Schema泄露
+    solution: 发送Introspection查询，分析暴露的类型和字段
+    tools_used: ["curl", "graphiql"]
+  - scenario: API未授权访问
+    solution: 移除Authorization头测试响应变化
+    tools_used: ["api_fuzzer", "curl"]
