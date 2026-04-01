@@ -18,8 +18,9 @@ from datetime import datetime
 
 from app.capabilities.foundation import FoundationCapability, FoundationTool
 from app.tools_v2.tools import execute_tool, list_tools, get_tool_schema
+from app.tools_v2.deferred_loader import get_deferred_tool_registry
 from app.skills import get_skill_registry
-from app.memory import get_memory_system
+from app.memory import get_agent_memory
 from app.agents.base import AgentType
 
 
@@ -95,8 +96,9 @@ class AutonomousAgent:
 
         # 能力
         self.foundation = FoundationCapability(workspace=workspace)
-        self.memory = get_memory_system()
+        self.memory = get_agent_memory()
         self.skill_registry = get_skill_registry()
+        self.deferred_registry = get_deferred_tool_registry()
 
     async def run(self) -> Dict[str, Any]:
         """
@@ -165,6 +167,16 @@ class AutonomousAgent:
         skill_suggestion = await self._get_skill_suggestion()
         if skill_suggestion:
             return skill_suggestion
+
+        # 检查工具是否在延迟加载列表中，需要时显式加载
+        context = {
+            "phase": phase.value,
+            "target": self.target,
+            "findings": self.state.findings[-3:] if self.state.findings else []
+        }
+
+        # 获取当前应加载的工具列表
+        available_tools = self.deferred_registry.get_tools_for_context(context)
 
         # 默认逻辑
         if phase == AgentPhase.INIT:
@@ -289,6 +301,22 @@ class AutonomousAgent:
         elif tool_name in ["httpx", "fscan"]:
             return {"target": self.target}
         return {}
+
+    def _search_deferred_tool(self, query: str) -> Optional[Dict[str, Any]]:
+        """搜索延迟加载的工具"""
+        results = self.deferred_registry.search_tools(query)
+        if results:
+            best_match = results[0]
+            # 加载工具Schema
+            schema = self.deferred_registry.load_tool(best_match["name"])
+            if schema:
+                print(f"  🔍 发现工具: {best_match['name']} - {best_match['description']}")
+                return {
+                    "tool": best_match["name"],
+                    "params": self._build_tool_params(best_match["name"]),
+                    "tags": best_match.get("tags", [])
+                }
+        return None
 
     async def _execute_action(self, action: Dict) -> Dict[str, Any]:
         """执行行动"""

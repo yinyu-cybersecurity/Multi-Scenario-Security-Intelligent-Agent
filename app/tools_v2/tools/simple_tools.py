@@ -589,7 +589,7 @@ TOOL_SCHEMAS = {
                 },
                 "recursive": {
                     "type": "boolean",
-                    "default": false,
+                    "default": False,
                     "description": "是否递归枚举"
                 },
                 "threads": {
@@ -1674,7 +1674,7 @@ async def hydra_handler(
 
     if result["success"]:
         # 解析hydra输出
-        output = result.get("output", "")
+        output = result.get("stdout", "")
         credentials = []
 
         # 提取成功爆破的凭据
@@ -2707,7 +2707,18 @@ async def marshalsec_handler(
 
 # 导入专业方向工具
 from .specialized_schemas import ALL_SPECIALIZED_SCHEMAS
-from .specialized_handlers import SPECIALIZED_HANDLERS
+from .specialized_handlers import (
+    crypto_identifier_handler,
+    classical_cipher_solver_handler,
+    rsa_attacker_handler,
+    hash_analyzer_handler,
+    encoding_decoder_handler,
+    binary_analyzer_handler,
+    rop_builder_handler,
+    shellcode_generator_handler,
+    ai_attacker_handler,
+    oa_exploiter_handler
+)
 
 # 合并Schema
 TOOL_SCHEMAS.update(ALL_SPECIALIZED_SCHEMAS)

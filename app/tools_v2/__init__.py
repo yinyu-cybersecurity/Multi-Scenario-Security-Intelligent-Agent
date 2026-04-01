@@ -22,6 +22,15 @@ from .tool_factory import (
     register_tool,
 )
 
+from .concurrency_config import (
+    ConcurrencyLevel,
+    ToolConcurrencyConfig,
+    is_concurrency_safe,
+    get_max_concurrent,
+    classify_tools_for_parallel,
+    is_read_only_command,
+)
+
 __all__ = [
     # 核心类
     "CTFToolV2",
@@ -40,4 +49,12 @@ __all__ = [
     "ToolRegistryV2",
     "get_tool_registry_v2",
     "register_tool",
+
+    # 并发安全
+    "ConcurrencyLevel",
+    "ToolConcurrencyConfig",
+    "is_concurrency_safe",
+    "get_max_concurrent",
+    "classify_tools_for_parallel",
+    "is_read_only_command",
 ]

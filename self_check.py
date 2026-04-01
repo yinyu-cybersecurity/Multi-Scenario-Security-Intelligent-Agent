@@ -242,14 +242,39 @@ except Exception as e:
     check('memory_manager module', False, str(e))
 
 # ========================================
-# 6. Graph Structure
+# 6. Graph Structure (New Architecture)
 # ========================================
-print('\n--- Graph Structure ---')
+print('\n--- Graph Structure (New Architecture) ---')
+try:
+    from agents.autonomous_agent import AutonomousAgent, AgentState
+    check('autonomous_agent module', True)
+except Exception as e:
+    check('autonomous_agent module', False, str(e))
+
+try:
+    from agents.base import AgentType
+    check('agents.base module', True)
+except Exception as e:
+    check('agents.base module', False, str(e))
+
+try:
+    from tools_v2.tools import list_tools, execute_tool
+    check('tools_v2 module', True)
+except Exception as e:
+    check('tools_v2 module', False, str(e))
+
+try:
+    from coordinator.dispatcher import AgentDispatcher, TaskType
+    check('coordinator.dispatcher module', True)
+except Exception as e:
+    check('coordinator.dispatcher module', False, str(e))
+
+# Legacy import for backward compatibility
 try:
     from ctf_agent_graph import run_single_task, CTFState
-    check('graph runner', True)
+    check('legacy graph runner', True)
 except Exception as e:
-    check('graph runner', False, str(e))
+    skip('legacy graph runner', 'old architecture - use autonomous_agent')
 
 # ========================================
 # 7. Functionality Tests
@@ -426,8 +451,8 @@ except Exception as e:
 
 # HTTP test
 try:
-    import urllib.request
-    urllib.request.urlopen('http://www.baidu.com', timeout=5)
+    import requests
+    requests.get('https://www.baidu.com', timeout=5)
     check('HTTP connectivity', True)
 except Exception as e:
     check('HTTP connectivity', False, str(e))

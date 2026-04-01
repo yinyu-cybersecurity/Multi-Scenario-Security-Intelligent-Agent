@@ -2,12 +2,21 @@
 #
 # 借鉴Claude Code的多Agent协调机制
 # 实现并行派发、结果聚合、Memory同步
+#
+# 核心职责:
+# 1. 并行派发多个Fork子Agent
+# 2. Memory系统同步Agent发现
+# 3. 结果聚合与冲突解决
+# 4. **超时熔断管理（唯一停止条件）**
+# 5. 异常检测与处理
 
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass, field
+from enum import Enum
 import asyncio
 from datetime import datetime
 import uuid
+import time
 
 from app.agents.base import AgentType, AGENT_REGISTRY
 from app.memory.prompt_cache import PromptCacheManager, ForkSubagentManager
@@ -19,6 +28,84 @@ from app.state.state_v3 import (
     create_initial_state,
     get_state_slice_for_agent,
 )
+
+
+# ============================================
+# 超时熔断配置
+# ============================================
+
+class TaskType(Enum):
+    """任务类型"""
+    CTF_CHALLENGE = "ctf_challenge"           # CTF 单题目 - 30分钟
+    CTF_MULTI_FLAG = "ctf_multi_flag"          # CTF 多flag题目 - 60分钟
+    PENETRATION_FULL = "penetration_full"       # 完整渗透（外网打点+内网） - 2小时
+    PENETRATION_INTERNAL = "penetration_internal"  # 纯内网渗透（已有入口） - 60分钟
+    EXTERNAL_ATTACK = "external_attack"         # 外网打点 - 30分钟
+    VULNERABILITY_SCAN = "vuln_scan"           # 漏洞扫描 - 30分钟
+    CODE_AUDIT = "code_audit"                  # 代码审计 - 60分钟
+    RESEARCH = "research"                      # 安全研究 - 2小时
+    OTHER = "other"                            # 其他任务 - 助手决策
+
+
+# 任务超时配置（秒）
+TASK_TIMEOUTS = {
+    TaskType.CTF_CHALLENGE: 30 * 60,           # CTF单题: 30 分钟
+    TaskType.CTF_MULTI_FLAG: 60 * 60,          # CTF多flag: 60 分钟
+    TaskType.PENETRATION_FULL: 120 * 60,       # 完整渗透: 2 小时（外网+内网）
+    TaskType.PENETRATION_INTERNAL: 60 * 60,    # 纯内网: 60 分钟
+    TaskType.EXTERNAL_ATTACK: 30 * 60,         # 外网打点: 30 分钟
+    TaskType.VULNERABILITY_SCAN: 30 * 60,      # 扫描: 30 分钟
+    TaskType.CODE_AUDIT: 60 * 60,              # 审计: 60 分钟
+    TaskType.RESEARCH: 120 * 60,               # 研究: 2 小时
+    TaskType.OTHER: 90 * 60,                   # 其他: 90 分钟
+}
+
+
+@dataclass
+class TimeoutState:
+    """超时状态"""
+    task_type: TaskType
+    start_time: float
+    timeout_seconds: int
+    task_description: str = ""
+
+    @property
+    def remaining_seconds(self) -> float:
+        """剩余时间（秒）"""
+        elapsed = time.time() - self.start_time
+        return max(0, self.timeout_seconds - elapsed)
+
+    @property
+    def elapsed_seconds(self) -> float:
+        """已用时间（秒）"""
+        return time.time() - self.start_time
+
+    @property
+    def is_timeout(self) -> bool:
+        """是否已超时 - 这是唯一停止条件"""
+        return self.remaining_seconds <= 0
+
+    @property
+    def progress_ratio(self) -> float:
+        """进度比例（0.0 ~ 1.0）"""
+        return min(1.0, self.elapsed_seconds / self.timeout_seconds)
+
+    def format_remaining(self) -> str:
+        """格式化剩余时间"""
+        remaining = self.remaining_seconds
+        if remaining <= 0:
+            return "已超时"
+
+        hours = int(remaining // 3600)
+        minutes = int((remaining % 3600) // 60)
+        secs = int(remaining % 60)
+
+        if hours > 0:
+            return f"{hours}小时{minutes}分{secs}秒"
+        elif minutes > 0:
+            return f"{minutes}分{secs}秒"
+        else:
+            return f"{secs}秒"
 
 
 @dataclass
@@ -43,6 +130,7 @@ class CoordinatorSession:
     fork_tasks: Dict[str, ForkTask] = field(default_factory=dict)
     memory_writes: List[Dict] = field(default_factory=list)
     aggregated_findings: List[Dict] = field(default_factory=list)
+    timeout_state: Optional[TimeoutState] = None  # 超时状态
 
 
 class CoordinatorDispatcher:
@@ -77,15 +165,217 @@ class CoordinatorDispatcher:
             AgentType.COORDINATOR
         ).max_concurrent_tasks if AgentType.COORDINATOR in AGENT_REGISTRY else 8
 
+    # =========================================================================
+    # 超时熔断管理（核心功能 - 唯一停止条件）
+    # =========================================================================
+
+    async def classify_task_with_llm(
+        self,
+        task_description: str,
+        context: Dict = None
+    ) -> TaskType:
+        """
+        使用LLM智能判断任务类型
+
+        完全由AI决定任务类型，考虑：
+        - 多flag场景
+        - 外网打点+内网渗透组合
+        - 任务复杂度
+
+        Args:
+            task_description: 任务描述
+            context: 额外上下文信息
+
+        Returns:
+            任务类型
+        """
+        from app.llm_client import get_llm_client
+
+        prompt = f"""你是一个渗透测试任务分类器。根据任务描述，判断任务类型。
+
+任务描述: {task_description}
+
+可选类型:
+1. ctf_challenge - CTF单题目，单个flag
+2. ctf_multi_flag - CTF多flag题目（如part1/part2、多阶段）
+3. penetration_full - 完整渗透（外网打点+内网渗透）
+4. penetration_internal - 纯内网渗透（已有入口）
+5. external_attack - 仅外网打点
+6. vuln_scan - 漏洞扫描
+7. code_audit - 代码审计
+8. research - 安全研究
+9. other - 其他
+
+请只返回类型名称（如 penetration_full），不要解释。"""
+
+        try:
+            llm = get_llm_client()
+            response = await llm.ainvoke(prompt, model="glm-5", max_tokens=30)
+
+            # 解析响应
+            result = response.strip().lower()
+
+            # 映射到TaskType
+            type_mapping = {
+                "ctf_challenge": TaskType.CTF_CHALLENGE,
+                "ctf_multi_flag": TaskType.CTF_MULTI_FLAG,
+                "penetration_full": TaskType.PENETRATION_FULL,
+                "penetration_internal": TaskType.PENETRATION_INTERNAL,
+                "external_attack": TaskType.EXTERNAL_ATTACK,
+                "vuln_scan": TaskType.VULNERABILITY_SCAN,
+                "code_audit": TaskType.CODE_AUDIT,
+                "research": TaskType.RESEARCH,
+                "other": TaskType.OTHER,
+            }
+
+            for key, task_type in type_mapping.items():
+                if key in result:
+                    print(f"🤖 LLM分类: {task_type.value}")
+                    return task_type
+
+            # LLM返回无法识别，默认OTHER
+            print(f"⚠️ LLM返回无法识别: {result}")
+            return TaskType.OTHER
+
+        except Exception as e:
+            print(f"⚠️ LLM分类失败: {e}")
+            return TaskType.OTHER
+
+    async def start_timeout(
+        self,
+        session_id: str,
+        task_description: str,
+        task_type: Optional[TaskType] = None,
+        timeout_override: Optional[int] = None
+    ) -> TimeoutState:
+        """
+        开始任务超时计时
+
+        这是唯一能启动超时的方法！
+
+        Args:
+            session_id: 会话ID
+            task_description: 任务描述
+            task_type: 任务类型（可选，默认用LLM自动识别）
+            timeout_override: 自定义超时时间（秒）
+
+        Returns:
+            超时状态
+        """
+        session = self._sessions.get(session_id)
+        if not session:
+            raise ValueError(f"Session {session_id} not found")
+
+        # LLM智能分类任务类型
+        if not task_type:
+            task_type = await self.classify_task_with_llm(task_description)
+
+        # 获取超时时间
+        timeout = timeout_override or TASK_TIMEOUTS.get(task_type, 90 * 60)
+
+        # 创建超时状态
+        session.timeout_state = TimeoutState(
+            task_type=task_type,
+            start_time=time.time(),
+            timeout_seconds=timeout,
+            task_description=task_description
+        )
+
+        print(f"\n⏱️ 任务开始")
+        print(f"   类型: {task_type.value}")
+        print(f"   描述: {task_description[:60]}...")
+        print(f"   超时: {timeout // 60} 分钟")
+        print(f"   截止: {datetime.fromtimestamp(session.timeout_state.start_time + timeout).strftime('%H:%M:%S')}")
+
+        return session.timeout_state
+
+    def should_stop(self, session_id: str) -> bool:
+        """
+        判断是否应该停止
+
+        这是唯一停止条件！
+
+        Args:
+            session_id: 会话ID
+
+        Returns:
+            是否应该停止
+        """
+        session = self._sessions.get(session_id)
+        if not session or not session.timeout_state:
+            return False
+
+        if session.timeout_state.is_timeout:
+            print(f"\n⏰ 任务超时！已运行 {session.timeout_state.elapsed_seconds:.0f} 秒")
+            return True
+
+        return False
+
+    def get_remaining_time(self, session_id: str) -> float:
+        """获取剩余时间（秒）"""
+        session = self._sessions.get(session_id)
+        if not session or not session.timeout_state:
+            return float('inf')
+        return session.timeout_state.remaining_seconds
+
+    def get_timeout_status(self, session_id: str) -> Dict[str, Any]:
+        """获取超时状态"""
+        session = self._sessions.get(session_id)
+        if not session or not session.timeout_state:
+            return {"status": "no_timeout"}
+
+        ts = session.timeout_state
+        return {
+            "status": "timeout" if ts.is_timeout else "running",
+            "task_type": ts.task_type.value,
+            "elapsed_seconds": ts.elapsed_seconds,
+            "remaining_seconds": ts.remaining_seconds,
+            "remaining_formatted": ts.format_remaining(),
+            "progress_ratio": ts.progress_ratio,
+            "is_timeout": ts.is_timeout
+        }
+
+    def check_time_warning(self, session_id: str, threshold: float = 0.8) -> bool:
+        """
+        检查时间警告（当进度超过阈值）
+
+        Args:
+            session_id: 会话ID
+            threshold: 阈值比例（默认 0.8 = 80%）
+
+        Returns:
+            是否达到警告阈值
+        """
+        session = self._sessions.get(session_id)
+        if not session or not session.timeout_state:
+            return False
+
+        if session.timeout_state.progress_ratio >= threshold:
+            remaining = session.timeout_state.format_remaining()
+            print(f"⚠️ 时间警告: 已用 {threshold*100:.0f}%，剩余 {remaining}")
+            return True
+
+        return False
+
+    # =========================================================================
+    # 会话管理
+    # =========================================================================
+
     async def create_session(
         self,
-        parent_messages: List[Dict]
+        parent_messages: List[Dict],
+        task_description: str = "",
+        task_type: Optional[TaskType] = None,
+        timeout_override: Optional[int] = None
     ) -> str:
         """
         创建Coordinator会话
 
         Args:
             parent_messages: 父Agent消息历史
+            task_description: 任务描述（用于自动分类超时）
+            task_type: 任务类型（可选）
+            timeout_override: 自定义超时时间（秒）
 
         Returns:
             session_id
@@ -98,6 +388,10 @@ class CoordinatorDispatcher:
         )
 
         self._sessions[session_id] = session
+
+        # 如果提供了任务描述，自动启动超时计时
+        if task_description:
+            await self.start_timeout(session_id, task_description, task_type, timeout_override)
 
         return session_id
 
@@ -236,6 +530,7 @@ class CoordinatorDispatcher:
         - 使用asyncio.gather并行
         - 控制并发数量（Semaphore）
         - 独立任务互不阻塞
+        - **超时熔断检查（唯一停止条件）**
 
         Args:
             session_id: 会话ID
@@ -249,20 +544,34 @@ class CoordinatorDispatcher:
         if not session:
             return {"success": False, "error": "Session not found"}
 
+        # 检查是否已超时
+        if self.should_stop(session_id):
+            return self.build_timeout_result(session_id)
+
         # 确定并发数
         concurrent_limit = max_concurrent or self._max_concurrent
 
         # 创建并发控制
         semaphore = asyncio.Semaphore(concurrent_limit)
 
-        # 执行函数（带并发控制）
+        # 执行函数（带并发控制和超时检查）
         async def execute_with_limit(task_id: str):
+            # 在每次执行前检查超时
+            if self.should_stop(session_id):
+                return {"success": False, "error": "Timeout", "task_id": task_id}
+
             async with semaphore:
-                return await self.execute_fork_task(
+                result = await self.execute_fork_task(
                     session_id,
                     task_id,
                     execute_handler
                 )
+
+                # 执行后检查超时
+                if self.should_stop(session_id):
+                    return {"success": False, "error": "Timeout", "task_id": task_id}
+
+                return result
 
         # 获取所有待执行任务
         pending_tasks = [
@@ -275,6 +584,10 @@ class CoordinatorDispatcher:
             *[execute_with_limit(task_id) for task_id in pending_tasks],
             return_exceptions=True
         )
+
+        # 最终超时检查
+        if self.should_stop(session_id):
+            return self.build_timeout_result(session_id)
 
         # 聚合结果
         return await self.aggregate_results(session_id)
@@ -494,7 +807,7 @@ class CoordinatorDispatcher:
         if not session:
             return {}
 
-        return {
+        stats = {
             "session_id": session_id,
             "total_tasks": len(session.fork_tasks),
             "completed": sum(1 for t in session.fork_tasks.values() if t.status == "completed"),
@@ -503,6 +816,41 @@ class CoordinatorDispatcher:
             "pending": sum(1 for t in session.fork_tasks.values() if t.status == "pending"),
             "memory_writes": len(session.memory_writes),
             "aggregated_findings": len(session.aggregated_findings),
+        }
+
+        # 添加超时状态
+        if session.timeout_state:
+            stats["timeout"] = self.get_timeout_status(session_id)
+
+        return stats
+
+    def build_timeout_result(self, session_id: str) -> Dict:
+        """
+        构建超时结果
+
+        当任务超时时，返回此结果作为最终输出
+
+        Args:
+            session_id: 会话ID
+
+        Returns:
+            超时结果字典
+        """
+        session = self._sessions.get(session_id)
+        if not session:
+            return {"success": False, "error": "Session not found", "reason": "timeout"}
+
+        ts = session.timeout_state
+
+        return {
+            "success": False,
+            "reason": "timeout",
+            "message": f"任务超时，已运行 {ts.elapsed_seconds:.0f} 秒",
+            "task_type": ts.task_type.value if ts else "unknown",
+            "elapsed_seconds": ts.elapsed_seconds if ts else 0,
+            "findings": session.aggregated_findings,
+            "completed_tasks": sum(1 for t in session.fork_tasks.values() if t.status == "completed"),
+            "total_tasks": len(session.fork_tasks)
         }
 
     async def monitor_agent_execution(
