@@ -22,12 +22,8 @@ typing-extensions>=4.0.0
 # Security Tools Integration
 pwn>=1.0.0  # pwntools
 impacket>=0.11.0
-bloodhound>=1.0.0
 defusedxml>=0.7.0  # dirsearch依赖
 psycopg[binary]>=3.1.0  # dirsearch PostgreSQL依赖
-
-# Database
-redis>=5.0.0
 
 # Logging
 colorlog>=6.0.0
@@ -40,10 +36,6 @@ gmpy2>=2.1.0
 # Optional - Misc
 Pillow>=10.0.0
 python-magic>=0.4.27
-
-# Web API
-flask>=3.0.0
-flask-cors>=4.0.0
 
 # MCP (Model Context Protocol)
 mcp>=1.0.0
