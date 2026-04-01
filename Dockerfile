@@ -1,23 +1,28 @@
+# CTF-Agent 2.0 Dockerfile
+# 基于 Ubuntu 22.04，集成65+安全工具
+
 FROM ac2-registry.cn-hangzhou.cr.aliyuncs.com/ac2/base:ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 替换 APT 源为阿里云镜像
+# ============================================
+# 基础环境配置
+# ============================================
 RUN sed -i 's@archive.ubuntu.com@mirrors.aliyun.com@g' /etc/apt/sources.list && \
     sed -i 's@security.ubuntu.com@mirrors.aliyun.com@g' /etc/apt/sources.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-        python3.11 python3.11-venv python3-pip python3.10-venv \
+        python3.11 python3.11-venv python3-pip \
         git curl wget unzip nmap openjdk-17-jdk openjdk-8-jdk maven ruby php-cli \
         libssl-dev libssh-dev libimage-exiftool-perl binwalk foremost \
         libmagic1 proxychains4 hydra && \
     rm -rf /var/lib/apt/lists/*
 
-# 设置Java 8为默认（marshalsec需要Java 8）
+# Java环境（marshalsec需要Java 8）
 ENV JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
 ENV PATH=$JAVA_HOME/bin:$PATH
 
-# 下载 Go（国内镜像）
+# Go环境
 RUN wget -q https://mirrors.aliyun.com/golang/go1.22.0.linux-amd64.tar.gz && \
     tar -C /usr/local -xzf go1.22.0.linux-amd64.tar.gz && \
     rm go1.22.0.linux-amd64.tar.gz
@@ -26,44 +31,33 @@ ENV GOPATH=/root/go
 ENV PATH=/usr/local/go/bin:$PATH:/root/go/bin
 ENV GOPROXY=https://goproxy.cn,direct
 
-# 下载 httprobe
+# ============================================
+# Go工具安装
+# ============================================
+# httprobe & qsreplace
 RUN wget -q -O /usr/local/bin/httprobe https://moeyy.cn/gh-proxy/https://github.com/tomnomnom/httprobe/releases/download/v0.2/httprobe-linux-amd64 && \
-    chmod +x /usr/local/bin/httprobe || true
-
-# 下载 qsreplace
-RUN wget -q -O /usr/local/bin/qsreplace https://moeyy.cn/gh-proxy/https://github.com/tomnomnom/qsreplace/releases/download/v0.0.2/qsreplace-linux-amd64 && \
+    chmod +x /usr/local/bin/httprobe || true && \
+    wget -q -O /usr/local/bin/qsreplace https://moeyy.cn/gh-proxy/https://github.com/tomnomnom/qsreplace/releases/download/v0.0.2/qsreplace-linux-amd64 && \
     chmod +x /usr/local/bin/qsreplace || true
 
-# 安装 Dalfox (XSS 扫描工具)
+# dalfox (XSS扫描)
 RUN go install github.com/hahwul/dalfox/v2@latest && \
-    cp /root/go/bin/dalfox /usr/local/bin/dalfox && \
-    chmod +x /usr/local/bin/dalfox || true
+    cp /root/go/bin/dalfox /usr/local/bin/ && chmod +x /usr/local/bin/dalfox || true
 
-# 安装 gobuster (目录爆破工具)
+# gobuster (目录爆破)
 RUN go install github.com/OJ/gobuster/v3@latest && \
-    cp /root/go/bin/gobuster /usr/local/bin/gobuster && \
-    chmod +x /usr/local/bin/gobuster || true
+    cp /root/go/bin/gobuster /usr/local/bin/ && chmod +x /usr/local/bin/gobuster || true
 
-# 安装 Metasploit Framework (使用国内镜像加速)
-RUN apt-get update && apt-get install -y gnupg2 && \
-    (curl --connect-timeout 30 --max-time 300 -fsSL https://ghproxy.net/https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb > /tmp/msfinstall && \
-     chmod 755 /tmp/msfinstall && \
-     /tmp/msfinstall) || \
-    (echo "Trying apt method..." && \
-     curl -fsSL https://apt.metasploit.com/metasploit-framework.gpg.key | gpg --dearmor -o /usr/share/keyrings/metasploit.gpg && \
-     echo "deb [signed-by=/usr/share/keyrings/metasploit.gpg] https://apt.metasploit.com buster main" > /etc/apt/sources.list.d/metasploit.list && \
-     apt-get update && apt-get install -y metasploit-framework) || \
-    echo "Warning: Metasploit installation failed, msf tool will be unavailable" || true
-
-# Python pip 配置
+# ============================================
+# Python工具安装
+# ============================================
 RUN pip3 install pipx -i https://pypi.tuna.tsinghua.edu.cn/simple && \
     pipx ensurepath
 
 ENV PATH="/root/.local/bin:$PATH"
-
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 
-# 安装 Python 工具
+# 核心Python安全工具
 RUN pipx install sqlmap || true
 RUN pipx install fenjing || true
 RUN pipx install flask-unsign || true
@@ -73,46 +67,37 @@ RUN pipx install ROPgadget || true
 RUN pipx install git-hacker || true
 RUN pipx install ldapdomaindump || true
 RUN pipx install bloodhound || true
-
-# 安装 kubectl (Kubernetes命令行工具)
-RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
-    chmod +x kubectl && \
-    mv kubectl /usr/local/bin/kubectl || echo "Warning: kubectl installation failed"
-
-# AD CS/证书攻击工具 (ESC1-10, Shadow Credentials, AD CS Abuse)
 RUN pipx install certipy-ad || true
-
-# pywhisker (Shadow Credentials备选工具)
 RUN pipx install pywhisker || true
 
-# 安装 crackmapexec 依赖
+# crackmapexec依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libffi-dev \
-    build-essential \
-    libxml2-dev \
-    libxslt1-dev \
-    zlib1g-dev \
-    && rm -rf /var/lib/apt/lists/*
+    libffi-dev build-essential libxml2-dev libxslt1-dev zlib1g-dev && \
+    rm -rf /var/lib/apt/lists/*
 
-# 安装 crackmapexec (优先使用国内 Gitee 镜像)
 RUN pipx install git+https://gitee.com/mirrors/CrackMapExec.git || \
-    pipx install git+https://github.com/Porchetta-Industries/CrackMapExec.git || \
-    echo "Warning: crackmapexec installation failed"
+    pipx install git+https://github.com/Porchetta-Industries/CrackMapExec.git || true
 
-# 验证 crackmapexec 安装
-RUN (crackmapexec --version 2>/dev/null || cme --version 2>/dev/null || echo "crackmapexec validation failed but continuing") && \
-    echo "crackmapexec installation verified"
+# kubectl
+RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
+    chmod +x kubectl && mv kubectl /usr/local/bin/kubectl || true
 
-# Ruby gems 国内镜像
+# Ruby工具
 RUN gem sources --add https://gems.ruby-china.com/ --remove https://rubygems.org/ || true
 RUN gem install zsteg one_gadget whatweb || true
 
+# ============================================
+# 工作目录
+# ============================================
 WORKDIR /app
 
+# 创建必要目录
 RUN mkdir -p /app/thirdparty /app/data/tool_outputs /app/data/tool_raw_logs /app/data/sessions /app/data/tunnels /app/data/security_resources /app/.memory /app/log /opt/tools/potato /opt/tools/ad /opt/tools/linux /opt/tools/windows /opt/frp
 
-# ============ 从本地 thirdparty 复制工具 ============
-# 复制二进制工具到 /usr/local/bin
+# ============================================
+# 从本地thirdparty复制工具
+# ============================================
+# 核心扫描工具
 COPY thirdparty/nuclei/nuclei /usr/local/bin/nuclei
 COPY thirdparty/xray/xray_linux_amd64 /usr/local/bin/xray
 COPY thirdparty/httpx/httpx /usr/local/bin/httpx
@@ -121,10 +106,10 @@ COPY thirdparty/subfinder/subfinder /usr/local/bin/subfinder
 COPY thirdparty/fscan_linux/fscan /usr/local/bin/fscan
 RUN chmod +x /usr/local/bin/nuclei /usr/local/bin/xray /usr/local/bin/httpx /usr/local/bin/ffuf /usr/local/bin/subfinder /usr/local/bin/fscan
 
-# 复制 frp
+# frp内网穿透
 COPY thirdparty/frp/frp_0.52.3_linux_amd64 /opt/frp
 
-# 复制 Git 仓库工具到 /app/thirdparty
+# Python/脚本工具
 COPY thirdparty/SSRFmap /app/thirdparty/SSRFmap
 COPY thirdparty/Gopherus /app/thirdparty/Gopherus
 COPY thirdparty/phpggc /app/thirdparty/phpggc
@@ -137,42 +122,38 @@ COPY thirdparty/Ghostcat /app/thirdparty/ajpshooter
 COPY thirdparty/Githacker /app/thirdparty/Githacker
 COPY thirdparty/marshalsec /app/thirdparty/marshalsec
 COPY thirdparty/fscan_windows /opt/tools/windows/fscan
+
+# Java工具
 COPY thirdparty/ysoserial/ysoserial-all.jar /app/thirdparty/ysoserial.jar
-
-# marshalsec 编译 (Java反序列化工具)
-RUN cd /app/thirdparty/marshalsec && \
-    (mvn clean package -DskipTests 2>/dev/null && \
-     cp target/marshalsec-*-all.jar /app/thirdparty/marshalsec.jar && \
-     echo "marshalsec compiled successfully") || \
-    echo "Warning: marshalsec compilation failed, will use ysoserial as fallback"
-
-# ============ 保留的 git clone 工具（其他工具）============
-# dirsearch
-RUN git clone --depth 1 https://gitee.com/mirrors/dirsearch.git /app/thirdparty/dirsearch || true
-
-# PayloadsAllTheThings
-RUN git clone --depth 1 https://gitee.com/RichardoMrMu/PayloadsAllTheThings.git /app/data/security_resources/PayloadsAllTheThings || true
-
-# ============ 从本地 thirdparty 复制工具 (Rubeus, JNDIExploit) ============
-COPY thirdparty/rubeus/Rubeus.exe /opt/tools/windows/Rubeus.exe
 COPY thirdparty/jndiexploit/JNDIExploit-1.3-SNAPSHOT.jar /app/thirdparty/JNDIExploit.jar
 
-# Windows 工具 (Potato系列)
+# Windows工具
+COPY thirdparty/rubeus/Rubeus.exe /opt/tools/windows/Rubeus.exe
+
+# marshalsec编译
+RUN cd /app/thirdparty/marshalsec && \
+    (mvn clean package -DskipTests 2>/dev/null && \
+     cp target/marshalsec-*-all.jar /app/thirdparty/marshalsec.jar) || \
+    echo "Warning: marshalsec compilation failed, ysoserial available as fallback"
+
+# 额外工具
+RUN git clone --depth 1 https://gitee.com/mirrors/dirsearch.git /app/thirdparty/dirsearch || true
+RUN git clone --depth 1 https://gitee.com/RichardoMrMu/PayloadsAllTheThings.git /app/data/security_resources/PayloadsAllTheThings || true
+
+# mimikatz下载
 RUN mkdir -p /opt/tools/windows && \
-    (wget -q -O /tmp/mimikatz.zip https://moeyy.cn/gh-proxy/https://github.com/gentilkiwi/mimikatz/releases/download/2.2.0-20220919/mimikatz_trunk.zip || \
-     wget -q -O /tmp/mimikatz.zip https://github.com/gentilkiwi/mimikatz/releases/download/2.2.0-20220919/mimikatz_trunk.zip || \
-     wget -q -O /tmp/mimikatz.zip https://ghproxy.net/https://github.com/gentilkiwi/mimikatz/releases/download/2.2.0-20220919/mimikatz_trunk.zip) && \
-    (unzip -o /tmp/mimikatz.zip -d /opt/tools/windows/mimikatz_temp/ && \
+    (wget -q -O /tmp/mimikatz.zip https://moeyy.cn/gh-proxy/https://github.com/gentilkiwi/mimikatz/releases/download/2.2.0-20220919/mimikatz_trunk.zip && \
+     unzip -o /tmp/mimikatz.zip -d /opt/tools/windows/mimikatz_temp/ && \
      mv /opt/tools/windows/mimikatz_temp/x64/mimikatz.exe /opt/tools/windows/mimikatz.exe && \
-     chmod +x /opt/tools/windows/mimikatz.exe || \
-     echo "Warning: mimikatz extraction failed") && \
+     chmod +x /opt/tools/windows/mimikatz.exe) || \
+    echo "Warning: mimikatz download failed" && \
     rm -rf /tmp/mimikatz.zip /opt/tools/windows/mimikatz_temp 2>/dev/null || true
 
-# 清理临时文件
+# 清理
 RUN rm -rf /tmp/* /var/tmp/* && \
     find /app/thirdparty -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
 
-# 创建软链接
+# 软链接
 RUN mkdir -p /opt/linux && \
     ln -sf /usr/local/bin/fscan /opt/linux/fscan && \
     ln -sf /usr/local/bin/nuclei /opt/linux/nuclei && \
@@ -185,16 +166,18 @@ RUN mkdir -p /opt/linux && \
     chmod +x /usr/local/bin/dirsearch /usr/local/bin/php-filter-chain && \
     chmod +x /app/thirdparty/Githacker/GitHack.py
 
+# ============================================
+# Python依赖安装
+# ============================================
 COPY requirements.txt .
 RUN python3.11 -m venv /opt/venv
-# 保留 pipx 安装路径 (/root/.local/bin) 在 PATH 中，确保 pipx 安装的工具可用
 ENV PATH="/opt/venv/bin:/root/.local/bin:$PATH"
 RUN pip install --upgrade pip && \
     pip install torch --index-url https://download.pytorch.org/whl/cpu && \
     pip install -r requirements.txt && \
     pip install -r /app/thirdparty/dirsearch/requirements.txt 2>/dev/null || true
 
-# 预下载 RAG Embedding 模型（~420MB多语言模型）
+# RAG Embedding模型预下载
 ENV HF_ENDPOINT=https://hf-mirror.com
 ENV HF_HOME=/app/.cache/huggingface
 ENV SENTENCE_TRANSFORMERS_HOME=/app/.cache/huggingface
@@ -204,24 +187,54 @@ RUN python3.11 -c "from sentence_transformers import SentenceTransformer; \
     SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')" && \
     echo "RAG model pre-downloaded (~420MB)"
 
+# ============================================
+# 应用代码复制
+# ============================================
 COPY app/*.py ./
 COPY app/state_types ./state_types/
 COPY app/topology ./topology/
-COPY tools/ ./tools/
-COPY internal_network/ ./internal_network/
-COPY remote_executor/ ./remote_executor/
-COPY crypto/ ./crypto/
-COPY pwn/ ./pwn/
-COPY reverse/ ./reverse/
-COPY misc/ ./misc/
-COPY ai_security/ ./ai_security/
-COPY cloud_security/ ./cloud_security/
-COPY memory/ ./memory/
-COPY rag_builder/ ./rag_builder/
+COPY app/tools_v2 ./tools_v2/
+COPY app/memory ./memory/
+COPY app/agents ./agents/
+COPY app/capabilities ./capabilities/
+COPY app/coordinator ./coordinator/
+COPY app/compressor ./compressor/
+COPY app/config ./config/
+COPY app/skills ./skills/
+COPY app/nodes ./nodes/
+COPY app/prompts ./prompts/
+COPY app/state ./state/
+COPY app/reports ./reports/
 COPY config.yaml.example /app/config.yaml.example
 COPY self_check.py /app/self_check.py
-COPY web/ ./web/
+COPY skills/ /app/skills/
+COPY frontend/ ./web/frontend/
 
+# ============================================
+# 安全配置 - 创建非root用户并配置sudo
+# ============================================
+# 注意：CTF工具需要特权操作，配置sudo允许ctfagent执行特定工具
+RUN apt-get update && apt-get install -y sudo && rm -rf /var/lib/apt/lists/* && \
+    groupadd -r ctfagent && useradd -r -g ctfagent -d /app -s /bin/bash ctfagent && \
+    echo "ctfagent ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/ctfagent && \
+    chmod 440 /etc/sudoers.d/ctfagent && \
+    # 将pipx工具复制到全局可访问位置
+    cp -r /root/.local/bin/* /usr/local/bin/ 2>/dev/null || true && \
+    chown -R ctfagent:ctfagent /app /opt/venv /opt/frp /opt/tools /root/.local 2>/dev/null || true && \
+    chmod -R 755 /root/.local 2>/dev/null || true
+
+# ============================================
+# 端口暴露
+# ============================================
 EXPOSE 54565 8000 7000 10800 4444
 
+# ============================================
+# 切换到非root用户（应用层安全）
+# 注意：CTF场景需要特权操作，sudo已配置
+# ============================================
+USER ctfagent
+
+# ============================================
+# 启动命令
+# ============================================
 CMD ["tail", "-f", "/dev/null"]

