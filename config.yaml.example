@@ -1,11 +1,12 @@
 # CTF-Agent Configuration
-# Edit the values below
+# 只保留用户必须配置的核心项，其他由Agent动态决策
 
 # ===== LLM Configuration =====
-LLM_API_KEY: "sk-9b037d6ba1314ba48c858c530bd70b09"
+LLM_API_KEY: "YOUR_API_KEY_HERE"
 LLM_BASE_URL: "https://api.deepseek.com/v1"
 
 # ===== Model Configuration =====
+# 为不同Agent选择模型，可自定义
 ANALYST_MODEL: "deepseek-chat"
 ATTACKER_MODEL: "deepseek-chat"
 VERIFIER_MODEL: "deepseek-chat"
@@ -13,66 +14,9 @@ EXPLORER_MODEL: "deepseek-chat"
 INNOVATOR_MODEL: "deepseek-chat"
 
 # ===== Task Timeout =====
-# Web CTF / 外网打点: 30分钟
-TASK_TIMEOUT: 1800
-# 内网渗透: 50分钟
-INTERNAL_TASK_TIMEOUT: 3000
-
-# ===== System Control =====
-MAX_VISITED_PAGES: 200
-MAX_VULN_CANDIDATES: 20
-
-# ===== Mode Switch Thresholds (Web CTF Only) =====
-# 内网渗透不受这些阈值影响，只按时间超时结束
-FAILURE_SCORE_FOR_EXPLORE: 5.0
-FAILURE_SCORE_FOR_INNOVATE: 10.0
-FAILURE_SCORE_ABANDON: 15.0
-EXPLORE_ROUNDS_FOR_INNOVATE: 5
-RULE_MISS_FOR_INNOVATE: 5
-MAX_STEPS_BEFORE_INNOVATE: 50
-
-# ===== Batch Configuration =====
-BATCH_SIZE: 5
-PARALLEL_AGENTS: 2
-
-# ===== Failure Weights =====
-HARD_FAILURE_WEIGHT: 0.8
-SOFT_FAILURE_WEIGHT: 0.4
-SUSPICIOUS_WEIGHT: 0.2
-
-# ===== Change Detection =====
-CACHE_DIR: "/tmp/ctf_cache"
-CHANGE_DETECTION_MODEL: "deepseek-chat"
-CHANGE_DETECTION_CONFIDENCE: 0.8
-SCORE_NO_CHANGE: 0.5
-SCORE_CHANGE_NOT_EXPLOIT: 0.2
-SCORE_CHANGE_EXPLOIT: 0.0
-
-# ===== OOB Configuration =====
-OOB_HOST: "127.0.0.1"
-
-# ===== RAG Configuration =====
-RAG_ENABLED: true
-RAG_FOR_WEB_ONLY: true
+TASK_TIMEOUT: 1800  # Web CTF / 外网打点: 30分钟
+INTERNAL_TASK_TIMEOUT: 3000  # 内网渗透: 50分钟
 
 # ===== Internal Network Configuration =====
-# 框架直接运行在VPS服务器上
-# 请将LOCAL_PUBLIC_IP改为你的VPS公网IP
+# 框架运行在VPS服务器上，填写公网IP
 LOCAL_PUBLIC_IP: ""
-
-# HTTP文件服务器端口 (用于工具分发)
-# 服务目录为 /opt/tools，包含所有Windows工具
-HTTP_SERVER_PORT: 8000
-
-# 工具目录 (根据Dockerfile)
-TOOLS_DIR: "/opt/tools"
-FRP_DIR: "/opt/frp"
-
-# Linux工具在系统PATH中 (fscan, nuclei, xray等)
-# Windows工具在 /opt/tools/windows/
-# Potato工具在 /opt/tools/potato/
-# mimikatz在 /opt/tools/x64/
-
-# FRP配置
-FRP_SERVER_PORT: 7000
-FRP_SOCKS5_PORT: 10800

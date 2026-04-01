@@ -173,19 +173,8 @@ COPY requirements.txt .
 RUN python3.11 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:/root/.local/bin:$PATH"
 RUN pip install --upgrade pip && \
-    pip install torch --index-url https://download.pytorch.org/whl/cpu && \
     pip install -r requirements.txt && \
     pip install -r /app/thirdparty/dirsearch/requirements.txt 2>/dev/null || true
-
-# RAG Embedding模型预下载
-ENV HF_ENDPOINT=https://hf-mirror.com
-ENV HF_HOME=/app/.cache/huggingface
-ENV SENTENCE_TRANSFORMERS_HOME=/app/.cache/huggingface
-ENV HF_HUB_DISABLE_PROGRESS_BARS=1
-ENV HF_HUB_DISABLE_TELEMETRY=1
-RUN python3.11 -c "from sentence_transformers import SentenceTransformer; \
-    SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')" && \
-    echo "RAG model pre-downloaded (~420MB)"
 
 # ============================================
 # 应用代码复制
