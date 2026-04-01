@@ -1,0 +1,26 @@
+# CODEOWNERS - 代码所有者
+
+# 项目维护者
+* @scmypapa
+
+# 工具系统
+app/tools_v2/ @scmypapa
+
+# Agent系统
+app/agents/ @scmypapa
+
+# Memory系统
+app/memory/ @scmypapa
+
+# Skill系统
+skills/ @scmypapa
+
+# 文档
+docs/ @scmypapa
+*.md @scmypapa
+
+# 测试
+tests/ @scmypapa
+
+# Docker配置
+Dockerfile docker-compose.yml @scmypapa

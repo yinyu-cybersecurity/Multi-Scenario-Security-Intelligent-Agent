@@ -546,6 +546,191 @@ TOOL_SCHEMAS = {
             },
             "required": ["target", "service"]
         }
+    },
+    "xray": {
+        "name": "xray",
+        "description": "长亭安全被动/主动扫描工具，支持漏洞扫描和服务探测",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target_url": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "目标URL"
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["active", "passive", "servicescan"],
+                    "default": "active",
+                    "description": "扫描模式：主动扫描/被动扫描/服务扫描"
+                },
+                "plugin": {
+                    "type": "string",
+                    "description": "指定插件（可选）"
+                },
+                "output_file": {
+                    "type": "string",
+                    "description": "输出文件路径（可选）"
+                }
+            },
+            "required": ["target_url"]
+        }
+    },
+    "subfinder": {
+        "name": "subfinder",
+        "description": "子域名发现工具，快速枚举目标域名的子域名",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string",
+                    "description": "目标域名"
+                },
+                "recursive": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "是否递归枚举"
+                },
+                "threads": {
+                    "type": "integer",
+                    "default": 10,
+                    "description": "并发线程数"
+                }
+            },
+            "required": ["domain"]
+        }
+    },
+    "frp": {
+        "name": "frp",
+        "description": "内网穿透工具，支持TCP/UDP端口映射",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["start", "stop", "status", "create_config"],
+                    "description": "操作类型"
+                },
+                "config_type": {
+                    "type": "string",
+                    "enum": ["client", "server"],
+                    "default": "client",
+                    "description": "配置类型：客户端/服务端"
+                },
+                "server_addr": {
+                    "type": "string",
+                    "description": "服务器地址（client模式）"
+                },
+                "server_port": {
+                    "type": "integer",
+                    "default": 7000,
+                    "description": "服务器端口"
+                },
+                "local_ip": {
+                    "type": "string",
+                    "default": "127.0.0.1",
+                    "description": "本地IP"
+                },
+                "local_port": {
+                    "type": "integer",
+                    "description": "本地端口"
+                },
+                "remote_port": {
+                    "type": "integer",
+                    "description": "远程端口"
+                }
+            },
+            "required": ["action"]
+        }
+    },
+    "ysoserial": {
+        "name": "ysoserial",
+        "description": "Java反序列化payload生成工具",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "gadget": {
+                    "type": "string",
+                    "description": "Gadget名称（如URLDNS, CommonsCollections1等）"
+                },
+                "command": {
+                    "type": "string",
+                    "description": "要执行的命令"
+                },
+                "output_format": {
+                    "type": "string",
+                    "default": "raw",
+                    "description": "输出格式"
+                }
+            },
+            "required": ["gadget", "command"]
+        }
+    },
+    "jwt_tool": {
+        "name": "jwt_tool",
+        "description": "JWT漏洞利用工具，支持解码、伪造、破解等",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "jwt_token": {
+                    "type": "string",
+                    "description": "JWT Token"
+                },
+                "action": {
+                    "type": "string",
+                    "enum": ["decode", "verify", "crack", "inject", "none_algorithm"],
+                    "default": "decode",
+                    "description": "操作类型"
+                },
+                "key": {
+                    "type": "string",
+                    "description": "密钥（verify/crack模式）"
+                },
+                "algorithm": {
+                    "type": "string",
+                    "description": "算法（可选）"
+                },
+                "inject_payload": {
+                    "type": "string",
+                    "description": "注入payload（inject模式）"
+                }
+            },
+            "required": ["jwt_token"]
+        }
+    },
+    "ssrfmap": {
+        "name": "ssrfmap",
+        "description": "SSRF漏洞利用框架",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target_url": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "目标URL"
+                },
+                "param": {
+                    "type": "string",
+                    "description": "测试参数名"
+                },
+                "method": {
+                    "type": "string",
+                    "enum": ["GET", "POST"],
+                    "default": "GET",
+                    "description": "HTTP方法"
+                },
+                "data": {
+                    "type": "string",
+                    "description": "POST数据（POST模式）"
+                },
+                "modules": {
+                    "type": "string",
+                    "default": "all",
+                    "description": "测试模块（如redis,mysql,all等）"
+                }
+            },
+            "required": ["target_url", "param"]
+        }
     }
 }
 
@@ -1188,6 +1373,310 @@ async def hydra_handler(
 
 
 # ============================================
+# P0级工具 - 核心补充
+# ============================================
+
+async def xray_handler(
+    target_url: str,
+    mode: str = "active",
+    plugin: str = None,
+    output_file: str = None
+) -> Dict:
+    """xray执行 - 长亭被动/主动扫描工具"""
+    xray_path = shutil.which("xray") or "/usr/local/bin/xray"
+    if not os.path.exists(xray_path):
+        return {"success": False, "error": "xray未安装"}
+
+    # SSRF防护
+    is_valid, error = validate_url_for_ssrf(target_url)
+    if not is_valid:
+        return {"success": False, "error": error}
+
+    # mode白名单
+    if mode not in ["active", "passive", "servicescan"]:
+        return {"success": False, "error": f"无效的mode: {mode}"}
+
+    if mode == "active":
+        # 主动扫描
+        cmd = [xray_path, "webscan", "--basic-crawler", target_url, "--json"]
+    elif mode == "servicescan":
+        # 服务扫描
+        cmd = [xray_path, "servicescan", "--target", target_url]
+    else:
+        return {"success": False, "error": "被动扫描需要启动xray服务，请使用: xray webscan --listen 127.0.0.1:7777"}
+
+    result = await run_command(cmd, timeout=600)
+
+    if result["success"]:
+        output = result.get("output", "")
+        vulns = []
+
+        # 解析JSON输出
+        try:
+            for line in output.split('\n'):
+                if line.strip().startswith('{'):
+                    vuln = json.loads(line)
+                    vulns.append({
+                        "plugin": vuln.get("plugin", ""),
+                        "url": vuln.get("target", {}).get("url", ""),
+                        "severity": vuln.get("severity", "unknown"),
+                        "description": vuln.get("description", "")
+                    })
+        except:
+            pass
+
+        result["vulnerabilities"] = vulns
+        result["vuln_count"] = len(vulns)
+
+    return result
+
+
+async def subfinder_handler(
+    domain: str,
+    recursive: bool = False,
+    threads: int = 10
+) -> Dict:
+    """subfinder执行 - 子域名发现工具"""
+    subfinder_path = shutil.which("subfinder") or "/usr/local/bin/subfinder"
+    if not os.path.exists(subfinder_path):
+        return {"success": False, "error": "subfinder未安装"}
+
+    # 域名验证
+    if not domain or len(domain) > 253:
+        return {"success": False, "error": "无效的域名"}
+
+    cmd = [
+        subfinder_path,
+        "-d", domain,
+        "-silent",
+        "-json",
+        "-t", str(threads)
+    ]
+
+    if recursive:
+        cmd.append("-recursive")
+
+    result = await run_command(cmd, timeout=300)
+
+    if result["success"]:
+        output = result.get("output", "")
+        subdomains = []
+
+        for line in output.split('\n'):
+            if line.strip():
+                try:
+                    data = json.loads(line)
+                    subdomains.append(data.get("host", ""))
+                except:
+                    if line.strip() and '.' in line:
+                        subdomains.append(line.strip())
+
+        result["subdomains"] = list(set(subdomains))
+        result["count"] = len(result["subdomains"])
+
+    return result
+
+
+async def frp_handler(
+    action: str,
+    config_type: str = "client",
+    server_addr: str = None,
+    server_port: int = 7000,
+    local_ip: str = "127.0.0.1",
+    local_port: int = None,
+    remote_port: int = None
+) -> Dict:
+    """frp执行 - 内网穿透工具"""
+    frpc_path = shutil.which("frpc") or "/opt/frp/frpc"
+    frps_path = shutil.which("frps") or "/opt/frp/frps"
+
+    # action白名单
+    if action not in ["start", "stop", "status", "create_config"]:
+        return {"success": False, "error": f"无效的action: {action}"}
+
+    if action == "create_config":
+        # 生成配置文件
+        config = {
+            "common": {
+                "server_addr": server_addr,
+                "server_port": server_port
+            }
+        }
+
+        if config_type == "client" and local_port and remote_port:
+            config["tcp_tunnel"] = {
+                "type": "tcp",
+                "local_ip": local_ip,
+                "local_port": local_port,
+                "remote_port": remote_port
+            }
+
+        return {
+            "success": True,
+            "config": config,
+            "config_path": f"/tmp/frp_{config_type}.ini"
+        }
+
+    elif action == "start":
+        if config_type == "client":
+            if not os.path.exists(frpc_path):
+                return {"success": False, "error": "frpc未安装"}
+            cmd = [frpc_path, "-c", f"/tmp/frp_client.ini"]
+        else:
+            if not os.path.exists(frps_path):
+                return {"success": False, "error": "frps未安装"}
+            cmd = [frps_path, "-c", f"/tmp/frp_server.ini"]
+
+        result = await run_command(cmd, timeout=10)
+        result["message"] = f"frp {config_type}启动成功"
+        return result
+
+    elif action == "stop":
+        # 停止frp进程
+        stop_cmd = "pkill -f frpc" if config_type == "client" else "pkill -f frps"
+        result = await run_command(stop_cmd.split(), timeout=5)
+        result["message"] = f"frp {config_type}已停止"
+        return result
+
+    elif action == "status":
+        # 检查frp进程状态
+        check_cmd = "pgrep -f frpc" if config_type == "client" else "pgrep -f frps"
+        result = await run_command(check_cmd.split(), timeout=5)
+        result["running"] = result["success"]
+        return result
+
+    return {"success": False, "error": "未知操作"}
+
+
+# ============================================
+# P1级工具 - 高优先级补充
+# ============================================
+
+async def ysoserial_handler(
+    gadget: str,
+    command: str,
+    output_format: str = "raw"
+) -> Dict:
+    """ysoserial执行 - Java反序列化payload生成"""
+    ysoserial_path = "/app/thirdparty/ysoserial.jar"
+    if not os.path.exists(ysoserial_path):
+        return {"success": False, "error": "ysoserial未安装"}
+
+    # gadget白名单（常用）
+    allowed_gadgets = [
+        "URLDNS", "CommonsBeanutils1", "CommonsCollections1", "CommonsCollections2",
+        "CommonsCollections3", "CommonsCollections4", "CommonsCollections5",
+        "CommonsCollections6", "CommonsCollections7", "JRMPClient", "JRMPListener",
+        "Jdk7u21", "Jdk8u20", "Spring1", "Spring2", "Hibernate1"
+    ]
+
+    if gadget not in allowed_gadgets:
+        return {"success": False, "error": f"不支持的gadget: {gadget}。常用: {', '.join(allowed_gadgets[:5])}"}
+
+    cmd = ["java", "-jar", ysoserial_path, gadget, command]
+
+    result = await run_command(cmd, timeout=30)
+
+    if result["success"]:
+        payload = result.get("output", "")
+        result["payload"] = payload
+        result["payload_size"] = len(payload)
+        result["gadget"] = gadget
+        result["command"] = command
+
+    return result
+
+
+async def jwt_tool_handler(
+    jwt_token: str,
+    action: str = "decode",
+    key: str = None,
+    algorithm: str = None,
+    inject_payload: str = None
+) -> Dict:
+    """jwt_tool执行 - JWT漏洞利用工具"""
+    jwt_tool_path = "/app/thirdparty/jwt_tool/jwt_tool.py"
+    if not os.path.exists(jwt_tool_path):
+        return {"success": False, "error": "jwt_tool未安装"}
+
+    # action白名单
+    if action not in ["decode", "verify", "crack", "inject", "none_algorithm"]:
+        return {"success": False, "error": f"无效的action: {action}"}
+
+    cmd = ["python3", jwt_tool_path, jwt_token]
+
+    if action == "decode":
+        cmd.append("-d")
+    elif action == "verify" and key:
+        cmd.extend(["-k", key])
+    elif action == "crack":
+        cmd.append("-C")  # Crack模式
+        if key:
+            cmd.extend(["-k", key])
+    elif action == "inject" and inject_payload:
+        cmd.extend(["-I", "-pc", inject_payload])  # Inject claim
+    elif action == "none_algorithm":
+        cmd.append("-X")  # Exploit: None algorithm
+
+    result = await run_command(cmd, timeout=60)
+
+    if result["success"]:
+        output = result.get("output", "")
+        result["analysis"] = output
+
+        # 解析JWT（简化）
+        if action == "decode":
+            parts = jwt_token.split('.')
+            if len(parts) == 3:
+                try:
+                    import base64
+                    header = json.loads(base64.urlsafe_b64decode(parts[0] + '=='))
+                    payload = json.loads(base64.urlsafe_b64decode(parts[1] + '=='))
+                    result["header"] = header
+                    result["payload"] = payload
+                except:
+                    pass
+
+    return result
+
+
+async def ssrfmap_handler(
+    target_url: str,
+    param: str,
+    method: str = "GET",
+    data: str = None,
+    modules: str = "all"
+) -> Dict:
+    """SSRFmap执行 - SSRF漏洞利用框架"""
+    ssrfmap_path = "/app/thirdparty/SSRFmap/ssrfmap.py"
+    if not os.path.exists(ssrfmap_path):
+        return {"success": False, "error": "SSRFmap未安装"}
+
+    # SSRF防护（SSRFmap是测试工具，需要允许私有IP）
+    # 但需要确保URL格式正确
+    if not target_url.startswith(("http://", "https://")):
+        return {"success": False, "error": "URL必须以http://或https://开头"}
+
+    cmd = [
+        "python3", ssrfmap_path,
+        "-r", target_url,
+        "-p", param,
+        "-m", modules
+    ]
+
+    if method.upper() == "POST" and data:
+        cmd.extend(["--method", "POST", "--data", data])
+
+    result = await run_command(cmd, timeout=300)
+
+    if result["success"]:
+        output = result.get("output", "")
+        result["findings"] = output
+
+    return result
+
+
+# ============================================
 # 工具注册表
 # ============================================
 
@@ -1205,6 +1694,14 @@ HANDLERS = {
     "impacket": impacket_handler,
     "bloodhound": bloodhound_handler,
     "hydra": hydra_handler,
+    # P0级新增
+    "xray": xray_handler,
+    "subfinder": subfinder_handler,
+    "frp": frp_handler,
+    # P1级新增
+    "ysoserial": ysoserial_handler,
+    "jwt_tool": jwt_tool_handler,
+    "ssrfmap": ssrfmap_handler,
 }
 
 

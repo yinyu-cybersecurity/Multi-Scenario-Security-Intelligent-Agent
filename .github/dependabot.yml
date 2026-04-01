@@ -1,13 +1,35 @@
-# Dependabot 配置 - 自动依赖更新
 version: 2
 updates:
+  # Python dependencies
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
+    reviewers:
+      - "scmypapa"
+    labels:
+      - "dependencies"
+      - "python"
 
+  # Docker dependencies
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
+    reviewers:
+      - "scmypapa"
+    labels:
+      - "dependencies"
+      - "docker"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    reviewers:
+      - "scmypapa"
+    labels:
+      - "dependencies"
+      - "github-actions"
