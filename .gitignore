@@ -272,3 +272,12 @@ docs/REFACTOR_PLAN.md
 docs/ARCHITECTURE_OPTIMIZATION_PLAN.md
 docs/EXPLOIT_ENHANCEMENT_PLAN.md
 docs/PERFORMANCE_ENHANCEMENT_PLAN.md
+
+# =============================================================================
+# 中文技术文档（仅本地参考）
+# =============================================================================
+Agent系统深度技术文档.md
+CLAUDE_CODE_分析报告.md
+MCP与扩展系统深度技术文档.md
+工具系统深度技术文档.md
+状态管理与上下文系统深度技术文档.md
