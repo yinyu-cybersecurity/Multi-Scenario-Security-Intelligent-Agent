@@ -1,0 +1,104 @@
+name: misc_challenges
+description: 杂项挑战技能，涵盖隐写术、取证分析、编码解码
+domain: misc
+
+version: "1.0"
+tags:
+  - misc
+  - steganography
+  - forensics
+  - encoding
+
+knowledge: |
+  ## 杂项挑战方法论
+
+  ### 1. 文件分析
+  - 文件类型识别：真实类型vs扩展名
+  - 文件头分析：Magic Number、文件签名
+  - 元数据提取：EXIF、作者信息、时间戳
+  - 隐藏数据：嵌入文件、追加数据
+
+  ### 2. 隐写术
+  - 图片隐写：LSB、DCT、颜色通道
+  - 音频隐写：频谱、LSB、相位编码
+  - 视频隐写：帧隐藏、字幕嵌入
+  - 文档隐写：空白字符、零宽字符、字体
+
+  ### 3. 编码与加密
+  - 多层编码：Base64嵌套、Hex+Base64
+  - 古典密码：凯撒、栅栏、培根密码
+  - 自定义编码：字符替换、映射表
+  - 压缩包：伪加密、明文攻击、密码爆破
+
+  ### 4. 取证分析
+  - 流量分析：PCAP、协议解析、数据提取
+  - 内存取证：Volatility、进程分析
+  - 磁盘取证：文件恢复、删除记录
+  - 日志分析：访问日志、错误日志
+
+  ### 5. 工具链
+  - 文件分析：binwalk、foremost、file
+  - 隐写工具：stegsolve、zsteg、steghide
+  - 编码工具：CyberChef、Python
+  - 取证工具：Volatility、Autopsy
+
+workflows:
+  - name: image_stego_workflow
+    description: 图片隐写分析流程
+    steps:
+      - description: 检查文件类型
+        suggested_tools: ["file", "exiftool"]
+        expected_output: "真实文件类型和元数据"
+      - description: 检查文件结构
+        suggested_tools: ["binwalk", "strings"]
+        expected_output: "嵌入文件或追加数据"
+      - description: LSB分析
+        suggested_tools: ["stegsolve", "zsteg"]
+        expected_output: "LSB隐藏信息"
+      - description: 提取隐藏数据
+        suggested_tools: ["steghide", "zsteg"]
+        expected_output: "隐藏的Flag或文本"
+
+  - name: pcap_analysis_workflow
+    description: 流量包分析流程
+    steps:
+      - description: 协议统计
+        suggested_tools: ["wireshark", "tshark"]
+        expected_output: "协议分布、通信对"
+      - description: 提取文件
+        suggested_tools: ["foremost", "wireshark"]
+        expected_output: "传输的文件"
+      - description: 分析异常流量
+        suggested_tools: ["wireshark", "tshark"]
+        expected_output: "可疑数据流"
+      - description: 数据重组
+        suggested_tools: ["wireshark", "python"]
+        expected_output: "完整通信内容"
+
+tool_preferences:
+  binwalk:
+    score: 0.90
+    reason: "自动识别和提取嵌入文件"
+  wireshark:
+    score: 0.88
+    reason: "网络协议分析标准工具"
+  stegsolve:
+    score: 0.85
+    reason: "图片隐写多角度分析"
+  cyberchef:
+    score: 0.82
+    reason: "在线编解码神器"
+  volatility:
+    score: 0.80
+    reason: "内存取证分析框架"
+
+examples:
+  - scenario: PNG图片隐藏Flag
+    solution: 使用stegsolve检查LSB，或binwalk提取嵌入文件
+    tools_used: ["stegsolve", "binwalk"]
+  - scenario: 流量包提取传输文件
+    solution: Wireshark导出对象，或foremost自动提取
+    tools_used: ["wireshark", "foremost"]
+  - scenario: 多层Base64编码
+    solution: CyberChef自动解码或Python循环解码
+    tools_used: ["cyberchef", "python"]

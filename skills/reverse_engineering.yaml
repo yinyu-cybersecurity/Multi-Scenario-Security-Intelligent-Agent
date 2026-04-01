@@ -1,0 +1,107 @@
+name: reverse_engineering
+description: 逆向工程技能，涵盖静态分析、动态调试、反混淆技术
+domain: reverse
+
+version: "1.0"
+tags:
+  - reverse
+  - disassembly
+  - debugging
+  - deobfuscation
+
+knowledge: |
+  ## 逆向工程方法论
+
+  ### 1. 文件识别
+  - 文件格式：ELF、PE、Mach-O、APK、DEX
+  - 架构识别：x86、x64、ARM、MIPS
+  - 编译器：GCC、MSVC、Clang
+  - 保护机制：加壳、混淆、反调试
+
+  ### 2. 静态分析
+  - 反汇编：IDA Pro、Ghidra、Binary Ninja
+  - 字符串搜索：敏感信息、密码、URL
+  - 导入导出表：API调用、关键函数
+  - 控制流图：逻辑结构、关键分支
+
+  ### 3. 动态调试
+  - 调试器：GDB、x64dbg、WinDbg、LLDB
+  - 断点设置：函数入口、关键条件
+  - 内存监控：读写断点、硬件断点
+  - 寄存器观察：关键变量、指针
+
+  ### 4. 反混淆技术
+  - 控制流平坦化：识别分发器、恢复CFG
+  - 不透明谓词：符号执行、约束求解
+  - 字符串加密：动态解密、Hook解密函数
+  - 代码虚拟化：VM分析、Handler识别
+
+  ### 5. 高级技术
+  - 符号执行：angr、Triton、KLEE
+  - 污点分析：数据流追踪
+  - 插件开发：IDA Python、Ghidra Script
+  - 自动化分析：r2pipe、Binary Ninja API
+
+workflows:
+  - name: elf_reverse_workflow
+    description: ELF逆向分析流程
+    steps:
+      - description: 文件基本信息
+        suggested_tools: ["file", "strings"]
+        expected_output: "架构、编译器、字符串"
+      - description: 检查保护机制
+        suggested_tools: ["checksec"]
+        expected_output: "NX/PIE/RELRO状态"
+      - description: 反汇编分析
+        suggested_tools: ["ida", "ghidra"]
+        expected_output: "关键函数、逻辑结构"
+      - description: 动态调试
+        suggested_tools: ["gdb", "pwndbg"]
+        expected_output: "运行时数据、关键变量"
+      - description: 提取算法或密钥
+        suggested_tools: ["python"]
+        expected_output: "加密算法、密钥"
+
+  - name: packed_binary_workflow
+    description: 加壳程序分析流程
+    steps:
+      - description: 识别壳类型
+        suggested_tools: ["file", "ExeinfoPE"]
+        expected_output: "壳名称和版本"
+      - description: 脱壳处理
+        suggested_tools: ["unpacker", "dump"]
+        expected_output: "脱壳后的程序"
+      - description: 修复导入表
+        suggested_tools: ["Scylla", "Import Rec"]
+        expected_output: "可运行的程序"
+      - description: 分析核心逻辑
+        suggested_tools: ["ida", "ghidra"]
+        expected_output: "真实代码逻辑"
+
+tool_preferences:
+  ida:
+    score: 0.98
+    reason: "业界标准反汇编工具，插件生态丰富"
+  ghidra:
+    score: 0.92
+    reason: "NSA开源工具，免费且功能强大"
+  gdb:
+    score: 0.90
+    reason: "Linux标准调试器"
+  angr:
+    score: 0.85
+    reason: "符号执行框架，自动求解约束"
+  binary_ninja:
+    score: 0.80
+    reason: "现代化UI，中间层分析强大"
+
+examples:
+  - scenario: 简单Key验证程序
+    solution: 静态分析找到比较逻辑，提取正确密钥
+    tools_used: ["ida", "gdb"]
+  - scenario: 控制流平坦化混淆
+    solution: 识别分发器模式，使用angr符号执行求解
+    tools_used: ["ida", "angr"]
+  - scenario: 字符串加密
+    solution: 动态调试，在解密后下断点提取明文
+    tools_used: ["gdb", "python"]
