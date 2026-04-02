@@ -76,24 +76,23 @@ if command -v apt &> /dev/null; then
         log_info "Node.js $node_version 已安装，跳过 npm 单独安装"
     fi
 
-    # Docker containerd 冲突处理
-    if is_installed "containerd.io"; then
-        log_info "containerd.io 已安装，跳过"
-    elif is_installed "containerd"; then
-        log_warn "发现系统自带 containerd，建议替换为 containerd.io (Docker官方)"
-        read -p "是否替换？(y/n) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            apt remove -y containerd
-            apt install -y containerd.io
-        fi
+    # Docker 检测与安装（智能避免冲突）
+    if command -v docker &> /dev/null; then
+        log_info "Docker 已安装，跳过"
     else
-        # 两者都未安装，安装 containerd.io
-        apt install -y containerd.io || apt install -y containerd
+        # 先移除冲突的 containerd
+        if is_installed "containerd" && ! is_installed "containerd.io"; then
+            log_info "移除系统自带 containerd，安装 containerd.io..."
+            apt remove -y containerd || true
+        fi
+        # 安装 docker.io（会自动安装 containerd.io）
+        apt install -y docker.io || {
+            log_warn "docker.io 安装失败，尝试 alternative 方式..."
+            apt install -y containerd.io || apt install -y containerd
+            apt install -y docker-ce || apt install -y docker
+        }
     fi
 
-    # Docker 和 docker-compose
-    install_if_missing "docker.io"
     install_if_missing "docker-compose"
 
 elif command -v yum &> /dev/null; then
