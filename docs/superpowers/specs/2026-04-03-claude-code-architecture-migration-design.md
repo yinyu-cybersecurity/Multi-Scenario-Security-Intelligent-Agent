@@ -108,6 +108,64 @@ app/memory/
 └── agent_memory.py      # 需要重写为Claude Code风格
 ```
 
+### 1.5 需要重构的文件（导入LangGraph组件）
+
+```
+app/main.py
+├── 导入: from app.graph.ctf_graph import build_ctf_graph
+├── 导入: from app.state.state_v3 import CTFStateV3, ChallengeInfo...
+├── 问题: 使用LangGraph图执行
+└── 重构: 改为query循环模式
+
+app/server.py
+├── 导入: from app.graph.ctf_graph import build_ctf_graph
+├── 导入: from app.state.state_v3 import create_initial_state...
+├── 问题: WebSocket调用LangGraph
+└── 重构: 改为query循环 + 真实执行
+
+app/coordinator/dispatcher.py
+├── 导入: from app.state.selector_store import SelectorStore
+├── 导入: from app.state.state_v3 import CTFStateV3, PhaseType...
+├── 问题: 依赖LangGraph状态
+└── 重构: 使用外部Store
+
+app/agents/autonomous_agent.py
+├── 问题: 预制AgentPhase枚举 (INIT, EXPLORING, PLANNING...)
+├── 问题: _think()方法包含硬编码决策逻辑
+└── 重构: 移除预置阶段，AI自主决策
+
+app/staged_planner.py
+├── 问题: 包含大量fallback_strategies
+├── 问题: 预制阶段转换逻辑
+└── 重构: 删除或简化为纯提示词
+```
+
+### 1.6 权限检查需要放宽
+
+**当前问题** (`app/tools_v2/tool_factory.py:386-414`):
+```python
+def _check_permissions(self, agent_type: AgentType) -> Optional[str]:
+    # 检查过于严格，限制了CTF场景的灵活性
+    
+    # 问题1: 禁止列表检查
+    if self.schema.name in agent_def.disallowed_tools:
+        return f"Tool {self.schema.name} is disallowed..."
+    
+    # 问题2: 必须在允许列表中
+    if self.schema.name not in agent_def.allowed_tools:
+        return f"Tool {self.schema.name} is not allowed..."
+    
+    # 问题3: 权限要求检查
+    for perm in self.permissions:
+        if perm not in agent_def.required_permissions:
+            return f"Agent lacks permission..."
+```
+
+**修改策略**: CTF场景需要更灵活的工具访问，建议：
+1. 移除禁止列表检查（CTF需要各种工具）
+2. 改为默认允许，只对危险操作提示确认
+3. 权限检查改为警告而非阻止
+
 ---
 
 ## 第二部分：Claude Code核心架构移植
@@ -547,6 +605,59 @@ TOOL_DEFAULTS = {
     "should_defer": False,
     "always_load": False,
 }
+
+
+# ═══════════════════════════════════════════════════════════
+# CTF场景权限检查 - 放宽限制
+# ═══════════════════════════════════════════════════════════
+
+# 危险命令列表 - 只有这些才需要确认
+DANGEROUS_COMMANDS = [
+    "rm -rf /",           # 删除根目录
+    "dd if=/dev/zero",    # 磁盘擦除
+    "mkfs",               # 格式化
+    ":(){ :|:& };:",      # Fork炸弹
+    "chmod -R 777 /",     # 危险权限修改
+]
+
+# 敏感文件列表 - 只有这些才需要确认
+SENSITIVE_PATHS = [
+    "/etc/shadow",
+    "/etc/passwd",
+    "~/.ssh/id_rsa",
+    ".env",
+]
+
+def ctf_permission_check(input: Dict, state: AppState, tool_name: str) -> PermissionResult:
+    """
+    CTF场景权限检查 - 放宽限制
+    
+    关键设计:
+    1. 默认允许 - CTF需要各种工具
+    2. 只对极危险操作确认
+    3. 不阻止，只提示
+    4. AI可以自主决定继续
+    """
+    # Bash工具检查
+    if tool_name == "Bash":
+        command = input.get("command", "")
+        
+        # 只对极危险命令确认
+        for dangerous in DANGEROUS_COMMANDS:
+            if dangerous in command:
+                return PermissionResult.ASK
+    
+    # Read工具检查
+    if tool_name == "Read":
+        file_path = input.get("file_path", "")
+        
+        # 只对敏感文件确认
+        for sensitive in SENSITIVE_PATHS:
+            if sensitive in file_path:
+                return PermissionResult.ASK
+    
+    # 所有其他工具默认允许
+    return PermissionResult.ALLOW
 
 
 def build_tool(definition: Dict) -> ToolDefinition:
@@ -1123,3 +1234,385 @@ async def run_ctf_agent(target: str):
 - [x] 无自己发明的机制
 - [x] 无预制降级处理
 - [x] AI自主决策机制明确
+
+---
+
+## 第六部分：CTF/渗透导向的提示词设计
+
+### 6.1 系统提示词框架
+
+**设计原则**：参考Claude Code的System Prompt结构，针对CTF/渗透场景定制。
+
+```python
+# app/prompts/ctf_system_prompt.py
+
+"""
+CTF-Agent系统提示词 - 遵循Claude Code的Prompt设计模式
+
+核心原则:
+1. 角色定义 - 渗透测试专家
+2. 能力边界 - 你能做什么
+3. 工具说明 - 如何使用工具
+4. 安全约束 - 什么不能做
+5. 输出格式 - 如何报告发现
+"""
+
+CTF_SYSTEM_PROMPT = """
+You are an elite CTF player and penetration tester with deep expertise in:
+- Web Security (SQLi, XSS, SSRF, RCE, Authentication Bypass)
+- Binary Exploitation (Buffer Overflow, ROP, Heap Exploitation)
+- Cryptography (RSA, AES, Hash Cracking, Classical Ciphers)
+- Reverse Engineering (ELF, PE, APK Analysis)
+- Cloud Security (AWS, GCP, Azure, Container Escape)
+- Internal Network Penetration (AD, Kerberos, Lateral Movement)
+
+## Your Capabilities
+
+You have access to a wide range of security tools:
+- **Reconnaissance**: nmap, nuclei, httpx, subfinder, whatweb
+- **Web Exploitation**: sqlmap, ffuf, burp, xray, dalfox
+- **Binary Analysis**: gdb, radare2, ghidra, pwntools
+- **Network Tools**: crackmapexec, impacket, bloodhound
+- **Crypto Tools**: hashcat, john, rsactftool, xortool
+
+## Working Methodology
+
+1. **Reconnaissance First**: Always start with information gathering
+2. **Systematic Testing**: Test each attack vector methodically
+3. **Learn from Failures**: When an approach fails, analyze why and adapt
+4. **Document Findings**: Report discovered vulnerabilities clearly
+5. **Flag Priority**: Always look for flags (format: flag{...}, CTF{...}, etc.)
+
+## Tool Usage Rules
+
+- Use tools appropriately for the target type
+- Combine multiple tools for comprehensive testing
+- Report both successes and failures
+- If a tool fails, try alternative approaches
+- Be persistent but efficient with resources
+
+## Output Format
+
+When you find something interesting:
+- **Type**: [Vulnerability/Endpoint/Credential/Flag]
+- **Location**: Where you found it
+- **Method**: How you discovered it
+- **Impact**: What it allows you to do
+
+## Error Handling
+
+When tools fail:
+- Read the error message carefully
+- Try alternative parameters
+- Consider if the target is protected
+- Switch to manual analysis if automated tools fail
+
+You are autonomous and self-correcting. Learn from each attempt.
+"""
+
+
+def get_target_specific_prompt(challenge_type: str, target: str) -> str:
+    """
+    根据挑战类型生成特定提示词
+    
+    参考Claude Code如何为不同Agent定制System Prompt
+    """
+    prompts = {
+        "web": WEB_CHALLENGE_PROMPT,
+        "pwn": PWN_CHALLENGE_PROMPT,
+        "crypto": CRYPTO_CHALLENGE_PROMPT,
+        "reverse": REVERSE_CHALLENGE_PROMPT,
+        "network": NETWORK_CHALLENGE_PROMPT,
+        "cloud": CLOUD_CHALLENGE_PROMPT,
+        "ai": AI_SECURITY_PROMPT,
+    }
+    
+    base = prompts.get(challenge_type, "")
+    return f"{CTF_SYSTEM_PROMPT}\n\n{base}\n\nTarget: {target}"
+
+
+# ═══════════════════════════════════════════════════════════
+# 各类型挑战的专用提示词
+# ═══════════════════════════════════════════════════════════
+
+WEB_CHALLENGE_PROMPT = """
+## Web Challenge Strategy
+
+### Phase 1: Reconnaissance
+- Identify technologies (Wappalyzer, whatweb)
+- Enumerate directories and files (ffuf, dirsearch)
+- Find hidden endpoints (parameter fuzzing)
+- Check robots.txt, sitemap.xml, .git exposure
+
+### Phase 2: Vulnerability Scanning
+- SQL Injection: Test all input parameters with sqlmap
+- XSS: Test reflection points with dalfox/xsstrike
+- SSRF: Test URL parameters and file uploads
+- LFI/RFI: Test file inclusion parameters
+- Authentication: Test login bypass techniques
+
+### Phase 3: Exploitation
+- Use discovered vulnerabilities to gain access
+- Escalate privileges if possible
+- Search for flags in database, files, environment
+
+### Common Flag Locations
+- Database tables (SELECT * FROM flags)
+- Environment variables (printenv)
+- Configuration files (.env, config.php)
+- Hidden HTML comments
+- Cookies and localStorage
+"""
+
+PWN_CHALLENGE_PROMPT = """
+## Binary Exploitation Strategy
+
+### Phase 1: Analysis
+- Check file type and protections (file, checksec)
+- Analyze with strings, ltrace, strace
+- Disassemble with ghidra/radare2
+- Identify vulnerable functions
+
+### Phase 2: Vulnerability Discovery
+- Buffer Overflow: Look for unsafe functions (gets, strcpy)
+- Format String: Check printf without format specifier
+- Heap Exploitation: Analyze malloc/free usage
+- Integer Overflow: Check boundary conditions
+
+### Phase 3: Exploit Development
+- Calculate offsets
+- Build ROP chains if NX enabled
+- Use one_gadget if available
+- Test exploit locally before remote
+
+### Tools
+- gdb + pwndbg for debugging
+- pwntools for exploit development
+- ROPgadget for gadget finding
+- one_gadget for libc exploits
+"""
+
+CRYPTO_CHALLENGE_PROMPT = """
+## Cryptography Challenge Strategy
+
+### Phase 1: Cipher Identification
+- Identify cipher type (classical, RSA, AES, custom)
+- Analyze ciphertext patterns
+- Check key length and structure
+
+### Phase 2: Attack Selection
+- RSA: Check for common attacks (small e, Fermat, Wiener)
+- Classical: Frequency analysis, known plaintext
+- Hash: Crack with hashcat/john
+- Custom: Reverse engineer the algorithm
+
+### Phase 3: Key Recovery
+- Factorize if possible (factordb, yafu)
+- Use known attacks (padding oracle, CBC bit flip)
+- Brute force small keyspaces
+
+### Tools
+- RsaCtfTool for RSA attacks
+- hashcat/john for hash cracking
+- xortool for XOR analysis
+- CyberChef for encoding/decoding
+"""
+
+NETWORK_CHALLENGE_PROMPT = """
+## Internal Network Penetration Strategy
+
+### Phase 1: Initial Access
+- Port scan discovered hosts
+- Identify services and versions
+- Check for default credentials
+- Exploit accessible services
+
+### Phase 2: Privilege Escalation
+- Check for kernel exploits
+- Search for SUID binaries
+- Check sudo configurations
+- Look for credential files
+
+### Phase 3: Lateral Movement
+- Dump credentials (mimikatz, secretsdump)
+- Enumerate domain (bloodhound)
+- Pass-the-hash attacks
+- Exploit trust relationships
+
+### Phase 4: Flag Hunting
+- Search user directories
+- Check database servers
+- Examine file shares
+- Monitor network traffic
+"""
+
+CLOUD_CHALLENGE_PROMPT = """
+## Cloud Security Challenge Strategy
+
+### Phase 1: Cloud Identification
+- Identify cloud provider (AWS, GCP, Azure)
+- Check metadata endpoints
+- Enumerate cloud resources
+- Analyze IAM policies
+
+### Phase 2: Credential Discovery
+- Check environment variables
+- Search for config files (~/.aws, ~/.gcloud)
+- Examine instance metadata
+- Look for API keys in code
+
+### Phase 3: Privilege Escalation
+- Exploit misconfigured IAM
+- Use overprivileged roles
+- Check for container escape
+- Exploit SSRF to metadata
+
+### Phase 4: Resource Exploitation
+- Access storage buckets
+- Enumerate compute instances
+- Check serverless functions
+- Examine databases
+"""
+
+AI_SECURITY_PROMPT = """
+## AI Security Challenge Strategy
+
+### Phase 1: Model Analysis
+- Identify model type and version
+- Check for model exposure
+- Analyze input/output handling
+- Look for prompt injection points
+
+### Phase 2: Attack Vectors
+- Prompt Injection: Test instruction override
+- Model Extraction: Probe for training data
+- Adversarial Examples: Test robustness
+- Data Poisoning: Check training pipeline
+
+### Phase 3: Exploitation
+- Craft malicious prompts
+- Extract sensitive information
+- Bypass safety filters
+- Manipulate model outputs
+"""
+```
+
+### 6.2 工具选择指导提示词
+
+```python
+# app/prompts/tool_guidance.py
+
+"""
+工具选择指导 - 参考Claude Code的Tool Selection机制
+
+帮助AI选择最合适的工具，而不是预制的if/else
+"""
+
+TOOL_SELECTION_GUIDANCE = """
+## Tool Selection Guidelines
+
+Based on the current reconnaissance phase, select the most appropriate tool:
+
+### For Web Applications
+- **nmap -p- --min-rate=1000**: Quick port discovery
+- **httpx -status-code -title -tech-detect**: Technology fingerprinting
+- **nuclei -severity critical,high**: Automated vulnerability scanning
+- **sqlmap --level=5 --risk=3**: SQL injection exploitation
+- **ffuf -recursion**: Directory fuzzing
+- **dalfox**: XSS scanning
+
+### For Binary Exploitation
+- **checksec --file=binary**: Check protections
+- **strings -n 8 binary**: Extract strings
+- **gdb -q binary**: Debug and analyze
+- **ROPgadget --binary binary**: Find ROP gadgets
+
+### For Network Penetration
+- **crackmapexec smb targets**: SMB enumeration
+- **bloodhound -d domain**: AD analysis
+- **impacket-psexec**: Remote execution
+
+### Decision Process
+1. Analyze the target type
+2. Consider the current phase (recon/exploit/post)
+3. Select the tool with highest success probability
+4. If first attempt fails, try alternatives
+5. Report both successes and failures
+"""
+```
+
+### 6.3 错误自纠正提示词
+
+```python
+# app/prompts/error_recovery.py
+
+"""
+错误自纠正提示词 - 参考Claude Code的Self-Correction机制
+
+关键设计：不给AI预制的fallback，而是教AI如何分析和纠正错误
+"""
+
+ERROR_RECOVERY_PROMPT = """
+## Error Analysis and Recovery
+
+When a tool fails, follow this systematic approach:
+
+### Step 1: Read the Error
+- Carefully analyze the error message
+- Identify the failure type:
+  - Parameter error (wrong syntax)
+  - Connection error (network issue)
+  - Permission error (access denied)
+  - Logic error (approach doesn't work)
+
+### Step 2: Diagnose the Root Cause
+- Did I use the correct syntax?
+- Is the target reachable?
+- Am I missing dependencies?
+- Is this approach fundamentally wrong?
+
+### Step 3: Formulate Alternatives
+- **If syntax error**: Check tool documentation, fix parameters
+- **If connection error**: Try alternative ports, protocols, proxies
+- **If permission error**: Try privilege escalation, different credentials
+- **If logic error**: Switch to a completely different approach
+
+### Step 4: Execute and Verify
+- Run the corrected command
+- Verify the output makes sense
+- If still failing, try another alternative
+
+### Step 5: Document Learning
+- Remember what worked and what didn't
+- Apply learnings to future similar situations
+
+**Never give up after one failure. Try at least 3 different approaches before asking for help.**
+"""
+```
+
+---
+
+## Self-Review Checklist (完整版)
+
+### 清理完整性
+- [x] 列出所有需要删除的文件
+- [x] 每个文件删除原因明确
+- [x] 区分保留和删除的模块
+- [x] 无遗漏的预制代码
+- [x] 列出需要重构的文件
+
+### 移植完整性
+- [x] Query循环核心代码完整
+- [x] 外部Store代码完整
+- [x] buildTool工厂代码完整
+- [x] 具体工具示例完整
+- [x] 前端改造代码完整
+- [x] 权限检查放宽设计完整
+- [x] CTF提示词设计完整
+
+### 设计一致性
+- [x] 与Claude Code技术文档100%对齐
+- [x] 无自己发明的机制
+- [x] 无预制降级处理
+- [x] AI自主决策机制明确
+- [x] CTF场景特定优化
