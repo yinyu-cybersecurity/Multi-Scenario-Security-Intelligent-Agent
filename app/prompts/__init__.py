@@ -383,3 +383,18 @@ def _auto_register():
 
 # 执行自动注册
 _auto_register()
+
+# ============================================================================
+# CTF 基础提示词导出
+# ============================================================================
+from app.prompts.ctf_system_prompt import CTF_SYSTEM_PROMPT, get_target_specific_prompt
+from app.prompts.tool_guidance import TOOL_SELECTION_FRAMEWORK, RECONNAISSANCE_TOOLS
+from app.prompts.error_recovery import ERROR_RECOVERY_PROMPT
+
+__all__ = [
+    "CTF_SYSTEM_PROMPT",
+    "get_target_specific_prompt",
+    "TOOL_SELECTION_FRAMEWORK",
+    "RECONNAISSANCE_TOOLS",
+    "ERROR_RECOVERY_PROMPT",
+]
