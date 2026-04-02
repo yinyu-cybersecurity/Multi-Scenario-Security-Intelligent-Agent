@@ -2,9 +2,24 @@
 
 基于 LangGraph 的智能 CTF 自动化求解框架，支持 **Web、Pwn、Crypto、Reverse、Misc、内网渗透、云安全、AI安全** 八大CTF方向。
 
+**Claude Code风格交互式前端** - 对话式交互、实时监控、AI自主攻击。
+
 ---
 
 ## 核心特性
+
+### Claude Code风格交互式界面
+- **对话式交互**: 类似Claude Code CLI的聊天界面，自然语言输入指令
+- **实时监控**: 三栏Dashboard展示Timeline/LogStream/DetailPanel
+- **文件上传**: 拖拽支持，50MB/5文件限制，AI自主判断文件类型
+- **打断机制**: Ctrl+C随时打断AI执行，保持控制权
+- **输入始终可用**: 执行过程中可输入新指令
+
+### 前端架构亮点
+- **buildHook工厂模式**: 镜像后端buildTool，保守默认值策略
+- **useShallow选择器**: Zustand优化，减少组件重渲染
+- **External Store模式**: useSyncExternalStore实现细粒度订阅
+- **WebSocket实时通信**: 支持user_input/interrupt/file_uploaded消息类型
 
 ### 多Agent协同架构
 - **Explore Agent**: 信息收集与代码探索（只读权限）
@@ -32,7 +47,35 @@
 
 ## 快速开始
 
-### 本地运行 + Docker工具容器（推荐）
+### 前端安装（交互式界面）
+
+```bash
+# 进入前端目录
+cd frontend
+
+# 安装依赖
+npm install
+
+# 开发模式运行
+npm run dev
+
+# 生产构建
+npm run build
+```
+
+**环境变量配置** (可选):
+```bash
+# 创建 .env.local 文件
+VITE_WS_URL=ws://localhost:8000/ws
+```
+
+**前端功能**:
+- Enter发送消息，Shift+Enter换行
+- Ctrl+C打断AI执行
+- 拖拽文件上传（支持所有CTF文件类型）
+- 实时查看AI操作日志
+
+### 后端安装 + Docker工具容器（推荐）
 
 ```bash
 # 1. 安装Python依赖
@@ -133,6 +176,37 @@ print(f"发现数量: {result['findings_count']}")
 ---
 
 ## 架构
+
+### 前端架构
+
+```
+frontend/src/
+├── hooks/
+│   ├── hookFactory.ts           # buildHook工厂模式
+│   ├── useWebSocket.ts          # WebSocket通信
+│   └── useFileUpload.ts         # 文件上传逻辑
+├── store/
+│   ├── useAppStore.ts           # Zustand状态管理 + 选择器hooks
+│   ├── wsStore.ts               # WebSocket外部Store
+│   └── types.ts                 # TypeScript类型定义
+├── components/
+│   ├── Chat/
+│   │   ├── InputBar.tsx         # 底部输入栏
+│   │   └── AttachmentBar.tsx    # 附件预览栏
+│   ├── Timeline/                # 迭代时间线
+│   ├── LogStream/               # 实时日志流
+│   ├── DetailPanel/             # 工具/发现/Flag详情
+│   └── common/                  # 通用组件
+└── App.tsx                      # 主布局
+```
+
+**前端核心模式**:
+- **buildHook工厂**: 镜像后端buildTool，HOOK_DEFAULTS提供保守默认值
+- **useShallow选择器**: `useChatState()`, `useStatsState()`等，避免不必要重渲染
+- **External Store**: `wsStore`使用useSyncExternalStore实现细粒度订阅
+- **WebSocket消息类型**: iteration_start, node_start, tool_start, finding, flag, user_input, interrupt
+
+### 后端架构
 
 ```
 app/
