@@ -50,10 +50,10 @@ log_info "[2/9] 安装基础依赖..."
 if command -v apt &> /dev/null; then
     # 【关键】清理 apt 缓存并修复依赖问题
     log_info "清理 apt 缓存并检查依赖..."
-    apt clean
-    apt update
-    apt --fix-broken install -y || true
-    dpkg --configure -a || true
+    apt clean 2>/dev/null || true
+    apt update 2>/dev/null || true
+    apt --fix-broken install -y 2>/dev/null || true
+    dpkg --configure -a 2>/dev/null || true
 
     # Ubuntu/Debian 包检测函数
     is_installed() {
@@ -62,13 +62,13 @@ if command -v apt &> /dev/null; then
 
     install_if_missing() {
         if ! is_installed "$1"; then
-            apt install -y "$1" || log_warn "$1 安装失败，继续..."
+            apt install -y "$1" 2>/dev/null || log_warn "$1 安装失败，继续..."
         else
             log_info "$1 已安装，跳过"
         fi
     }
 
-    # 基础工具（通常无冲突）
+    # 基础工具（通常无冲突）- 使用 2>/dev/null 屏蔽错误
     for pkg in git curl wget vim ufw python3 python3-pip python3-venv nginx; do
         install_if_missing "$pkg"
     done
@@ -77,7 +77,7 @@ if command -v apt &> /dev/null; then
     if ! is_installed "nodejs"; then
         log_info "安装 Node.js 20.x..."
         curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-        apt install -y nodejs
+        apt install -y nodejs 2>/dev/null || log_warn "Node.js 安装失败"
     else
         node_version=$(node --version 2>/dev/null || echo "unknown")
         log_info "Node.js $node_version 已安装，跳过 npm 单独安装"
@@ -88,17 +88,16 @@ if command -v apt &> /dev/null; then
         log_info "Docker 已安装，跳过 docker.io 安装"
     else
         log_info "安装 Docker..."
-        # 不使用 docker.io，改用官方仓库避免 containerd 冲突
-        apt install -y docker-ce docker-ce-cli containerd.io || {
+        apt install -y docker-ce docker-ce-cli containerd.io 2>/dev/null || {
             log_warn "Docker 官方版安装失败，尝试 docker.io..."
-            apt install -y docker.io
+            apt install -y docker.io 2>/dev/null || log_warn "Docker 安装失败，请手动安装"
         }
     fi
 
     if command -v docker-compose &> /dev/null; then
         log_info "docker-compose 已安装，跳过"
     else
-        apt install -y docker-compose
+        apt install -y docker-compose 2>/dev/null || log_warn "docker-compose 安装失败"
     fi
 
 elif command -v yum &> /dev/null; then
