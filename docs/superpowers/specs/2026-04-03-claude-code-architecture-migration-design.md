@@ -23,6 +23,8 @@
 - ✅ 错误暴露给AI让其自我纠错
 - ✅ 动态状态，AI可以随时创建新字段
 - ✅ 工具延迟加载，按需提供工具Schema
+- ✅ 全程只用一种模型（config.LLM_MODEL）
+- ✅ 唯一熔断条件：超时
 
 ---
 
@@ -2496,7 +2498,7 @@ class TaskType(Enum):
     RESEARCH = "research"                 # 安全研究 - 120分钟
 
 
-# 时间配置（秒）- 可根据记忆文档动态调整
+# 时间配置（秒）- 只有总超时，AI自主分配
 TIMEOUT_CONFIGS = {
     TaskType.CTF_SINGLE_FLAG: 30 * 60,       # 30分钟
     TaskType.CTF_MULTI_FLAG: 60 * 60,        # 60分钟
@@ -2607,27 +2609,9 @@ class TimeManager:
 TIME_MANAGEMENT_PROMPT = """
 ## Time Management
 
-You are working with a time budget. Manage your time efficiently:
+You have a time budget for this task. The system will warn you when time is running low.
 
-### Time Allocation Strategy
-- **First 10%**: Reconnaissance and information gathering
-- **Next 40%**: Primary exploitation attempts
-- **Next 30%**: Alternative approaches and verification
-- **Final 20%**: Documentation and wrap-up
-
-### Time-Pressure Decisions
-- If time is running low, prioritize high-probability approaches
-- Don't spend too long on one technique if it's not working
-- Consider fallback strategies when time is limited
-- Document partial findings even if task incomplete
-
-### Efficiency Guidelines
-- Parallelize independent tasks when possible
-- Use automated tools for repetitive operations
-- Skip deep analysis on low-priority findings
-- Move on quickly from failed approaches
-
-The system will warn you when time is running low. Respect the time limit.
+You decide how to allocate your time. Be efficient and prioritize high-value activities.
 """
 
 
@@ -2638,7 +2622,7 @@ async def query_with_time_management(
     task_type: TaskType,
 ) -> AsyncGenerator[Dict, None]:
     """
-    带时间管理的Query循环
+    带时间管理的Query循环 - 简化版
     """
     from app.core.time_manager import TimeManager, TIME_MANAGEMENT_PROMPT
     
@@ -2647,151 +2631,73 @@ async def query_with_time_management(
     # 1. 创建时间预算
     budget = time_manager.create_budget(session_id, task_type)
     
-    # 2. 注入时间管理Prompt
-    time_prompt = TIME_MANAGEMENT_PROMPT + f"\n\n### Your Time Budget\n- Task Type: {task_type.value}\n- Total Time: {budget.total_seconds / 60:.0f} minutes\n"
-    config.system_prompt = config.system_prompt + "\n\n" + time_prompt
+    # 2. 注入时间信息
+    time_prompt = f"\n\nTime Budget: {budget.total_seconds / 60:.0f} minutes total."
+    config.system_prompt = config.system_prompt + TIME_MANAGEMENT_PROMPT + time_prompt
     
-    # 3. 在每次循环检查时间
+    # 3. 在每次循环检查超时
     turn_count = 0
-    last_time_warning = 0
     
     while turn_count < config.max_turns:
-        # 检查超时 - 唯一熔断条件
+        # 唯一熔断条件：超时
         if time_manager.should_stop(session_id):
             yield {
                 "type": "timeout",
-                "message": "Time budget exhausted. Task terminated.",
+                "message": "Time budget exhausted.",
                 "elapsed_seconds": budget.elapsed_seconds,
             }
             return
         
-        # 定期注入时间状态（每10%进度或每5轮）
-        if (budget.progress_ratio >= last_time_warning + 0.1) or (turn_count > 0 and turn_count % 5 == 0):
-            time_status = time_manager.get_time_prompt(session_id)
-            if time_status:
-                # 注入时间状态到消息
-                messages.append({
-                    "role": "user",
-                    "content": time_status
-                })
-                last_time_warning = budget.progress_ratio
-        
         # 执行正常Query循环...
-        # (复用之前的query函数逻辑)
-        
         turn_count += 1
 ```
 
-### 8.3 任务类型自动识别
+### 8.3 任务类型识别
 
 ```python
-# app/core/task_classifier.py
-
-"""
-任务类型自动识别 - AI判断任务类型
-
-Claude Code设计原则:
-- AI分析任务描述，判断类型
-- 根据类型设置合适的时间预算
-- 用户可以覆盖AI的判断
-"""
-
-TASK_CLASSIFICATION_PROMPT = """
-Analyze the following task and classify it into one of these types:
-
-1. **ctf_single**: CTF challenge with a single flag (typical CTF problem)
-2. **ctf_multi**: CTF challenge with multiple flags or stages
-3. **external_attack**: External network penetration testing (recon + exploitation)
-4. **internal**: Internal network penetration (already have initial access)
-5. **full_pentest**: Full penetration test (external + internal)
-6. **code_audit**: Source code security audit
-7. **research**: Security research or proof-of-concept development
-
-Task Description: {task_description}
-
-Target Information: {target_info}
-
-Return ONLY the task type name (e.g., "ctf_single").
-"""
-
-
 async def classify_task(
     task_description: str,
     target_info: str,
 ) -> TaskType:
     """
-    使用AI判断任务类型
-    
-    返回对应的TaskType和超时时间
+    使用AI判断任务类型 - 使用配置中的模型
     """
     from app.llm_client import llm_client
+    from app.settings import config
     
-    prompt = TASK_CLASSIFICATION_PROMPT.format(
-        task_description=task_description,
-        target_info=target_info,
-    )
-    
+    prompt = f"""Classify this task into one type:
+
+Types: ctf_single (30min), ctf_multi (60min), external_attack (60min), internal (120min), full_pentest (180min)
+
+Task: {task_description}
+Target: {target_info}
+
+Return ONLY the type name."""
+
     try:
         response = llm_client.call_chat_completion(
-            model="glm-5",  # 快速分类用小模型
+            model=config.LLM_MODEL,  # 使用配置中的模型
             messages=[{"role": "user", "content": prompt}],
             max_tokens=20,
-            temperature=0.1,
         )
         
-        type_str = response.strip().lower()
-        
-        # 映射到TaskType
         type_mapping = {
             "ctf_single": TaskType.CTF_SINGLE_FLAG,
             "ctf_multi": TaskType.CTF_MULTI_FLAG,
             "external_attack": TaskType.EXTERNAL_ATTACK,
             "internal": TaskType.INTERNAL_PENETRATION,
             "full_pentest": TaskType.FULL_PENETRATION,
-            "code_audit": TaskType.CODE_AUDIT,
-            "research": TaskType.RESEARCH,
         }
         
+        result = response.strip().lower()
         for key, task_type in type_mapping.items():
-            if key in type_str:
+            if key in result:
                 return task_type
         
-        # 默认：CTF单题目
         return TaskType.CTF_SINGLE_FLAG
         
     except Exception:
         return TaskType.CTF_SINGLE_FLAG
-
-
-# ═══════════════════════════════════════════════════════════
-# 时间配置示例
-# ═══════════════════════════════════════════════════════════
-
-"""
-# 在Memory文档中记录时间分配
-
-session_2026_04_03:
-  task_type: ctf_single
-  time_budget: 30 minutes
-  time_allocation:
-    reconnaissance: 3 minutes
-    exploitation: 12 minutes
-    verification: 9 minutes
-    documentation: 6 minutes
-  
-  # AI可以根据实际情况动态调整
-  actual_usage:
-    nmap_scan: 1 minute
-    httpx_probe: 0.5 minutes
-    nuclei_scan: 2 minutes
-    sqlmap_exploit: 8 minutes
-    flag_extraction: 2 minutes
-  
-  lessons_learned:
-    - SQL injection was found quickly with nuclei
-    - Should have tried sqlmap earlier
-    - Time was well-managed
-"""
 ```
 
 ---
