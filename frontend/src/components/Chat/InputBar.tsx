@@ -2,22 +2,18 @@
 
 import React, { useRef, useCallback, useEffect } from 'react';
 import { Paperclip } from 'lucide-react';
-import { useAppStore } from '../../store/useAppStore';
+import { useChatState, useChatActions, useIsExecuting } from '../../store/useAppStore';
 import { useFileUpload } from '../../hooks/useFileUpload';
 import { useWebSocket } from '../../hooks/useWebSocket';
 
 export const InputBar: React.FC = () => {
-  const {
-    inputValue,
-    setInputValue,
-    isExecuting,
-    isDragging,
-    addLogEntry,
-    clearAttachments,
-  } = useAppStore();
+  // 使用细粒度选择器，避免不必要重渲染
+  const { inputValue, attachments, isDragging } = useChatState();
+  const isExecuting = useIsExecuting();
+  const { setInputValue, addLogEntry, clearAttachments } = useChatActions();
 
   const { sendUserInput, sendInterrupt } = useWebSocket();
-  const { handleDrop, handleDragOver, handleDragLeave, handleFileSelect, attachments } = useFileUpload();
+  const { handleDrop, handleDragOver, handleDragLeave, handleFileSelect } = useFileUpload();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 

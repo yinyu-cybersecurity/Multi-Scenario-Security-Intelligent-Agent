@@ -3,22 +3,24 @@
 import React from 'react';
 import clsx from 'clsx';
 import { Wrench, Search, Flag, ChevronRight } from 'lucide-react';
-import { useAppStore } from '../../store/useAppStore';
+import { useShallow } from 'zustand/react/shallow';
+import { useAppStore, useDetailPanelState, useDetailPanelActions } from '../../store/useAppStore';
 import { ToolCard } from './ToolCard';
 import { FindingCard } from './FindingCard';
 import { FlagCard } from './FlagCard';
 
 export const DetailPanel: React.FC = () => {
-  const {
-    toolExecutions,
-    findings,
-    flags,
-    detailPanelCollapsed,
-    detailPanelTab,
-    setDetailPanelCollapsed,
-    setDetailPanelTab,
-    setSelectedLogEntry,
-  } = useAppStore();
+  const { detailPanelCollapsed, detailPanelTab } = useDetailPanelState();
+  const { setDetailPanelCollapsed, setDetailPanelTab, setSelectedLogEntry } = useDetailPanelActions();
+
+  // 数据选择器 - 使用useShallow避免对象重建
+  const { toolExecutions, findings, flags } = useAppStore(
+    useShallow((state) => ({
+      toolExecutions: state.toolExecutions,
+      findings: state.findings,
+      flags: state.flags,
+    }))
+  );
 
   const handleToolClick = (toolId: string) => {
     // Scroll log to this tool

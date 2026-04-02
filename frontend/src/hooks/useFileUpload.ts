@@ -2,15 +2,30 @@
 
 import { useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
+import { buildHook, BuiltHook } from './hookFactory';
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-const MAX_FILES = 5;
+/**
+ * 文件上传配置 - 镜像后端TOOL_DEFAULTS模式
+ */
+const FILE_UPLOAD_DEFAULTS = {
+  maxFileSize: 50 * 1024 * 1024, // 50MB
+  maxFiles: 5,
+  allowedExtensions: [] as string[], // 空数组 = 不限制，AI自主判断
+  validateMimeType: () => false, // CTF场景不过度限制
+};
+
+// 使用buildHook工厂创建配置
+const fileUploadHook: BuiltHook = buildHook({
+  name: 'FileUpload',
+  ...FILE_UPLOAD_DEFAULTS,
+});
 
 export function useFileUpload() {
   const { attachments, addAttachment, removeAttachment, clearAttachments, setDragging } = useAppStore();
 
   const validateFile = useCallback((file: File): string | null => {
-    if (file.size > MAX_FILE_SIZE) {
+    // 仅验证大小，类型由AI自主判断（CTF场景）
+    if (file.size > FILE_UPLOAD_DEFAULTS.maxFileSize) {
       return `File ${file.name} exceeds 50MB limit`;
     }
     return null;
@@ -19,15 +34,15 @@ export function useFileUpload() {
   const handleFiles = useCallback((files: FileList | File[]) => {
     const fileArray = Array.from(files);
 
-    if (attachments.length + fileArray.length > MAX_FILES) {
-      alert(`Maximum ${MAX_FILES} files allowed`);
+    if (attachments.length + fileArray.length > FILE_UPLOAD_DEFAULTS.maxFiles) {
+      console.warn(`Maximum ${FILE_UPLOAD_DEFAULTS.maxFiles} files allowed`);
       return;
     }
 
     for (const file of fileArray) {
       const error = validateFile(file);
       if (error) {
-        alert(error);
+        console.warn(error);
         continue;
       }
 
@@ -80,7 +95,10 @@ export function useFileUpload() {
     handleDragLeave,
     handleFileSelect,
     formatSize,
-    MAX_FILE_SIZE,
-    MAX_FILES,
+    maxFileSize: FILE_UPLOAD_DEFAULTS.maxFileSize,
+    maxFiles: FILE_UPLOAD_DEFAULTS.maxFiles,
   };
 }
+
+// 导出配置供测试使用
+export { FILE_UPLOAD_DEFAULTS, fileUploadHook };

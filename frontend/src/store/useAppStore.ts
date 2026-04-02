@@ -1,6 +1,7 @@
 // frontend/src/store/useAppStore.ts
 
 import { create } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
 import type {
   CurrentTask,
   LoopState,
@@ -199,3 +200,72 @@ export const useAppStore = create<AppState>((set) => ({
 
   reset: () => set(initialState),
 }));
+
+// ============================================
+// 选择器Hooks - 遵循Claude Code细粒度订阅模式
+// ============================================
+
+/**
+ * 单值选择器 - 最低粒度，避免不必要重渲染
+ */
+export const useLoopState = () => useAppStore((state) => state.loopState);
+export const useLogEntries = () => useAppStore((state) => state.logEntries);
+export const useToolExecutions = () => useAppStore((state) => state.toolExecutions);
+export const useFindings = () => useAppStore((state) => state.findings);
+export const useFlags = () => useAppStore((state) => state.flags);
+export const useIterations = () => useAppStore((state) => state.iterations);
+export const useWsConnected = () => useAppStore((state) => state.wsConnected);
+export const useIsExecuting = () => useAppStore((state) => state.isExecuting);
+
+/**
+ * 多值选择器 - 使用useShallow避免对象重建
+ */
+export const useChatState = () =>
+  useAppStore(
+    useShallow((state) => ({
+      inputValue: state.inputValue,
+      attachments: state.attachments,
+      isDragging: state.isDragging,
+      isExecuting: state.isExecuting,
+    }))
+  );
+
+export const useDetailPanelState = () =>
+  useAppStore(
+    useShallow((state) => ({
+      detailPanelCollapsed: state.detailPanelCollapsed,
+      detailPanelTab: state.detailPanelTab,
+      selectedLogEntryId: state.selectedLogEntryId,
+    }))
+  );
+
+export const useStatsState = () =>
+  useAppStore(
+    useShallow((state) => ({
+      findings: state.findings,
+      flags: state.flags,
+      toolExecutions: state.toolExecutions,
+      loopState: state.loopState,
+    }))
+  );
+
+/**
+ * Action选择器 - 稳定引用，无需useShallow
+ */
+export const useChatActions = () =>
+  useAppStore((state) => ({
+    setInputValue: state.setInputValue,
+    addAttachment: state.addAttachment,
+    removeAttachment: state.removeAttachment,
+    clearAttachments: state.clearAttachments,
+    setDragging: state.setDragging,
+    setIsExecuting: state.setIsExecuting,
+    addLogEntry: state.addLogEntry,
+  }));
+
+export const useDetailPanelActions = () =>
+  useAppStore((state) => ({
+    setDetailPanelCollapsed: state.setDetailPanelCollapsed,
+    setDetailPanelTab: state.setDetailPanelTab,
+    setSelectedLogEntry: state.setSelectedLogEntry,
+  }));

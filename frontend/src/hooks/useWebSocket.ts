@@ -2,13 +2,25 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
+import { wsStore, useWSState } from '../store/wsStore';
+import { buildHook, BuiltHook } from './hookFactory';
 import type { WSMessage, NodeType, LogEntry, ToolExecution, Finding, Flag, Iteration, Attachment } from '../store/types';
 
-const WS_URL = 'ws://localhost:8000/ws';
+// 使用buildHook工厂创建WebSocket配置
+const wsHook: BuiltHook = buildHook({
+  name: 'WebSocket',
+  url: import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws',
+  shouldReconnect: () => true,
+  reconnectDelay: () => 3000,
+  maxReconnectAttempts: () => 10,
+  onConnect: () => wsStore.setConnected(true),
+  onDisconnect: () => wsStore.setConnected(false),
+});
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  const reconnectAttemptsRef = useRef(0);
 
   const {
     setWsConnected,
@@ -21,6 +33,9 @@ export function useWebSocket() {
     addIteration,
     setIsExecuting,
   } = useAppStore();
+
+  // 使用外部Store的状态
+  const connected = useWSState((s) => s.connected);
 
   const handleMessage = useCallback((event: MessageEvent) => {
     try {
@@ -43,6 +58,7 @@ export function useWebSocket() {
           } as Iteration);
           updateLoopState({ currentIteration: iteration });
           addLogEntry({
+            id: `iter-${Date.now()}`,
             timestamp: new Date(),
             type: 'info',
             message: `Iteration ${iteration} started`,
@@ -56,6 +72,7 @@ export function useWebSocket() {
           const { node, iteration } = message.data;
           updateLoopState({ currentNode: node as NodeType });
           addLogEntry({
+            id: `node-${Date.now()}`,
             timestamp: new Date(),
             type: node as LogEntry['type'],
             message: `Starting ${node}...`,
@@ -68,6 +85,7 @@ export function useWebSocket() {
         case 'node_end': {
           const { node, iteration, result } = message.data;
           addLogEntry({
+            id: `node-end-${Date.now()}`,
             timestamp: new Date(),
             type: node as LogEntry['type'],
             message: result,
@@ -80,6 +98,7 @@ export function useWebSocket() {
         case 'log': {
           addLogEntry({
             ...message.data,
+            id: message.data.id || `log-${Date.now()}`,
             timestamp: new Date(message.data.timestamp),
           } as LogEntry);
           break;
@@ -88,6 +107,7 @@ export function useWebSocket() {
         case 'tool_start': {
           addToolExecution({
             ...message.data,
+            id: message.data.id || `tool-${Date.now()}`,
             startTime: new Date(message.data.startTime),
           } as ToolExecution);
           break;
@@ -106,6 +126,7 @@ export function useWebSocket() {
         case 'finding': {
           addFinding({
             ...message.data,
+            id: message.data.id || `finding-${Date.now()}`,
             timestamp: new Date(message.data.timestamp),
           } as Finding);
           break;
@@ -114,6 +135,7 @@ export function useWebSocket() {
         case 'flag': {
           addFlag({
             ...message.data,
+            id: message.data.id || `flag-${Date.now()}`,
             timestamp: new Date(message.data.timestamp),
           } as Flag);
           break;
@@ -122,6 +144,7 @@ export function useWebSocket() {
         case 'iteration_end': {
           const { iteration } = message.data;
           addLogEntry({
+            id: `iter-end-${Date.now()}`,
             timestamp: new Date(),
             type: 'info',
             message: `Iteration ${iteration} completed`,
@@ -134,6 +157,7 @@ export function useWebSocket() {
         case 'task_complete': {
           const { success, flags } = message.data;
           addLogEntry({
+            id: `task-${Date.now()}`,
             timestamp: new Date(),
             type: success ? 'success' : 'error',
             message: success
@@ -148,6 +172,7 @@ export function useWebSocket() {
 
         case 'interrupt': {
           addLogEntry({
+            id: `interrupt-${Date.now()}`,
             timestamp: new Date(),
             type: 'info',
             message: '[System] Execution interrupted',
@@ -164,6 +189,7 @@ export function useWebSocket() {
             ? `${(size / (1024 * 1024)).toFixed(1)}MB`
             : `${(size / 1024).toFixed(1)}KB`;
           addLogEntry({
+            id: `file-${Date.now()}`,
             timestamp: new Date(),
             type: 'info',
             message: `[File] Uploaded: ${filename} (${sizeStr})`,
@@ -174,22 +200,14 @@ export function useWebSocket() {
         }
 
         case 'execution_status': {
-          const { isExecuting, task } = message.data;
+          const { isExecuting } = message.data;
           setIsExecuting(isExecuting);
-          if (isExecuting && task) {
-            addLogEntry({
-              timestamp: new Date(),
-              type: 'info',
-              message: `[System] Task started: ${task}`,
-              iteration: 0,
-              node: 'think',
-            } as LogEntry);
-          }
           break;
         }
       }
     } catch (error) {
       console.error('Failed to parse WebSocket message:', error);
+      wsStore.setError(error as Error);
     }
   }, [
     addLogEntry,
@@ -207,36 +225,50 @@ export function useWebSocket() {
       return;
     }
 
-    const ws = new WebSocket(WS_URL);
+    // 检查最大重连次数
+    if (reconnectAttemptsRef.current >= wsHook.maxReconnectAttempts()) {
+      wsStore.setError(new Error('Max reconnect attempts reached'));
+      return;
+    }
+
+    const ws = new WebSocket(wsHook.url);
     wsRef.current = ws;
 
     ws.onopen = () => {
+      wsHook.onConnect();
+      reconnectAttemptsRef.current = 0;
+      wsStore.setReconnecting(false, 0);
       setWsConnected(true);
-      console.log('WebSocket connected');
     };
 
     ws.onmessage = handleMessage;
 
     ws.onclose = () => {
+      wsHook.onDisconnect();
       setWsConnected(false);
-      console.log('WebSocket disconnected');
 
-      // Reconnect after 3 seconds
-      reconnectTimeoutRef.current = window.setTimeout(() => {
-        connect();
-      }, 3000);
+      // 使用工厂配置决定是否重连
+      if (wsHook.shouldReconnect()) {
+        wsStore.setReconnecting(true, reconnectAttemptsRef.current + 1);
+        reconnectTimeoutRef.current = window.setTimeout(() => {
+          reconnectAttemptsRef.current++;
+          connect();
+        }, wsHook.reconnectDelay());
+      }
     };
 
     ws.onerror = (error) => {
+      wsHook.onError(new Error('WebSocket error'));
       console.error('WebSocket error:', error);
     };
-  }, [setWsConnected, handleMessage]);
+  }, [handleMessage, setWsConnected]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
     }
     wsRef.current?.close();
+    wsStore.setConnected(false);
   }, []);
 
   const sendUserInput = useCallback((message: string, attachments: Attachment[]) => {
@@ -268,10 +300,14 @@ export function useWebSocket() {
   }, [connect, disconnect]);
 
   return {
-    isConnected: wsRef.current?.readyState === WebSocket.OPEN,
+    isConnected: connected,
+    reconnectAttempts: reconnectAttemptsRef.current,
     connect,
     disconnect,
     sendUserInput,
     sendInterrupt,
   };
 }
+
+// 导出配置供测试使用
+export { wsHook };

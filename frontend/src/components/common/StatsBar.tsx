@@ -2,10 +2,10 @@
 
 import React from 'react';
 import { Target, Flag, Wrench, Brain, Repeat } from 'lucide-react';
-import { useAppStore } from '../../store/useAppStore';
+import { useStatsState } from '../../store/useAppStore';
 
 export const StatsBar: React.FC = () => {
-  const { findings, flags, toolExecutions, loopState } = useAppStore();
+  const { findings, flags, toolExecutions, loopState } = useStatsState();
 
   const stats = [
     {
