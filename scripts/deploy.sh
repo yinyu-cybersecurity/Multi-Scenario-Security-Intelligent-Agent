@@ -231,7 +231,7 @@ if [ -f "config.yaml.example" ]; then
 fi
 
 # ========================================
-# 7. Docker镜像构建
+# 7. Docker镜像构建（优化版）
 # ========================================
 log_info "[7/9] 构建Docker工具镜像..."
 
@@ -239,20 +239,62 @@ log_info "[7/9] 构建Docker工具镜像..."
 systemctl start docker
 systemctl enable docker
 
-# 构建镜像
-if [ -d "docker" ]; then
-    for dockerfile in docker/*/Dockerfile; do
-        if [ -f "$dockerfile" ]; then
-            dir=$(dirname "$dockerfile")
-            name=$(basename "$dir")
-            image_name="ctf-tools-${name}"
+# 配置Docker资源限制（避免构建时卡死）
+log_info "配置Docker资源限制..."
+mkdir -p /etc/docker
+cat > /etc/docker/daemon.json <<'EOF'
+{
+  "registry-mirrors": [
+    "https://docker.mirrors.ustc.edu.cn",
+    "https://hub-mirror.c.163.com"
+  ],
+  "max-concurrent-downloads": 3,
+  "max-concurrent-uploads": 3,
+  "default-ulimits": {
+    "nofile": {
+      "Name": "nofile",
+      "Hard": 65535,
+      "Soft": 65535
+    }
+  }
+}
+EOF
+systemctl restart docker
 
-            log_info "构建镜像: $image_name"
-            docker build -t "$image_name:latest" -f "$dockerfile" . || log_warn "镜像构建失败: $image_name"
-        fi
-    done
+# 构建策略：优先构建all-in-one镜像
+if [ -f "docker/all-in-one/Dockerfile" ]; then
+    log_info "构建综合工具镜像（all-in-one）..."
+    # 限制内存和CPU，避免卡死
+    docker build \
+        --memory=4g \
+        --memory-swap=4g \
+        --cpus=2 \
+        -t ctf-tools:latest \
+        -f docker/all-in-one/Dockerfile . || log_warn "all-in-one镜像构建失败"
 else
-    log_warn "Docker目录不存在，跳过镜像构建"
+    # Fallback: 构建独立镜像（串行，限制资源）
+    if [ -d "docker" ]; then
+        log_info "构建独立工具镜像（串行，资源限制）..."
+        for dockerfile in docker/*/Dockerfile; do
+            if [ -f "$dockerfile" ]; then
+                dir=$(dirname "$dockerfile")
+                name=$(basename "$dir")
+                # 跳过base
+                if [ "$name" = "base" ]; then
+                    continue
+                fi
+                image_name="ctf-tools-${name}"
+                log_info "构建镜像: $image_name"
+                docker build \
+                    --memory=2g \
+                    --cpus=1 \
+                    -t "$image_name:latest" \
+                    -f "$dockerfile" . || log_warn "镜像构建失败: $image_name"
+            fi
+        done
+    else
+        log_warn "Docker目录不存在，跳过镜像构建"
+    fi
 fi
 
 # ========================================
