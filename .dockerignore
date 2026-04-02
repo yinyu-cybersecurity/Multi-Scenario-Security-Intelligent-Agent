@@ -1,0 +1,40 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.eggs
+*.egg
+venv
+.venv
+
+# IDE
+.idea
+.vscode
+
+# Node
+frontend/node_modules
+
+# Build artifacts
+frontend/dist
+build
+*.log
+
+# Data
+data/chroma_db
+data/rag_cache
+*.db
+*.sqlite3
+
+# Docker
+docker/*/Dockerfile
+!docker/all-in-one/Dockerfile
+
+# Documentation
+docs/
+*.md
+!README.md

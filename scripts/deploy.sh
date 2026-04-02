@@ -264,11 +264,12 @@ systemctl restart docker
 # 构建策略：优先构建all-in-one镜像
 if [ -f "docker/all-in-one/Dockerfile" ]; then
     log_info "构建综合工具镜像（all-in-one）..."
-    # 限制内存和CPU，避免卡死
+    # 限制内存和CPU，避免卡死，启用缓存优化
     docker build \
         --memory=4g \
         --memory-swap=4g \
         --cpus=2 \
+        --build-arg BUILDKIT_INLINE_CACHE=1 \
         -t ctf-tools:latest \
         -f docker/all-in-one/Dockerfile . || log_warn "all-in-one镜像构建失败"
 else

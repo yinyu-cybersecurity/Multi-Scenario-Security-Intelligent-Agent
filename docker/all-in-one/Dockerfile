@@ -1,14 +1,15 @@
 # CTF 综合工具镜像 - 合并所有工具
 # 包含: Web安全、Pwn、AD域、Misc、反序列化工具
 
+# 使用阿里云镜像加速
 FROM python:3.11-slim
+
+# 立即替换为阿里云源（在第一个RUN之前）
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+    sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list 2>/dev/null || true
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
-
-# 替换为阿里云镜像源
-RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
-    sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list 2>/dev/null || true
 
 # ============================================
 # 基础系统工具（一次性安装）
@@ -46,6 +47,10 @@ RUN go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
 # ============================================
 # Python 工具（pipx 管理）
 # ============================================
+# pip配置阿里云镜像
+RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ && \
+    pip config set global.trusted-host mirrors.aliyun.com
+
 RUN pip install --no-cache-dir pipx && pipx ensurepath
 ENV PATH="/root/.local/bin:$PATH"
 
