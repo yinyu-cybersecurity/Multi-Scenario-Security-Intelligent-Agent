@@ -48,12 +48,12 @@ fi
 log_info "[2/9] 安装基础依赖..."
 
 if command -v apt &> /dev/null; then
-    # 【关键】先解决 containerd 冲突，否则任何 apt install 都会失败
-    if dpkg -l containerd 2>/dev/null | grep -q "^ii" && ! dpkg -l containerd.io 2>/dev/null | grep -q "^ii"; then
-        log_info "检测到 containerd 冲突，自动替换为 containerd.io..."
-        apt remove -y containerd || true
-        apt install -y containerd.io || apt install -y containerd
-    fi
+    # 【关键】清理 apt 缓存并修复依赖问题
+    log_info "清理 apt 缓存并检查依赖..."
+    apt clean
+    apt update
+    apt --fix-broken install -y || true
+    dpkg --configure -a || true
 
     # Ubuntu/Debian 包检测函数
     is_installed() {
@@ -62,7 +62,7 @@ if command -v apt &> /dev/null; then
 
     install_if_missing() {
         if ! is_installed "$1"; then
-            apt install -y "$1"
+            apt install -y "$1" || log_warn "$1 安装失败，继续..."
         else
             log_info "$1 已安装，跳过"
         fi
@@ -85,12 +85,21 @@ if command -v apt &> /dev/null; then
 
     # Docker 检测与安装
     if command -v docker &> /dev/null; then
-        log_info "Docker 已安装，跳过"
+        log_info "Docker 已安装，跳过 docker.io 安装"
     else
-        apt install -y docker.io
+        log_info "安装 Docker..."
+        # 不使用 docker.io，改用官方仓库避免 containerd 冲突
+        apt install -y docker-ce docker-ce-cli containerd.io || {
+            log_warn "Docker 官方版安装失败，尝试 docker.io..."
+            apt install -y docker.io
+        }
     fi
 
-    install_if_missing "docker-compose"
+    if command -v docker-compose &> /dev/null; then
+        log_info "docker-compose 已安装，跳过"
+    else
+        apt install -y docker-compose
+    fi
 
 elif command -v yum &> /dev/null; then
     # CentOS/Rocky 包检测
