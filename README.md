@@ -94,10 +94,53 @@ python -m app.ctf_agent_graph
 
 ---
 
+## 使用方式
+
+### CLI使用
+
+```bash
+# 基本使用（自动识别类型）
+python -m app.main http://target.com
+
+# 指定挑战类型
+python -m app.main 192.168.1.100 -t network
+
+# 指定超时时间
+python -m app.main http://target.com --timeout 60
+
+# 详细输出
+python -m app.main http://target.com -v
+```
+
+### 代码调用
+
+```python
+from app.main import run_agent
+
+result = await run_agent(
+    target="http://target.com",
+    description="SQL注入测试",
+    max_iterations=30,
+    timeout_minutes=60
+)
+
+print(f"成功: {result['success']}")
+print(f"Flags: {result['flags']}")
+print(f"迭代次数: {result['iterations']}")
+print(f"发现数量: {result['findings_count']}")
+```
+
+---
+
 ## 架构
 
 ```
 app/
+├── main.py                           # 统一入口
+├── graph/                            # AgenticLoop架构
+│   ├── __init__.py
+│   ├── ctf_graph.py                  # LangGraph主图
+│   └── nodes.py                      # Think/Act/Reflect节点
 ├── agents/               # Agent实现
 │   ├── base.py           # 基础Agent
 │   └── autonomous_agent.py
