@@ -11,6 +11,8 @@ CTF-Agent 2.0 统一入口
 
 import asyncio
 import sys
+import ipaddress
+import re
 from typing import Optional
 from datetime import datetime
 
@@ -26,6 +28,84 @@ from app.coordinator.dispatcher import (
     TaskType
 )
 from app.memory import get_agent_memory
+
+
+# ============================================
+# 安全验证函数
+# ============================================
+
+def validate_target(target: str, allow_internal: bool = False) -> tuple[bool, str]:
+    """
+    验证目标地址是否合法
+
+    Args:
+        target: 目标地址（URL/IP/域名）
+        allow_internal: 是否允许内网地址（内网渗透场景）
+
+    Returns:
+        (是否合法, 错误信息)
+    """
+    if not target or not isinstance(target, str):
+        return False, "Target is empty or invalid"
+
+    # 长度限制
+    if len(target) > 255:
+        return False, "Target exceeds max length 255"
+
+    # 检查危险协议
+    dangerous_protocols = ["file://", "ftp://", "gopher://", "dict://"]
+    for proto in dangerous_protocols:
+        if target.lower().startswith(proto):
+            return False, f"Protocol '{proto}' is not allowed"
+
+    # 如果允许内网地址，直接返回True（内网渗透场景）
+    if allow_internal:
+        return True, ""
+
+    # 检查是否为内网IP地址
+    # 提取IP地址（如果不是URL）
+    if not target.startswith("http"):
+        # 可能是IP或域名
+        ip_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
+        if re.match(ip_pattern, target):
+            try:
+                ip = ipaddress.ip_address(target)
+
+                # 禁止私有IP、环回地址、链路本地地址
+                if ip.is_private:
+                    return False, f"Private IP address not allowed: {target}"
+                if ip.is_loopback:
+                    return False, f"Loopback address not allowed: {target}"
+                if ip.is_link_local:
+                    return False, f"Link-local address not allowed: {target}"
+                if ip.is_multicast:
+                    return False, f"Multicast address not allowed: {target}"
+            except ValueError:
+                # 不是有效IP，可能是域名
+                pass
+
+    # 检查URL中的主机名
+    if target.startswith("http"):
+        # 提取主机名
+        from urllib.parse import urlparse
+        try:
+            parsed = urlparse(target)
+            hostname = parsed.hostname
+
+            if hostname:
+                # 检查是否为IP
+                try:
+                    ip = ipaddress.ip_address(hostname)
+                    if ip.is_private or ip.is_loopback or ip.is_link_local:
+                        return False, f"Internal IP in URL not allowed: {hostname}"
+                except ValueError:
+                    # 是域名，检查是否为localhost等
+                    if hostname.lower() in ["localhost", "127.0.0.1", "0.0.0.0"]:
+                        return False, f"Localhost not allowed: {hostname}"
+        except Exception as e:
+            return False, f"Invalid URL: {str(e)}"
+
+    return True, ""
 
 
 async def run_agent(
@@ -48,6 +128,20 @@ async def run_agent(
     Returns:
         执行结果
     """
+    # =========================================
+    # 安全验证：检查target是否合法
+    # =========================================
+    # 内网渗透类型允许内网地址
+    allow_internal = (challenge_type == ChallengeType.NETWORK) if challenge_type else False
+    is_valid, error_msg = validate_target(target, allow_internal)
+
+    if not is_valid:
+        return {
+            "success": False,
+            "error": f"Invalid target: {error_msg}",
+            "session_id": None
+        }
+
     # =========================================
     # 1. 初始化组件
     # =========================================

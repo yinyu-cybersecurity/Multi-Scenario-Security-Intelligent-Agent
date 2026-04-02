@@ -2,17 +2,17 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import { useAppStore } from '@/store/useAppStore';
 import { AgentStatusCard } from '@/components/AgentStatusCard';
-import { Activity, Target, Shield, CheckCircle, Settings, Flag } from 'lucide-react';
+import { Activity, Target, Shield, CheckCircle, Settings, Flag, Repeat } from 'lucide-react';
 
 function Dashboard() {
-  const { currentTask, flags, findings, wsConnected } = useAppStore();
+  const { currentTask, flags, findings, wsConnected, currentIteration, maxIterations } = useAppStore();
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">CTF-Agent Dashboard</h1>
+          <h1 className="text-2xl font-bold">CTF-Agent 2.0 Dashboard</h1>
           <p className="text-muted-foreground">
             {currentTask ? `Task: ${currentTask.title}` : 'No active task'}
           </p>
@@ -26,7 +26,7 @@ function Dashboard() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         <div className="bg-secondary rounded-lg p-4 border border-border">
           <div className="flex items-center gap-2 text-muted-foreground">
             <Target className="w-4 h-4" />
@@ -48,7 +48,7 @@ function Dashboard() {
             <Activity className="w-4 h-4" />
             <span className="text-xs">Tools</span>
           </div>
-          <p className="text-2xl font-bold mt-2">12</p>
+          <p className="text-2xl font-bold mt-2">65+</p>
         </div>
 
         <div className="bg-secondary rounded-lg p-4 border border-border">
@@ -56,18 +56,26 @@ function Dashboard() {
             <Shield className="w-4 h-4" />
             <span className="text-xs">Skills</span>
           </div>
-          <p className="text-2xl font-bold mt-2">8</p>
+          <p className="text-2xl font-bold mt-2">15</p>
+        </div>
+
+        <div className="bg-secondary rounded-lg p-4 border border-border">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Repeat className="w-4 h-4" />
+            <span className="text-xs">Iterations</span>
+          </div>
+          <p className="text-2xl font-bold mt-2">{currentIteration}/{maxIterations}</p>
         </div>
       </div>
 
-      {/* Agents */}
+      {/* Loop Nodes */}
       <div>
-        <h2 className="text-lg font-semibold mb-4">Agent Status</h2>
-        <div className="grid grid-cols-2 gap-4">
-          <AgentStatusCard agentType="explore" />
-          <AgentStatusCard agentType="plan" />
-          <AgentStatusCard agentType="attack" />
-          <AgentStatusCard agentType="verify" />
+        <h2 className="text-lg font-semibold mb-4">AgenticLoop Status</h2>
+        <div className="grid grid-cols-4 gap-4">
+          <AgentStatusCard nodeType="think" />
+          <AgentStatusCard nodeType="act" />
+          <AgentStatusCard nodeType="reflect" />
+          <AgentStatusCard nodeType="decide" />
         </div>
       </div>
 

@@ -13,12 +13,59 @@ Think → Act → Reflect → Decide
 
 import json
 import re
+import shlex
 from enum import Enum
-from typing import Dict, Any, List, Optional, Literal
+from typing import Dict, Any, List, Optional, Literal, Set
 from datetime import datetime
 
 from app.state.state_v3 import CTFStateV3, PhaseType, ChallengeType
 from app.agents.base import AgentType
+
+
+# ============================================
+# 安全配置
+# ============================================
+
+# 允许执行的工具白名单（从tools_v2动态获取）
+ALLOWED_TOOLS: Set[str] = {
+    # Web安全工具
+    "nmap", "nuclei", "httpx", "fscan", "sqlmap", "ffuf", "dirsearch",
+    "gobuster", "whatweb", "subfinder", "hydra", "xray", "dalfox",
+    "httprobe", "jsfinder", "gopherus", "ssrfmap", "jwt_tool",
+
+    # Pwn工具
+    "binary_analyzer", "rop_builder", "shellcode_generator",
+
+    # Crypto工具
+    "crypto_identifier", "rsa_attacker", "hash_analyzer",
+    "classical_cipher_solver", "encoding_decoder",
+
+    # Reverse工具
+    "disassembler", "decompiler", "string_extractor", "apk_analyzer",
+
+    # Misc工具
+    "steganography_detector", "forensics_analyzer", "traffic_analyzer",
+    "qr_decoder", "encoding_converter",
+
+    # AI安全工具
+    "ai_attacker", "prompt_injector", "model_extractor",
+
+    # 云安全工具
+    "cloud_scanner", "container_escape", "kube_attacker",
+
+    # 内网渗透工具
+    "privesc_scanner", "potato_attack", "ldap_domaindump",
+    "crackmapexec", "impacket", "bloodhound",
+
+    # OA攻击工具
+    "oa_exploiter", "ysoserial", "marshalsec", "jndiexploit",
+
+    # 其他
+    "Read", "Glob", "Grep", "Bash", "WebFetch", "LSP"
+}
+
+# 最大参数值长度（防止超长输入）
+MAX_PARAM_LENGTH = 10000
 
 
 class ActionType(Enum):
@@ -27,6 +74,49 @@ class ActionType(Enum):
     DISPATCH_SUBAGENT = "dispatch_subagent"
     SWITCH_PHASE = "switch_phase"
     COMPLETE = "complete"
+
+
+def validate_tool_name(tool_name: str) -> bool:
+    """
+    验证工具名称是否在白名单中
+
+    Args:
+        tool_name: 工具名称
+
+    Returns:
+        是否允许执行
+    """
+    if not tool_name or not isinstance(tool_name, str):
+        return False
+
+    # 检查是否在白名单中
+    return tool_name in ALLOWED_TOOLS
+
+
+def validate_tool_params(params: Dict[str, Any], tool_name: str) -> tuple[bool, str]:
+    """
+    验证工具参数，检查是否安全
+
+    Args:
+        params: 工具参数
+        tool_name: 工具名称
+
+    Returns:
+        (是否安全, 错误信息)
+    """
+    if not isinstance(params, dict):
+        return True, ""
+
+    for key, value in params.items():
+        # 检查参数值长度
+        if isinstance(value, str) and len(value) > MAX_PARAM_LENGTH:
+            return False, f"Parameter '{key}' exceeds max length {MAX_PARAM_LENGTH}"
+
+        # 检查参数名是否合法
+        if not isinstance(key, str) or not key.replace("_", "").replace("-", "").isalnum():
+            return False, f"Invalid parameter name: {key}"
+
+    return True, ""
 
 
 async def think_node(state: CTFStateV3) -> CTFStateV3:
@@ -300,6 +390,41 @@ async def act_node(state: CTFStateV3) -> CTFStateV3:
     if action_type == ActionType.DIRECT_TOOL.value:
         tool_name = action.get("tool")
         params = action.get("params", {})
+
+        # =====================================
+        # 安全验证：工具白名单检查
+        # =====================================
+        if not validate_tool_name(tool_name):
+            state["last_tool_result"] = {
+                "success": False,
+                "error": f"Tool '{tool_name}' is not allowed or does not exist"
+            }
+            state["tool_history"].append({
+                "tool": tool_name,
+                "params": params,
+                "success": False,
+                "error": "Tool not in whitelist",
+                "timestamp": datetime.now().isoformat()
+            })
+            return state
+
+        # =====================================
+        # 安全验证：参数基本检查
+        # =====================================
+        is_valid, error_msg = validate_tool_params(params, tool_name)
+        if not is_valid:
+            state["last_tool_result"] = {
+                "success": False,
+                "error": f"Invalid parameters: {error_msg}"
+            }
+            state["tool_history"].append({
+                "tool": tool_name,
+                "params": params,
+                "success": False,
+                "error": error_msg,
+                "timestamp": datetime.now().isoformat()
+            })
+            return state
 
         try:
             # execute_tool内部已集成Docker执行
