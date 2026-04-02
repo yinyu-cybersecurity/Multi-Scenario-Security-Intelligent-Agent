@@ -20,6 +20,7 @@ from datetime import datetime
 
 from app.state.state_v3 import CTFStateV3, PhaseType, ChallengeType
 from app.agents.base import AgentType
+from app.settings import config
 
 
 # ============================================
@@ -217,7 +218,7 @@ async def think_node(state: CTFStateV3) -> CTFStateV3:
     # =========================================
     try:
         response = llm_client.call_chat_completion(
-            model="deepseek-chat",
+            model=config.LLM_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             max_tokens=800,

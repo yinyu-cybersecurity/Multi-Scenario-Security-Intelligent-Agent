@@ -16,7 +16,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from config import config
+from settings import config
 from logger import get_logger
 
 logger = get_logger("LLM")

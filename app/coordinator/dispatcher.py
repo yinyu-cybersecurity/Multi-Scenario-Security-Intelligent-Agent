@@ -28,6 +28,7 @@ from app.state.state_v3 import (
     create_initial_state,
     get_state_slice_for_agent,
 )
+from app.settings import config
 
 
 # ============================================
@@ -210,7 +211,7 @@ class CoordinatorDispatcher:
 
         try:
             llm = get_llm_client()
-            response = await llm.ainvoke(prompt, model="glm-5", max_tokens=30)
+            response = await llm.ainvoke(prompt, model=config.LLM_MODEL, max_tokens=30)
 
             # 解析响应
             result = response.strip().lower()
@@ -401,7 +402,7 @@ class CoordinatorDispatcher:
         targets: List[str],
         task_template: str,
         agent_type: AgentType = AgentType.EXPLORE,
-        model: str = "glm-5"
+        model: str = config.LLM_MODEL
     ) -> List[ForkTask]:
         """
         并行派发多个Fork子Agent
@@ -1142,7 +1143,7 @@ async def parallel_scan_targets(
     targets: List[str],
     parent_messages: List[Dict],
     execute_handler: Callable,
-    model: str = "glm-5"
+    model: str = config.LLM_MODEL
 ) -> Dict:
     """
     便捷函数：并行扫描多个目标
