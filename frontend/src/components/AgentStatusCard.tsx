@@ -1,5 +1,5 @@
 import React from 'react';
-import { useAppStore, AgentStatus } from '@/store/useAppStore';
+import { useAppStore } from '@/store/useAppStore';
 import { Brain, Zap, Eye, GitBranch } from 'lucide-react';
 
 const nodeIcons = {
@@ -31,8 +31,6 @@ interface Props {
 export const AgentStatusCard: React.FC<Props> = ({ nodeType }) => {
   // 使用统一的"loop"状态，因为现在是单循环架构
   const loopState = useAppStore((state) => state.loopState);
-  const currentIteration = useAppStore((state) => state.currentIteration);
-  const maxIterations = useAppStore((state) => state.maxIterations);
 
   const isCurrentNode = loopState?.currentNode === nodeType;
   const status = isCurrentNode ? 'running' : 'idle';
@@ -61,12 +59,12 @@ export const AgentStatusCard: React.FC<Props> = ({ nodeType }) => {
         <div className="w-full bg-muted rounded-full h-1.5">
           <div
             className="bg-primary h-1.5 rounded-full transition-all"
-            style={{ width: `${(currentIteration / maxIterations) * 100}%` }}
+            style={{ width: `${(loopState.currentIteration / loopState.maxIterations) * 100}%` }}
           />
         </div>
 
         <div className="flex justify-between text-xs text-muted-foreground">
-          <span>Iteration: {currentIteration}/{maxIterations}</span>
+          <span>Iteration: {loopState.currentIteration}/{loopState.maxIterations}</span>
         </div>
       </div>
     </div>

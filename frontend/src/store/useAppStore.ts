@@ -1,119 +1,153 @@
+// frontend/src/store/useAppStore.ts
+
 import { create } from 'zustand';
-
-export interface AgentStatus {
-  agentType: 'explore' | 'plan' | 'attack' | 'verify';
-  status: 'idle' | 'running' | 'waiting' | 'error' | 'success';
-  currentTask: string;
-  progress: number;
-  lastUpdate: Date;
-  toolsUsed: string[];
-}
-
-export interface ToolExecution {
-  id: string;
-  toolName: string;
-  startTime: Date;
-  duration: number;
-  status: 'pending' | 'running' | 'success' | 'error';
-  output: string;
-  error?: string;
-}
-
-export interface Finding {
-  id: string;
-  type: 'endpoint' | 'vuln' | 'credential' | 'flag';
-  severity: 'critical' | 'high' | 'medium' | 'low';
-  title: string;
-  description: string;
-  evidence: string;
-  timestamp: Date;
-}
-
-export interface Task {
-  id: string;
-  title: string;
-  description: string;
-  target: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  createdAt: Date;
-}
+import type {
+  CurrentTask,
+  LoopState,
+  LogEntry,
+  Iteration,
+  ToolExecution,
+  Finding,
+  Flag,
+} from './types';
 
 interface AppState {
-  // 当前任务
-  currentTask: Task | null;
+  // Task
+  currentTask: CurrentTask | null;
 
-  // Agent状态
-  agents: Record<string, AgentStatus>;
+  // Loop State
+  loopState: LoopState;
 
-  // 工具执行历史
+  // Log Entries
+  logEntries: LogEntry[];
+
+  // Iterations
+  iterations: Iteration[];
+
+  // Tool Executions
   toolExecutions: ToolExecution[];
 
-  // 发现列表
+  // Findings
   findings: Finding[];
 
   // Flags
-  flags: string[];
+  flags: Flag[];
 
-  // Token统计
-  tokenStats: {
-    total: number;
-    byModel: Record<string, number>;
-    cost: number;
-  };
-
-  // WebSocket连接
+  // WebSocket
   wsConnected: boolean;
 
+  // UI State
+  detailPanelCollapsed: boolean;
+  detailPanelTab: 'tools' | 'findings' | 'flags';
+  selectedLogEntryId: string | null;
+
   // Actions
-  setCurrentTask: (task: Task | null) => void;
-  updateAgentStatus: (agentType: string, status: AgentStatus) => void;
+  setCurrentTask: (task: CurrentTask | null) => void;
+  updateLoopState: (state: Partial<LoopState>) => void;
+  addLogEntry: (entry: LogEntry) => void;
+  addIteration: (iteration: Iteration) => void;
+  updateIteration: (number: number, update: Partial<Iteration>) => void;
   addToolExecution: (execution: ToolExecution) => void;
+  updateToolExecution: (id: string, update: Partial<ToolExecution>) => void;
   addFinding: (finding: Finding) => void;
-  addFlag: (flag: string) => void;
+  addFlag: (flag: Flag) => void;
+  setFlagCopied: (id: string, copied: boolean) => void;
   setWsConnected: (connected: boolean) => void;
+  setDetailPanelCollapsed: (collapsed: boolean) => void;
+  setDetailPanelTab: (tab: 'tools' | 'findings' | 'flags') => void;
+  setSelectedLogEntry: (id: string | null) => void;
   reset: () => void;
 }
 
+const initialLoopState: LoopState = {
+  currentNode: 'think',
+  currentIteration: 0,
+  maxIterations: 50,
+  phase: 'idle',
+  lastAction: '',
+};
+
 const initialState = {
   currentTask: null,
-  agents: {},
+  loopState: initialLoopState,
+  logEntries: [],
+  iterations: [],
   toolExecutions: [],
   findings: [],
   flags: [],
-  tokenStats: {
-    total: 0,
-    byModel: {},
-    cost: 0,
-  },
   wsConnected: false,
+  detailPanelCollapsed: false,
+  detailPanelTab: 'tools' as const,
+  selectedLogEntryId: null,
 };
+
+// Utility to generate unique IDs
+let idCounter = 0;
+const generateId = () => `id_${Date.now()}_${++idCounter}`;
 
 export const useAppStore = create<AppState>((set) => ({
   ...initialState,
 
   setCurrentTask: (task) => set({ currentTask: task }),
 
-  updateAgentStatus: (agentType, status) =>
+  updateLoopState: (state) =>
+    set((prev) => ({
+      loopState: { ...prev.loopState, ...state },
+    })),
+
+  addLogEntry: (entry) =>
     set((state) => ({
-      agents: { ...state.agents, [agentType]: status },
+      logEntries: [...state.logEntries, { ...entry, id: entry.id || generateId() }],
+    })),
+
+  addIteration: (iteration) =>
+    set((state) => ({
+      iterations: [...state.iterations, iteration],
+    })),
+
+  updateIteration: (num, update) =>
+    set((state) => ({
+      iterations: state.iterations.map((iter) =>
+        iter.number === num ? { ...iter, ...update } : iter
+      ),
     })),
 
   addToolExecution: (execution) =>
     set((state) => ({
-      toolExecutions: [...state.toolExecutions, execution],
+      toolExecutions: [...state.toolExecutions, { ...execution, id: execution.id || generateId() }],
+    })),
+
+  updateToolExecution: (id, update) =>
+    set((state) => ({
+      toolExecutions: state.toolExecutions.map((tool) =>
+        tool.id === id ? { ...tool, ...update } : tool
+      ),
     })),
 
   addFinding: (finding) =>
     set((state) => ({
-      findings: [...state.findings, finding],
+      findings: [...state.findings, { ...finding, id: finding.id || generateId() }],
     })),
 
   addFlag: (flag) =>
     set((state) => ({
-      flags: [...state.flags, flag],
+      flags: [...state.flags, { ...flag, id: flag.id || generateId(), copied: false }],
+    })),
+
+  setFlagCopied: (id, copied) =>
+    set((state) => ({
+      flags: state.flags.map((flag) =>
+        flag.id === id ? { ...flag, copied } : flag
+      ),
     })),
 
   setWsConnected: (connected) => set({ wsConnected: connected }),
+
+  setDetailPanelCollapsed: (collapsed) => set({ detailPanelCollapsed: collapsed }),
+
+  setDetailPanelTab: (tab) => set({ detailPanelTab: tab }),
+
+  setSelectedLogEntry: (id) => set({ selectedLogEntryId: id }),
 
   reset: () => set(initialState),
 }));
