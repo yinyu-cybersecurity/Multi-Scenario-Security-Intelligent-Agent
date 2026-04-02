@@ -89,6 +89,31 @@ export interface CurrentTask {
   status: 'running' | 'completed' | 'failed';
 }
 
+// Chat types
+export interface Attachment {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  file: File;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'system';
+  content: string;
+  attachments?: Attachment[];
+  timestamp: Date;
+}
+
+export interface ChatState {
+  inputValue: string;
+  attachments: Attachment[];
+  isDragging: boolean;
+  isExecuting: boolean;
+  messages: ChatMessage[];
+}
+
 // WebSocket message types
 export type WSMessage =
   | { type: 'iteration_start'; data: { iteration: number; timestamp: string } }
@@ -100,4 +125,9 @@ export type WSMessage =
   | { type: 'finding'; data: Finding }
   | { type: 'flag'; data: Flag }
   | { type: 'iteration_end'; data: { iteration: number; summary: Record<string, unknown> } }
-  | { type: 'task_complete'; data: { success: boolean; flags: string[] } };
+  | { type: 'task_complete'; data: { success: boolean; flags: string[] } }
+  // Chat message types
+  | { type: 'user_input'; data: { message: string; attachments: Omit<Attachment, 'file'>[] } }
+  | { type: 'interrupt'; data: { reason: string } }
+  | { type: 'file_uploaded'; data: { fileId: string; filename: string; size: number } }
+  | { type: 'execution_status'; data: { isExecuting: boolean; task?: string } };

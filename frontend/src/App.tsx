@@ -8,6 +8,8 @@ import { StatsBar } from './components/common/StatsBar';
 import { Timeline } from './components/Timeline/Timeline';
 import { LogStream } from './components/LogStream/LogStream';
 import { DetailPanel } from './components/DetailPanel/DetailPanel';
+import { AttachmentBar } from './components/Chat/AttachmentBar';
+import { InputBar } from './components/Chat/InputBar';
 
 function Dashboard() {
   return (
@@ -19,7 +21,7 @@ function Dashboard() {
       <StatsBar />
 
       {/* Main Content - Three Column Layout */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden min-h-0">
         {/* Left: Timeline */}
         <Timeline />
 
@@ -29,6 +31,12 @@ function Dashboard() {
         {/* Right: Detail Panel */}
         <DetailPanel />
       </div>
+
+      {/* Attachment Bar */}
+      <AttachmentBar />
+
+      {/* Input Bar */}
+      <InputBar />
     </div>
   );
 }

@@ -9,6 +9,8 @@ import type {
   ToolExecution,
   Finding,
   Flag,
+  Attachment,
+  ChatMessage,
 } from './types';
 
 interface AppState {
@@ -41,6 +43,13 @@ interface AppState {
   detailPanelTab: 'tools' | 'findings' | 'flags';
   selectedLogEntryId: string | null;
 
+  // Chat State
+  inputValue: string;
+  attachments: Attachment[];
+  isDragging: boolean;
+  isExecuting: boolean;
+  messages: ChatMessage[];
+
   // Actions
   setCurrentTask: (task: CurrentTask | null) => void;
   updateLoopState: (state: Partial<LoopState>) => void;
@@ -57,6 +66,15 @@ interface AppState {
   setDetailPanelTab: (tab: 'tools' | 'findings' | 'flags') => void;
   setSelectedLogEntry: (id: string | null) => void;
   reset: () => void;
+
+  // Chat Actions
+  setInputValue: (value: string) => void;
+  addAttachment: (attachment: Attachment) => void;
+  removeAttachment: (id: string) => void;
+  clearAttachments: () => void;
+  setDragging: (isDragging: boolean) => void;
+  setIsExecuting: (isExecuting: boolean) => void;
+  addMessage: (message: ChatMessage) => void;
 }
 
 const initialLoopState: LoopState = {
@@ -79,6 +97,12 @@ const initialState = {
   detailPanelCollapsed: false,
   detailPanelTab: 'tools' as const,
   selectedLogEntryId: null,
+  // Chat state
+  inputValue: '',
+  attachments: [],
+  isDragging: false,
+  isExecuting: false,
+  messages: [],
 };
 
 // Utility to generate unique IDs
@@ -148,6 +172,30 @@ export const useAppStore = create<AppState>((set) => ({
   setDetailPanelTab: (tab) => set({ detailPanelTab: tab }),
 
   setSelectedLogEntry: (id) => set({ selectedLogEntryId: id }),
+
+  // Chat Actions
+  setInputValue: (value) => set({ inputValue: value }),
+
+  addAttachment: (attachment) =>
+    set((state) => ({
+      attachments: [...state.attachments, { ...attachment, id: attachment.id || generateId() }],
+    })),
+
+  removeAttachment: (id) =>
+    set((state) => ({
+      attachments: state.attachments.filter((a) => a.id !== id),
+    })),
+
+  clearAttachments: () => set({ attachments: [] }),
+
+  setDragging: (isDragging) => set({ isDragging }),
+
+  setIsExecuting: (isExecuting) => set({ isExecuting }),
+
+  addMessage: (message) =>
+    set((state) => ({
+      messages: [...state.messages, { ...message, id: message.id || generateId() }],
+    })),
 
   reset: () => set(initialState),
 }));

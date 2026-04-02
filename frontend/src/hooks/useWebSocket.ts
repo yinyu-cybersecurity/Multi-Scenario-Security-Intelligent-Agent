@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import type { WSMessage, NodeType, LogEntry, ToolExecution, Finding, Flag, Iteration } from '../store/types';
+import type { WSMessage, NodeType, LogEntry, ToolExecution, Finding, Flag, Iteration, Attachment } from '../store/types';
 
 const WS_URL = 'ws://localhost:8000/ws';
 
@@ -19,6 +19,7 @@ export function useWebSocket() {
     addFinding,
     addFlag,
     addIteration,
+    setIsExecuting,
   } = useAppStore();
 
   const handleMessage = useCallback((event: MessageEvent) => {
@@ -141,6 +142,49 @@ export function useWebSocket() {
             iteration: 0,
             node: 'decide',
           } as LogEntry);
+          setIsExecuting(false);
+          break;
+        }
+
+        case 'interrupt': {
+          addLogEntry({
+            timestamp: new Date(),
+            type: 'info',
+            message: '[System] Execution interrupted',
+            iteration: 0,
+            node: 'think',
+          } as LogEntry);
+          setIsExecuting(false);
+          break;
+        }
+
+        case 'file_uploaded': {
+          const { filename, size } = message.data;
+          const sizeStr = size > 1024 * 1024
+            ? `${(size / (1024 * 1024)).toFixed(1)}MB`
+            : `${(size / 1024).toFixed(1)}KB`;
+          addLogEntry({
+            timestamp: new Date(),
+            type: 'info',
+            message: `[File] Uploaded: ${filename} (${sizeStr})`,
+            iteration: 0,
+            node: 'think',
+          } as LogEntry);
+          break;
+        }
+
+        case 'execution_status': {
+          const { isExecuting, task } = message.data;
+          setIsExecuting(isExecuting);
+          if (isExecuting && task) {
+            addLogEntry({
+              timestamp: new Date(),
+              type: 'info',
+              message: `[System] Task started: ${task}`,
+              iteration: 0,
+              node: 'think',
+            } as LogEntry);
+          }
           break;
         }
       }
@@ -155,6 +199,7 @@ export function useWebSocket() {
     addFinding,
     addFlag,
     addIteration,
+    setIsExecuting,
   ]);
 
   const connect = useCallback(() => {
@@ -194,6 +239,29 @@ export function useWebSocket() {
     wsRef.current?.close();
   }, []);
 
+  const sendUserInput = useCallback((message: string, attachments: Attachment[]) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'user_input',
+        data: {
+          message,
+          attachments: attachments.map(a => ({ id: a.id, name: a.name, size: a.size, type: a.type })),
+        },
+      }));
+      setIsExecuting(true);
+    }
+  }, [setIsExecuting]);
+
+  const sendInterrupt = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'interrupt',
+        data: { reason: 'user_cancel' },
+      }));
+      setIsExecuting(false);
+    }
+  }, [setIsExecuting]);
+
   useEffect(() => {
     connect();
     return () => disconnect();
@@ -203,5 +271,7 @@ export function useWebSocket() {
     isConnected: wsRef.current?.readyState === WebSocket.OPEN,
     connect,
     disconnect,
+    sendUserInput,
+    sendInterrupt,
   };
 }
