@@ -48,6 +48,13 @@ fi
 log_info "[2/9] 安装基础依赖..."
 
 if command -v apt &> /dev/null; then
+    # 【关键】先解决 containerd 冲突，否则任何 apt install 都会失败
+    if dpkg -l containerd 2>/dev/null | grep -q "^ii" && ! dpkg -l containerd.io 2>/dev/null | grep -q "^ii"; then
+        log_info "检测到 containerd 冲突，自动替换为 containerd.io..."
+        apt remove -y containerd || true
+        apt install -y containerd.io || apt install -y containerd
+    fi
+
     # Ubuntu/Debian 包检测函数
     is_installed() {
         dpkg -l "$1" 2>/dev/null | grep -q "^ii"
@@ -76,21 +83,11 @@ if command -v apt &> /dev/null; then
         log_info "Node.js $node_version 已安装，跳过 npm 单独安装"
     fi
 
-    # Docker 检测与安装（智能避免冲突）
+    # Docker 检测与安装
     if command -v docker &> /dev/null; then
         log_info "Docker 已安装，跳过"
     else
-        # 先移除冲突的 containerd
-        if is_installed "containerd" && ! is_installed "containerd.io"; then
-            log_info "移除系统自带 containerd，安装 containerd.io..."
-            apt remove -y containerd || true
-        fi
-        # 安装 docker.io（会自动安装 containerd.io）
-        apt install -y docker.io || {
-            log_warn "docker.io 安装失败，尝试 alternative 方式..."
-            apt install -y containerd.io || apt install -y containerd
-            apt install -y docker-ce || apt install -y docker
-        }
+        apt install -y docker.io
     fi
 
     install_if_missing "docker-compose"
