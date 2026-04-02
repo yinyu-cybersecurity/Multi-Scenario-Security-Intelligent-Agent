@@ -176,6 +176,12 @@ class CTFStateV3(TypedDict):
     should_continue: bool
     error_log: List[str]
 
+    # === Agent决策层 ===
+    next_action: Dict[str, Any]  # Think节点的决策结果
+    last_tool_result: Optional[Dict]  # 最后一次工具执行结果
+    last_subagent_result: Optional[Dict]  # 最后一次子Agent结果
+    last_phase_switch: Optional[Dict]  # 最后一次阶段切换记录
+
     # === Memory层 ===
     memory_updates: List[Dict]  # 待写入Memory的更新
     subscribed_topics: List[str]  # Agent订阅的Memory主题
@@ -288,6 +294,10 @@ def create_initial_state(
         max_iterations=10,
         should_continue=True,
         error_log=[],
+        next_action={},
+        last_tool_result=None,
+        last_subagent_result=None,
+        last_phase_switch=None,
         memory_updates=[],
         subscribed_topics=[],
         parent_messages=[],

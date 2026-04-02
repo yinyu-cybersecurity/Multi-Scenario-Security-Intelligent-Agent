@@ -139,7 +139,14 @@ async def run_agent(
         return {
             "success": False,
             "error": f"Invalid target: {error_msg}",
-            "session_id": None
+            "flags": [],
+            "iterations": 0,
+            "session_id": None,
+            "findings_count": 0,
+            "tool_calls_count": 0,
+            "phase": "error",
+            "duration_seconds": 0,
+            "timeout": {"status": "none"}
         }
 
     # =========================================
@@ -194,7 +201,7 @@ async def run_agent(
     # 6. 构建并执行图
     # =========================================
     print(f"\n{'='*60}")
-    print(f"🎯 CTF-Agent 2.0 启动")
+    print("[CTF-Agent 2.0] Starting...")
     print(f"{'='*60}")
     print(f"目标: {target}")
     print(f"类型: {challenge_type.value}")
@@ -207,8 +214,15 @@ async def run_agent(
         # 构建图
         graph = build_ctf_graph()
 
+        # 配置checkpointer（需要thread_id）
+        config = {
+            "configurable": {
+                "thread_id": session_id
+            }
+        }
+
         # 执行
-        final_state = await graph.ainvoke(initial_state)
+        final_state = await graph.ainvoke(initial_state, config=config)
 
         # =========================================
         # 7. 构建结果
@@ -221,7 +235,14 @@ async def run_agent(
         return {
             "success": False,
             "error": str(e),
-            "session_id": session_id
+            "flags": [],
+            "iterations": 0,
+            "session_id": session_id,
+            "findings_count": 0,
+            "tool_calls_count": 0,
+            "phase": "error",
+            "duration_seconds": 0,
+            "timeout": {"status": "none"}
         }
     finally:
         # 清理会话
@@ -361,9 +382,9 @@ def main():
 
     # 输出结果
     print(f"\n{'='*60}")
-    print("📊 执行结果")
+    print("[Result] Execution completed")
     print(f"{'='*60}")
-    print(f"成功: {'✅' if result['success'] else '❌'}")
+    print(f"Success: {'YES' if result['success'] else 'NO'}")
     if result.get("flags"):
         print(f"Flags: {result['flags']}")
     print(f"迭代: {result['iterations']}")

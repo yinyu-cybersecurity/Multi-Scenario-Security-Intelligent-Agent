@@ -282,11 +282,11 @@ class CoordinatorDispatcher:
             task_description=task_description
         )
 
-        print(f"\n⏱️ 任务开始")
-        print(f"   类型: {task_type.value}")
-        print(f"   描述: {task_description[:60]}...")
-        print(f"   超时: {timeout // 60} 分钟")
-        print(f"   截止: {datetime.fromtimestamp(session.timeout_state.start_time + timeout).strftime('%H:%M:%S')}")
+        print(f"\n[Timer] Task started")
+        print(f"   Type: {task_type.value}")
+        print(f"   Desc: {task_description[:60]}...")
+        print(f"   Timeout: {timeout // 60} min")
+        print(f"   Deadline: {datetime.fromtimestamp(session.timeout_state.start_time + timeout).strftime('%H:%M:%S')}")
 
         return session.timeout_state
 

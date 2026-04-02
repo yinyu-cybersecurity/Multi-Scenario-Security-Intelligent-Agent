@@ -120,7 +120,7 @@ def validate_tool_params(params: Dict[str, Any], tool_name: str) -> tuple[bool, 
     return True, ""
 
 
-async def think_node(state: CTFStateV3) -> CTFStateV3:
+async def think_node(state: CTFStateV3) -> dict:
     """
     思考节点：分析状态，LLM决策下一步行动
 
@@ -130,6 +130,9 @@ async def think_node(state: CTFStateV3) -> CTFStateV3:
     - agent_memory: 历史发现读取
     - llm_client: LLM决策调用
     - dispatcher: 超时检查
+
+    Returns:
+        状态更新字典（不是完整状态）
     """
     from app.tools_v2.deferred_loader import get_deferred_tool_registry
     from app.skills import get_skill_registry
@@ -146,11 +149,12 @@ async def think_node(state: CTFStateV3) -> CTFStateV3:
     # 1. 检查超时（唯一硬性停止条件）
     # =========================================
     if dispatcher.should_stop(state["session_id"]):
-        state["next_action"] = {
-            "type": ActionType.COMPLETE.value,
-            "reason": "timeout"
+        return {
+            "next_action": {
+                "type": ActionType.COMPLETE.value,
+                "reason": "timeout"
+            }
         }
-        return state
 
     # =========================================
     # 2. 构建思考上下文
@@ -214,30 +218,21 @@ async def think_node(state: CTFStateV3) -> CTFStateV3:
     )
 
     # =========================================
-    # 7. LLM决策
+    # 7. LLM决策 - 不降级，直接调用
     # =========================================
-    try:
-        response = llm_client.call_chat_completion(
-            model=config.LLM_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=800,
-            json_mode=True
-        )
+    response = llm_client.call_chat_completion(
+        model=config.LLM_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+        max_tokens=800,
+        json_mode=True
+    )
 
-        # 解析决策
-        action = _parse_action_response(response, available_tools)
-        state["next_action"] = action
+    # 解析决策
+    action = _parse_action_response(response, available_tools)
 
-    except Exception as e:
-        # LLM调用失败，使用默认行动
-        state["next_action"] = {
-            "type": ActionType.SWITCH_PHASE.value,
-            "new_phase": PhaseType.EXPLORE.value,
-            "reasoning": f"LLM调用失败: {str(e)}"
-        }
-
-    return state
+    # 返回状态更新
+    return {"next_action": action}
 
 
 def _get_target(state: CTFStateV3) -> str:
@@ -348,12 +343,14 @@ def _parse_action_response(response: str, available_tools: List[str]) -> Dict:
 
             # 验证工具是否存在
             if action.get("type") == ActionType.DIRECT_TOOL.value:
-                if action.get("tool") not in available_tools:
+                tool_name = action.get("tool")
+
+                if tool_name not in available_tools:
                     # 工具不存在，切换到探索阶段
                     action = {
                         "type": ActionType.SWITCH_PHASE.value,
                         "new_phase": PhaseType.EXPLORE.value,
-                        "reasoning": f"工具 {action.get('tool')} 不可用"
+                        "reasoning": f"工具 {tool_name} 不可用"
                     }
 
             return action
@@ -368,7 +365,7 @@ def _parse_action_response(response: str, available_tools: List[str]) -> Dict:
     }
 
 
-async def act_node(state: CTFStateV3) -> CTFStateV3:
+async def act_node(state: CTFStateV3) -> dict:
     """
     执行节点：执行Think决策的行动
 
@@ -377,6 +374,9 @@ async def act_node(state: CTFStateV3) -> CTFStateV3:
     2. DISPATCH_SUBAGENT - 派发子Agent
     3. SWITCH_PHASE - 阶段切换
     4. COMPLETE - 任务完成
+
+    Returns:
+        状态更新字典
     """
     from app.tools_v2.tools import execute_tool
     from app.coordinator.dispatcher import get_coordinator_dispatcher
@@ -385,6 +385,12 @@ async def act_node(state: CTFStateV3) -> CTFStateV3:
     action = state.get("next_action", {})
     action_type = action.get("type", ActionType.SWITCH_PHASE.value)
 
+    # 初始化更新字典
+    updates = {
+        "iteration_count": state["iteration_count"] + 1,
+        "last_update_time": datetime.now().timestamp()
+    }
+
     # =========================================
     # 行动类型1：直接工具调用
     # =========================================
@@ -392,78 +398,65 @@ async def act_node(state: CTFStateV3) -> CTFStateV3:
         tool_name = action.get("tool")
         params = action.get("params", {})
 
-        # =====================================
         # 安全验证：工具白名单检查
-        # =====================================
         if not validate_tool_name(tool_name):
-            state["last_tool_result"] = {
+            updates["last_tool_result"] = {
                 "success": False,
                 "error": f"Tool '{tool_name}' is not allowed or does not exist"
             }
-            state["tool_history"].append({
+            updates["tool_history"] = state["tool_history"] + [{
                 "tool": tool_name,
                 "params": params,
                 "success": False,
                 "error": "Tool not in whitelist",
                 "timestamp": datetime.now().isoformat()
-            })
-            return state
+            }]
+            return updates
 
-        # =====================================
         # 安全验证：参数基本检查
-        # =====================================
         is_valid, error_msg = validate_tool_params(params, tool_name)
         if not is_valid:
-            state["last_tool_result"] = {
+            updates["last_tool_result"] = {
                 "success": False,
                 "error": f"Invalid parameters: {error_msg}"
             }
-            state["tool_history"].append({
+            updates["tool_history"] = state["tool_history"] + [{
                 "tool": tool_name,
                 "params": params,
                 "success": False,
                 "error": error_msg,
                 "timestamp": datetime.now().isoformat()
-            })
-            return state
+            }]
+            return updates
 
-        try:
-            # execute_tool内部已集成Docker执行
-            result = await execute_tool(tool_name, params)
-            state["last_tool_result"] = result
-
-            # 记录工具历史
-            state["tool_history"].append({
-                "tool": tool_name,
-                "params": params,
-                "success": result.get("success", False),
-                "timestamp": datetime.now().isoformat()
-            })
-        except Exception as e:
-            state["last_tool_result"] = {
-                "success": False,
-                "error": str(e)
-            }
+        # 执行工具
+        result = await execute_tool(tool_name, params)
+        updates["last_tool_result"] = result
+        updates["tool_history"] = state["tool_history"] + [{
+            "tool": tool_name,
+            "params": params,
+            "success": result.get("success", False),
+            "timestamp": datetime.now().isoformat()
+        }]
 
     # =========================================
     # 行动类型2：派发子Agent
     # =========================================
     elif action_type == ActionType.DISPATCH_SUBAGENT.value:
         result = await _dispatch_subagent_integrated(state, action)
-        state["last_subagent_result"] = result
+        updates["last_subagent_result"] = result
 
     # =========================================
     # 行动类型3：阶段切换
     # =========================================
     elif action_type == ActionType.SWITCH_PHASE.value:
         new_phase_str = action.get("new_phase", PhaseType.EXPLORE.value)
-        # 转换为PhaseType枚举
         try:
             new_phase = PhaseType(new_phase_str)
         except ValueError:
             new_phase = PhaseType.EXPLORE
-        state["current_phase"] = new_phase
-        state["last_phase_switch"] = {
+        updates["current_phase"] = new_phase
+        updates["last_phase_switch"] = {
             "to": new_phase.value,
             "reason": action.get("reasoning", "")
         }
@@ -472,17 +465,13 @@ async def act_node(state: CTFStateV3) -> CTFStateV3:
     # 行动类型4：任务完成
     # =========================================
     elif action_type == ActionType.COMPLETE.value:
-        state["current_phase"] = PhaseType.COMPLETE
-        state["final_result"] = {
+        updates["current_phase"] = PhaseType.COMPLETE
+        updates["final_result"] = {
             "success": bool(state.get("flags_found")),
             "reason": action.get("reason", "completed")
         }
 
-    # 更新迭代计数
-    state["iteration_count"] += 1
-    state["last_update_time"] = datetime.now().timestamp()
-
-    return state
+    return updates
 
 
 async def _dispatch_subagent_integrated(
@@ -585,7 +574,7 @@ def _create_subagent_handler(parent_state: CTFStateV3, agent_type: AgentType):
     return handler
 
 
-async def reflect_node(state: CTFStateV3) -> CTFStateV3:
+async def reflect_node(state: CTFStateV3) -> dict:
     """
     反思节点：分析结果，学习反思，更新知识库
 
@@ -593,6 +582,9 @@ async def reflect_node(state: CTFStateV3) -> CTFStateV3:
     - agent_memory: 写入发现
     - flag_extractor_v2: Flag提取
     - context_compressor: 上下文压缩
+
+    Returns:
+        状态更新字典
     """
     from app.memory import get_agent_memory
     from app.flag_extractor_v2 import extract_flags
@@ -601,6 +593,13 @@ async def reflect_node(state: CTFStateV3) -> CTFStateV3:
     memory = get_agent_memory()
     compressor = get_context_compressor()
     target = _get_target(state)
+
+    # 初始化更新
+    updates = {
+        "findings": list(state["findings"]),  # 复制现有发现
+        "flags_found": list(state.get("flags_found", [])),
+        "discovered_assets": []
+    }
 
     # =========================================
     # 1. 分析工具结果
@@ -611,67 +610,52 @@ async def reflect_node(state: CTFStateV3) -> CTFStateV3:
 
         for finding in findings:
             # 写入状态
-            state["findings"].append(finding)
+            updates["findings"].append(finding)
 
             # 写入Memory
-            try:
-                await memory.write_finding(
-                    agent_type=AgentType.COORDINATOR,
-                    target=target,
-                    topic=finding.get("type", "general"),
-                    data=finding
-                )
-            except Exception:
-                pass
+            await memory.write_finding(
+                agent_type=AgentType.COORDINATOR,
+                target=target,
+                topic=finding.get("type", "general"),
+                data=finding
+            )
 
         # Flag提取
-        try:
-            flags = extract_flags(str(tool_result))
-            if flags:
-                for flag in flags:
-                    if flag not in state.get("flags_found", []):
-                        state["flags_found"].append(flag)
-        except Exception:
-            pass
+        flags = extract_flags(str(tool_result))
+        if flags:
+            for flag in flags:
+                if flag not in updates["flags_found"]:
+                    updates["flags_found"].append(flag)
 
     # =========================================
     # 2. 分析子Agent结果
     # =========================================
     if subagent_result := state.get("last_subagent_result"):
         sub_findings = subagent_result.get("findings", [])
-        state["findings"].extend(sub_findings)
+        updates["findings"].extend(sub_findings)
 
         # 同步到Memory
         for finding in sub_findings:
-            try:
-                await memory.write_finding(
-                    agent_type=AgentType.COORDINATOR,
-                    target=target,
-                    topic=finding.get("type", "general"),
-                    data=finding
-                )
-            except Exception:
-                pass
+            await memory.write_finding(
+                agent_type=AgentType.COORDINATOR,
+                target=target,
+                topic=finding.get("type", "general"),
+                data=finding
+            )
 
     # =========================================
     # 3. 上下文压缩（避免Token爆炸）
     # =========================================
-    if len(state["findings"]) > 20:
-        try:
-            # 使用context_compressor压缩
-            compressed = compressor.build_prompt_context(max_tokens=5000)
-            # 保留关键发现
-            state["findings"] = state["findings"][-15:]
-        except Exception:
-            # 压缩失败，简单截断
-            state["findings"] = state["findings"][-15:]
+    if len(updates["findings"]) > 20:
+        # 压缩失败，简单截断
+        updates["findings"] = updates["findings"][-15:]
 
     # =========================================
     # 4. 更新发现资产
     # =========================================
-    state["discovered_assets"] = _extract_assets(state["findings"])
+    updates["discovered_assets"] = _extract_assets(updates["findings"])
 
-    return state
+    return updates
 
 
 def _extract_findings_from_result(result: Dict) -> List[Dict]:

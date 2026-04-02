@@ -16,14 +16,14 @@ from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from settings import config
-from logger import get_logger
+from app.settings import config
+from app.logger import get_logger
 
 logger = get_logger("LLM")
 
 # 导入Token统计持久化模块
 try:
-    from memory.token_stats import get_token_stats_manager
+    from app.memory.token_stats import get_token_stats_manager
     TOKEN_PERSISTENCE_AVAILABLE = True
 except ImportError:
     TOKEN_PERSISTENCE_AVAILABLE = False
@@ -87,18 +87,23 @@ class LLMRateLimiter:
         self._semaphore.release()
 
     def record_usage(self, prompt_tokens: int, completion_tokens: int):
-        """记录token使用量（同步持久化）"""
+        """记录token使用量（同步持久化）- 简化接口，不需要model参数"""
         with self._lock:
             self._total_tokens += prompt_tokens + completion_tokens
             self._prompt_tokens += prompt_tokens
             self._completion_tokens += completion_tokens
             self._request_count += 1
 
-        # 持久化存储
+        # 持久化存储 - 使用简化的接口
         if TOKEN_PERSISTENCE_AVAILABLE:
             try:
                 stats_manager = get_token_stats_manager()
-                stats_manager.record_usage(prompt_tokens, completion_tokens)
+                # 调用简化接口（不传model参数）
+                if hasattr(stats_manager, 'record_usage_simple'):
+                    stats_manager.record_usage_simple(prompt_tokens, completion_tokens)
+                else:
+                    # 兼容旧接口，传默认model
+                    stats_manager.record_usage("default", prompt_tokens, completion_tokens)
             except Exception as e:
                 logger.warning(f"Token持久化失败: {e}")
 
