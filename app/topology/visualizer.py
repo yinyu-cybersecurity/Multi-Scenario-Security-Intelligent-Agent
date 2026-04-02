@@ -5,7 +5,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from typing import Optional
 import tempfile
-from logger import get_logger
+from app.logger import get_logger
 
 logger = get_logger("Visualizer")
 

@@ -29,7 +29,7 @@ def validate_target(target: str) -> Tuple[bool, str]:
     验证目标地址格式
 
     Args:
-        target: 目标地址（IP或域名）
+        target: 目标地址（IP、域名或URL）
 
     Returns:
         (is_valid, error_message)
@@ -40,6 +40,17 @@ def validate_target(target: str) -> Tuple[bool, str]:
     # 基本长度限制
     if len(target) > 253:
         return False, "目标地址过长"
+
+    # URL格式验证（http/https）
+    if target.startswith(('http://', 'https://')):
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(target)
+            if parsed.hostname:
+                return True, ""
+            return False, "URL格式无效"
+        except Exception:
+            return False, "URL解析失败"
 
     # IP地址验证
     try:

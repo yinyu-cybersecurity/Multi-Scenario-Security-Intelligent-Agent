@@ -1,0 +1,94 @@
+name: "SQL注入攻击"
+description: "MySQL、MSSQL、Oracle、PostgreSQL等数据库的SQL注入技术"
+domain: "web"
+version: "1.0"
+tags:
+  - web
+  - sqli
+  - injection
+  - database
+
+knowledge: |
+  # 二阶注入
+  
+  ## 1. 原理
+  
+  攻击者构造恶意输入，数据被存储后，在第二次调用时触发漏洞
+  
+  ## 2. 利用场景
+  
+  ### 注册功能
+  
+  ```
+  用户名: admin'--
+  密码: password
+  
+  登录时触发注入
+  ```
+  
+  ### 修改密码
+  
+  ```
+  当前密码: ' OR '1'='1
+  新密码: attacker
+  ```
+  
+  ### 文件导入
+  
+  ```
+  CSV文件包含SQL注入
+  二次解析时触发
+  ```
+  
+  ## 3. 利用示例
+  
+  ### 存储型注入
+  
+  ```sql
+  -- 注册时
+  INSERT INTO users (username) VALUES ('admin\'--')
+  
+  -- 登录时查询变成
+  SELECT * FROM users WHERE username='admin'--' AND password='...'
+  ```
+  
+  ### 二次 ORDER BY
+  
+  ```sql
+  -- 存储
+  ' PROCEDURE analyse()--
+  
+  -- 触发
+  ORDER BY ${stored_value}
+  ```
+  
+  ## 4. 探测方法
+  
+  1. 插入特殊字符
+  2. 检查是否被正确转义
+  3. 在不同功能点触发
+  
+
+workflows:
+  - name: "自动检测和利用"
+    description: "自动检测漏洞并尝试利用"
+    steps:
+      - description: "信息收集和漏洞探测"
+        expected_output: "发现潜在漏洞点"
+      - description: "漏洞验证"
+        expected_output: "确认漏洞存在"
+      - description: "漏洞利用"
+        expected_output: "成功利用漏洞"
+
+tool_preferences:
+  nmap:
+    score: 0.8
+    reason: "端口和服务扫描"
+  nuclei:
+    score: 0.9
+    reason: "漏洞扫描"
+
+examples:
+  - scenario: "发现漏洞并获取敏感信息"
+    solution: "使用工具探测 -> 验证漏洞 -> 获取数据"
+    tools_used: ["nmap", "nuclei"]

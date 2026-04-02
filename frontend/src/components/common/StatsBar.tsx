@@ -1,11 +1,19 @@
 // frontend/src/components/common/StatsBar.tsx
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Target, Flag, Wrench, Brain, Repeat } from 'lucide-react';
 import { useStatsState } from '../../store/useAppStore';
 
 export const StatsBar: React.FC = () => {
   const { findings, flags, toolExecutions, loopState } = useStatsState();
+  const [skillsCount, setSkillsCount] = useState(0);
+
+  useEffect(() => {
+    fetch('/api/skills/count')
+      .then(res => res.json())
+      .then(data => setSkillsCount(data.count))
+      .catch(() => setSkillsCount(0));
+  }, []);
 
   const stats = [
     {
@@ -29,7 +37,7 @@ export const StatsBar: React.FC = () => {
     {
       icon: Brain,
       label: 'Skills',
-      value: 15,
+      value: skillsCount,
       color: 'text-purple-500',
     },
     {

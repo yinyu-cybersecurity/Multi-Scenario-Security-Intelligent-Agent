@@ -10,10 +10,10 @@
 
 from typing import Dict, Any, Optional
 import time
-from logger import get_logger
+from app.logger import get_logger
 
 # URL处理函数已移至 url_utils.py
-from url_utils import is_ip_target, extract_ip
+from app.url_utils import is_ip_target, extract_ip
 
 logger = get_logger(__name__)
 

@@ -42,6 +42,32 @@ export function useWebSocket() {
       const message: WSMessage = JSON.parse(event.data);
 
       switch (message.type) {
+        case 'connection_established': {
+          // 连接成功
+          addLogEntry({
+            id: `conn-${Date.now()}`,
+            timestamp: new Date(),
+            type: 'info',
+            message: '[System] Connected to CTF-Agent 2.0',
+            iteration: 0,
+            node: 'think',
+          } as LogEntry);
+          break;
+        }
+
+        case 'task_start': {
+          const { target, description } = message.data;
+          addLogEntry({
+            id: `task-${Date.now()}`,
+            timestamp: new Date(),
+            type: 'info',
+            message: `[Task] Starting: ${target}`,
+            iteration: 0,
+            node: 'think',
+          } as LogEntry);
+          break;
+        }
+
         case 'iteration_start': {
           const { iteration, timestamp } = message.data;
           addIteration({

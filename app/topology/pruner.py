@@ -5,7 +5,7 @@ import os
 import networkx as nx
 from typing import Dict, List, Set, Optional
 from datetime import datetime
-from logger import get_logger
+from app.logger import get_logger
 
 logger = get_logger("Pruner")
 

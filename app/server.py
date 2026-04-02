@@ -10,6 +10,8 @@ import asyncio
 import json
 import os
 import uuid
+import re
+import ipaddress
 from datetime import datetime
 from pathlib import Path
 
@@ -19,6 +21,10 @@ from app.state.state_v3 import create_initial_state, ChallengeInfo, ChallengeTyp
 from app.coordinator.dispatcher import get_coordinator_dispatcher
 from app.memory import get_agent_memory
 from app.settings import config
+
+# 启动时加载Skills
+from app.skills import load_all_skills
+load_all_skills()
 
 # ============================================
 # FastAPI 应用
@@ -45,12 +51,8 @@ class ConnectionManager:
         self.active_connections: List[WebSocket] = []
 
     async def connect(self, websocket: WebSocket):
-        await websocket.accept()
+        # 注意：FastAPI WebSocket路由已经自动accept，这里只添加到连接列表
         self.active_connections.append(websocket)
-        await self.broadcast({
-            "type": "system",
-            "data": {"message": "Client connected", "timestamp": datetime.now().isoformat()}
-        })
 
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
@@ -90,6 +92,9 @@ class MessageRequest(BaseModel):
 # 全局状态
 # ============================================
 
+# 全局状态锁（防止并发状态竞争）
+execution_lock = asyncio.Lock()
+
 current_task = None
 is_executing = False
 iteration_count = 0
@@ -115,6 +120,52 @@ async def get_status():
         "flags_count": len(flags),
         "tools_count": len(tool_executions),
     }
+
+@app.get("/api/skills/count")
+async def get_skills_count():
+    from app.skills import get_skill_registry
+    registry = get_skill_registry()
+    return {
+        "count": len(registry.list_skills()),
+        "skills": registry.list_skills()
+    }
+
+@app.get("/api/skills/list")
+async def list_skills():
+    from app.skills import get_skill_registry
+    registry = get_skill_registry()
+    skills = []
+    for name in registry.list_skills():
+        skill = registry.get_skill(name)
+        if skill:
+            skills.append({
+                "name": skill.name,
+                "domain": skill.domain,
+                "description": skill.description,
+                "tags": skill.tags
+            })
+    return {"skills": skills}
+
+@app.get("/api/test/agent")
+async def test_agent_import():
+    """测试Agent导入和执行准备"""
+    try:
+        from app.main import run_agent
+        return {
+            "status": "ok",
+            "message": "run_agent导入成功",
+            "is_coroutine": True
+        }
+    except ImportError as e:
+        return {
+            "status": "error",
+            "message": f"导入失败: {str(e)}"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"未知错误: {str(e)}"
+        }
 
 @app.post("/api/task/start")
 async def start_task(request: TaskRequest):
@@ -190,11 +241,15 @@ async def upload_file(file: UploadFile = File(...)):
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
+    # 先accept连接
+    await websocket.accept()
+    manager.active_connections.append(websocket)
+
+    global is_executing, iteration_count, findings, flags, tool_executions, log_entries
 
     try:
         # 发送初始状态
-        await manager.send_personal(websocket, {
+        await websocket.send_json({
             "type": "connection_established",
             "data": {
                 "message": "Connected to CTF-Agent 2.0",
@@ -209,7 +264,7 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 message = json.loads(data)
             except json.JSONDecodeError:
-                await manager.send_personal(websocket, {
+                await websocket.send_json({
                     "type": "error",
                     "data": {"message": "Invalid JSON format"}
                 })
@@ -240,22 +295,48 @@ async def websocket_endpoint(websocket: WebSocket):
                     "data": log_entry
                 })
 
-                # TODO: 调用Agent处理
-                # 模拟Agent响应
-                await manager.broadcast({
-                    "type": "log",
-                    "data": {
-                        "id": f"log-{uuid.uuid4()}",
-                        "timestamp": datetime.now().isoformat(),
-                        "type": "assistant",
-                        "message": f"收到任务: {user_message}",
-                        "iteration": iteration_count
-                    }
-                })
+                # 触发真实Agent执行（使用锁防止并发竞争）
+                if not is_executing:
+                    try:
+                        target = extract_target_from_message(user_message)
+
+                        if target:
+                            async with execution_lock:
+                                if not is_executing:  # 双重检查
+                                    is_executing = True
+                                    # 创建任务并添加完成回调处理异常
+                                    task = asyncio.create_task(execute_agent_task(
+                                        target=target,
+                                        description=user_message,
+                                        websocket=websocket,
+                                        session_id=str(uuid.uuid4())
+                                    ))
+                                    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+                        else:
+                            # 未检测到有效目标，提示用户
+                            await websocket.send_json({
+                                "type": "system",
+                                "data": {
+                                    "message": "未检测到有效的目标URL或IP地址，请输入类似 http://example.com 或 192.168.1.1 格式的目标",
+                                    "timestamp": datetime.now().isoformat()
+                                }
+                            })
+                    except Exception as e:
+                        # 捕获并报告错误，避免连接关闭
+                        print(f"[WebSocket] user_input处理错误: {e}")
+                        await websocket.send_json({
+                            "type": "error",
+                            "data": {"message": f"处理输入时出错: {str(e)}", "timestamp": datetime.now().isoformat()}
+                        })
+                else:
+                    # 正在执行中，提示用户
+                    await websocket.send_json({
+                        "type": "system",
+                        "data": {"message": "已有任务正在执行中，请等待完成或发送interrupt中断", "timestamp": datetime.now().isoformat()}
+                    })
 
             elif msg_type == "interrupt":
                 # 用户打断
-                global is_executing
                 is_executing = False
 
                 await manager.broadcast({
@@ -265,92 +346,130 @@ async def websocket_endpoint(websocket: WebSocket):
 
             elif msg_type == "ping":
                 # 心跳
-                await manager.send_personal(websocket, {
+                await websocket.send_json({
                     "type": "pong",
                     "data": {"timestamp": datetime.now().isoformat()}
                 })
 
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        if websocket in manager.active_connections:
+            manager.active_connections.remove(websocket)
         await manager.broadcast({
             "type": "system",
             "data": {"message": "Client disconnected", "timestamp": datetime.now().isoformat()}
         })
     except Exception as e:
-        manager.disconnect(websocket)
+        if websocket in manager.active_connections:
+            manager.active_connections.remove(websocket)
         await manager.broadcast({
             "type": "error",
             "data": {"message": str(e), "timestamp": datetime.now().isoformat()}
         })
 
 # ============================================
-# 模拟数据生成（用于测试）
+# Agent执行函数
 # ============================================
 
-async def simulate_agent_execution():
-    """模拟Agent执行过程（测试用）"""
-    global iteration_count, is_executing
+def extract_target_from_message(message: str) -> str:
+    """从用户消息中提取并验证目标URL/IP"""
 
-    for i in range(1, 6):
-        if not is_executing:
-            break
+    # 匹配URL模式
+    url_pattern = r'(https?://[^\s]+)'
+    url_match = re.search(url_pattern, message)
 
-        iteration_count = i
+    if url_match:
+        url = url_match.group(1)
+        # 基本URL验证 - 防止SSRF风险
+        if len(url) > 2083:  # URL长度限制
+            return ""
+        return url
 
-        # 迭代开始
-        await manager.broadcast({
-            "type": "iteration_start",
+    # 匹配IP:端口模式
+    ip_pattern = r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?::(\d+))?'
+    ip_match = re.search(ip_pattern, message)
+
+    if ip_match:
+        ip_str = ip_match.group(1)
+        port = ip_match.group(2)
+
+        # 验证IP合法性
+        try:
+            ip = ipaddress.ip_address(ip_str)
+            # 构造返回结果
+            result = ip_str
+            if port:
+                result += f":{port}"
+            return result
+        except ValueError:
+            # IP地址不合法，返回空字符串
+            return ""
+
+    return ""
+
+
+async def execute_agent_task(
+    target: str,
+    description: str,
+    websocket: WebSocket,
+    session_id: str
+):
+    """真实Agent执行流程"""
+    global is_executing
+
+    print(f"[Agent] 开始执行任务 - 目标: {target}")
+
+    try:
+        from app.main import run_agent  # 延迟导入避免循环依赖
+    except ImportError as e:
+        print(f"[Agent] 导入run_agent失败: {e}")
+        await websocket.send_json({
+            "type": "error",
+            "data": {"message": f"Agent模块导入失败: {str(e)}"}
+        })
+        is_executing = False
+        return
+
+    try:
+        print(f"[Agent] 调用run_agent...")
+        # 调用真实Agent执行（添加超时控制：5分钟）
+        result = await asyncio.wait_for(
+            run_agent(
+                target=target,
+                description=description,
+                max_iterations=50
+            ),
+            timeout=300  # 5分钟超时
+        )
+        print(f"[Agent] run_agent完成 - 成功: {result.get('success')}")
+
+        # 流式发送结果（使用.get()确保健壮性）
+        await websocket.send_json({
+            "type": "task_complete",
             "data": {
-                "iteration": i,
-                "timestamp": datetime.now().isoformat()
+                "success": result.get("success", False),
+                "flags": result.get("flags", []),
+                "iterations": result.get("iterations", 0),
+                "session_id": result.get("session_id"),
+                "error": result.get("error")
             }
         })
-
-        # 模拟节点执行
-        for node in ["think", "act", "reflect", "decide"]:
-            await manager.broadcast({
-                "type": "node_start",
-                "data": {
-                    "node": node,
-                    "iteration": i,
-                    "timestamp": datetime.now().isoformat()
-                }
-            })
-
-            await asyncio.sleep(1)
-
-            await manager.broadcast({
-                "type": "node_end",
-                "data": {
-                    "node": node,
-                    "iteration": i,
-                    "result": f"{node} completed",
-                    "timestamp": datetime.now().isoformat()
-                }
-            })
-
-        # 迭代结束
-        await manager.broadcast({
-            "type": "iteration_end",
-            "data": {
-                "iteration": i,
-                "timestamp": datetime.now().isoformat()
-            }
+    except asyncio.TimeoutError:
+        print(f"[Agent] 执行超时")
+        await websocket.send_json({
+            "type": "error",
+            "data": {"message": "Agent execution timeout (5 minutes)"}
         })
-
-        await asyncio.sleep(2)
-
-    # 任务完成
-    await manager.broadcast({
-        "type": "task_complete",
-        "data": {
-            "success": True,
-            "flags": flags,
-            "timestamp": datetime.now().isoformat()
-        }
-    })
-
-    is_executing = False
+    except Exception as e:
+        print(f"[Agent] 执行错误: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        await websocket.send_json({
+            "type": "error",
+            "data": {"message": f"Agent执行错误: {str(e)}"}
+        })
+    finally:
+        is_executing = False
+        print(f"[Agent] 任务结束 - is_executing: {is_executing}")
 
 # ============================================
 # 静态文件服务（生产环境）
@@ -368,7 +487,7 @@ if dist_path.exists():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "server:app",
+        "app.server:app",
         host="0.0.0.0",
         port=8000,
         reload=True,

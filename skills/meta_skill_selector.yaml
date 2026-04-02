@@ -1,0 +1,57 @@
+name: "Meta Skill Selector"
+description: "智能选择和调用其他Skills的元Skill"
+domain: "meta"
+version: "1.0"
+tags:
+  - meta
+  - orchestration
+
+knowledge: |
+  ## Skill选择策略
+
+  根据目标特征自动选择最合适的Skill:
+
+  1. **Web应用** → web_exploitation
+     - 触发: URL以http/https开头
+
+  2. **密码学** → crypto_exploitation
+     - 触发: .enc, cipher, crypto关键词
+
+  3. **二进制** → pwn_exploitation
+     - 触发: ELF, PE, binary文件
+
+  4. **逆向** → reverse_engineering
+     - 触发: apk, dex, so, dll文件
+
+  5. **内网** → internal_network
+     - 触发: 内网IP, AD域, 内网渗透关键词
+
+  6. **AI安全** → ai_security
+     - 触发: LLM, GPT, AI模型关键词
+
+  7. **Misc** → misc_challenges
+     - 触发: stego, forensics, misc关键词
+
+workflows:
+  - name: "自动Skill选择"
+    description: "根据目标特征自动选择Skills"
+    steps:
+      - description: "分析目标类型"
+        expected_output: "目标类型识别结果"
+      - description: "匹配Skills"
+        expected_output: "推荐的Skills列表"
+      - description: "调用匹配的Skill"
+        expected_output: "执行结果"
+
+tool_preferences:
+  web_exploitation:
+    score: 0.9
+    reason: "Web攻击首选"
+  nmap:
+    score: 0.8
+    reason: "信息收集基础工具"
+
+examples:
+  - scenario: "攻击Web应用发现SQL注入"
+    solution: "选择web_exploitation"
+    tools_used: ["web_exploitation", "sqlmap"]

@@ -6,9 +6,9 @@ import json
 import re
 import traceback
 from typing import Dict, Any, Optional
-from config import config
-from llm_client import llm_client
-from logger import get_logger
+from app.settings import config
+from app.llm_client import llm_client
+from app.logger import get_logger
 
 logger = get_logger("PageDiff")
 

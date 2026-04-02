@@ -1,0 +1,73 @@
+name: "缓存投毒攻击"
+description: "Web缓存投毒和CDN利用技术"
+domain: "web"
+version: "1.0"
+tags:
+  - web
+  - cache
+  - cdn
+
+knowledge: |
+  # 缓存与CDN安全
+  
+  ## 1. 缓存投毒
+  
+  ### HTTP头投毒
+  
+  ```
+  X-Forwarded-Host: attacker.com
+  ```
+  
+  ### 缓存污染
+  
+  ```
+  GET / HTTP/1.1
+  Host: example.com
+  X-Forwarded-Host: attacker.com
+  ```
+  
+  ## 2. 缓存欺骗
+  
+  ### Web缓存欺骗
+  
+  ```
+  http://target.com/css/..;/main.js
+  ```
+  
+  ## 3. CDN绕过
+  
+  ### 源站IP发现
+  
+  ```
+  nslookup target.com
+  dig target.com
+  ```
+  
+  ### 配置错误
+  
+  ### 回源请求利用
+  
+
+workflows:
+  - name: "自动检测和利用"
+    description: "自动检测漏洞并尝试利用"
+    steps:
+      - description: "信息收集和漏洞探测"
+        expected_output: "发现潜在漏洞点"
+      - description: "漏洞验证"
+        expected_output: "确认漏洞存在"
+      - description: "漏洞利用"
+        expected_output: "成功利用漏洞"
+
+tool_preferences:
+  nmap:
+    score: 0.8
+    reason: "端口和服务扫描"
+  nuclei:
+    score: 0.9
+    reason: "漏洞扫描"
+
+examples:
+  - scenario: "发现漏洞并获取敏感信息"
+    solution: "使用工具探测 -> 验证漏洞 -> 获取数据"
+    tools_used: ["nmap", "nuclei"]

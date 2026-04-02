@@ -177,6 +177,15 @@ class SkillRegistry:
         for yaml_file in dir_path.glob("*.yaml"):
             try:
                 skill = Skill.from_yaml(str(yaml_file))
+                # 使用文件名作为唯一标识，避免name字段重复导致覆盖
+                skill_id = yaml_file.stem  # 文件名去掉.yaml后缀
+
+                # 如果name为空或重复，使用文件名作为name
+                if not skill.name or skill.name in self._skills:
+                    # 保留原name作为显示名，但使用文件名作为注册ID
+                    skill_display_name = skill.name or skill_id
+                    skill.name = skill_id  # 注册用的唯一ID
+
                 self.register(skill)
                 count += 1
             except Exception as e:

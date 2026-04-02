@@ -116,6 +116,8 @@ export interface ChatState {
 
 // WebSocket message types
 export type WSMessage =
+  | { type: 'connection_established'; data: { message: string; timestamp: string } }
+  | { type: 'task_start'; data: { target: string; description?: string; timestamp: string } }
   | { type: 'iteration_start'; data: { iteration: number; timestamp: string } }
   | { type: 'node_start'; data: { node: NodeType; iteration: number } }
   | { type: 'node_end'; data: { node: NodeType; iteration: number; result: string } }

@@ -1,0 +1,169 @@
+name: "认证漏洞测试"
+description: "认证绕过、会话管理漏洞测试"
+domain: "web"
+version: "1.0"
+tags:
+  - web
+  - auth
+  - authentication
+
+knowledge: |
+  # 认证漏洞
+  
+  ## 1. 认证绕过
+  
+  ### SQL注入绕过
+  
+  ```
+  admin'--
+  admin' or '1'='1
+  ```
+  
+  ### 空密码绕过
+  
+  ```
+  用户名: admin
+  密码: ' or 1=1--
+  ```
+  
+  ### 大小写绕过
+  
+  ```
+  admin
+  Admin
+  ADMIN
+  ```
+  
+  ---
+  
+  ## 2. 会话劫持
+  
+  ### Cookie窃取
+  
+  ```javascript
+  document.cookie
+  ```
+  
+  ### Session fixation
+  
+  ```
+  攻击者设置用户的Session ID
+  ```
+  
+  ### Session预测
+  
+  ---
+  
+  ## 3. 密码重置漏洞
+  
+  ### Token可预测
+  
+  ```
+  重置链接: http://target.com/reset?token=12345
+  ```
+  
+  ### Token泄露
+  
+  - Referer泄露
+  - 邮件泄露
+  
+  ### Token复用
+  
+  ### 邮箱绑定漏洞
+  
+  ---
+  
+  ## 4. OAuth漏洞
+  
+  ### redirect_uri绕过
+  
+  ```
+  正常: http://target.com/callback
+  绕过: http://target.com.attacker.com
+  ```
+  
+  ### state参数缺失
+  
+  ### 权限绕过
+  
+  ### token泄露
+  
+  ---
+  
+  ## 5. SAML漏洞
+  
+  ### XML签名绕过
+  
+  ### SAML重放
+  
+  ### 断言注入
+  
+  ---
+  
+  ## 6. 2FA绕过
+  
+  ### 2FA码暴力破解
+  
+  ### 2FA码复用
+  
+  ### 绕过2FA
+  
+  ```
+  直接访问受保护资源
+  ```
+  
+  ### 备份码利用
+  
+  ---
+  
+  ## 7. 验证码绕过
+  
+  ### 验证码复用
+  
+  ### 验证码可预测
+  
+  ### 验证码删除
+  
+  ### 验证码IDOR
+  
+  ---
+  
+  ## 8. 记住我漏洞
+  
+  ```javascript
+  // 伪造remember me cookie
+  ```
+  
+  ## 9. 暴力破解
+  
+  ### 速率限制绕过
+  
+  ```
+  X-Forwarded-IP
+  X-Real-IP
+  ```
+  
+
+workflows:
+  - name: "自动检测和利用"
+    description: "自动检测漏洞并尝试利用"
+    steps:
+      - description: "信息收集和漏洞探测"
+        expected_output: "发现潜在漏洞点"
+      - description: "漏洞验证"
+        expected_output: "确认漏洞存在"
+      - description: "漏洞利用"
+        expected_output: "成功利用漏洞"
+
+tool_preferences:
+  nmap:
+    score: 0.8
+    reason: "端口和服务扫描"
+  nuclei:
+    score: 0.9
+    reason: "漏洞扫描"
+
+examples:
+  - scenario: "发现漏洞并获取敏感信息"
+    solution: "使用工具探测 -> 验证漏洞 -> 获取数据"
+    tools_used: ["nmap", "nuclei"]
