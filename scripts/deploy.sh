@@ -43,26 +43,90 @@ elif command -v yum &> /dev/null; then
 fi
 
 # ========================================
-# 2. 安装基础依赖
+# 2. 安装基础依赖（智能检测，避免冲突）
 # ========================================
 log_info "[2/9] 安装基础依赖..."
 
 if command -v apt &> /dev/null; then
-    apt install -y \
-        git curl wget vim \
-        ufw \
-        python3 python3-pip python3-venv \
-        nodejs npm \
-        nginx \
-        docker.io docker-compose
+    # Ubuntu/Debian 包检测函数
+    is_installed() {
+        dpkg -l "$1" 2>/dev/null | grep -q "^ii"
+    }
+
+    install_if_missing() {
+        if ! is_installed "$1"; then
+            apt install -y "$1"
+        else
+            log_info "$1 已安装，跳过"
+        fi
+    }
+
+    # 基础工具（通常无冲突）
+    for pkg in git curl wget vim ufw python3 python3-pip python3-venv nginx; do
+        install_if_missing "$pkg"
+    done
+
+    # Node.js 智能安装（Node.js 20+ 已自带 npm）
+    if ! is_installed "nodejs"; then
+        log_info "安装 Node.js 20.x..."
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+        apt install -y nodejs
+    else
+        node_version=$(node --version 2>/dev/null || echo "unknown")
+        log_info "Node.js $node_version 已安装，跳过 npm 单独安装"
+    fi
+
+    # Docker containerd 冲突处理
+    if is_installed "containerd.io"; then
+        log_info "containerd.io 已安装，跳过"
+    elif is_installed "containerd"; then
+        log_warn "发现系统自带 containerd，建议替换为 containerd.io (Docker官方)"
+        read -p "是否替换？(y/n) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            apt remove -y containerd
+            apt install -y containerd.io
+        fi
+    else
+        # 两者都未安装，安装 containerd.io
+        apt install -y containerd.io || apt install -y containerd
+    fi
+
+    # Docker 和 docker-compose
+    install_if_missing "docker.io"
+    install_if_missing "docker-compose"
+
 elif command -v yum &> /dev/null; then
-    yum install -y \
-        git curl wget vim \
-        firewalld \
-        python3 python3-pip \
-        nodejs npm \
-        nginx \
-        docker docker-compose
+    # CentOS/Rocky 包检测
+    is_installed_rpm() {
+        rpm -q "$1" &>/dev/null
+    }
+
+    install_if_missing_rpm() {
+        if ! is_installed_rpm "$1"; then
+            yum install -y "$1"
+        else
+            log_info "$1 已安装，跳过"
+        fi
+    }
+
+    for pkg in git curl wget vim firewalld python3 python3-pip nginx; do
+        install_if_missing_rpm "$pkg"
+    done
+
+    # Node.js
+    if ! is_installed_rpm "nodejs"; then
+        log_info "安装 Node.js 20.x..."
+        curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+        yum install -y nodejs
+    else
+        node_version=$(node --version 2>/dev/null || echo "unknown")
+        log_info "Node.js $node_version 已安装"
+    fi
+
+    # Docker
+    install_if_missing_rpm "docker"
+    install_if_missing_rpm "docker-compose"
 fi
 
 # ========================================
