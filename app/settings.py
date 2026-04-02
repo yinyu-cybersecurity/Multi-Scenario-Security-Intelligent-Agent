@@ -600,3 +600,49 @@ def get_tool_timeout(tool_name: str) -> int:
     return config.TOOL_TIMEOUTS["default"]
 
 
+# ============================================
+# 新版配置加载（支持单一settings.json）
+# ============================================
+
+import json
+import re
+from pathlib import Path
+
+
+def load_settings_from_json(path: str = "settings.json") -> dict:
+    """从JSON文件加载配置"""
+    settings_path = Path(path)
+    if not settings_path.exists():
+        return {}
+
+    with open(settings_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+def expand_env_vars(value: str) -> str:
+    """展开环境变量 ${VAR} 格式"""
+    if not value:
+        return value
+
+    pattern = r'\$\{([^}]+)\}'
+
+    def replace(match):
+        var_name = match.group(1)
+        return os.environ.get(var_name, match.group(0))
+
+    return re.sub(pattern, replace, value)
+
+
+# 加载配置
+_settings_data = load_settings_from_json()
+
+# 导出常用配置
+if _settings_data.get("model"):
+    model_cfg = _settings_data["model"]
+    LLM_MODEL = model_cfg.get("name", "glm-5")
+    LLM_BASE_URL = model_cfg.get("base_url", "")
+    LLM_API_KEY = expand_env_vars(model_cfg.get("api_key", ""))
+    LLM_TIMEOUT = model_cfg.get("timeout", 120)
+    LLM_MAX_CONCURRENT = model_cfg.get("max_concurrent", 5)
+
+
