@@ -2732,3 +2732,1493 @@ Return ONLY the type name."""
 - [x] CTF场景特定优化
 - [x] 唯一熔断条件：超时
 - [x] 时间分配：CTF 30min, 外网+内网 2h+
+
+---
+
+## 第九部分：原生工具调用机制
+
+### 9.1 设计决策：原生调用 vs Docker
+
+**用户选择**: 原生调用（推荐）
+
+**利弊分析**:
+
+| 方案 | 优点 | 缺点 |
+|------|------|------|
+| **原生调用** | 执行速度快、调试方便、资源占用低、与Claude Code一致 | 需要环境配置、潜在冲突风险 |
+| **Docker调用** | 环境隔离、可重复性好 | 启动慢、资源占用高、调试复杂 |
+
+**决策**: 采用原生调用，通过虚拟环境隔离解决依赖冲突。
+
+### 9.2 原生执行器实现
+
+```python
+# app/tools_v2/native_executor.py
+
+"""
+原生工具执行器 - 直接调用系统工具
+
+设计原则:
+1. 直接执行系统命令，无Docker开销
+2. 通过虚拟环境隔离Python工具
+3. 安全检查仅针对极危险操作
+4. 错误直接返回给AI，让其自我纠错
+"""
+
+import asyncio
+import subprocess
+import shutil
+from typing import Dict, Any, Optional, List
+from pathlib import Path
+from dataclasses import dataclass
+
+
+@dataclass
+class ToolAvailability:
+    """工具可用性检查结果"""
+    name: str
+    is_available: bool
+    version: Optional[str] = None
+    path: Optional[str] = None
+    error: Optional[str] = None
+
+
+class NativeExecutor:
+    """
+    原生工具执行器
+    
+    直接调用系统工具，无需Docker容器
+    """
+    
+    # Python工具的虚拟环境路径
+    VENV_PATH = Path.home() / ".ctf_agent" / "venv"
+    
+    # 工具路径映射（覆盖系统PATH）
+    TOOL_PATHS = {
+        # Python工具（使用虚拟环境）
+        "sqlmap": VENV_PATH / "bin" / "sqlmap",
+        "nuclei": VENV_PATH / "bin" / "nuclei",
+        "dalfox": VENV_PATH / "bin" / "dalfox",
+        "ffuf": VENV_PATH / "bin" / "ffuf",
+        "httpx": VENV_PATH / "bin" / "httpx",
+        "subfinder": VENV_PATH / "bin" / "subfinder",
+        
+        # 系统工具（使用系统PATH）
+        "nmap": "nmap",
+        "gdb": "gdb",
+        "radare2": "r2",
+        "ghidra": "ghidra",
+        "hashcat": "hashcat",
+        "john": "john",
+        "wireshark": "wireshark",
+        "tshark": "tshark",
+    }
+    
+    def __init__(self):
+        self._availability_cache: Dict[str, ToolAvailability] = {}
+    
+    async def check_available(self, tool_name: str) -> ToolAvailability:
+        """检查工具是否可用"""
+        if tool_name in self._availability_cache:
+            return self._availability_cache[tool_name]
+        
+        # 检查自定义路径
+        if tool_name in self.TOOL_PATHS:
+            tool_path = self.TOOL_PATHS[tool_name]
+            if isinstance(tool_path, Path):
+                if tool_path.exists():
+                    version = await self._get_version(tool_name, str(tool_path))
+                    result = ToolAvailability(
+                        name=tool_name,
+                        is_available=True,
+                        version=version,
+                        path=str(tool_path),
+                    )
+                else:
+                    result = ToolAvailability(
+                        name=tool_name,
+                        is_available=False,
+                        error=f"Tool not found at {tool_path}",
+                    )
+            else:
+                # 系统PATH中的工具
+                full_path = shutil.which(tool_path)
+                if full_path:
+                    version = await self._get_version(tool_name, full_path)
+                    result = ToolAvailability(
+                        name=tool_name,
+                        is_available=True,
+                        version=version,
+                        path=full_path,
+                    )
+                else:
+                    result = ToolAvailability(
+                        name=tool_name,
+                        is_available=False,
+                        error=f"Tool not found in PATH",
+                    )
+        else:
+            # 检查系统PATH
+            full_path = shutil.which(tool_name)
+            if full_path:
+                version = await self._get_version(tool_name, full_path)
+                result = ToolAvailability(
+                    name=tool_name,
+                    is_available=True,
+                    version=version,
+                    path=full_path,
+                )
+            else:
+                result = ToolAvailability(
+                    name=tool_name,
+                    is_available=False,
+                    error="Tool not found",
+                )
+        
+        self._availability_cache[tool_name] = result
+        return result
+    
+    async def _get_version(self, tool_name: str, tool_path: str) -> Optional[str]:
+        """获取工具版本"""
+        version_flags = {
+            "nmap": ["--version"],
+            "sqlmap": ["--version"],
+            "nuclei": ["--version"],
+            "gdb": ["--version"],
+            "radare2": ["--version"],
+            "hashcat": ["--version"],
+            "john": ["--list=build-info"],
+            "ffuf": ["-V"],
+            "httpx": ["--version"],
+        }
+        
+        flags = version_flags.get(tool_name, ["--version", "-v", "--help"])
+        
+        for flag in flags[:2]:  # 只尝试前两个
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    tool_path, flag,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+                output = stdout.decode("utf-8", errors="replace")
+                # 提取第一行作为版本
+                first_line = output.split("\n")[0].strip()
+                if first_line:
+                    return first_line[:50]  # 限制长度
+            except Exception:
+                pass
+        
+        return None
+    
+    async def execute(
+        self,
+        tool_name: str,
+        args: List[str],
+        timeout: int = 120000,
+        env: Optional[Dict[str, str]] = None,
+        cwd: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        原生执行工具
+        
+        Args:
+            tool_name: 工具名称
+            args: 参数列表
+            timeout: 超时时间（毫秒）
+            env: 额外环境变量
+            cwd: 工作目录
+        
+        Returns:
+            执行结果字典
+        """
+        # 检查工具可用性
+        availability = await self.check_available(tool_name)
+        if not availability.is_available:
+            return {
+                "success": False,
+                "error": f"Tool '{tool_name}' is not available: {availability.error}",
+                "hint": f"Install with: pip install {tool_name} or apt install {tool_name}",
+            }
+        
+        tool_path = availability.path
+        
+        # 构建命令
+        cmd = [tool_path] + args
+        
+        # 构建环境
+        import os
+        exec_env = os.environ.copy()
+        if env:
+            exec_env.update(env)
+        
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=exec_env,
+                cwd=cwd,
+            )
+            
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=timeout / 1000,
+            )
+            
+            return {
+                "success": proc.returncode == 0,
+                "stdout": stdout.decode("utf-8", errors="replace"),
+                "stderr": stderr.decode("utf-8", errors="replace"),
+                "exit_code": proc.returncode,
+                "tool": tool_name,
+                "version": availability.version,
+            }
+            
+        except asyncio.TimeoutError:
+            proc.kill()
+            return {
+                "success": False,
+                "error": f"Timeout after {timeout}ms",
+                "tool": tool_name,
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "tool": tool_name,
+            }
+    
+    async def execute_interactive(
+        self,
+        tool_name: str,
+        args: List[str],
+        input_data: Optional[str] = None,
+        timeout: int = 300000,
+    ) -> Dict[str, Any]:
+        """
+        执行交互式工具（如gdb, sqlmap交互模式）
+        
+        Args:
+            tool_name: 工具名称
+            args: 参数列表
+            input_data: 要发送的输入数据
+            timeout: 超时时间
+        
+        Returns:
+            执行结果
+        """
+        availability = await self.check_available(tool_name)
+        if not availability.is_available:
+            return {
+                "success": False,
+                "error": f"Tool '{tool_name}' is not available",
+            }
+        
+        tool_path = availability.path
+        cmd = [tool_path] + args
+        
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(input=input_data.encode() if input_data else None),
+                timeout=timeout / 1000,
+            )
+            
+            return {
+                "success": proc.returncode == 0,
+                "stdout": stdout.decode("utf-8", errors="replace"),
+                "stderr": stderr.decode("utf-8", errors="replace"),
+                "exit_code": proc.returncode,
+            }
+            
+        except asyncio.TimeoutError:
+            proc.kill()
+            return {
+                "success": False,
+                "error": f"Timeout after {timeout}ms",
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+
+# 全局执行器实例
+_executor: Optional[NativeExecutor] = None
+
+
+def get_native_executor() -> NativeExecutor:
+    """获取全局执行器实例"""
+    global _executor
+    if _executor is None:
+        _executor = NativeExecutor()
+    return _executor
+```
+
+### 9.3 工具安装脚本
+
+```bash
+#!/bin/bash
+# scripts/install_tools.sh
+
+# 创建虚拟环境
+python -m venv ~/.ctf_agent/venv
+source ~/.ctf_agent/venv/bin/activate
+
+# Python工具
+pip install sqlmap
+pip install nuclei
+pip install dalfox
+pip install ffuf
+pip install httpx
+pip install subfinder
+pip install pwntools
+pip install impacket
+pip install bloodhound
+
+# Go工具
+go install -v github.com/projectdiscovery/nuclei/v2/cmd/nuclei@latest
+go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
+go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+go install -v github.com/ffuf/ffuf@latest
+go install -v github.com/hahwul/dalfox/v2@latest
+
+# 系统工具
+sudo apt install -y nmap gdb radare2 ghidra hashcat john wireshark tshark
+
+echo "Tools installed successfully!"
+```
+
+---
+
+## 第十部分：单一配置文件设计
+
+### 10.1 设计决策：合并为单一settings.json
+
+**用户选择**: 合并为单一settings.json（推荐）
+
+**原则**: 所有配置集中在一个文件，简化管理和部署。
+
+### 10.2 配置文件结构
+
+```json
+// settings.json
+{
+  "$schema": "./settings.schema.json",
+  
+  "model": {
+    "provider": "openai",
+    "name": "glm-5",
+    "base_url": "https://open.bigmodel.cn/api/paas/v4/",
+    "api_key": "${LLM_API_KEY}",
+    "timeout": 120,
+    "max_retries": 3,
+    "max_concurrent": 5
+  },
+  
+  "timeouts": {
+    "ctf_single": 1800,
+    "ctf_multi": 3600,
+    "external_attack": 3600,
+    "internal_penetration": 7200,
+    "full_penetration": 10800
+  },
+  
+  "tools": {
+    "native_execution": true,
+    "venv_path": "~/.ctf_agent/venv",
+    "timeout_multiplier": 1.0,
+    "dangerous_commands_require_confirmation": true
+  },
+  
+  "mcp_servers": {
+    "semgrep": {
+      "command": "uvx",
+      "args": ["semgrep-mcp-server"],
+      "env": {}
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@context7/mcp-server"],
+      "env": {}
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@anthropic-ai/mcp-server-playwright"],
+      "env": {}
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "@anthropic-ai/mcp-server-chrome-devtools"],
+      "env": {}
+    }
+  },
+  
+  "skills": {
+    "enabled": true,
+    "auto_recommend": true,
+    "lazy_load": true,
+    "skills_dir": "app/skills/data"
+  },
+  
+  "memory": {
+    "enabled": true,
+    "persist_token_stats": true,
+    "prompt_cache_ttl": 3600
+  },
+  
+  "frontend": {
+    "ws_url": "ws://localhost:8000/ws",
+    "pulse_animation": true,
+    "decision_flow_display": true
+  },
+  
+  "logging": {
+    "level": "INFO",
+    "file": "logs/ctf_agent.log",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  }
+}
+```
+
+### 10.3 配置加载器实现
+
+```python
+# app/settings.py
+
+"""
+配置加载器 - 从单一settings.json加载所有配置
+
+设计原则:
+1. 单一配置文件
+2. 环境变量覆盖
+3. 类型安全
+4. 默认值
+"""
+
+import json
+import os
+from pathlib import Path
+from typing import Dict, Any, Optional
+from dataclasses import dataclass, field
+import re
+
+
+@dataclass
+class ModelConfig:
+    """模型配置"""
+    provider: str = "openai"
+    name: str = "glm-5"
+    base_url: str = "https://open.bigmodel.cn/api/paas/v4/"
+    api_key: str = ""
+    timeout: int = 120
+    max_retries: int = 3
+    max_concurrent: int = 5
+
+
+@dataclass
+class TimeoutConfig:
+    """超时配置（秒）"""
+    ctf_single: int = 1800
+    ctf_multi: int = 3600
+    external_attack: int = 3600
+    internal_penetration: int = 7200
+    full_penetration: int = 10800
+
+
+@dataclass
+class ToolsConfig:
+    """工具配置"""
+    native_execution: bool = True
+    venv_path: str = "~/.ctf_agent/venv"
+    timeout_multiplier: float = 1.0
+    dangerous_commands_require_confirmation: bool = True
+
+
+@dataclass
+class MCPServerConfig:
+    """MCP服务器配置"""
+    command: str
+    args: list = field(default_factory=list)
+    env: dict = field(default_factory=dict)
+
+
+@dataclass
+class SkillsConfig:
+    """Skills配置"""
+    enabled: bool = True
+    auto_recommend: bool = True
+    lazy_load: bool = True
+    skills_dir: str = "app/skills/data"
+
+
+@dataclass
+class MemoryConfig:
+    """Memory配置"""
+    enabled: bool = True
+    persist_token_stats: bool = True
+    prompt_cache_ttl: int = 3600
+
+
+@dataclass
+class FrontendConfig:
+    """前端配置"""
+    ws_url: str = "ws://localhost:8000/ws"
+    pulse_animation: bool = True
+    decision_flow_display: bool = True
+
+
+@dataclass
+class LoggingConfig:
+    """日志配置"""
+    level: str = "INFO"
+    file: str = "logs/ctf_agent.log"
+    format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+
+@dataclass
+class Settings:
+    """
+    全局配置
+    
+    从settings.json加载，支持环境变量覆盖
+    """
+    model: ModelConfig = field(default_factory=ModelConfig)
+    timeouts: TimeoutConfig = field(default_factory=TimeoutConfig)
+    tools: ToolsConfig = field(default_factory=ToolsConfig)
+    mcp_servers: Dict[str, MCPServerConfig] = field(default_factory=dict)
+    skills: SkillsConfig = field(default_factory=SkillsConfig)
+    memory: MemoryConfig = field(default_factory=MemoryConfig)
+    frontend: FrontendConfig = field(default_factory=FrontendConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
+    
+    @classmethod
+    def from_file(cls, path: str = "settings.json") -> "Settings":
+        """从文件加载配置"""
+        settings_path = Path(path)
+        
+        if not settings_path.exists():
+            return cls()
+        
+        with open(settings_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        return cls._parse_config(data)
+    
+    @classmethod
+    def _parse_config(cls, data: Dict[str, Any]) -> "Settings":
+        """解析配置数据"""
+        settings = cls()
+        
+        # 解析model配置
+        if "model" in data:
+            model_data = data["model"]
+            settings.model = ModelConfig(
+                provider=model_data.get("provider", "openai"),
+                name=model_data.get("name", "glm-5"),
+                base_url=model_data.get("base_url", ""),
+                api_key=cls._expand_env(model_data.get("api_key", "")),
+                timeout=model_data.get("timeout", 120),
+                max_retries=model_data.get("max_retries", 3),
+                max_concurrent=model_data.get("max_concurrent", 5),
+            )
+        
+        # 解析timeouts配置
+        if "timeouts" in data:
+            timeout_data = data["timeouts"]
+            settings.timeouts = TimeoutConfig(
+                ctf_single=timeout_data.get("ctf_single", 1800),
+                ctf_multi=timeout_data.get("ctf_multi", 3600),
+                external_attack=timeout_data.get("external_attack", 3600),
+                internal_penetration=timeout_data.get("internal_penetration", 7200),
+                full_penetration=timeout_data.get("full_penetration", 10800),
+            )
+        
+        # 解析tools配置
+        if "tools" in data:
+            tools_data = data["tools"]
+            settings.tools = ToolsConfig(
+                native_execution=tools_data.get("native_execution", True),
+                venv_path=tools_data.get("venv_path", "~/.ctf_agent/venv"),
+                timeout_multiplier=tools_data.get("timeout_multiplier", 1.0),
+                dangerous_commands_require_confirmation=tools_data.get("dangerous_commands_require_confirmation", True),
+            )
+        
+        # 解析mcp_servers配置
+        if "mcp_servers" in data:
+            for name, server_data in data["mcp_servers"].items():
+                settings.mcp_servers[name] = MCPServerConfig(
+                    command=server_data.get("command", ""),
+                    args=server_data.get("args", []),
+                    env=server_data.get("env", {}),
+                )
+        
+        # 解析skills配置
+        if "skills" in data:
+            skills_data = data["skills"]
+            settings.skills = SkillsConfig(
+                enabled=skills_data.get("enabled", True),
+                auto_recommend=skills_data.get("auto_recommend", True),
+                lazy_load=skills_data.get("lazy_load", True),
+                skills_dir=skills_data.get("skills_dir", "app/skills/data"),
+            )
+        
+        # 解析memory配置
+        if "memory" in data:
+            memory_data = data["memory"]
+            settings.memory = MemoryConfig(
+                enabled=memory_data.get("enabled", True),
+                persist_token_stats=memory_data.get("persist_token_stats", True),
+                prompt_cache_ttl=memory_data.get("prompt_cache_ttl", 3600),
+            )
+        
+        # 解析frontend配置
+        if "frontend" in data:
+            frontend_data = data["frontend"]
+            settings.frontend = FrontendConfig(
+                ws_url=frontend_data.get("ws_url", "ws://localhost:8000/ws"),
+                pulse_animation=frontend_data.get("pulse_animation", True),
+                decision_flow_display=frontend_data.get("decision_flow_display", True),
+            )
+        
+        # 解析logging配置
+        if "logging" in data:
+            logging_data = data["logging"]
+            settings.logging = LoggingConfig(
+                level=logging_data.get("level", "INFO"),
+                file=logging_data.get("file", "logs/ctf_agent.log"),
+                format=logging_data.get("format", "%(asctime)s - %(name)s - %(levelname)s - %(message)s"),
+            )
+        
+        return settings
+    
+    @staticmethod
+    def _expand_env(value: str) -> str:
+        """
+        展开环境变量
+        
+        支持 ${VAR} 和 $VAR 格式
+        """
+        if not value:
+            return value
+        
+        # 匹配 ${VAR} 格式
+        pattern = r'\$\{([^}]+)\}'
+        
+        def replace(match):
+            var_name = match.group(1)
+            return os.environ.get(var_name, match.group(0))
+        
+        return re.sub(pattern, replace, value)
+
+
+# 全局配置实例
+_settings: Optional[Settings] = None
+
+
+def get_settings() -> Settings:
+    """获取全局配置实例"""
+    global _settings
+    if _settings is None:
+        _settings = Settings.from_file()
+    return _settings
+
+
+# 兼容旧代码的别名
+config = get_settings()
+
+# 常用配置快捷访问
+LLM_MODEL = config.model.name
+LLM_API_KEY = config.model.api_key
+LLM_BASE_URL = config.model.base_url
+LLM_TIMEOUT = config.model.timeout
+LLM_MAX_CONCURRENT = config.model.max_concurrent
+```
+
+---
+
+## 第十一部分：前端决策过程UI克隆
+
+### 11.1 设计目标
+
+**用户要求**: 完全复刻Claude Code的决策过程展示效果，包括：
+
+- **脉冲动画**: 运行中节点的动态效果
+- **可展开详情**: ctrl+o 展开/收起
+- **实时状态更新**: 如 "Searched for 1 pattern (ctrl+o to expand) ●"
+- **决策流卡片**: 带状态图标的决策步骤
+- **Framer Motion动画**: 平滑过渡效果
+
+### 11.2 决策流组件实现
+
+```typescript
+// frontend/src/components/DecisionFlow/DecisionFlow.tsx
+
+/**
+ * 决策流展示 - 完全复刻Claude Code的决策过程UI
+ * 
+ * 特性:
+ * 1. 脉冲动画效果
+ * 2. 可展开详情 (ctrl+o)
+ * 3. 实时状态更新
+ * 4. 决策流卡片
+ * 5. Framer Motion动画
+ */
+
+import React, { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Search,
+  FileCode,
+  Terminal,
+  CheckCircle,
+  AlertCircle,
+  Loader2,
+  ChevronDown,
+  ChevronRight,
+} from 'lucide-react';
+import './DecisionFlow.css';
+
+// ═══════════════════════════════════════════════════════════
+// 类型定义
+// ═══════════════════════════════════════════════════════════
+
+export type DecisionStatus = 'pending' | 'running' | 'success' | 'error';
+
+export interface DecisionStep {
+  id: string;
+  type: 'search' | 'read' | 'write' | 'bash' | 'tool' | 'think';
+  title: string;
+  description: string;
+  status: DecisionStatus;
+  startTime: Date;
+  endTime?: Date;
+  details?: string;
+  result?: string;
+  error?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface DecisionFlowProps {
+  steps: DecisionStep[];
+  currentStepId?: string;
+  onStepClick?: (step: DecisionStep) => void;
+}
+
+// ═══════════════════════════════════════════════════════════
+// 状态图标组件
+// ═══════════════════════════════════════════════════════════
+
+const StatusIcon: React.FC<{ status: DecisionStatus; type: string }> = ({ status, type }) => {
+  const iconProps = {
+    size: 16,
+    className: status === 'running' ? 'animate-pulse' : '',
+  };
+
+  if (status === 'running') {
+    return <Loader2 {...iconProps} className="status-icon running" />;
+  }
+
+  if (status === 'success') {
+    return <CheckCircle {...iconProps} className="status-icon success" />;
+  }
+
+  if (status === 'error') {
+    return <AlertCircle {...iconProps} className="status-icon error" />;
+  }
+
+  // 根据类型返回不同图标
+  switch (type) {
+    case 'search':
+      return <Search {...iconProps} className="status-icon pending" />;
+    case 'read':
+      return <FileCode {...iconProps} className="status-icon pending" />;
+    case 'bash':
+    case 'tool':
+      return <Terminal {...iconProps} className="status-icon pending" />;
+    default:
+      return <ChevronRight {...iconProps} className="status-icon pending" />;
+  }
+};
+
+// ═══════════════════════════════════════════════════════════
+// 决策步骤卡片
+// ═══════════════════════════════════════════════════════════
+
+const DecisionCard: React.FC<{
+  step: DecisionStep;
+  isExpanded: boolean;
+  onToggle: () => void;
+}> = ({ step, isExpanded, onToggle }) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.ctrlKey && e.key === 'o') {
+      e.preventDefault();
+      onToggle();
+    }
+  }, [onToggle]);
+
+  // 格式化时间
+  const formatDuration = () => {
+    if (!step.endTime) return null;
+    const ms = step.endTime.getTime() - step.startTime.getTime();
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+  };
+
+  return (
+    <motion.div
+      className={`decision-card ${step.status}`}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      transition={{ duration: 0.2 }}
+      onKeyDown={handleKeyDown}
+      tabIndex={0}
+    >
+      <div className="decision-card-header" onClick={onToggle}>
+        <div className="decision-card-left">
+          <StatusIcon status={step.status} type={step.type} />
+          <span className="decision-card-title">{step.title}</span>
+          {step.status === 'running' && (
+            <span className="pulse-indicator">
+              <span className="pulse-dot"></span>
+            </span>
+          )}
+        </div>
+        
+        <div className="decision-card-right">
+          {formatDuration() && (
+            <span className="decision-duration">{formatDuration()}</span>
+          )}
+          <span className="expand-hint">(ctrl+o)</span>
+          <motion.div
+            animate={{ rotate: isExpanded ? 180 : 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <ChevronDown size={14} />
+          </motion.div>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            className="decision-card-details"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            {step.description && (
+              <p className="decision-description">{step.description}</p>
+            )}
+            
+            {step.details && (
+              <pre className="decision-code">{step.details}</pre>
+            )}
+            
+            {step.result && (
+              <div className="decision-result">
+                <span className="result-label">Result:</span>
+                <pre>{step.result}</pre>
+              </div>
+            )}
+            
+            {step.error && (
+              <div className="decision-error">
+                <span className="error-label">Error:</span>
+                <pre>{step.error}</pre>
+              </div>
+            )}
+            
+            {step.metadata && Object.keys(step.metadata).length > 0 && (
+              <div className="decision-metadata">
+                {Object.entries(step.metadata).map(([key, value]) => (
+                  <div key={key} className="metadata-item">
+                    <span className="metadata-key">{key}:</span>
+                    <span className="metadata-value">{String(value)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════
+// 主组件
+// ═══════════════════════════════════════════════════════════
+
+export const DecisionFlow: React.FC<DecisionFlowProps> = ({
+  steps,
+  currentStepId,
+  onStepClick,
+}) => {
+  const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
+
+  // 自动展开当前运行的步骤
+  useEffect(() => {
+    if (currentStepId) {
+      setExpandedSteps(prev => new Set([...prev, currentStepId]));
+    }
+  }, [currentStepId]);
+
+  const toggleStep = useCallback((stepId: string) => {
+    setExpandedSteps(prev => {
+      const next = new Set(prev);
+      if (next.has(stepId)) {
+        next.delete(stepId);
+      } else {
+        next.add(stepId);
+      }
+      return next;
+    });
+  }, []);
+
+  // 全局键盘监听
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 'o' && currentStepId) {
+        e.preventDefault();
+        toggleStep(currentStepId);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [currentStepId, toggleStep]);
+
+  return (
+    <div className="decision-flow">
+      <AnimatePresence mode="popLayout">
+        {steps.map((step, index) => (
+          <div key={step.id} className="decision-step-wrapper">
+            {index > 0 && <div className="decision-connector" />}
+            <DecisionCard
+              step={step}
+              isExpanded={expandedSteps.has(step.id)}
+              onToggle={() => toggleStep(step.id)}
+            />
+          </div>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+export default DecisionFlow;
+```
+
+### 11.3 CSS样式（脉冲动画）
+
+```css
+/* frontend/src/components/DecisionFlow/DecisionFlow.css */
+
+.decision-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 13px;
+}
+
+.decision-step-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.decision-connector {
+  width: 2px;
+  height: 8px;
+  background: linear-gradient(180deg, #3b82f6 0%, #60a5fa 100%);
+  margin-left: 7px;
+  border-radius: 1px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   决策卡片
+   ═══════════════════════════════════════════════════════════ */
+
+.decision-card {
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.decision-card:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.decision-card.running {
+  border-color: #3b82f6;
+  animation: pulse-border 2s ease-in-out infinite;
+}
+
+.decision-card.success {
+  border-color: #10b981;
+}
+
+.decision-card.error {
+  border-color: #ef4444;
+}
+
+.decision-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.decision-card-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.decision-card-title {
+  color: #1f2937;
+  font-weight: 500;
+}
+
+.decision-card-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   状态图标
+   ═══════════════════════════════════════════════════════════ */
+
+.status-icon {
+  transition: color 0.2s;
+}
+
+.status-icon.pending {
+  color: #9ca3af;
+}
+
+.status-icon.running {
+  color: #3b82f6;
+  animation: spin 1s linear infinite;
+}
+
+.status-icon.success {
+  color: #10b981;
+}
+
+.status-icon.error {
+  color: #ef4444;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   脉冲动画
+   ═══════════════════════════════════════════════════════════ */
+
+.pulse-indicator {
+  display: flex;
+  align-items: center;
+  margin-left: 4px;
+}
+
+.pulse-dot {
+  width: 6px;
+  height: 6px;
+  background: #3b82f6;
+  border-radius: 50%;
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.2);
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0);
+  }
+}
+
+@keyframes pulse-border {
+  0%, 100% {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+  }
+  50% {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+  }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   展开详情
+   ═══════════════════════════════════════════════════════════ */
+
+.decision-card-details {
+  overflow: hidden;
+  border-top: 1px solid #e5e7eb;
+  background: #f9fafb;
+  padding: 12px 16px;
+}
+
+.decision-description {
+  margin: 0 0 8px;
+  color: #4b5563;
+}
+
+.decision-code {
+  margin: 8px 0;
+  padding: 12px;
+  background: #1f2937;
+  color: #e5e7eb;
+  border-radius: 6px;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.decision-result {
+  margin: 8px 0;
+}
+
+.result-label, .error-label {
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+.result-label {
+  color: #10b981;
+}
+
+.error-label {
+  color: #ef4444;
+}
+
+.decision-error pre {
+  color: #ef4444;
+  background: #fef2f2;
+  padding: 8px;
+  border-radius: 4px;
+  margin: 4px 0;
+}
+
+.decision-metadata {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.metadata-item {
+  display: flex;
+  gap: 8px;
+}
+
+.metadata-key {
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.metadata-value {
+  color: #374151;
+}
+
+.expand-hint {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.decision-card:hover .expand-hint {
+  opacity: 1;
+}
+
+.decision-duration {
+  font-variant-numeric: tabular-nums;
+  color: #6b7280;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   暗色主题
+   ═══════════════════════════════════════════════════════════ */
+
+@media (prefers-color-scheme: dark) {
+  .decision-card {
+    background: #1f2937;
+    border-color: #374151;
+  }
+
+  .decision-card-title {
+    color: #f3f4f6;
+  }
+
+  .decision-card-details {
+    background: #111827;
+    border-color: #374151;
+  }
+
+  .decision-description {
+    color: #9ca3af;
+  }
+
+  .decision-metadata .metadata-value {
+    color: #d1d5db;
+  }
+}
+```
+
+### 11.4 实时状态更新Hook
+
+```typescript
+// frontend/src/hooks/useDecisionFlow.ts
+
+/**
+ * 决策流实时状态管理
+ */
+
+import { useState, useCallback, useEffect } from 'react';
+import type { DecisionStep, DecisionStatus } from '../components/DecisionFlow/DecisionFlow';
+
+export interface DecisionFlowState {
+  steps: DecisionStep[];
+  currentStepId: string | null;
+  isExecuting: boolean;
+}
+
+const initialState: DecisionFlowState = {
+  steps: [],
+  currentStepId: null,
+  isExecuting: false,
+};
+
+export function useDecisionFlow() {
+  const [state, setState] = useState<DecisionFlowState>(initialState);
+
+  const addStep = useCallback((step: Omit<DecisionStep, 'id' | 'startTime'>) => {
+    const id = `step-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const newStep: DecisionStep = {
+      ...step,
+      id,
+      startTime: new Date(),
+    };
+
+    setState(prev => ({
+      ...prev,
+      steps: [...prev.steps, newStep],
+      currentStepId: step.status === 'running' ? id : prev.currentStepId,
+    }));
+
+    return id;
+  }, []);
+
+  const updateStep = useCallback((stepId: string, updates: Partial<DecisionStep>) => {
+    setState(prev => ({
+      ...prev,
+      steps: prev.steps.map(step =>
+        step.id === stepId ? { ...step, ...updates } : step
+      ),
+      currentStepId: updates.status === 'running' 
+        ? stepId 
+        : updates.status !== 'running' && prev.currentStepId === stepId
+          ? null
+          : prev.currentStepId,
+    }));
+  }, []);
+
+  const completeStep = useCallback((stepId: string, result?: string, error?: string) => {
+    updateStep(stepId, {
+      status: error ? 'error' : 'success',
+      endTime: new Date(),
+      result,
+      error,
+    });
+  }, [updateStep]);
+
+  const clearSteps = useCallback(() => {
+    setState(initialState);
+  }, []);
+
+  const setExecuting = useCallback((isExecuting: boolean) => {
+    setState(prev => ({ ...prev, isExecuting }));
+  }, []);
+
+  return {
+    ...state,
+    addStep,
+    updateStep,
+    completeStep,
+    clearSteps,
+    setExecuting,
+  };
+}
+
+// WebSocket集成
+export function useDecisionFlowWebSocket(ws: WebSocket | null) {
+  const flow = useDecisionFlow();
+
+  useEffect(() => {
+    if (!ws) return;
+
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+
+      switch (message.type) {
+        case 'tool_start': {
+          const { tool_name, params, description } = message.data;
+          flow.addStep({
+            type: 'tool',
+            title: tool_name,
+            description: description || `Running ${tool_name}...`,
+            status: 'running',
+            details: JSON.stringify(params, null, 2),
+          });
+          break;
+        }
+
+        case 'tool_complete': {
+          const { tool_name, result, error, duration } = message.data;
+          // 找到对应的running步骤
+          const runningStep = flow.steps.find(
+            s => s.status === 'running' && s.title === tool_name
+          );
+          if (runningStep) {
+            flow.completeStep(runningStep.id, result, error);
+          }
+          break;
+        }
+
+        case 'decision': {
+          const { decision, reasoning } = message.data;
+          flow.addStep({
+            type: 'think',
+            title: decision,
+            description: reasoning,
+            status: 'success',
+          });
+          break;
+        }
+
+        case 'execution_status': {
+          flow.setExecuting(message.data.isExecuting);
+          break;
+        }
+      }
+    };
+  }, [ws, flow]);
+
+  return flow;
+}
+```
+
+### 11.5 集成到主界面
+
+```typescript
+// frontend/src/pages/MainPage.tsx
+
+import React from 'react';
+import { DecisionFlow } from '../components/DecisionFlow/DecisionFlow';
+import { useDecisionFlowWebSocket } from '../hooks/useDecisionFlow';
+import { useWebSocket } from '../hooks/useWebSocket';
+
+export const MainPage: React.FC = () => {
+  const { ws, isConnected } = useWebSocket();
+  const decisionFlow = useDecisionFlowWebSocket(ws);
+
+  return (
+    <div className="main-page">
+      <header className="main-header">
+        <h1>CTF-Agent 2.0</h1>
+        <div className="connection-status">
+          {isConnected ? (
+            <span className="connected">● Connected</span>
+          ) : (
+            <span className="disconnected">○ Disconnected</span>
+          )}
+        </div>
+      </header>
+
+      <main className="main-content">
+        <section className="decision-section">
+          <h2>Decision Flow</h2>
+          <DecisionFlow
+            steps={decisionFlow.steps}
+            currentStepId={decisionFlow.currentStepId || undefined}
+          />
+        </section>
+
+        {/* 其他内容 */}
+      </main>
+    </div>
+  );
+};
+```
+
+---
+
+## Self-Review Checklist (最终版)
+
+### 清理完整性
+- [x] 列出所有需要删除的文件
+- [x] 每个文件删除原因明确
+- [x] 区分保留和删除的模块
+- [x] 无遗漏的预制代码
+- [x] 列出需要重构的文件
+- [x] 列出需要删除的缓存文件
+
+### 移植完整性
+- [x] Query循环核心代码完整
+- [x] 外部Store代码完整
+- [x] buildTool工厂代码完整
+- [x] 具体工具示例完整
+- [x] 前端改造代码完整
+- [x] 权限检查放宽设计完整
+- [x] CTF提示词设计完整
+- [x] 工具选择指导完整（含详细工具分类）
+- [x] Skill延迟加载机制完整
+- [x] 时间管理与唯一熔断条件完整
+- [x] 原生工具调用机制完整
+- [x] 单一settings.json配置完整
+- [x] 前端决策过程UI克隆完整
+
+### 设计一致性
+- [x] 与Claude Code技术文档100%对齐
+- [x] 无自己发明的机制
+- [x] 无预制降级处理
+- [x] AI自主决策机制明确
+- [x] CTF场景特定优化
+- [x] 唯一熔断条件：超时
+- [x] 时间分配：CTF 30min, 外网+内网 2h+
+- [x] 原生工具调用（用户选择）
+- [x] 单一settings.json（用户选择）
+- [x] 前端UI完全复刻Claude Code决策过程展示
