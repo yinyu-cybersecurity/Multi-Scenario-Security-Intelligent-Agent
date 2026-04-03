@@ -25,7 +25,6 @@ from enum import Enum
 
 from app.logger import get_logger
 from app.settings import config
-from app.state_types.strategic import ATTACK_PHASES
 
 logger = get_logger("staged_planner")
 

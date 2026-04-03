@@ -22,12 +22,6 @@ from app.agents.base import AgentType, AGENT_REGISTRY
 from app.memory.prompt_cache import PromptCacheManager, ForkSubagentManager
 from app.memory.agent_memory import AgentMemorySystem
 from app.state.selector_store import SelectorStore, get_selector_store
-from app.state.state_v3 import (
-    CTFStateV3,
-    PhaseType,
-    create_initial_state,
-    get_state_slice_for_agent,
-)
 from app.settings import config
 
 
