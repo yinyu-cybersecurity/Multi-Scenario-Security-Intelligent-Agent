@@ -496,10 +496,10 @@ class CTFToolV2:
         context: Dict[str, Any]
     ) -> Any:
         """调用Handler"""
-        if asyncio.iscoroutinefunction(self.handler):
-            return await self.handler(params, context)
-        else:
-            return self.handler(params, context)
+        result = self.handler(params, context)
+        if asyncio.iscoroutine(result):
+            return await result
+        return result
 
     def get_schema_dict(self) -> Dict:
         """获取Schema字典（用于API格式）"""

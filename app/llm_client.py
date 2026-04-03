@@ -161,7 +161,17 @@ class LLMClient:
             payload["response_format"] = {"type": "json_object"}
 
         if tools:
-            payload["tools"] = tools
+            # 包装为OpenAI兼容格式: {"type": "function", "function": {...}}
+            wrapped_tools = []
+            for tool in tools:
+                if tool.get("type") == "function":
+                    wrapped_tools.append(tool)
+                else:
+                    wrapped_tools.append({
+                        "type": "function",
+                        "function": tool
+                    })
+            payload["tools"] = wrapped_tools
             payload["tool_choice"] = tool_choice
 
         try:
@@ -174,6 +184,17 @@ class LLMClient:
                 )
 
                 # 检查HTTP状态码
+                if response.status_code == 400:
+                    error_detail = response.text
+                    logger.error(f"API 400 Error: {error_detail}")
+                    return LLMResult(
+                        "",
+                        LLMErrorType.INVALID_RESPONSE,
+                        f"Bad request: {error_detail}",
+                        0,
+                        time.time() - start_time
+                    )
+
                 if response.status_code == 401:
                     return LLMResult(
                         "",

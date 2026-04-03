@@ -47,15 +47,6 @@ from .error_recovery import (
     get_error_recovery
 )
 
-from .incremental_memory import (
-    IncrementalMemorySystem,
-    MemoryBlock,
-    MemoryUpdate,
-    MemoryType,
-    MemoryPriority,
-    get_incremental_memory
-)
-
 __all__ = [
     # Agent Memory
     "AgentMemorySystem",
@@ -91,12 +82,4 @@ __all__ = [
     "ErrorSeverity",
     "RecoveryStrategy",
     "get_error_recovery",
-
-    # Incremental Memory
-    "IncrementalMemorySystem",
-    "MemoryBlock",
-    "MemoryUpdate",
-    "MemoryType",
-    "MemoryPriority",
-    "get_incremental_memory",
 ]

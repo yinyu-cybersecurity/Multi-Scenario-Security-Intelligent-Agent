@@ -1,153 +1,97 @@
+# app/state/store.py
+
 """
-Claude Code AppStateStore - Python移植版
+极简状态容器 - CTF Agent专用
 
-完全复制Claude Code的AppStateStore.ts设计:
-- 外部Store模式
-- 单向数据流
-- 细粒度订阅
-- 引用相等检查
+设计原则：
+1. 不需要响应式特性（订阅、监听器）
+2. 不需要引用相等检查
+3. 只需要简单的字典容器
+
+CTF Agent场景特点：
+- 单线程执行
+- 状态更新频率低
+- 不需要细粒度订阅
 """
 
-from typing import TypeVar, Generic, Callable, Set, Optional, Dict, Any
-from dataclasses import dataclass, field
-from copy import deepcopy
-import threading
 
-T = TypeVar('T')
-Listener = Callable[[], None]
-OnChange = Callable[[T, T], None]
-
-
-@dataclass
-class Store(Generic[T]):
+class AgentState:
     """
-    通用Store - 框架无关的状态管理
+    简化的状态容器
 
-    完全复制Claude Code的store.ts设计
-    """
-    _state: T
-    _listeners: Set[Listener] = field(default_factory=set)
-    _on_change: Optional[OnChange] = None
-    _lock: threading.Lock = field(default_factory=threading.Lock)
-
-    def get_state(self) -> T:
-        """获取当前状态"""
-        with self._lock:
-            return self._state
-
-    def set_state(self, updater: Callable[[T], T]) -> None:
-        """
-        更新状态
-
-        关键设计:
-        - 引用相等检查 (Object.is)
-        - 如果返回相同引用，跳过更新
-        """
-        with self._lock:
-            prev = self._state
-            next_state = updater(prev)
-
-            # 引用相等检查 - Claude Code核心优化
-            if next_state is prev:
-                return
-
-            self._state = next_state
-
-            # 触发onChange回调
-            if self._on_change:
-                self._on_change(next_state, prev)
-
-        # 通知所有监听器（在锁外执行，避免死锁）
-        for listener in list(self._listeners):
-            listener()
-
-    def subscribe(self, listener: Listener) -> Callable[[], None]:
-        """
-        订阅状态变化
-
-        返回取消订阅函数
-        """
-        self._listeners.add(listener)
-        return lambda: self._listeners.discard(listener)
-
-
-def create_store(
-    initial_state: T,
-    on_change: OnChange = None,
-) -> Store[T]:
-    """创建Store实例"""
-    return Store(_state=initial_state, _on_change=on_change)
-
-
-class AppState:
-    """
-    应用状态 - 动态字典
-
-    关键设计:
-    - 无预置TypedDict字段
-    - AI可以随时创建新字段
-    - 动态状态，完全灵活
+    只保留实际需要的功能：
+    - get/set/update: 基本操作
+    - to_dict: 导出状态
+    - to_context_string: 生成上下文提示
     """
 
     def __init__(self):
-        self._data: Dict[str, Any] = {}
-        self._lock = threading.Lock()
+        self._data: dict = {}
 
-    def get(self, key: str, default: Any = None) -> Any:
-        with self._lock:
-            return self._data.get(key, default)
+    def get(self, key: str, default=None):
+        """获取状态值"""
+        return self._data.get(key, default)
 
-    def set(self, key: str, value: Any) -> None:
-        with self._lock:
-            self._data[key] = value
+    def set(self, key: str, value):
+        """设置状态值"""
+        self._data[key] = value
 
-    def update(self, updates: Dict[str, Any]) -> None:
-        with self._lock:
-            self._data.update(updates)
+    def update(self, updates: dict):
+        """批量更新状态"""
+        self._data.update(updates)
 
-    def to_dict(self) -> Dict[str, Any]:
-        with self._lock:
-            return deepcopy(self._data)
+    def to_dict(self) -> dict:
+        """导出状态字典"""
+        return dict(self._data)
+
+    def to_context_string(self) -> str:
+        """
+        生成上下文提示
+
+        用于注入到LLM消息中，告诉AI当前状态
+        """
+        s = self._data
+        parts = []
+        if s.get("target"):
+            parts.append(f"Target: {s['target']}")
+        if s.get("findings"):
+            parts.append(f"Findings: {len(s['findings'])}")
+        if s.get("current_phase"):
+            parts.append(f"Phase: {s['current_phase']}")
+
+        return " | ".join(parts) if parts else ""
 
     def __contains__(self, key: str) -> bool:
         return key in self._data
 
 
-def get_default_app_state() -> AppState:
+def get_default_agent_state() -> AgentState:
     """
-    获取默认应用状态
+    获取默认Agent状态
 
-    遵循Claude Code模式:
-    - 无预置业务字段
-    - 只设置系统运行必需的最小状态
-    - AI可以动态创建任何字段
+    只设置系统运行必需的最小状态
     """
-    state = AppState()
-    # 只设置真正必需的系统字段
+    state = AgentState()
     state.update({
-        "is_executing": False,  # 执行状态标志
+        "is_executing": False,
     })
     return state
 
 
-# 全局Store实例
-_app_state_store: Optional[Store[AppState]] = None
-_store_lock = threading.Lock()
+# 全局状态实例
+_agent_state: AgentState = None
 
 
-def get_app_state_store() -> Store[AppState]:
-    """获取全局AppState Store"""
-    global _app_state_store
-    with _store_lock:
-        if _app_state_store is None:
-            _app_state_store = create_store(get_default_app_state())
-        return _app_state_store
+def get_agent_state() -> AgentState:
+    """获取全局Agent状态"""
+    global _agent_state
+    if _agent_state is None:
+        _agent_state = get_default_agent_state()
+    return _agent_state
 
 
 __all__ = [
-    "Store",
-    "create_store",
-    "AppState",
-    "get_default_app_state",
-    "get_app_state_store",
+    "AgentState",
+    "get_default_agent_state",
+    "get_agent_state",
 ]

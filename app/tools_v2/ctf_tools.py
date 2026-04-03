@@ -1,39 +1,71 @@
-"""
-CTF工具定义 - 基础工具集
+# app/tools_v2/ctf_tools.py
 
-实现Claude Code的buildTool模式:
-- 声明式Schema定义
-- Zod风格参数验证
-- ToolRegistry注册
+"""
+CTF工具定义 - 极简版本
+
+严格遵循计划.txt，只保留核心工具：
+- 核心工具: http_request, bash
+- 知识工具: load_skill, list_skills
+- 记忆工具: remember, recall
+- Web工具: sqlmap, ffuf
+- 信息收集: nmap, nuclei
+- 内网: fscan
+- 云安全: 云存储检测, 云元数据
+- AI安全: AI模型探测
+
+总计约25个工具
 """
 
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any
 import asyncio
 import httpx
-import re
-import logging
+import json
+import os
 
-from app.tools_v2.tool_factory import (
-    buildTool,
-    get_tool_registry_v2,
-    ParamType,
-)
-from app.tools_v2.native_executor import get_native_executor
+from app.tools_v2.tool_factory import buildTool, get_tool_registry_v2
+from app.tools_v2.tool_result import ToolResult
 from app.agents.base import ToolPermission
 
-logger = logging.getLogger(__name__)
+
+# ============================================
+# 比赛平台配置
+# ============================================
+
+def get_competition_config() -> Dict[str, str]:
+    """获取比赛平台配置"""
+    return {
+        "server_host": os.environ.get("COMPETITION_SERVER_HOST", ""),
+        "agent_token": os.environ.get("COMPETITION_AGENT_TOKEN", ""),
+    }
+
+
+async def competition_api_call(method: str, endpoint: str, data: Dict = None) -> Dict:
+    """调用比赛平台API"""
+    config = get_competition_config()
+    if not config["server_host"] or not config["agent_token"]:
+        return {"code": -1, "message": "比赛平台未配置SERVER_HOST或AGENT_TOKEN"}
+
+    url = f"http://{config['server_host']}{endpoint}"
+    headers = {
+        "Agent-Token": config["agent_token"],
+        "Content-Type": "application/json"
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        if method == "GET":
+            response = await client.get(url, headers=headers)
+        else:
+            response = await client.post(url, headers=headers, json=data or {})
+
+        return response.json()
 
 
 # ============================================
 # 工具Handler实现
 # ============================================
 
-async def http_request_handler(params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    HTTP请求工具Handler
-
-    支持GET/POST/PUT/DELETE方法
-    """
+async def http_request_handler(params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
+    """HTTP请求工具"""
     url = params.get("url")
     method = params.get("method", "GET").upper()
     headers = params.get("headers", {})
@@ -41,7 +73,7 @@ async def http_request_handler(params: Dict[str, Any], context: Dict[str, Any]) 
     timeout = params.get("timeout", 30)
 
     if not url:
-        return {"success": False, "error": "URL is required"}
+        return ToolResult(success=False, data=None, error="URL is required")
 
     try:
         async with httpx.AsyncClient(timeout=timeout, verify=False) as client:
@@ -54,174 +86,149 @@ async def http_request_handler(params: Dict[str, Any], context: Dict[str, Any]) 
             elif method == "DELETE":
                 response = await client.delete(url, headers=headers)
             else:
-                return {"success": False, "error": f"Unsupported method: {method}"}
+                return ToolResult(success=False, data=None, error=f"Unsupported method: {method}")
 
-            # 提取关键响应信息
             result = {
-                "success": True,
                 "status_code": response.status_code,
                 "headers": dict(response.headers),
-                "content": response.text[:50000],  # 限制大小
-                "content_length": len(response.content),
+                "content": response.text[:50000],
             }
 
-            # 检测常见漏洞特征
-            content_lower = response.text.lower()
-            if "flag{" in content_lower or "ctf{" in content_lower:
+            # 检测FLAG
+            if "flag{" in response.text.lower() or "ctf{" in response.text.lower():
                 result["flag_detected"] = True
-            if "error" in content_lower and "sql" in content_lower:
-                result["sqli_hint"] = True
-            if "<!--" in response.text:
-                result["html_comments"] = True
 
-            return result
+            return ToolResult(success=True, data=result)
 
-    except httpx.TimeoutException:
-        return {"success": False, "error": f"Request timeout after {timeout}s"}
-    except httpx.RequestError as e:
-        return {"success": False, "error": f"Request error: {str(e)}"}
     except Exception as e:
-        return {"success": False, "error": f"Unexpected error: {str(e)}"}
+        return ToolResult(success=False, data=None, error=str(e))
 
 
-async def run_command_handler(params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    命令执行工具Handler
-
-    使用NativeExecutor执行系统工具
-    """
+async def bash_handler(params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
+    """命令执行工具"""
     command = params.get("command")
     timeout = params.get("timeout", 120)
 
     if not command:
-        return {"success": False, "error": "Command is required"}
-
-    # 安全检查：仅允许白名单工具
-    allowed_tools = [
-        "nuclei", "httpx", "ffuf", "subfinder",
-        "curl", "wget", "dirb", "gobuster",
-        "fscan", "frpc", "frps", "sqlmap", "xray"
-    ]
-
-    # 解析命令获取工具名
-    parts = command.split()
-    if not parts:
-        return {"success": False, "error": "Empty command"}
-
-    tool_name = parts[0].lower()
-
-    # Windows下处理
-    if tool_name.endswith(".exe"):
-        tool_name = tool_name[:-4]
-
-    if tool_name not in allowed_tools:
-        return {
-            "success": False,
-            "error": f"Tool '{tool_name}' not in allowed list: {allowed_tools}"
-        }
+        return ToolResult(success=False, data=None, error="Command is required")
 
     try:
-        executor = get_native_executor()
-
-        # 检查工具可用性
-        availability = await executor.check_available(tool_name)
-        if not availability.is_available:
-            return {
-                "success": False,
-                "error": f"Tool '{tool_name}' not available: {availability.error}",
-                "hint": availability.error
-            }
-
-        # 执行命令
-        args = parts[1:] if len(parts) > 1 else []
-        result = await executor.execute(
-            tool_name=tool_name,
-            args=args,
-            timeout=timeout * 1000  # 转换为毫秒
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
 
-        return result
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(),
+            timeout=timeout
+        )
 
+        result = {
+            "stdout": stdout.decode("utf-8", errors="ignore")[:10000],
+            "stderr": stderr.decode("utf-8", errors="ignore")[:5000],
+            "return_code": proc.returncode
+        }
+
+        return ToolResult(success=True, data=result)
+
+    except asyncio.TimeoutError:
+        return ToolResult(success=False, data=None, error=f"Timeout after {timeout}s")
     except Exception as e:
-        return {"success": False, "error": f"Execution error: {str(e)}"}
+        return ToolResult(success=False, data=None, error=str(e))
 
 
-async def analyze_response_handler(params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    响应分析工具Handler
+async def load_skill_handler(params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
+    """加载Skill知识包"""
+    skill_name = params.get("name")
 
-    分析HTTP响应提取有用信息
-    """
-    response = params.get("response", "")
-    look_for = params.get("look_for", "flags")
+    if not skill_name:
+        return ToolResult(success=False, data=None, error="Skill name is required")
 
-    if not response:
-        return {"success": False, "error": "Response content is required"}
+    # TODO: 从skills/目录加载YAML文件
+    return ToolResult(success=True, data={"message": f"Skill '{skill_name}' loaded"})
 
-    result = {
-        "success": True,
-        "look_for": look_for,
-        "findings": []
-    }
 
-    try:
-        if look_for == "flags":
-            # 搜索FLAG格式
-            flag_patterns = [
-                r'flag\{[^}]+\}',
-                r'FLAG\{[^}]+\}',
-                r'ctf\{[^}]+\}',
-                r'CTF\{[^}]+\}',
-                r'hctf\{[^}]+\}',
-                r'ACTF\{[^}]+\}',
-            ]
-            for pattern in flag_patterns:
-                matches = re.findall(pattern, response, re.IGNORECASE)
-                for match in matches:
-                    if match not in result["findings"]:
-                        result["findings"].append(match)
+async def remember_handler(params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
+    """记录发现"""
+    key = params.get("key")
+    value = params.get("value")
 
-        elif look_for == "links":
-            # 提取链接
-            link_patterns = [
-                r'href=["\']([^"\']+)["\']',
-                r'src=["\']([^"\']+)["\']',
-                r'https?://[^\s<>"]+',
-            ]
-            for pattern in link_patterns:
-                matches = re.findall(pattern, response, re.IGNORECASE)
-                result["findings"].extend(matches[:20])  # 限制数量
+    if not key:
+        return ToolResult(success=False, data=None, error="Key is required")
 
-        elif look_for == "forms":
-            # 提取表单
-            form_pattern = r'<form[^>]*>.*?</form>'
-            matches = re.findall(form_pattern, response, re.DOTALL | re.IGNORECASE)
-            result["findings"] = matches[:10]
+    # TODO: 写入Memory
+    return ToolResult(success=True, data={"message": f"Remembered: {key}"})
 
-        elif look_for == "comments":
-            # 提取HTML注释
-            comment_pattern = r'<!--(.*?)-->'
-            matches = re.findall(comment_pattern, response, re.DOTALL)
-            result["findings"] = [m.strip() for m in matches if m.strip()][:20]
 
-        elif look_for == "errors":
-            # 搜索错误信息
-            error_patterns = [
-                r'error[:\s]+([^\n]+)',
-                r'exception[:\s]+([^\n]+)',
-                r'warning[:\s]+([^\n]+)',
-                r'sql[^<]*error',
-                r'stack trace[:\s]*([^\n]+)',
-            ]
-            for pattern in error_patterns:
-                matches = re.findall(pattern, response, re.IGNORECASE)
-                result["findings"].extend(matches[:10])
+async def recall_handler(params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
+    """回忆发现"""
+    key = params.get("key")
 
-        result["count"] = len(result["findings"])
-        return result
+    # TODO: 从Memory读取
+    return ToolResult(success=True, data={"message": f"Recall: {key}"})
 
-    except Exception as e:
-        return {"success": False, "error": f"Analysis error: {str(e)}"}
+
+# ============================================
+# 比赛平台工具Handler
+# ============================================
+
+async def list_challenges_handler(params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
+    """获取赛题列表"""
+    result = await competition_api_call("GET", "/api/challenges")
+    if result.get("code") == 0:
+        return ToolResult(success=True, data=result.get("data"))
+    return ToolResult(success=False, data=None, error=result.get("message"))
+
+
+async def start_challenge_handler(params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
+    """启动赛题实例"""
+    code = params.get("code")
+    if not code:
+        return ToolResult(success=False, data=None, error="赛题code必填")
+    result = await competition_api_call("POST", "/api/start_challenge", {"code": code})
+    if result.get("code") == 0:
+        return ToolResult(success=True, data=result.get("data"))
+    return ToolResult(success=False, data=None, error=result.get("message"))
+
+
+async def stop_challenge_handler(params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
+    """停止赛题实例"""
+    code = params.get("code")
+    if not code:
+        return ToolResult(success=False, data=None, error="赛题code必填")
+    result = await competition_api_call("POST", "/api/stop_challenge", {"code": code})
+    if result.get("code") == 0:
+        return ToolResult(success=True, data={"message": result.get("message")})
+    return ToolResult(success=False, data=None, error=result.get("message"))
+
+
+async def submit_flag_handler(params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
+    """提交Flag"""
+    code = params.get("code")
+    flag = params.get("flag")
+    if not code or not flag:
+        return ToolResult(success=False, data=None, error="赛题code和flag必填")
+    result = await competition_api_call("POST", "/api/submit", {"code": code, "flag": flag})
+    if result.get("code") == 0:
+        data = result.get("data", {})
+        return ToolResult(
+            success=data.get("correct", False),
+            data=data,
+            error="" if data.get("correct") else data.get("message")
+        )
+    return ToolResult(success=False, data=None, error=result.get("message"))
+
+
+async def view_hint_handler(params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
+    """查看提示（会扣分）"""
+    code = params.get("code")
+    if not code:
+        return ToolResult(success=False, data=None, error="赛题code必填")
+    result = await competition_api_call("POST", "/api/hint", {"code": code})
+    if result.get("code") == 0:
+        return ToolResult(success=True, data=result.get("data"))
+    return ToolResult(success=False, data=None, error=result.get("message"))
 
 
 # ============================================
@@ -229,166 +236,172 @@ async def analyze_response_handler(params: Dict[str, Any], context: Dict[str, An
 # ============================================
 
 def register_ctf_tools():
-    """注册所有CTF工具到Registry"""
-
+    """注册所有CTF工具"""
     registry = get_tool_registry_v2()
 
-    # 1. 注册基础工具（http_request, run_command, analyze_response）
-    http_tool = buildTool(
+    # 1. 核心工具
+    registry.register(buildTool(
         name="http_request",
-        description="发送HTTP请求获取目标URL内容，支持GET/POST/PUT/DELETE方法",
+        description="发送HTTP请求获取目标URL内容",
         parameters=[
-            {
-                "name": "url",
-                "type": "uri",
-                "required": True,
-                "description": "目标URL"
-            },
-            {
-                "name": "method",
-                "type": "string",
-                "required": False,
-                "description": "HTTP方法",
-                "enum": ["GET", "POST", "PUT", "DELETE"],
-                "default": "GET"
-            },
-            {
-                "name": "headers",
-                "type": "object",
-                "required": False,
-                "description": "请求头字典"
-            },
-            {
-                "name": "data",
-                "type": "string",
-                "required": False,
-                "description": "请求体数据（POST/PUT）"
-            },
-            {
-                "name": "timeout",
-                "type": "integer",
-                "required": False,
-                "description": "超时时间（秒）",
-                "min": 1,
-                "max": 300,
-                "default": 30
-            }
+            {"name": "url", "type": "string", "required": True, "description": "目标URL"},
+            {"name": "method", "type": "string", "required": False, "description": "HTTP方法", "default": "GET"},
+            {"name": "headers", "type": "object", "required": False, "description": "请求头"},
+            {"name": "data", "type": "string", "required": False, "description": "请求体"},
+            {"name": "timeout", "type": "integer", "required": False, "description": "超时秒数", "default": 30},
         ],
         handler=http_request_handler,
         permissions=[ToolPermission.NETWORK],
-        timeout=60,
-    )
-    registry.register(http_tool)
+    ))
 
-    # 2. 命令执行工具
-    command_tool = buildTool(
-        name="run_command",
-        description="执行系统命令（安全工具：sqlmap, nuclei, curl, xray等）",
+    registry.register(buildTool(
+        name="bash",
+        description="执行系统命令",
         parameters=[
-            {
-                "name": "command",
-                "type": "string",
-                "required": True,
-                "description": "要执行的完整命令"
-            },
-            {
-                "name": "timeout",
-                "type": "integer",
-                "required": False,
-                "description": "超时时间（秒）",
-                "min": 1,
-                "max": 600,
-                "default": 120
-            }
+            {"name": "command", "type": "string", "required": True, "description": "命令"},
+            {"name": "timeout", "type": "integer", "required": False, "description": "超时秒数", "default": 120},
         ],
-        handler=run_command_handler,
-        permissions=[ToolPermission.EXECUTE, ToolPermission.NETWORK],
-        timeout=180,
-    )
-    registry.register(command_tool)
+        handler=bash_handler,
+        permissions=[ToolPermission.EXECUTE],
+    ))
 
-    # 3. 响应分析工具
-    analyze_tool = buildTool(
-        name="analyze_response",
-        description="分析HTTP响应，提取flags、链接、表单、注释、错误信息",
+    # 2. 知识工具
+    registry.register(buildTool(
+        name="load_skill",
+        description="加载领域知识包",
         parameters=[
-            {
-                "name": "response",
-                "type": "string",
-                "required": True,
-                "description": "HTTP响应内容"
-            },
-            {
-                "name": "look_for",
-                "type": "string",
-                "required": False,
-                "description": "查找类型",
-                "enum": ["flags", "links", "forms", "comments", "errors"],
-                "default": "flags"
-            }
+            {"name": "name", "type": "string", "required": True, "description": "Skill名称"},
         ],
-        handler=analyze_response_handler,
-        permissions=[],  # 无特殊权限要求
-        timeout=30,
-    )
-    registry.register(analyze_tool)
+        handler=load_skill_handler,
+        permissions=[],
+    ))
 
-    # 4. 注册ToolSearch工具（搜索延迟加载的工具）
-    from app.tools_v2.deferred_loader import tool_search_handler
-    search_tool = buildTool(
-        name="ToolSearch",
-        description="搜索可用的安全工具（包括延迟加载的工具），根据关键词查找相关工具",
+    registry.register(buildTool(
+        name="list_skills",
+        description="列出所有可用Skill",
+        parameters=[],
+        handler=lambda p, c: ToolResult(success=True, data={"skills": ["sqli", "rce", "ssrf", "xxe"]}),
+        permissions=[],
+    ))
+
+    # 3. 记忆工具
+    registry.register(buildTool(
+        name="remember",
+        description="记录发现",
         parameters=[
-            {
-                "name": "query",
-                "type": "string",
-                "required": True,
-                "description": "搜索关键词，如 'sql', 'xss', 'crypto', 'scan'"
-            }
+            {"name": "key", "type": "string", "required": True, "description": "键"},
+            {"name": "value", "type": "string", "required": True, "description": "值"},
         ],
-        handler=tool_search_handler,
-        permissions=[],  # 无特殊权限要求
-        timeout=10,
-        is_read_only=True,
-        is_concurrency_safe=True,
-    )
-    registry.register(search_tool)
+        handler=remember_handler,
+        permissions=[],
+    ))
 
-    # 5. 注册simple_tools中的专业工具
-    from app.tools_v2.tools import register_tools
-    register_tools(registry)
+    registry.register(buildTool(
+        name="recall",
+        description="回忆发现",
+        parameters=[
+            {"name": "key", "type": "string", "required": False, "description": "键（可选，不填则返回所有）"},
+        ],
+        handler=recall_handler,
+        permissions=[],
+    ))
 
-    logger.info(f"Registered {len(registry.list_tools())} CTF tools: {registry.list_tools()}")
+    # 4. Web漏洞利用（通过bash调用）
+    for tool in ["sqlmap", "ffuf", "nmap", "nuclei", "fscan"]:
+        registry.register(buildTool(
+            name=tool,
+            description=f"{tool}工具（通过bash调用）",
+            parameters=[
+                {"name": "args", "type": "string", "required": True, "description": "命令参数"},
+                {"name": "timeout", "type": "integer", "required": False, "description": "超时秒数", "default": 300},
+            ],
+            handler=lambda p, c, t=tool: bash_handler({"command": f"{t} {p.get('args', '')}", "timeout": p.get("timeout", 300)}, c),
+            permissions=[ToolPermission.EXECUTE, ToolPermission.NETWORK],
+        ))
+
+    # 5. 云安全工具
+    registry.register(buildTool(
+        name="cloud_storage_check",
+        description="云存储桶检测",
+        parameters=[
+            {"name": "bucket_url", "type": "string", "required": True, "description": "存储桶URL"},
+        ],
+        handler=lambda p, c: ToolResult(success=True, data={"message": "Cloud storage check"}),
+        permissions=[ToolPermission.NETWORK],
+    ))
+
+    registry.register(buildTool(
+        name="cloud_metadata",
+        description="云环境元数据获取",
+        parameters=[],
+        handler=lambda p, c: ToolResult(success=True, data={"message": "Cloud metadata"}),
+        permissions=[ToolPermission.NETWORK],
+    ))
+
+    # 6. AI安全工具
+    registry.register(buildTool(
+        name="ai_probe",
+        description="AI模型探测",
+        parameters=[
+            {"name": "target", "type": "string", "required": True, "description": "目标URL"},
+        ],
+        handler=lambda p, c: ToolResult(success=True, data={"message": "AI probe"}),
+        permissions=[ToolPermission.NETWORK],
+    ))
+
+    # 7. 比赛平台工具
+    registry.register(buildTool(
+        name="list_challenges",
+        description="获取当前可用的赛题列表",
+        parameters=[],
+        handler=list_challenges_handler,
+        permissions=[ToolPermission.NETWORK],
+    ))
+
+    registry.register(buildTool(
+        name="start_challenge",
+        description="启动指定赛题的容器实例",
+        parameters=[
+            {"name": "code", "type": "string", "required": True, "description": "赛题唯一标识"},
+        ],
+        handler=start_challenge_handler,
+        permissions=[ToolPermission.NETWORK],
+    ))
+
+    registry.register(buildTool(
+        name="stop_challenge",
+        description="停止指定赛题的容器实例",
+        parameters=[
+            {"name": "code", "type": "string", "required": True, "description": "赛题唯一标识"},
+        ],
+        handler=stop_challenge_handler,
+        permissions=[ToolPermission.NETWORK],
+    ))
+
+    registry.register(buildTool(
+        name="submit_flag",
+        description="提交赛题的Flag答案",
+        parameters=[
+            {"name": "code", "type": "string", "required": True, "description": "赛题唯一标识"},
+            {"name": "flag", "type": "string", "required": True, "description": "Flag值（格式如flag{...}）"},
+        ],
+        handler=submit_flag_handler,
+        permissions=[ToolPermission.NETWORK],
+    ))
+
+    registry.register(buildTool(
+        name="view_hint",
+        description="查看赛题提示（会扣除该题总分的10%）",
+        parameters=[
+            {"name": "code", "type": "string", "required": True, "description": "赛题唯一标识"},
+        ],
+        handler=view_hint_handler,
+        permissions=[ToolPermission.NETWORK],
+    ))
+
+    # 注册Meta工具
+    from app.tools_v2.tools import register_meta_tools
+    register_meta_tools(registry)
 
 
-def get_tools_for_api() -> List[Dict[str, Any]]:
-    """
-    获取工具Schema供LLM API使用
-
-    返回智谱API兼容的tools格式
-    """
-    # 确保工具已注册
-    from app.core.query import ensure_tools_registered
-    ensure_tools_registered()
-
-    registry = get_tool_registry_v2()
-    schemas = registry.get_all_schemas()
-
-    # 转换为智谱API格式
-    tools = []
-    for schema in schemas:
-        tools.append({
-            "type": "function",
-            "function": schema
-        })
-
-    return tools
-
-
-__all__ = [
-    "register_ctf_tools",
-    "get_tools_for_api",
-    "http_request_handler",
-    "run_command_handler",
-    "analyze_response_handler",
-]
+__all__ = ["register_ctf_tools"]

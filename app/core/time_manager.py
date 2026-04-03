@@ -43,8 +43,12 @@ TIMEOUT_CONFIGS: Dict[TaskType, int] = {
 class TimeBudget:
     """时间预算"""
     total_seconds: int
-    start_time: float
-    task_type: TaskType
+    start_time: float = None
+    task_type: TaskType = TaskType.CTF_SINGLE_FLAG
+
+    def __post_init__(self):
+        if self.start_time is None:
+            self.start_time = time.time()
 
     @property
     def elapsed_seconds(self) -> float:
@@ -57,6 +61,10 @@ class TimeBudget:
     @property
     def progress_ratio(self) -> float:
         return min(1.0, self.elapsed_seconds / self.total_seconds)
+
+    @property
+    def remaining_ratio(self) -> float:
+        return max(0.0, 1.0 - self.progress_ratio)
 
     @property
     def is_timeout(self) -> bool:

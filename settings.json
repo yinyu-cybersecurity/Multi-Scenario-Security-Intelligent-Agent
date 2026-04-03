@@ -63,6 +63,12 @@
     "decision_flow_display": true
   },
 
+  "competition": {
+    "server_host": "${COMPETITION_SERVER_HOST}",
+    "agent_token": "${COMPETITION_AGENT_TOKEN}",
+    "rate_limit_delay": 0.35
+  },
+
   "logging": {
     "level": "INFO",
     "file": "logs/ctf_agent.log",
