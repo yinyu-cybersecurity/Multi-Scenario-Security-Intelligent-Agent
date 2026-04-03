@@ -367,6 +367,10 @@ def get_tools_for_api() -> List[Dict[str, Any]]:
 
     返回智谱API兼容的tools格式
     """
+    # 确保工具已注册
+    from app.core.query import ensure_tools_registered
+    ensure_tools_registered()
+
     registry = get_tool_registry_v2()
     schemas = registry.get_all_schemas()
 
