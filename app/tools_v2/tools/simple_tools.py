@@ -321,9 +321,27 @@ TOOL_SCHEMAS = {
 HANDLERS = {}  # 空字典，所有工具通过Bash直接调用
 
 
-def get_tool_schema(name: str):
-    """获取工具Schema"""
-    return TOOL_SCHEMAS.get(name)
+def get_tool_schema(name: str) -> dict:
+    """获取工具Schema - 返回OpenAI Function Calling格式"""
+    tool = TOOL_SCHEMAS.get(name)
+    if not tool:
+        return None
+
+    # 转换为OpenAI function calling格式
+    return {
+        "name": tool.get("name", name),
+        "description": tool.get("description", ""),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "args": {
+                    "type": "string",
+                    "description": f"工具命令参数，示例: {', '.join(tool.get('examples', []))}"
+                }
+            },
+            "required": []
+        }
+    }
 
 
 def list_tools() -> list:
@@ -332,8 +350,13 @@ def list_tools() -> list:
 
 
 def get_all_schemas() -> list:
-    """获取所有工具Schema"""
-    return list(TOOL_SCHEMAS.values())
+    """获取所有工具Schema - 返回OpenAI Function Calling格式"""
+    schemas = []
+    for name in TOOL_SCHEMAS.keys():
+        schema = get_tool_schema(name)
+        if schema:
+            schemas.append(schema)
+    return schemas
 
 
 # 导入专业方向工具Schema（如果有）
