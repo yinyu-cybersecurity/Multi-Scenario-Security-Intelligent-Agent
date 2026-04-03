@@ -6,12 +6,22 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Header } from './components/common/Header';
 import { StatsBar } from './components/common/StatsBar';
 import { Timeline } from './components/Timeline/Timeline';
-import { LogStream } from './components/LogStream/LogStream';
+import { ConsoleStream } from './components/Console/ConsoleStream';
 import { DetailPanel } from './components/DetailPanel/DetailPanel';
 import { AttachmentBar } from './components/Chat/AttachmentBar';
 import { InputBar } from './components/Chat/InputBar';
 
+// Hooks
+import { useWebSocket } from './hooks/useWebSocket';
+import { useConsoleEventProcessor } from './hooks/useConsoleEventProcessor';
+
 function Dashboard() {
+  // 初始化WebSocket
+  useWebSocket();
+
+  // 处理控制台事件
+  useConsoleEventProcessor();
+
   return (
     <div className="flex flex-col h-screen bg-background text-foreground">
       {/* Header */}
@@ -25,8 +35,8 @@ function Dashboard() {
         {/* Left: Timeline */}
         <Timeline />
 
-        {/* Center: Log Stream */}
-        <LogStream />
+        {/* Center: Console Stream (New) */}
+        <ConsoleStream />
 
         {/* Right: Detail Panel */}
         <DetailPanel />

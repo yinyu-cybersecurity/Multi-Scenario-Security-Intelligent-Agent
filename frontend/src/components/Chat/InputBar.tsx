@@ -128,7 +128,7 @@ export const InputBar: React.FC = () => {
           adjustTextareaHeight();
         }}
         onKeyDown={handleKeyDown}
-        placeholder=""
+        placeholder="Tell the AI what you want to do..."
         className="flex-1 bg-background border border-border rounded px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-primary min-h-[40px]"
         rows={1}
         style={{ maxHeight: '72px' }}

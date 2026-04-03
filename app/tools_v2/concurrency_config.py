@@ -1,15 +1,12 @@
 """
-工具并发安全配置
+工具并发安全配置 - Claude Code最佳实践
 
-借鉴Claude Code的isConcurrencySafe设计：
-- 只读工具可并发执行
-- 修改操作需串行
-- 根据参数动态判断安全性
+核心原则:
+- isConcurrencySafe: 工具是否并发安全
+- isReadOnly: 工具是否只读
+- 权限检查与执行分离
 
-并发策略：
-- 只读扫描（nmap -sV, whatweb）: 可并发
-- 漏洞扫描（nuclei）: 需谨慎（可能触发WAF）
-- 攻击工具（sqlmap, hydra）: 串行执行
+参考: Claude Code工具系统深度技术文档
 """
 
 from dataclasses import dataclass
@@ -41,7 +38,7 @@ READ_ONLY_COMMANDS = [
     # Git只读
     "git status", "git log", "git diff", "git show", "git branch",
     # 网络探测
-    "curl", "wget", "ping", "nc -z", "nmap -sV", "nmap -sT",
+    "curl", "wget", "ping", "nc -z",
     "whatweb", "dig", "nslookup", "whois",
     # 信息收集
     "whoami", "id", "uname", "hostname", "env", "printenv"
@@ -82,14 +79,6 @@ def is_read_only_command(command: str) -> bool:
     return False
 
 
-def check_nmap_safety(params: Dict) -> bool:
-    """检查nmap参数是否安全"""
-    scan_type = params.get("scan_type", "quick")
-    # quick和service扫描通常是只读的
-    # full扫描可能触发IDS
-    return scan_type in ["quick", "service"]
-
-
 def check_bash_safety(params: Dict) -> bool:
     """检查Bash命令是否安全"""
     command = params.get("command", "")
@@ -113,12 +102,6 @@ def check_nuclei_safety(params: Dict) -> bool:
 
 TOOL_CONCURRENCY_CONFIGS: Dict[str, ToolConcurrencyConfig] = {
     # === 始终安全的只读工具 ===
-    "nmap": ToolConcurrencyConfig(
-        name="nmap",
-        level=ConcurrencyLevel.CONDITIONAL,
-        is_read_only=True,
-        safe_conditions=check_nmap_safety
-    ),
     "httpx": ToolConcurrencyConfig(
         name="httpx",
         level=ConcurrencyLevel.ALWAYS_SAFE,
@@ -153,12 +136,6 @@ TOOL_CONCURRENCY_CONFIGS: Dict[str, ToolConcurrencyConfig] = {
     ),
     "sqlmap": ToolConcurrencyConfig(
         name="sqlmap",
-        level=ConcurrencyLevel.NEVER_SAFE,
-        is_read_only=False,
-        max_concurrent=1
-    ),
-    "hydra": ToolConcurrencyConfig(
-        name="hydra",
         level=ConcurrencyLevel.NEVER_SAFE,
         is_read_only=False,
         max_concurrent=1
@@ -250,7 +227,7 @@ def classify_tools_for_parallel(
     将工具调用分类为可并行和需串行
 
     Args:
-        tool_calls: 工具调用列表 [{"tool": "nmap", "params": {...}}, ...]
+        tool_calls: 工具调用列表 [{"tool": "nuclei", "params": {...}}, ...]
 
     Returns:
         (parallel_tools, serial_tools)

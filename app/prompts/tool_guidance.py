@@ -1,32 +1,15 @@
 # app/prompts/tool_guidance.py
 
 """
-工具选择指导 - 参考Claude Code的Tool Selection机制
+工具选择指导 - 已迁移到Skill系统
+
+工具使用指导现在由 tool_usage_guide.yaml Skill提供
 """
 
+# 占位符 - 实际指导由Skill系统提供
 TOOL_SELECTION_FRAMEWORK = """
-## Tool Selection Framework
-
-When selecting a tool, consider:
-1. Target type (Web app, binary, network, crypto)
-2. What information you need
-3. Available tools and their capabilities
-
-## Common Tool Chains
-
-- **Web Recon**: nmap → httpx → nuclei → ffuf
-- **SQL Injection**: sqlmap with various levels
-- **Binary Analysis**: checksec → ghidra → gdb → pwntools
-- **Network**: crackmapexec → bloodhound → impacket
+工具使用指导已迁移到 tool_usage_guide Skill。
+AI应该通过Skill系统获取工具使用最佳实践。
 """
 
-RECONNAISSANCE_TOOLS = """
-## Reconnaissance Tools
-
-- nmap: Network scanning
-- httpx: HTTP probing
-- nuclei: Vulnerability scanning
-- ffuf: Directory fuzzing
-"""
-
-__all__ = ["TOOL_SELECTION_FRAMEWORK", "RECONNAISSANCE_TOOLS"]
+__all__ = ["TOOL_SELECTION_FRAMEWORK"]

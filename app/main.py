@@ -1,46 +1,49 @@
 # app/main.py
+
 """
-CTF-Agent 2.0 统一入口
+CTF-Agent 主入口 - 使用Claude Code Query循环模式
 
 设计原则:
-1. 单一入口 - 所有任务从此进入
-2. 智能分类 - LLM自动识别任务类型
-3. 状态持久化 - 支持断点续传
-4. 优雅退出 - 超时熔断
+1. Query循环替代LangGraph状态机
+2. AI完全自主决策下一步行动
+3. 超时是唯一熔断条件
+4. 动态AppState，无预置字段
 """
 
 import asyncio
 import sys
-import ipaddress
 import re
+import ipaddress
+import logging
 from typing import Optional
 from datetime import datetime
 
-from app.graph.ctf_graph import build_ctf_graph
-from app.state.state_v3 import (
-    CTFStateV3,
-    ChallengeInfo,
-    ChallengeType,
-    create_initial_state
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-from app.coordinator.dispatcher import (
-    get_coordinator_dispatcher,
-    TaskType
-)
-from app.memory import get_agent_memory
+logger = logging.getLogger("CTF-Agent")
+
+# 导入新架构组件
+from app.core.query import query, QueryConfig
+from app.core.time_manager import TimeManager, TaskType
+from app.state.store import get_app_state_store
+from app.prompts.ctf_system_prompt import get_target_specific_prompt
+from app.settings import config
 
 
 # ============================================
 # 安全验证函数
 # ============================================
 
-def validate_target(target: str, allow_internal: bool = False) -> tuple[bool, str]:
+def validate_target(target: str, allow_internal: bool = False) -> tuple:
     """
     验证目标地址是否合法
 
     Args:
         target: 目标地址（URL/IP/域名）
-        allow_internal: 是否允许内网地址（内网渗透场景）
+        allow_internal: 是否允许内网地址
 
     Returns:
         (是否合法, 错误信息)
@@ -58,48 +61,37 @@ def validate_target(target: str, allow_internal: bool = False) -> tuple[bool, st
         if target.lower().startswith(proto):
             return False, f"Protocol '{proto}' is not allowed"
 
-    # 如果允许内网地址，直接返回True（内网渗透场景）
+    # 如果允许内网地址，直接返回True
     if allow_internal:
         return True, ""
 
     # 检查是否为内网IP地址
-    # 提取IP地址（如果不是URL）
     if not target.startswith("http"):
-        # 可能是IP或域名
         ip_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
         if re.match(ip_pattern, target):
             try:
                 ip = ipaddress.ip_address(target)
-
-                # 禁止私有IP、环回地址、链路本地地址
                 if ip.is_private:
                     return False, f"Private IP address not allowed: {target}"
                 if ip.is_loopback:
                     return False, f"Loopback address not allowed: {target}"
                 if ip.is_link_local:
                     return False, f"Link-local address not allowed: {target}"
-                if ip.is_multicast:
-                    return False, f"Multicast address not allowed: {target}"
             except ValueError:
-                # 不是有效IP，可能是域名
                 pass
 
     # 检查URL中的主机名
     if target.startswith("http"):
-        # 提取主机名
         from urllib.parse import urlparse
         try:
             parsed = urlparse(target)
             hostname = parsed.hostname
-
             if hostname:
-                # 检查是否为IP
                 try:
                     ip = ipaddress.ip_address(hostname)
                     if ip.is_private or ip.is_loopback or ip.is_link_local:
                         return False, f"Internal IP in URL not allowed: {hostname}"
                 except ValueError:
-                    # 是域名，检查是否为localhost等
                     if hostname.lower() in ["localhost", "127.0.0.1", "0.0.0.0"]:
                         return False, f"Localhost not allowed: {hostname}"
         except Exception as e:
@@ -108,276 +100,239 @@ def validate_target(target: str, allow_internal: bool = False) -> tuple[bool, st
     return True, ""
 
 
-async def run_agent(
+def detect_challenge_type(target: str, description: str = "") -> str:
+    """简单规则检测挑战类型"""
+    target_lower = target.lower()
+    desc_lower = description.lower()
+
+    # Web检测
+    if target.startswith("http") or any(kw in target_lower for kw in [".php", ".asp", "web"]):
+        return "web"
+
+    # Pwn检测
+    if any(kw in desc_lower for kw in ["pwn", "binary", "buffer", "overflow", "漏洞利用"]):
+        return "pwn"
+
+    # Crypto检测
+    if any(kw in desc_lower for kw in ["crypto", "rsa", "aes", "encrypt", "decrypt", "密码"]):
+        return "crypto"
+
+    # Reverse检测
+    if any(kw in desc_lower for kw in ["reverse", "逆向", "decompile", "反编译"]):
+        return "reverse"
+
+    # 内网渗透
+    if any(kw in desc_lower for kw in ["内网", "internal", "域控", "ad ", "active directory"]):
+        return "network"
+
+    # 默认Web
+    return "web"
+
+
+def map_challenge_to_task_type(challenge_type: str) -> TaskType:
+    """映射挑战类型到任务类型"""
+    mapping = {
+        "web": TaskType.CTF_SINGLE_FLAG,
+        "pwn": TaskType.CTF_SINGLE_FLAG,
+        "crypto": TaskType.CTF_SINGLE_FLAG,
+        "reverse": TaskType.CTF_SINGLE_FLAG,
+        "misc": TaskType.CTF_SINGLE_FLAG,
+        "network": TaskType.INTERNAL_PENETRATION,
+        "cloud": TaskType.FULL_PENETRATION,
+        "ai": TaskType.RESEARCH,
+    }
+    return mapping.get(challenge_type, TaskType.CTF_SINGLE_FLAG)
+
+
+async def run_ctf_agent(
     target: str,
     description: str = "",
-    challenge_type: Optional[ChallengeType] = None,
-    max_iterations: int = 50,
-    timeout_minutes: Optional[int] = None
+    challenge_type: Optional[str] = None,
+    timeout_minutes: Optional[int] = None,
 ) -> dict:
     """
-    执行CTF-Agent主入口
+    运行CTF Agent - 使用Query循环
 
     Args:
-        target: 目标地址（URL/IP/域名）
-        description: 任务描述（用于LLM分类）
-        challenge_type: 挑战类型（可选，默认自动识别）
-        max_iterations: 最大迭代次数
+        target: 目标URL或描述
+        description: 任务描述
+        challenge_type: 挑战类型 (web/pwn/crypto/reverse/misc/network/cloud/ai)
         timeout_minutes: 超时时间（分钟）
 
     Returns:
         执行结果
     """
-    # =========================================
-    # 安全验证：检查target是否合法
-    # =========================================
-    # 内网渗透类型允许内网地址
-    allow_internal = (challenge_type == ChallengeType.NETWORK) if challenge_type else False
-    is_valid, error_msg = validate_target(target, allow_internal)
+    start_time = datetime.now()
 
+    # 检测挑战类型
+    if not challenge_type:
+        challenge_type = detect_challenge_type(target, description)
+
+    # 确定是否允许内网地址
+    allow_internal = challenge_type == "network"
+
+    # 安全验证
+    is_valid, error_msg = validate_target(target, allow_internal)
     if not is_valid:
         return {
             "success": False,
             "error": f"Invalid target: {error_msg}",
             "flags": [],
-            "iterations": 0,
-            "session_id": None,
-            "findings_count": 0,
-            "tool_calls_count": 0,
-            "phase": "error",
             "duration_seconds": 0,
-            "timeout": {"status": "none"}
         }
 
-    # =========================================
-    # 1. 初始化组件
-    # =========================================
-    coordinator = get_coordinator_dispatcher()
-    memory = get_agent_memory()
-
-    # =========================================
-    # 2. 智能分类挑战类型（如未指定）
-    # =========================================
-    if not challenge_type:
-        challenge_type = await _classify_challenge_type(target, description)
-
-    # =========================================
-    # 3. 构建挑战信息
-    # =========================================
-    challenge = ChallengeInfo(
-        challenge_id=f"task_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-        challenge_type=challenge_type,
-        title=f"Attack: {target}",
-        description=description or f"攻击目标 {target}",
-        target_url=target if target.startswith("http") else None,
-        target_ip=target if not target.startswith("http") else None
-    )
-
-    # =========================================
-    # 4. 创建初始状态
-    # =========================================
-    initial_state = create_initial_state(challenge)
-    initial_state["max_iterations"] = max_iterations
-
-    # =========================================
-    # 5. 创建Coordinator会话（启动超时）
-    # =========================================
-    task_description = description or f"攻击目标 {target}"
+    # 初始化
+    store = get_app_state_store()
+    time_manager = TimeManager()
+    session_id = f"session-{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
     # 确定任务类型和超时
-    task_type = _map_challenge_to_task_type(challenge_type)
-    timeout_seconds = timeout_minutes * 60 if timeout_minutes else None
+    task_type = map_challenge_to_task_type(challenge_type)
 
-    session_id = await coordinator.create_session(
-        parent_messages=[],
-        task_description=task_description,
-        task_type=task_type,
-        timeout_override=timeout_seconds
+    # 创建时间预算
+    budget = time_manager.create_budget(session_id, task_type)
+
+    # 获取模型配置
+    model = getattr(config, 'LLM_MODEL', 'glm-5')
+
+    # 构建System Prompt
+    system_prompt = get_target_specific_prompt(challenge_type, target)
+
+    # 添加时间预算信息
+    time_prompt = f"\n\n**Time Budget**: {budget.total_seconds / 60:.0f} minutes for this task."
+    system_prompt += time_prompt
+
+    # 配置Query
+    # 不传递静态工具列表，让query.py使用延迟加载
+    query_config = QueryConfig(
+        model=model,
+        max_turns=200,
+        system_prompt=system_prompt,
+        tools=[],  # 空列表 - 启用延迟加载
     )
 
-    initial_state["session_id"] = session_id
+    # 初始消息
+    messages = [{
+        "role": "user",
+        "content": f"""CTF Challenge Target: {target}
 
-    # =========================================
-    # 6. 构建并执行图
-    # =========================================
+Description: {description or 'No description provided'}
+
+Your task:
+1. Analyze the target and identify potential vulnerabilities
+2. Exploit any vulnerabilities found
+3. Extract the flag (format: flag{{...}} or FLAG{{...}})
+
+Time budget: {budget.total_seconds / 60:.0f} minutes.
+
+Begin your analysis and exploitation now."""
+    }]
+
+    # 运行Query循环
+    final_result = {
+        "success": False,
+        "flags": [],
+        "iterations": 0,
+        "findings": [],
+        "duration_seconds": 0,
+        "session_id": session_id,
+    }
+
+    flags_found = []
+
     print(f"\n{'='*60}")
-    print("[CTF-Agent 2.0] Starting...")
+    print(f"[CTF-Agent] Starting with Claude Code Query Loop")
     print(f"{'='*60}")
-    print(f"目标: {target}")
-    print(f"类型: {challenge_type.value}")
-    print(f"描述: {task_description[:50]}...")
-    remaining = coordinator.get_remaining_time(session_id)
-    print(f"超时: {remaining:.0f} 秒")
+    print(f"Target: {target}")
+    print(f"Type: {challenge_type}")
+    print(f"Model: {model}")
+    print(f"Time budget: {budget.total_seconds / 60:.0f} minutes")
     print(f"{'='*60}\n")
 
     try:
-        # 构建图
-        graph = build_ctf_graph()
+        async for event in query(messages, query_config):
+            # 检查超时
+            if time_manager.should_stop(session_id):
+                print("\n⏰ **TIMEOUT** - Time budget exhausted!")
+                final_result["timeout"] = True
+                break
 
-        # 配置checkpointer（需要thread_id）
-        config = {
-            "configurable": {
-                "thread_id": session_id
-            }
-        }
+            # 处理事件
+            event_type = event.get("type")
+            turn = event.get("turn", 0)
 
-        # 执行
-        final_state = await graph.ainvoke(initial_state, config=config)
+            if event_type == "message":
+                content = event.get("message", {}).get("content", "")
+                print(f"\n[Turn {turn}] AI Response:")
+                print(content[:500] + "..." if len(content) > 500 else content)
 
-        # =========================================
-        # 7. 构建结果
-        # =========================================
-        result = _build_final_result(final_state, session_id, coordinator)
+                # 检查是否找到Flag
+                flag_match = re.search(r'flag\{[^}]+\}', content, re.IGNORECASE)
+                if flag_match:
+                    flag = flag_match.group(0)
+                    if flag not in flags_found:
+                        flags_found.append(flag)
+                        print(f"\n🎉 **FLAG FOUND**: {flag}")
 
-        return result
+                final_result["iterations"] = turn
+
+            elif event_type == "flag_found":
+                flag = event.get("flag")
+                if flag and flag not in flags_found:
+                    flags_found.append(flag)
+
+            elif event_type == "complete":
+                reason = event.get("reason", "unknown")
+                print(f"\n✅ Task completed: {reason}")
+                break
+
+            elif event_type == "error":
+                error = event.get("error", "Unknown error")
+                print(f"\n❌ Error: {error}")
+                final_result["error"] = error
+
+            elif event_type == "turn_complete":
+                # 显示时间状态
+                remaining = budget.remaining_seconds
+                if remaining > 0:
+                    elapsed_pct = budget.progress_ratio * 100
+                    if elapsed_pct >= 80:
+                        print(f"\n⏰ Time warning: {remaining/60:.0f} min remaining ({elapsed_pct:.0f}% used)")
 
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "flags": [],
-            "iterations": 0,
-            "session_id": session_id,
-            "findings_count": 0,
-            "tool_calls_count": 0,
-            "phase": "error",
-            "duration_seconds": 0,
-            "timeout": {"status": "none"}
-        }
-    finally:
-        # 清理会话
-        coordinator.cleanup_session(session_id)
+        logger.error(f"Query loop error: {e}")
+        final_result["error"] = str(e)
 
+    # 构建最终结果
+    end_time = datetime.now()
+    final_result["flags"] = flags_found
+    final_result["success"] = len(flags_found) > 0
+    final_result["duration_seconds"] = (end_time - start_time).total_seconds()
 
-async def _classify_challenge_type(target: str, description: str) -> ChallengeType:
-    """智能分类挑战类型"""
-    from app.llm_client import llm_client
-
-    # 简单规则优先
-    if target.startswith("http"):
-        return ChallengeType.WEB
-
-    # LLM分类
-    prompt = f"""分析目标并分类挑战类型。
-
-目标: {target}
-描述: {description}
-
-类型选项:
-- web: Web应用
-- pwn: 二进制漏洞
-- crypto: 密码学
-- reverse: 逆向工程
-- misc: 杂项
-- network: 内网渗透
-- cloud: 云安全
-- ai: AI安全
-
-只返回类型名称，不要解释。"""
-
-    try:
-        response = llm_client.call_chat_completion(
-            model="deepseek-chat",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=20
-        )
-        type_str = response.strip().lower()
-
-        type_map = {
-            "web": ChallengeType.WEB,
-            "pwn": ChallengeType.PWN,
-            "crypto": ChallengeType.CRYPTO,
-            "reverse": ChallengeType.REVERSE,
-            "misc": ChallengeType.MISC,
-            "network": ChallengeType.NETWORK,
-            "cloud": ChallengeType.CLOUD,
-            "ai": ChallengeType.AI,
-        }
-
-        return type_map.get(type_str, ChallengeType.WEB)
-    except Exception:
-        return ChallengeType.WEB
-
-
-def _map_challenge_to_task_type(challenge_type: ChallengeType) -> TaskType:
-    """映射挑战类型到任务类型"""
-    from app.coordinator.dispatcher import TaskType
-
-    mapping = {
-        ChallengeType.WEB: TaskType.CTF_CHALLENGE,
-        ChallengeType.PWN: TaskType.CTF_CHALLENGE,
-        ChallengeType.CRYPTO: TaskType.CTF_CHALLENGE,
-        ChallengeType.REVERSE: TaskType.CTF_CHALLENGE,
-        ChallengeType.MISC: TaskType.CTF_CHALLENGE,
-        ChallengeType.NETWORK: TaskType.PENETRATION_INTERNAL,
-        ChallengeType.CLOUD: TaskType.PENETRATION_FULL,
-        ChallengeType.AI: TaskType.RESEARCH,
-    }
-    return mapping.get(challenge_type, TaskType.CTF_CHALLENGE)
-
-
-def _build_final_result(
-    state: CTFStateV3,
-    session_id: str,
-    coordinator
-) -> dict:
-    """构建最终结果"""
-    timeout_status = coordinator.get_timeout_status(session_id)
-
-    phase = state.get("current_phase")
-    phase_value = phase.value if hasattr(phase, 'value') else "unknown"
-
-    return {
-        "success": bool(state.get("flags_found")),
-        "flags": state.get("flags_found", []),
-        "phase": phase_value,
-        "iterations": state.get("iteration_count", 0),
-        "findings_count": len(state.get("findings", [])),
-        "tool_calls_count": len(state.get("tool_history", [])),
-        "findings": state.get("findings", [])[-10:],
-        "timeout": timeout_status,
-        "session_id": session_id,
-        "duration_seconds": timeout_status.get("elapsed_seconds", 0)
-    }
+    return final_result
 
 
 def main():
     """命令行入口"""
     import argparse
 
-    parser = argparse.ArgumentParser(description="CTF-Agent 2.0 - 智能渗透测试Agent")
+    parser = argparse.ArgumentParser(description="CTF-Agent - Claude Code Query Loop Architecture")
     parser.add_argument("target", help="目标地址（URL/IP/域名）")
     parser.add_argument("-d", "--description", default="", help="任务描述")
     parser.add_argument("-t", "--type",
                         choices=["web", "pwn", "crypto", "reverse", "misc", "network", "cloud", "ai"],
-                        help="挑战类型（默认自动识别）")
-    parser.add_argument("-i", "--max-iterations", type=int, default=50, help="最大迭代次数")
+                        help="挑战类型（默认自动检测）")
     parser.add_argument("--timeout", type=int, help="超时时间（分钟）")
     parser.add_argument("-v", "--verbose", action="store_true", help="详细输出")
 
     args = parser.parse_args()
 
-    # 类型映射
-    type_map = {
-        "web": ChallengeType.WEB,
-        "pwn": ChallengeType.PWN,
-        "crypto": ChallengeType.CRYPTO,
-        "reverse": ChallengeType.REVERSE,
-        "misc": ChallengeType.MISC,
-        "network": ChallengeType.NETWORK,
-        "cloud": ChallengeType.CLOUD,
-        "ai": ChallengeType.AI,
-    }
-
-    challenge_type = type_map.get(args.type) if args.type else None
-
     # 执行
-    result = asyncio.run(run_agent(
+    result = asyncio.run(run_ctf_agent(
         target=args.target,
         description=args.description,
-        challenge_type=challenge_type,
-        max_iterations=args.max_iterations,
-        timeout_minutes=args.timeout
+        challenge_type=args.type,
+        timeout_minutes=args.timeout,
     ))
 
     # 输出结果
@@ -385,19 +340,19 @@ def main():
     print("[Result] Execution completed")
     print(f"{'='*60}")
     print(f"Success: {'YES' if result['success'] else 'NO'}")
-    if result.get("flags"):
-        print(f"Flags: {result['flags']}")
-    print(f"迭代: {result['iterations']}")
-    print(f"发现: {result['findings_count']}")
-    print(f"耗时: {result['duration_seconds']:.1f}秒")
-    print(f"{'='*60}\n")
 
-    # 详细输出
-    if args.verbose and result.get("findings"):
-        print("\n📝 发现详情:")
-        for i, finding in enumerate(result["findings"], 1):
-            content = finding.get("content", str(finding))
-            print(f"{i}. [{finding.get('type', 'unknown')}] {str(content)[:100]}")
+    if result.get("flags"):
+        print(f"\n🎉 Flags Found: {len(result['flags'])}")
+        for i, flag in enumerate(result["flags"], 1):
+            print(f"  {i}. {flag}")
+
+    print(f"\nIterations: {result.get('iterations', 0)}")
+    print(f"Duration: {result.get('duration_seconds', 0):.1f} seconds")
+
+    if result.get("error"):
+        print(f"Error: {result['error']}")
+
+    print(f"{'='*60}\n")
 
     return 0 if result["success"] else 1
 

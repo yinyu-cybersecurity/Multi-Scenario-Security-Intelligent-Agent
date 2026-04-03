@@ -83,12 +83,6 @@ TOOL_LOAD_CONFIGS: Dict[str, ToolLoadConfig] = {
     ),
 
     # === Web安全核心工具（优先加载）===
-    "nmap": ToolLoadConfig(
-        name="nmap",
-        priority=LoadPriority.ALWAYS,
-        description="端口扫描",
-        tags=["network", "scan", "recon"]
-    ),
     "httpx": ToolLoadConfig(
         name="httpx",
         priority=LoadPriority.ALWAYS,

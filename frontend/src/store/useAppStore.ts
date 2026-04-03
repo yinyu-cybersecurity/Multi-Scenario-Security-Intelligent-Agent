@@ -250,22 +250,26 @@ export const useStatsState = () =>
   );
 
 /**
- * Action选择器 - 稳定引用，无需useShallow
+ * Action选择器 - 使用useShallow避免对象重建
  */
 export const useChatActions = () =>
-  useAppStore((state) => ({
-    setInputValue: state.setInputValue,
-    addAttachment: state.addAttachment,
-    removeAttachment: state.removeAttachment,
-    clearAttachments: state.clearAttachments,
-    setDragging: state.setDragging,
-    setIsExecuting: state.setIsExecuting,
-    addLogEntry: state.addLogEntry,
-  }));
+  useAppStore(
+    useShallow((state) => ({
+      setInputValue: state.setInputValue,
+      addAttachment: state.addAttachment,
+      removeAttachment: state.removeAttachment,
+      clearAttachments: state.clearAttachments,
+      setDragging: state.setDragging,
+      setIsExecuting: state.setIsExecuting,
+      addLogEntry: state.addLogEntry,
+    }))
+  );
 
 export const useDetailPanelActions = () =>
-  useAppStore((state) => ({
-    setDetailPanelCollapsed: state.setDetailPanelCollapsed,
-    setDetailPanelTab: state.setDetailPanelTab,
-    setSelectedLogEntry: state.setSelectedLogEntry,
-  }));
+  useAppStore(
+    useShallow((state) => ({
+      setDetailPanelCollapsed: state.setDetailPanelCollapsed,
+      setDetailPanelTab: state.setDetailPanelTab,
+      setSelectedLogEntry: state.setSelectedLogEntry,
+    }))
+  );

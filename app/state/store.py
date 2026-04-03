@@ -117,28 +117,15 @@ def get_default_app_state() -> AppState:
     """
     获取默认应用状态
 
-    只设置必要的初始值，不预置CTF相关字段
+    遵循Claude Code模式:
+    - 无预置业务字段
+    - 只设置系统运行必需的最小状态
+    - AI可以动态创建任何字段
     """
     state = AppState()
+    # 只设置真正必需的系统字段
     state.update({
-        # 基础配置
-        "verbose": False,
-        "model": "glm-5",
-
-        # 会话信息
-        "session_id": "",
-        "start_time": 0,
-
-        # MCP状态
-        "mcp_clients": [],
-        "mcp_tools": [],
-
-        # 权限上下文
-        "permission_mode": "default",
-
-        # 执行状态
-        "is_executing": False,
-        "current_turn": 0,
+        "is_executing": False,  # 执行状态标志
     })
     return state
 

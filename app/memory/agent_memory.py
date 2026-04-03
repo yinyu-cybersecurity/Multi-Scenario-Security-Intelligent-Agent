@@ -4,12 +4,23 @@
 # 借鉴Claude Code的Agent间信息传递设计
 
 import json
+import os
+import time
 from typing import Dict, Any, List, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
+from enum import Enum
 import asyncio
 
 # 导入Agent类型
 from app.agents.base import AgentType
+
+
+class MemoryScope(Enum):
+    """Memory范围"""
+    GLOBAL = "global"      # 全局范围 - 跨项目共享
+    PROJECT = "project"    # 项目范围 - 当前项目内共享
+    SESSION = "session"    # 会话范围 - 当前会话内有效
 
 
 @dataclass
@@ -17,10 +28,12 @@ class MemoryEntry:
     """Memory条目"""
     name: str
     content: str
-    topic: str
-    created_by: AgentType
-    timestamp: float
-    metadata: Dict[str, Any] = None
+    scope: MemoryScope = MemoryScope.PROJECT
+    topic: str = ""
+    created_by: Optional[AgentType] = None
+    timestamp: float = field(default_factory=time.time)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    version: int = 1  # 版本号，用于编辑追踪
 
 
 class AgentMemorySystem:
@@ -221,6 +234,108 @@ class AgentMemorySystem:
 
         # 降级到本地缓存
         return list(self._local_cache.keys())
+
+    async def edit_memory(
+        self,
+        memory_name: str,
+        needle: str,
+        repl: str,
+        mode: str = "literal",
+        allow_multiple_occurrences: bool = False
+    ) -> bool:
+        """
+        编辑Memory内容
+
+        Claude Code的edit_memory实现:
+        - 支持字面量和正则模式
+        - 默认只替换第一个匹配
+        - 可选允许多处替换
+        - 保持版本追踪
+
+        Args:
+            memory_name: Memory名称
+            needle: 要查找的内容或正则模式
+            repl: 替换内容
+            mode: "literal" 或 "regex"
+            allow_multiple_occurrences: 是否允许多处替换
+
+        Returns:
+            是否编辑成功
+        """
+        import re
+
+        # 读取现有内容
+        content = await self._read_internal(memory_name)
+        if not content:
+            return False
+
+        # 执行替换
+        if mode == "literal":
+            if allow_multiple_occurrences:
+                new_content = content.replace(needle, repl)
+            else:
+                # 只替换第一个
+                new_content = content.replace(needle, repl, 1)
+        else:  # regex模式
+            if allow_multiple_occurrences:
+                new_content = re.sub(needle, repl, content, flags=re.DOTALL | re.MULTILINE)
+            else:
+                new_content = re.sub(needle, repl, content, count=1, flags=re.DOTALL | re.MULTILINE)
+
+        # 如果内容有变化，更新
+        if new_content != content:
+            # 获取现有条目并更新版本
+            entry = self._local_cache.get(memory_name)
+            if entry:
+                entry.version += 1
+                entry.content = new_content
+                entry.timestamp = time.time()
+
+                # 写入更新
+                return await self._write_internal(
+                    memory_name=memory_name,
+                    content=new_content,
+                    created_by=entry.created_by
+                )
+            else:
+                # 创建新条目
+                return await self._write_internal(
+                    memory_name=memory_name,
+                    content=new_content,
+                    created_by=None
+                )
+
+        return True  # 无变化也算成功
+
+    async def delete_memory(self, memory_name: str) -> bool:
+        """
+        删除Memory
+
+        Claude Code的delete_memory实现:
+        - 从本地缓存删除
+        - 从持久化存储删除
+        - 返回成功状态
+
+        Args:
+            memory_name: Memory名称
+
+        Returns:
+            是否删除成功
+        """
+        # 从本地缓存删除
+        if memory_name in self._local_cache:
+            del self._local_cache[memory_name]
+
+        # 如果有Serena客户端，也从远程删除
+        if self.serena:
+            try:
+                await self.serena.delete_memory(memory_name=memory_name)
+                return True
+            except Exception as e:
+                print(f"[Memory] Delete failed: {e}")
+                return False
+
+        return True
 
     def _format_memory_content(
         self,

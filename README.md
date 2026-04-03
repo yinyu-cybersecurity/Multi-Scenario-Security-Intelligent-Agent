@@ -1,357 +1,293 @@
 # CTF-Agent 2.0
 
-基于 LangGraph 的智能 CTF 自动化求解框架，支持 **Web、Pwn、Crypto、Reverse、Misc、内网渗透、云安全、AI安全** 八大CTF方向。
+基于 **Claude Code Query Loop** 架构的智能CTF自动化求解框架。
 
-**Claude Code风格交互式前端** - 对话式交互、实时监控、AI自主攻击。
+**对话式交互，AI自主执行** - 像使用Claude Code一样与AI对话，发布任务后AI自动规划时间并执行。
 
 ---
 
 ## 核心特性
 
-### Claude Code风格交互式界面
-- **对话式交互**: 类似Claude Code CLI的聊天界面，自然语言输入指令
-- **实时监控**: 三栏Dashboard展示Timeline/LogStream/DetailPanel
-- **文件上传**: 拖拽支持，50MB/5文件限制，AI自主判断文件类型
-- **打断机制**: Ctrl+C随时打断AI执行，保持控制权
-- **输入始终可用**: 执行过程中可输入新指令
+### Claude Code风格交互
+- **对话式界面**: 自然语言描述目标，AI理解并执行
+- **自动时间规划**: AI根据任务复杂度动态分配时间预算
+- **自主决策执行**: 无需人工干预，AI完全自主决策下一步行动
+- **实时状态展示**: 三栏Dashboard显示Timeline/LogStream/DetailPanel
+- **打断与恢复**: 随时打断执行，保持控制权
 
-### 前端架构亮点
-- **buildHook工厂模式**: 镜像后端buildTool，保守默认值策略
-- **useShallow选择器**: Zustand优化，减少组件重渲染
-- **External Store模式**: useSyncExternalStore实现细粒度订阅
-- **WebSocket实时通信**: 支持user_input/interrupt/file_uploaded消息类型
+### 架构特点
+- **Query Loop**: 替代传统状态机，AI完全自主决策
+- **延迟加载**: 工具按需加载，节省Token消耗
+- **Memory系统**: Agent间通信，知识积累
+- **推测执行**: 预先执行可能操作，节省时间
+- **原生工具调用**: 直接调用系统工具，无Docker开销
 
-### 多Agent协同架构
-- **Explore Agent**: 信息收集与代码探索（只读权限）
-- **Plan Agent**: 攻击策略规划（只读权限）
-- **Attack Agent**: 漏洞利用执行（读写执行权限）
-- **Verify Agent**: 结果验证与对抗测试（读写执行权限）
-
-### 65+ 安全工具集成
-| 分类 | 数量 | 核心工具 |
-|------|------|----------|
-| Web安全 | 34 | nmap, nuclei, sqlmap, xray, fscan, ffuf, dirsearch, hydra... |
-| 密码学 | 5 | crypto_identifier, rsa_attacker, hash_analyzer, classical_cipher_solver |
-| 二进制 | 3 | binary_analyzer, rop_builder, shellcode_generator |
-| 逆向 | 4 | disassembler, decompiler, string_extractor, apk_analyzer |
-| 杂项 | 5 | steganography_detector, forensics_analyzer, traffic_analyzer |
-| AI安全 | 3 | ai_attacker, prompt_injector, model_extractor |
-| OA攻击 | 4 | oa_exploiter (泛微/致远/通达/蓝凌) |
-| 云安全 | 4 | cloud_scanner, container_escape, kube_attacker |
-| 内网渗透 | 3 | privesc_scanner, potato_attack, ldap_domaindump |
-
-### 自动交互支持
-支持需要交互式输入的工具（如Gopherus），自动响应提示。
+### 支持的CTF方向
+- **Web安全**: SQL注入、XSS、SSRF、RCE...
+- **PWN**: 栈溢出、堆利用、ROP...
+- **Crypto**: RSA、AES、古典密码...
+- **Reverse**: 逆向工程、反编译...
+- **Misc**: 隐写、取证、流量分析...
+- **内网渗透**: AD域、横向移动...
+- **云安全**: 容器逃逸、云服务利用...
 
 ---
 
 ## 快速开始
 
-### 前端安装（交互式界面）
+### 1. 环境要求
 
-```bash
-# 进入前端目录
-cd frontend
+**必需**:
+- Python 3.8+
+- Node.js 18+ (前端)
+- Git
 
-# 安装依赖
-npm install
+**推荐**:
+- Go 1.19+ (安全工具编译)
+- Scoop (Windows包管理)
 
-# 开发模式运行
-npm run dev
+### 2. 安装
 
-# 生产构建
-npm run build
-```
-
-**环境变量配置** (可选):
-```bash
-# 创建 .env.local 文件
-VITE_WS_URL=ws://localhost:8000/ws
-```
-
-**前端功能**:
-- Enter发送消息，Shift+Enter换行
-- Ctrl+C打断AI执行
-- 拖拽文件上传（支持所有CTF文件类型）
-- 实时查看AI操作日志
-
-### 后端安装 + Docker工具容器（推荐）
-
-```bash
-# 1. 安装Python依赖
-pip install -r requirements.txt
-
-# 2. 构建Docker工具镜像
-chmod +x scripts/build-images.sh
-./scripts/build-images.sh
-
-# 3. 配置API密钥
-cp config.yaml.example config.yaml
-# 编辑config.yaml，填入LLM API密钥
-
-# 4. 运行Agent
-python -m app.main
-```
-
-### 工具镜像构建
-
-```bash
-# 构建所有镜像
-docker build -t ctf-tools-web:latest -f docker/web-tools/Dockerfile .
-docker build -t ctf-tools-pwn:latest -f docker/pwn-tools/Dockerfile .
-docker build -t ctf-tools-ad:latest -f docker/ad-tools/Dockerfile .
-docker build -t ctf-tools-deser:latest -f docker/deser-tools/Dockerfile .
-docker build -t ctf-tools-misc:latest -f docker/misc-tools/Dockerfile .
-
-# 或使用构建脚本
-./scripts/build-images.sh
-```
-
-### Docker工具镜像列表
-
-| 镜像名 | 工具 | 大小 | 用途 |
-|--------|------|------|------|
-| ctf-tools-web | nmap, nuclei, httpx, fscan, sqlmap... | ~800MB | Web安全扫描 |
-| ctf-tools-pwn | pwntools, ROPgadget, pwndbg | ~300MB | 二进制利用 |
-| ctf-tools-ad | crackmapexec, impacket, bloodhound | ~400MB | AD域渗透 |
-| ctf-tools-deser | ysoserial, marshalsec, JNDIExploit | ~200MB | 反序列化攻击 |
-| ctf-tools-misc | jwt_tool, ssrfmap, gopherus | ~150MB | 杂项工具 |
-
-### 本地开发
-
+**后端**:
 ```bash
 # 克隆项目
 git clone https://github.com/your-repo/ctf-agent.git
 cd ctf-agent
 
-# 安装依赖
+# 安装Python依赖
 pip install -r requirements.txt
 
 # 配置API密钥
-cp config.yaml.example config.yaml
-# 编辑config.yaml，填入API密钥
-
-# 运行
-python -m app.ctf_agent_graph
+cp settings.json.example settings.json
+# 编辑settings.json，填入LLM API密钥
 ```
+
+**前端**:
+```bash
+cd frontend
+npm install
+```
+
+**安全工具**:
+```bash
+# Linux
+cd thirdparty
+chmod +x install_all.sh
+./install_all.sh
+
+# Windows (PowerShell)
+cd thirdparty
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+.\install_all.ps1
+```
+
+### 3. 运行
+
+**启动后端服务**:
+```bash
+python -m app.server
+# 或
+uvicorn app.server:app --host 0.0.0.0 --port 8000
+```
+
+**启动前端**:
+```bash
+cd frontend
+npm run dev
+```
+
+**访问**: http://localhost:5173
 
 ---
 
 ## 使用方式
 
+### 对话式交互
+
+在聊天框中输入任务描述，AI会自动理解并执行：
+
+```
+用户: 扫描 http://target.com 并找出SQL注入漏洞
+
+AI: 我将开始扫描目标。根据任务复杂度，预计需要15分钟。
+
+[AI自动执行]
+→ 信息收集: 端口扫描、目录枚举
+→ 漏洞检测: SQL注入测试
+→ 漏洞利用: 数据提取
+→ Flag获取
+
+[TASK_COMPLETE]
+找到Flag: flag{xxx}
+```
+
 ### CLI使用
 
 ```bash
-# 基本使用（自动识别类型）
-python -m app.main http://target.com
+# 基本使用
+python -m app.main "扫描 http://target.com"
 
-# 指定挑战类型
-python -m app.main 192.168.1.100 -t network
-
-# 指定超时时间
-python -m app.main http://target.com --timeout 60
+# 指定类型
+python -m app.main "192.168.1.100" --type network
 
 # 详细输出
-python -m app.main http://target.com -v
+python -m app.main "http://target.com" -v
 ```
 
 ### 代码调用
 
 ```python
-from app.main import run_agent
+from app.main import run_ctf_agent
 
-result = await run_agent(
+result = await run_ctf_agent(
     target="http://target.com",
     description="SQL注入测试",
-    max_iterations=30,
-    timeout_minutes=60
 )
 
 print(f"成功: {result['success']}")
 print(f"Flags: {result['flags']}")
-print(f"迭代次数: {result['iterations']}")
-print(f"发现数量: {result['findings_count']}")
 ```
 
 ---
 
-## 架构
-
-### 前端架构
+## 项目结构
 
 ```
-frontend/src/
-├── hooks/
-│   ├── hookFactory.ts           # buildHook工厂模式
-│   ├── useWebSocket.ts          # WebSocket通信
-│   └── useFileUpload.ts         # 文件上传逻辑
-├── store/
-│   ├── useAppStore.ts           # Zustand状态管理 + 选择器hooks
-│   ├── wsStore.ts               # WebSocket外部Store
-│   └── types.ts                 # TypeScript类型定义
-├── components/
-│   ├── Chat/
-│   │   ├── InputBar.tsx         # 底部输入栏
-│   │   └── AttachmentBar.tsx    # 附件预览栏
-│   ├── Timeline/                # 迭代时间线
-│   ├── LogStream/               # 实时日志流
-│   ├── DetailPanel/             # 工具/发现/Flag详情
-│   └── common/                  # 通用组件
-└── App.tsx                      # 主布局
-```
-
-**前端核心模式**:
-- **buildHook工厂**: 镜像后端buildTool，HOOK_DEFAULTS提供保守默认值
-- **useShallow选择器**: `useChatState()`, `useStatsState()`等，避免不必要重渲染
-- **External Store**: `wsStore`使用useSyncExternalStore实现细粒度订阅
-- **WebSocket消息类型**: iteration_start, node_start, tool_start, finding, flag, user_input, interrupt
-
-### 后端架构
-
-```
-app/
-├── main.py                           # 统一入口
-├── graph/                            # AgenticLoop架构
-│   ├── __init__.py
-│   ├── ctf_graph.py                  # LangGraph主图
-│   └── nodes.py                      # Think/Act/Reflect节点
-├── agents/               # Agent实现
-│   ├── base.py           # 基础Agent
-│   └── autonomous_agent.py
-├── tools_v2/             # 工具系统（65+工具）
-│   └── tools/
-│       ├── simple_tools.py        # Web安全工具Schema+Handler
-│       ├── specialized_schemas.py  # 专业方向Schema
-│       └── specialized_handlers.py # 专业方向Handler
-├── memory/               # 记忆系统
-│   ├── agent_memory.py   # Agent间通信
-│   ├── prompt_cache.py   # Prompt缓存（90% Token节省）
-│   ├── error_recovery.py # 错误恢复（指数退避）
-│   └── incremental_memory.py # 增量记忆
-├── capabilities/         # 能力模块
-│   └── foundation.py     # 基础能力框架
-├── coordinator/          # 协调器
-│   └── dispatcher.py     # 任务分发
-├── state_types/          # 状态类型定义
-│   ├── web.py, crypto.py, pwn.py... # 各方向状态
-│   └── reducers.py       # 状态归约器
-├── skills/               # 技能配置
-│   └── *.yaml            # YAML技能定义
-├── ctf_agent_graph.py    # 主图定义
-├── llm_client.py         # LLM客户端
-├── flag_extractor_v2.py  # Flag提取器
-└── router.py             # 路由器
+CTF-Agent/
+├── app/                        # 后端核心
+│   ├── core/
+│   │   ├── query.py           # Query循环（核心）
+│   │   ├── time_manager.py    # 时间管理
+│   │   └── speculation.py     # 推测执行
+│   ├── tools_v2/              # 工具系统
+│   │   ├── native_executor.py # 原生执行器
+│   │   ├── tool_factory.py    # 工具工厂
+│   │   └── deferred_loader.py # 延迟加载
+│   ├── memory/                # Memory系统
+│   ├── prompts/               # 提示词
+│   └── server.py              # FastAPI服务
+│
+├── frontend/                   # React前端
+│   └── src/
+│       ├── components/        # UI组件
+│       ├── hooks/             # React Hooks
+│       └── store/             # 状态管理
+│
+├── thirdparty/                 # 第三方工具
+│   ├── nmap/                  # 端口扫描
+│   ├── nuclei/                # 漏洞扫描
+│   ├── sqlmap/                # SQL注入
+│   └── ...                    # 更多工具
+│
+├── docs/                       # 文档
+├── skills/                     # Skill定义
+└── settings.json              # 配置文件
 ```
 
 ---
 
-## 工具详细列表
+## 架构设计
 
-### Web安全工具 (34个)
+### Query Loop
 
-#### P0级核心工具 (16个)
-| 工具 | 功能 | Docker路径 |
-|------|------|------------|
-| nmap | 端口扫描 | /usr/bin/nmap |
-| nuclei | 漏洞扫描 | /usr/local/bin/nuclei |
-| httpx | HTTP探测 | /usr/local/bin/httpx |
-| fscan | 内网综合扫描 | /usr/local/bin/fscan |
-| sqlmap | SQL注入 | pipx (sqlmap) |
-| ffuf | Web模糊测试 | /usr/local/bin/ffuf |
-| dirsearch | 目录扫描 | /app/thirdparty/dirsearch |
-| gobuster | 多协议爆破 | /usr/local/bin/gobuster |
-| whatweb | 技术栈识别 | gem (whatweb) |
-| crackmapexec | 内网渗透 | pipx (crackmapexec) |
-| impacket | 协议工具包 | pipx (impacket) |
-| bloodhound | AD分析 | pipx (bloodhound) |
-| hydra | 密码爆破 | /usr/bin/hydra |
-| xray | 被动扫描 | /usr/local/bin/xray |
-| subfinder | 子域名发现 | /usr/local/bin/subfinder |
-| frp | 内网穿透 | /opt/frp |
+核心执行流程，完全遵循Claude Code设计：
 
-#### P1-P3级工具 (18个)
-ysoserial, jwt_tool, ssrfmap, dalfox, httprobe, githacker, gopherus, phpggc, certipy, jndiexploit, jsfinder, xxeinjector, petitpotam, php_filter_chain, rubeus, mimikatz, pywhisker, marshalsec
+```
+用户输入 → System Prompt → LLM决策 → 工具执行 → 结果处理 → 继续或完成
+```
 
-### CTF专业方向工具
+**关键特点**:
+- AI完全自主决策下一步
+- 无硬编码的阶段转换
+- System Prompt指导行为
+- 错误直接返回，AI自我纠错
 
-#### Crypto (密码学)
-- `crypto_identifier`: 自动识别Base64/Hex/哈希/古典密码/RSA
-- `rsa_attacker`: 小指数攻击、Fermat分解
-- `hash_analyzer`: 哈希类型识别、彩虹表查询
-- `classical_cipher_solver`: 凯撒、栅栏、维吉尼亚自动破解
-- `encoding_decoder`: 多编码自动解码
+### 时间管理
 
-#### Pwn (二进制漏洞)
-- `binary_analyzer`: 保护检测、函数列表、字符串提取
-- `rop_builder`: ROPgadget集成、自动gadget搜索
-- `shellcode_generator`: msfvenom集成、多架构支持
+AI根据任务复杂度自动规划时间：
 
-#### Reverse (逆向工程)
-- `disassembler`: 多架构反汇编
-- `decompiler`: Ghidra/IDA/radare2
-- `string_extractor`: 字符串提取
-- `apk_analyzer`: APK反编译、权限分析
+```python
+from app.core.time_manager import TimeManager, TaskType
 
-#### Misc (杂项)
-- `steganography_detector`: LSB/DCT/FFT隐写检测
-- `forensics_analyzer`: 内存/磁盘分析、文件恢复
-- `traffic_analyzer`: PCAP解析、敏感信息提取
-- `encoding_converter`: 多编码转换
-- `qr_decoder`: 二维码解码
+tm = TimeManager()
+budget = tm.create_budget("session-1", TaskType.CTF_SINGLE_FLAG)
+# 默认30分钟，AI可在范围内自由分配
+```
 
-#### AI Security (AI安全)
-- `ai_attacker`: Prompt注入、越狱攻击、模型窃取
-- `prompt_injector`: Payload生成器
-- `model_extractor`: 模型重建攻击
+### 工具调用机制
 
-#### OA Exploit (OA系统攻击)
-支持系统：泛微OA、致远OA、通达OA、蓝凌OA、信呼OA、用友NC/U8、金蝶EAS/K3
+原生执行，无Docker开销：
+
+```python
+from app.tools_v2.native_executor import get_native_executor
+
+executor = get_native_executor()
+result = await executor.execute(
+    tool_name="nmap",
+    args=["-sV", "192.168.1.1"],
+    timeout=120000
+)
+```
 
 ---
 
 ## 配置
 
-### API密钥配置
+### settings.json
 
-```yaml
-# config.yaml
-llm:
-  default_model: "glm-4-flash"
-  api_keys:
-    openai: "sk-xxx"
-    anthropic: "sk-xxx"
-    zhipu: "xxx"
+```json
+{
+  "model": {
+    "name": "glm-5",
+    "base_url": "https://open.bigmodel.cn/api/paas/v4/",
+    "api_key": "${LLM_API_KEY}"
+  },
+  "timeouts": {
+    "ctf_single": 1800,
+    "ctf_multi": 3600
+  },
+  "tools": {
+    "native_execution": true
+  }
+}
 ```
 
-### MCP插件配置
+### 环境变量
 
-在 `.claude/settings.local.json` 中配置MCP服务器：
-- `serena`: LSP代码分析
-- `semgrep-plugin`: 静态代码扫描
-- `context7`: 文档查询
-- `playwright`: 浏览器自动化
-- `chrome-devtools-mcp`: 浏览器调试
+```bash
+# Linux/macOS
+export LLM_API_KEY="your-api-key"
+
+# Windows
+set LLM_API_KEY=your-api-key
+```
 
 ---
 
-## 安全特性
+## 工具列表
 
-### SSRF防护
-所有HTTP工具调用 `validate_url_for_ssrf()`，阻止私有IP访问（内网扫描除外）。
+### 核心工具（P0）
 
-### 命令注入防护
-使用 `subprocess` 列表传参，禁止 `shell=True`，参数白名单验证。
+| 工具 | 用途 | 安装 |
+|------|------|------|
+| nmap | 端口扫描 | apt/scoop |
+| nuclei | 漏洞扫描 | go install |
+| httpx | HTTP探测 | go install |
+| sqlmap | SQL注入 | pip install |
+| ffuf | 模糊测试 | go install |
 
-### 权限分离
-- Explore Agent: 仅 Read, Glob, Grep, LSP, WebFetch
-- Plan Agent: Read, Glob, Grep, AskUserQuestion
-- Attack Agent: Read, Write, Edit, Bash, MCP工具
-- Verify Agent: Read, Bash, Semgrep扫描
+### 完整工具列表
 
-### Docker安全
-- 非root用户运行（ctfagent）
-- sudo配置限制（仅允许安全工具）
-- 敏感文件权限控制
+见 [thirdparty/README.md](thirdparty/README.md)
+
+---
+
+## 文档
+
+- [Windows安装指南](docs/INSTALL_WINDOWS.md)
+- [Linux配置指南](docs/INSTALL_LINUX.md)
+- [架构设计](docs/ARCHITECTURE.md)
+- [API文档](docs/API.md)
 
 ---
 
@@ -363,7 +299,7 @@ llm:
 pytest tests/ -v
 ```
 
-### 代码审查
+### 代码检查
 
 ```bash
 semgrep --config=auto app/
@@ -371,31 +307,9 @@ semgrep --config=auto app/
 
 ### 添加新工具
 
-```python
-# app/tools_v2/tools/specialized_schemas.py
-TOOL_SCHEMAS["new_tool"] = {
-    "name": "new_tool",
-    "description": "工具描述",
-    "inputSchema": {...}
-}
-
-# app/tools_v2/tools/specialized_handlers.py
-async def new_tool_handler(...) -> Dict:
-    # 实现逻辑
-    return {"success": True, ...}
-
-SPECIALIZED_HANDLERS["new_tool"] = new_tool_handler
-```
-
----
-
-## 文档
-
-- [API文档](docs/API_DOCUMENTATION.md)
-- [使用指南](docs/USAGE.md)
-- [路线图](docs/ROADMAP.md)
-- [贡献指南](CONTRIBUTING.md)
-- [安全政策](SECURITY.md)
+1. 在 `thirdparty/` 创建工具目录
+2. 添加安装脚本 `install.sh` 和 `install.ps1`
+3. 在 `app/tools_v2/ctf_tools.py` 注册工具Schema
 
 ---
 
@@ -408,9 +322,3 @@ MIT License
 ## 贡献
 
 欢迎提交 Issue 和 Pull Request！
-
----
-
-## 更新日志
-
-见 [CHANGELOG.md](CHANGELOG.md)

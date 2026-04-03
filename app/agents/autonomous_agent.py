@@ -158,69 +158,91 @@ class AutonomousAgent:
         """
         思考：决定下一步行动
 
-        基于当前阶段和发现决定行动
-        集成Skill系统获取专业知识推荐
-        """
-        phase = self.state.phase
+        遵循Claude Code模式:
+        - 不硬编码阶段转换逻辑
+        - 通过LLM根据当前状态决策
+        - 集成Skill系统获取知识推荐
 
-        # 尝试从Skill系统获取建议
+        Returns:
+            行动字典 {"type": str, "tool": str, "params": dict}
+        """
+        # 1. 尝试从Skill系统获取建议
         skill_suggestion = await self._get_skill_suggestion()
         if skill_suggestion:
             return skill_suggestion
 
-        # 检查工具是否在延迟加载列表中，需要时显式加载
+        # 2. 构建上下文给LLM
         context = {
-            "phase": phase.value,
+            "phase": self.state.phase.value,
             "target": self.target,
-            "findings": self.state.findings[-3:] if self.state.findings else []
+            "objective": self.objective,
+            "current_iteration": self.state.current_iteration,
+            "findings": self.state.findings[-5:] if self.state.findings else [],
+            "tool_calls": self.state.tool_calls[-3:] if self.state.tool_calls else [],
         }
 
-        # 获取当前应加载的工具列表
+        # 3. 获取可用工具列表（延迟加载）
         available_tools = self.deferred_registry.get_tools_for_context(context)
 
-        # 默认逻辑
-        if phase == AgentPhase.INIT:
-            # 初始阶段：信息收集
-            return {
-                "type": "scan",
-                "tool": "nmap",
-                "params": {"target": self.target, "scan_type": "quick"}
-            }
+        # 4. 调用LLM决策
+        from app.llm_client import llm_client
+        from app.settings import config
 
-        elif phase == AgentPhase.EXPLORING:
-            # 探索阶段：发现服务后深入
-            if self._has_web_service():
+        system_prompt = f"""You are a CTF penetration tester deciding the next action.
+
+Current Context:
+- Target: {self.target}
+- Phase: {self.state.phase.value}
+- Iteration: {self.state.current_iteration}/{self.state.max_iterations}
+- Objective: {self.objective}
+
+Available Tools: {', '.join(available_tools)}
+
+Recent Findings: {self.state.findings[-3:] if self.state.findings else 'None yet'}
+
+Decide the next action. Return JSON:
+{{
+  "reasoning": "Why you chose this action",
+  "tool": "tool_name",
+  "params": {{"param1": "value1"}},
+  "expected_outcome": "What you expect to find"
+}}
+
+Be strategic. Focus on discovering vulnerabilities and flags."""
+
+        try:
+            result = await llm_client.call_with_details(
+                model=getattr(config, 'LLM_MODEL', 'glm-5'),
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": "Decide the next action now."}
+                ],
+                temperature=0.3,
+                timeout=30,
+                json_mode=True,
+            )
+
+            if result.success:
+                import json
+                decision = json.loads(result.content)
+
+                print(f"  🤖 LLM决策: {decision.get('reasoning', 'No reasoning')}")
+                print(f"  🔧 选择工具: {decision.get('tool', 'none')}")
+
                 return {
-                    "type": "vuln_scan",
-                    "tool": "nuclei",
-                    "params": {"target": self._get_web_url()}
+                    "type": "llm_decision",
+                    "tool": decision.get("tool"),
+                    "params": decision.get("params", {}),
+                    "reasoning": decision.get("reasoning"),
                 }
             else:
-                # 继续探索
-                return {
-                    "type": "scan",
-                    "tool": "nmap",
-                    "params": {"target": self.target, "scan_type": "service"}
-                }
+                # LLM失败 - 返回等待动作
+                print(f"  ⚠️ LLM决策失败: {result.error_message}")
+                return {"type": "wait", "tool": None, "error": result.error_message}
 
-        elif phase == AgentPhase.ATTACKING:
-            # 攻击阶段：利用发现的漏洞
-            vuln = self._get_next_vuln()
-            if vuln:
-                return self._plan_exploit(vuln)
-            else:
-                self.state.phase = AgentPhase.EXPLORING
-                return {"type": "explore", "tool": "nmap"}
-
-        elif phase == AgentPhase.VERIFYING:
-            # 验证阶段：检查flag
-            return {
-                "type": "verify",
-                "tool": "foundation",
-                "params": {"action": "check_flag"}
-            }
-
-        return {"type": "wait", "tool": None}
+        except Exception as e:
+            print(f"  ⚠️ LLM决策异常: {e}")
+            return {"type": "wait", "tool": None, "error": str(e)}
 
     async def _get_skill_suggestion(self) -> Optional[Dict[str, Any]]:
         """

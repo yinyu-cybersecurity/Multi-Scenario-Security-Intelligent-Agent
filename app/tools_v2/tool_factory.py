@@ -53,6 +53,8 @@ class ToolSchema:
     timeout: int = 60  # 秒
     retry_count: int = 0
     retry_delay: int = 1
+    is_read_only: bool = True  # 是否只读（只读工具可并发）
+    is_concurrency_safe: bool = True  # 是否并发安全
 
 
 @dataclass
@@ -335,13 +337,19 @@ class CTFToolV2:
         self.handler = handler
         self.permissions = permissions
         self.validator = ZodValidator()
-        self._semaphore = asyncio.Semaphore(1)  # 并发控制
+
+        # 并发控制：只读且并发安全的工具不需要semaphore
+        # Claude Code模式：细粒度并发控制
+        if schema.is_concurrency_safe and schema.is_read_only:
+            self._semaphore = None  # 无并发限制
+        else:
+            self._semaphore = asyncio.Semaphore(1)  # 串行执行
 
     async def execute(
         self,
         params: Dict[str, Any],
         context: Dict[str, Any],
-        agent_type: AgentType
+        agent_type: Optional[AgentType] = None
     ) -> ToolExecutionResult:
         """
         执行工具
@@ -375,26 +383,45 @@ class CTFToolV2:
                 error=permission_error
             )
 
-        # 3. 并发控制
-        async with self._semaphore:
-            # 4. 执行（带超时和重试）
+        # 3. 并发控制 - 细粒度
+        # Claude Code模式：只读工具可并发，写工具串行
+        if self._semaphore:
+            async with self._semaphore:
+                # 4. 执行（带超时和重试）
+                return await self._execute_with_retry(
+                    validation_result.sanitized_params,
+                    context
+                )
+        else:
+            # 并发安全工具：直接执行
             return await self._execute_with_retry(
                 validation_result.sanitized_params,
                 context
             )
 
-    def _check_permissions(self, agent_type: AgentType) -> Optional[str]:
-        """权限检查"""
+    def _check_permissions(self, agent_type: Optional[AgentType]) -> Optional[str]:
+        """
+        权限检查 - 简化版
+
+        遵循Claude Code模式:
+        - 如果没有指定agent_type，跳过权限检查（直接调用）
+        - 如果指定agent_type，进行基本权限验证
+        - 返回简单的错误信息，让AI自己决定如何处理
+        """
+        # 如果没有指定agent_type，跳过权限检查（用于直接调用）
+        if agent_type is None:
+            return None
+
         # 从Agent注册表获取权限
         from app.agents.base import get_agent_definition
 
         agent_def = get_agent_definition(agent_type)
         if not agent_def:
-            return f"Unknown agent type: {agent_type}"
+            return f"Unknown agent: {agent_type.value}"
 
         # 检查工具是否在禁止列表
         if self.schema.name in agent_def.disallowed_tools:
-            return f"Tool {self.schema.name} is disallowed for {agent_type.value}"
+            return f"Tool '{self.schema.name}' not allowed"
 
         # 检查工具是否在允许列表
         if self.schema.name not in agent_def.allowed_tools:
@@ -402,16 +429,10 @@ class CTFToolV2:
             for allowed in agent_def.allowed_tools:
                 if allowed.endswith("*"):
                     if self.schema.name.startswith(allowed[:-1]):
-                        break
-            else:
-                return f"Tool {self.schema.name} is not allowed for {agent_type.value}"
+                        return None  # 通配符匹配，允许执行
+            return f"Tool '{self.schema.name}' not in allowed list"
 
-        # 检查权限要求
-        for perm in self.permissions:
-            if perm not in agent_def.required_permissions:
-                return f"Agent {agent_type.value} lacks permission {perm.value}"
-
-        return None
+        return None  # 权限检查通过
 
     async def _execute_with_retry(
         self,
@@ -532,7 +553,9 @@ def buildTool(
     permissions: List[ToolPermission],
     timeout: int = 60,
     retry_count: int = 0,
-    retry_delay: int = 1
+    retry_delay: int = 1,
+    is_read_only: bool = True,
+    is_concurrency_safe: bool = True
 ) -> CTFToolV2:
     """
     工具工厂函数
@@ -541,6 +564,7 @@ def buildTool(
     - 声明式参数定义
     - Zod风格验证
     - 权限绑定
+    - 细粒度并发控制
 
     示例:
         sqlmap_tool = buildTool(
@@ -551,7 +575,9 @@ def buildTool(
                 {"name": "level", "type": "integer", "min": 1, "max": 5}
             ],
             handler=sqlmap_handler,
-            permissions=[ToolPermission.EXECUTE, ToolPermission.NETWORK]
+            permissions=[ToolPermission.EXECUTE, ToolPermission.NETWORK],
+            is_read_only=False,  # 写操作
+            is_concurrency_safe=False  # 需要串行
         )
 
     Args:
@@ -563,6 +589,8 @@ def buildTool(
         timeout: 超时时间（秒）
         retry_count: 重试次数
         retry_delay: 重试延迟（秒）
+        is_read_only: 是否只读（只读工具可并发）
+        is_concurrency_safe: 是否并发安全
 
     Returns:
         CTFToolV2实例
@@ -596,7 +624,9 @@ def buildTool(
         parameters=param_schemas,
         timeout=timeout,
         retry_count=retry_count,
-        retry_delay=retry_delay
+        retry_delay=retry_delay,
+        is_read_only=is_read_only,
+        is_concurrency_safe=is_concurrency_safe
     )
 
     return CTFToolV2(

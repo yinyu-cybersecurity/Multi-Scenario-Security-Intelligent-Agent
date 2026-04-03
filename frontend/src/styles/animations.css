@@ -1,0 +1,348 @@
+/* frontend/src/styles/animations.css */
+/**
+ * Claude Code风格脉冲动画系统
+ */
+
+/* ================================
+   1. 边框脉冲动画
+   ================================ */
+
+/* 蓝色边框脉冲 - 运行中状态 */
+.pulse-border-blue {
+  animation: pulse-border-blue 2s ease-in-out infinite;
+}
+
+@keyframes pulse-border-blue {
+  0%, 100% {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.3);
+  }
+  25% {
+    border-color: #60a5fa;
+    box-shadow: 0 0 4px 1px rgba(59, 130, 246, 0.2);
+  }
+  50% {
+    border-color: #93c5fd;
+    box-shadow: 0 0 8px 2px rgba(59, 130, 246, 0.15);
+  }
+  75% {
+    border-color: #60a5fa;
+    box-shadow: 0 0 4px 1px rgba(59, 130, 246, 0.2);
+  }
+}
+
+/* 绿色边框脉冲 - 完成状态 */
+.pulse-border-green {
+  animation: pulse-border-green 0.5s ease-out;
+}
+
+@keyframes pulse-border-green {
+  0% {
+    border-color: #3b82f6;
+    box-shadow: 0 0 8px 2px rgba(59, 130, 246, 0.2);
+  }
+  100% {
+    border-color: #10b981;
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+
+/* 红色边框脉冲 - 错误状态 */
+.pulse-border-red {
+  animation: pulse-border-red 0.5s ease-out;
+}
+
+@keyframes pulse-border-red {
+  0% {
+    border-color: #3b82f6;
+    box-shadow: 0 0 8px 2px rgba(59, 130, 246, 0.2);
+  }
+  100% {
+    border-color: #ef4444;
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+/* ================================
+   2. 点脉冲动画
+   ================================ */
+
+/* 执行指示点脉冲 - 蓝色 */
+.pulse-dot-blue {
+  width: 6px;
+  height: 6px;
+  background: #3b82f6;
+  border-radius: 50%;
+  animation: pulse-dot-blue 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-dot-blue {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.8;
+    box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);
+  }
+}
+
+/* 执行指示点脉冲 - 绿色 */
+.pulse-dot-green {
+  width: 6px;
+  height: 6px;
+  background: #10b981;
+  border-radius: 50%;
+  animation: pulse-dot-green 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-dot-green {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.8;
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+}
+
+/* ================================
+   3. 光标闪烁动画
+   ================================ */
+
+/* 执行中光标闪烁 "... " */
+.cursor-blink {
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* 流式输出光标 */
+.streaming-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 16px;
+  background: #3b82f6;
+  animation: streaming-cursor 1s step-end infinite;
+  vertical-align: middle;
+  margin-left: 2px;
+}
+
+@keyframes streaming-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* ================================
+   4. 旋转动画
+   ================================ */
+
+/* 加载图标旋转 */
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ================================
+   5. 进度条动画
+   ================================ */
+
+/* 进度条流动效果 */
+.progress-flow {
+  background: linear-gradient(
+    90deg,
+    #3b82f6 0%,
+    #60a5fa 50%,
+    #3b82f6 100%
+  );
+  background-size: 200% 100%;
+  animation: progress-flow 2s linear infinite;
+}
+
+@keyframes progress-flow {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 200% 0%; }
+}
+
+/* ================================
+   6. 入场/退场动画
+   ================================ */
+
+/* 卡片入场 */
+.fade-in-up {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 卡片退场 */
+.fade-out-down {
+  animation: fadeOutDown 0.2s ease-in;
+}
+
+@keyframes fadeOutDown {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+/* 滑入动画 */
+.slide-in {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ================================
+   7. 闪烁动画
+   ================================ */
+
+/* Flag发现闪烁 */
+.flash-green {
+  animation: flashGreen 0.6s ease-out;
+}
+
+@keyframes flashGreen {
+  0% {
+    background-color: rgba(16, 185, 129, 0.4);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+/* 错误闪烁 */
+.flash-red {
+  animation: flashRed 0.6s ease-out;
+}
+
+@keyframes flashRed {
+  0% {
+    background-color: rgba(239, 68, 68, 0.4);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+/* ================================
+   8. 呼吸动画
+   ================================ */
+
+/* 状态指示呼吸 */
+.breathing {
+  animation: breathing 2s ease-in-out infinite;
+}
+
+@keyframes breathing {
+  0%, 100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ================================
+   9. 弹跳动画
+   ================================ */
+
+/* 新消息弹跳 */
+.bounce-in {
+  animation: bounceIn 0.4s ease-out;
+}
+
+@keyframes bounceIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ================================
+   10. 工具调用专用动画
+   ================================ */
+
+/* 工具卡片运行状态 */
+.tool-running {
+  animation: tool-running 2s ease-in-out infinite;
+}
+
+@keyframes tool-running {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 12px 4px rgba(59, 130, 246, 0.15);
+  }
+}
+
+/* 工具卡片完成状态 */
+.tool-completed {
+  animation: tool-completed 0.5s ease-out;
+}
+
+@keyframes tool-completed {
+  0% {
+    box-shadow: 0 0 8px 2px rgba(59, 130, 246, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+
+/* 工具卡片错误状态 */
+.tool-error {
+  animation: tool-error 0.5s ease-out;
+}
+
+@keyframes tool-error {
+  0% {
+    box-shadow: 0 0 8px 2px rgba(59, 130, 246, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}

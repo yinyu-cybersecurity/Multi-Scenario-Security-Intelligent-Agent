@@ -6,10 +6,31 @@ import { wsStore, useWSState } from '../store/wsStore';
 import { buildHook, BuiltHook } from './hookFactory';
 import type { WSMessage, NodeType, LogEntry, ToolExecution, Finding, Flag, Iteration, Attachment } from '../store/types';
 
+/**
+ * 获取WebSocket URL
+ * 支持相对路径和绝对路径
+ */
+function getWebSocketUrl(): string {
+  const envUrl = import.meta.env.VITE_WS_URL;
+
+  if (envUrl) {
+    // 如果是相对路径，转换为绝对URL
+    if (envUrl.startsWith('/')) {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${protocol}//${window.location.host}${envUrl}`;
+    }
+    return envUrl;
+  }
+
+  // 默认使用当前页面的host
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}/ws`;
+}
+
 // 使用buildHook工厂创建WebSocket配置
 const wsHook: BuiltHook = buildHook({
   name: 'WebSocket',
-  url: import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws',
+  url: getWebSocketUrl(),
   shouldReconnect: () => true,
   reconnectDelay: () => 3000,
   maxReconnectAttempts: () => 10,
@@ -41,6 +62,9 @@ export function useWebSocket() {
     try {
       const message: WSMessage = JSON.parse(event.data);
 
+      // 设置最后消息，供控制台事件处理器使用
+      wsStore.setLastMessage(message);
+
       switch (message.type) {
         case 'connection_established': {
           // 连接成功
@@ -56,7 +80,7 @@ export function useWebSocket() {
         }
 
         case 'task_start': {
-          const { target, description } = message.data;
+          const { target } = message.data;
           addLogEntry({
             id: `task-${Date.now()}`,
             timestamp: new Date(),

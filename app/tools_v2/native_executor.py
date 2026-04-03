@@ -1,11 +1,13 @@
 """
-原生工具执行器 - 直接调用系统工具
+原生工具执行器 - Claude Code最佳实践
 
-设计原则:
-1. 直接执行系统命令，无Docker开销
-2. 通过虚拟环境隔离Python工具
-3. 安全检查仅针对极危险操作
-4. 错误直接返回给AI，让其自我纠错
+核心设计:
+1. 工具路径由tool_paths.py配置，支持thirdparty目录
+2. 工具通过subprocess直接调用
+3. 权限检查与执行分离
+4. 错误直接返回AI，让其自我纠错
+
+参考: Claude Code工具系统深度技术文档
 """
 
 import asyncio
@@ -13,142 +15,383 @@ import subprocess
 import shutil
 import os
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List, Optional
 from pathlib import Path
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
+# 导入工具路径配置
+from app.tools_v2.tool_paths import (
+    get_tool_path,
+    is_python_tool,
+    is_java_tool,
+    is_directory_tool,
+    THIRDPARTY_DIR,
+)
+
+
+# ============================================
+# 工具执行结果
+# ============================================
 
 @dataclass
-class ToolAvailability:
-    """工具可用性检查结果"""
-    name: str
-    is_available: bool
-    version: Optional[str] = None
-    path: Optional[str] = None
+class ToolResult:
+    """工具执行结果"""
+    success: bool
+    stdout: str = ""
+    stderr: str = ""
+    exit_code: int = 0
     error: Optional[str] = None
+    tool: str = ""
+    hint: Optional[str] = None
 
+
+# ============================================
+# 工具权限检查
+# ============================================
+
+class PermissionResult:
+    """权限检查结果"""
+    ALLOW = "allow"
+    DENY = "deny"
+    ASK = "ask"
+
+
+async def check_tool_permissions(
+    tool_name: str,
+    args: List[str],
+    context: Dict[str, Any]
+) -> str:
+    """
+    检查工具执行权限
+
+    Claude Code模式:
+    - 返回 allow/deny/ask
+    - 独立于执行逻辑
+
+    Args:
+        tool_name: 工具名称
+        args: 参数列表
+        context: 执行上下文
+
+    Returns:
+        PermissionResult.ALLOW/DENY/ASK
+    """
+    # 危险命令检查
+    dangerous_patterns = [
+        "rm -rf",
+        "mkfs",
+        "dd if=",
+        "> /dev/sd",
+        "chmod 777",
+        "curl | bash",
+        "wget | bash",
+    ]
+
+    cmd_str = " ".join(args)
+    for pattern in dangerous_patterns:
+        if pattern in cmd_str:
+            logger.warning(f"Dangerous pattern detected: {pattern}")
+            return PermissionResult.ASK
+
+    # 默认允许（Claude Code模式）
+    return PermissionResult.ALLOW
+
+
+# ============================================
+# 工具执行函数
+# ============================================
+
+async def execute_tool(
+    tool_name: str,
+    args: List[str],
+    timeout: int = 120000,
+    env: Optional[Dict[str, str]] = None,
+    cwd: Optional[str] = None,
+    context: Optional[Dict[str, Any]] = None,
+) -> ToolResult:
+    """
+    执行工具 - Claude Code最佳实践
+
+    核心模式:
+    1. 工具通过subprocess直接调用
+    2. 系统PATH自动解析工具位置
+    3. 无硬编码路径映射
+
+    Args:
+        tool_name: 工具名称（如"sqlmap", "nuclei"）
+        args: 参数列表
+        timeout: 超时时间（毫秒）
+        env: 额外环境变量
+        cwd: 工作目录
+        context: 执行上下文
+
+    Returns:
+        ToolResult
+    """
+    # 1. 权限检查
+    permission = await check_tool_permissions(
+        tool_name,
+        args,
+        context or {}
+    )
+
+    if permission == PermissionResult.DENY:
+        return ToolResult(
+            success=False,
+            error="Permission denied",
+            tool=tool_name,
+            hint="This tool execution is not allowed"
+        )
+
+    # 2. 检查工具是否可用
+    tool_path = get_tool_path(tool_name)
+
+    if not tool_path:
+        # 尝试从系统PATH查找
+        tool_path = shutil.which(tool_name)
+
+        if not tool_path:
+            return ToolResult(
+                success=False,
+                error=f"Tool '{tool_name}' not found",
+                tool=tool_name,
+                hint=get_install_hint(tool_name)
+            )
+
+    # 3. 构建命令
+    cmd = _build_command(tool_name, str(tool_path), args)
+
+    # 4. 准备环境变量
+    exec_env = os.environ.copy()
+    if env:
+        exec_env.update(env)
+
+    logger.info(f"Executing: {tool_name} {' '.join(args[:5])}...")
+
+    try:
+        # 5. 异步subprocess调用
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=exec_env,
+            cwd=cwd,
+        )
+
+        # 6. 等待执行完成（带超时）
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(),
+            timeout=timeout / 1000,
+        )
+
+        stdout_str = stdout.decode("utf-8", errors="replace")
+        stderr_str = stderr.decode("utf-8", errors="replace")
+
+        # 7. 返回结果
+        result = ToolResult(
+            success=proc.returncode == 0,
+            stdout=stdout_str,
+            stderr=stderr_str,
+            exit_code=proc.returncode,
+            tool=tool_name,
+        )
+
+        if proc.returncode == 0:
+            logger.info(f"Tool {tool_name} executed successfully")
+        else:
+            logger.warning(
+                f"Tool {tool_name} failed with exit code {proc.returncode}"
+            )
+
+        return result
+
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        logger.error(f"Tool {tool_name} timeout after {timeout}ms")
+
+        return ToolResult(
+            success=False,
+            error=f"Timeout after {timeout}ms",
+            tool=tool_name,
+            hint="Consider increasing timeout or optimizing parameters"
+        )
+
+    except FileNotFoundError as e:
+        logger.error(f"Tool {tool_name} not found: {e}")
+
+        return ToolResult(
+            success=False,
+            error=f"Tool executable not found: {e}",
+            tool=tool_name,
+            hint=get_install_hint(tool_name)
+        )
+
+    except PermissionError as e:
+        logger.error(f"Permission denied for {tool_name}: {e}")
+
+        return ToolResult(
+            success=False,
+            error=f"Permission denied: {e}",
+            tool=tool_name,
+            hint="Check file permissions or run with appropriate privileges"
+        )
+
+    except Exception as e:
+        logger.error(f"Unexpected error executing {tool_name}: {e}")
+
+        return ToolResult(
+            success=False,
+            error=str(e),
+            tool=tool_name
+        )
+
+
+# ============================================
+# 辅助函数
+# ============================================
+
+def _build_command(tool_name: str, tool_path: str, args: List[str]) -> List[str]:
+    """
+    根据工具类型构建执行命令
+
+    Args:
+        tool_name: 工具名称
+        tool_path: 工具路径
+        args: 参数列表
+
+    Returns:
+        完整命令列表
+    """
+    # Python脚本工具
+    if is_python_tool(tool_name):
+        return ["python", tool_path] + args
+
+    # Java jar工具
+    if is_java_tool(tool_name):
+        return ["java", "-jar", tool_path] + args
+
+    # 目录型工具（需要进一步处理）
+    if is_directory_tool(tool_name):
+        # 返回目录路径，让具体工具handler处理
+        return [tool_path] + args
+
+    # 可执行文件直接执行
+    return [tool_path] + args
+
+
+def get_install_hint(tool_name: str) -> str:
+    """
+    获取工具安装提示
+
+    Args:
+        tool_name: 工具名称
+
+    Returns:
+        安装提示
+    """
+    hints = {
+        "sqlmap": "pip install sqlmap",
+        "nuclei": "go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+        "httpx": "go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest",
+        "ffuf": "go install -v github.com/ffuf/ffuf/v2@latest",
+        "subfinder": "go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest",
+        "gobuster": "go install github.com/OJ/gobuster/v3@latest",
+        "dalfox": "go install github.com/hahwul/dalfox/v2@latest",
+        "hashcat": "apt install hashcat (Linux) or download from hashcat.net",
+        "john": "apt install john (Linux)",
+        "gdb": "apt install gdb (Linux)",
+    }
+
+    return hints.get(
+        tool_name,
+        f"Install {tool_name} using your system package manager"
+    )
+
+
+# ============================================
+# 批量执行
+# ============================================
+
+async def execute_batch(
+    commands: List[Dict[str, Any]],
+    max_concurrent: int = 3,
+) -> List[ToolResult]:
+    """
+    批量执行多个工具命令
+
+    Args:
+        commands: 命令列表 [{"tool": str, "args": list, "timeout": int}, ...]
+        max_concurrent: 最大并发数
+
+    Returns:
+        结果列表
+    """
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def execute_with_semaphore(cmd: Dict[str, Any]) -> ToolResult:
+        async with semaphore:
+            return await execute_tool(
+                tool_name=cmd.get("tool"),
+                args=cmd.get("args", []),
+                timeout=cmd.get("timeout", 120000),
+                env=cmd.get("env"),
+                cwd=cmd.get("cwd"),
+                context=cmd.get("context"),
+            )
+
+    tasks = [execute_with_semaphore(cmd) for cmd in commands]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # 处理异常结果
+    processed_results = []
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            processed_results.append(
+                ToolResult(
+                    success=False,
+                    error=str(result),
+                    tool=commands[i].get("tool"),
+                )
+            )
+        else:
+            processed_results.append(result)
+
+    return processed_results
+
+
+# ============================================
+# 兼容层
+# ============================================
 
 class NativeExecutor:
     """
-    原生工具执行器
+    兼容层：为旧代码提供API
 
-    直接调用系统工具，无需Docker容器
+    内部直接调用execute_tool函数
     """
 
-    # Python工具的虚拟环境路径
-    VENV_PATH = Path.home() / ".ctf_agent" / "venv"
-
-    # 工具路径映射
-    TOOL_PATHS: Dict[str, Any] = {}
-
     def __init__(self):
-        self._availability_cache: Dict[str, ToolAvailability] = {}
-        self._setup_tool_paths()
+        pass
 
-    def _setup_tool_paths(self):
-        """设置工具路径"""
-        venv = self.VENV_PATH
-        self.TOOL_PATHS = {
-            # Python工具
-            "sqlmap": venv / "bin" / "sqlmap",
-            "nuclei": venv / "bin" / "nuclei",
-            "ffuf": venv / "bin" / "ffuf",
-            "httpx": venv / "bin" / "httpx",
+    async def check_available(self, tool_name: str) -> Dict[str, Any]:
+        """检查工具是否可用"""
+        tool_path = shutil.which(tool_name)
 
-            # 系统工具
-            "nmap": "nmap",
-            "gdb": "gdb",
-            "hashcat": "hashcat",
-            "john": "john",
-        }
-
-    async def check_available(self, tool_name: str) -> ToolAvailability:
-        """检查工具是否可用 - 真实检查"""
-        if tool_name in self._availability_cache:
-            return self._availability_cache[tool_name]
-
-        # 真实的文件系统检查
-        if tool_name in self.TOOL_PATHS:
-            tool_path = self.TOOL_PATHS[tool_name]
-            if isinstance(tool_path, Path):
-                if tool_path.exists():
-                    # 尝试获取版本信息
-                    version = await self._get_tool_version(str(tool_path))
-                    result = ToolAvailability(
-                        name=tool_name,
-                        is_available=True,
-                        path=str(tool_path),
-                        version=version,
-                    )
-                else:
-                    result = ToolAvailability(
-                        name=tool_name,
-                        is_available=False,
-                        error=f"Tool not found at {tool_path}",
-                    )
-            else:
-                # 真实的PATH检查
-                full_path = shutil.which(tool_path)
-                if full_path:
-                    version = await self._get_tool_version(full_path)
-                    result = ToolAvailability(
-                        name=tool_name,
-                        is_available=True,
-                        path=full_path,
-                        version=version,
-                    )
-                else:
-                    result = ToolAvailability(
-                        name=tool_name,
-                        is_available=False,
-                        error=f"Tool not found in PATH",
-                    )
+        if tool_path:
+            return {
+                "name": tool_name,
+                "is_available": True,
+                "path": tool_path,
+            }
         else:
-            # 真实的系统PATH检查
-            full_path = shutil.which(tool_name)
-            if full_path:
-                version = await self._get_tool_version(full_path)
-                result = ToolAvailability(
-                    name=tool_name,
-                    is_available=True,
-                    path=full_path,
-                    version=version,
-                )
-            else:
-                result = ToolAvailability(
-                    name=tool_name,
-                    is_available=False,
-                    error="Tool not found",
-                )
-
-        self._availability_cache[tool_name] = result
-        return result
-
-    async def _get_tool_version(self, tool_path: str) -> Optional[str]:
-        """获取工具版本信息"""
-        try:
-            # 尝试常见的版本参数
-            for version_flag in ["--version", "-V", "version", "-version"]:
-                proc = await asyncio.create_subprocess_exec(
-                    tool_path,
-                    version_flag,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(),
-                    timeout=5.0,
-                )
-                if proc.returncode == 0:
-                    output = stdout.decode("utf-8", errors="replace").strip()
-                    if output:
-                        # 提取版本号（取第一行）
-                        return output.split("\n")[0][:100]
-        except Exception:
-            pass
-        return None
+            return {
+                "name": tool_name,
+                "is_available": False,
+                "error": f"Tool not found in PATH",
+            }
 
     async def execute(
         self,
@@ -158,182 +401,51 @@ class NativeExecutor:
         env: Optional[Dict[str, str]] = None,
         cwd: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        原生执行工具 - 真实的subprocess调用
+        """执行工具"""
+        result = await execute_tool(
+            tool_name=tool_name,
+            args=args,
+            timeout=timeout,
+            env=env,
+            cwd=cwd,
+        )
 
-        Args:
-            tool_name: 工具名称
-            args: 参数列表
-            timeout: 超时时间（毫秒）
-            env: 额外环境变量
-            cwd: 工作目录
-        """
-        # 真实的可用性检查
-        availability = await self.check_available(tool_name)
-        if not availability.is_available:
-            return {
-                "success": False,
-                "error": f"Tool '{tool_name}' is not available: {availability.error}",
-                "hint": self._get_install_hint(tool_name),
-            }
-
-        tool_path = availability.path
-
-        # 构建命令
-        cmd = [tool_path] + args
-
-        # 真实的环境变量
-        exec_env = os.environ.copy()
-        if env:
-            exec_env.update(env)
-
-        logger.info(f"Executing: {tool_name} with args: {args[:5]}...")
-
-        try:
-            # 真实的异步subprocess调用
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=exec_env,
-                cwd=cwd,
-            )
-
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=timeout / 1000,
-            )
-
-            stdout_str = stdout.decode("utf-8", errors="replace")
-            stderr_str = stderr.decode("utf-8", errors="replace")
-
-            result = {
-                "success": proc.returncode == 0,
-                "stdout": stdout_str,
-                "stderr": stderr_str,
-                "exit_code": proc.returncode,
-                "tool": tool_name,
-                "path": tool_path,
-            }
-
-            # 添加版本信息（如果有的话）
-            if availability.version:
-                result["version"] = availability.version
-
-            # 记录执行结果
-            if proc.returncode == 0:
-                logger.info(f"Tool {tool_name} executed successfully")
-            else:
-                logger.warning(f"Tool {tool_name} failed with exit code {proc.returncode}")
-
-            return result
-
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
-            logger.error(f"Tool {tool_name} timeout after {timeout}ms")
-            return {
-                "success": False,
-                "error": f"Timeout after {timeout}ms",
-                "tool": tool_name,
-                "hint": "Consider increasing timeout or optimizing command parameters",
-            }
-        except FileNotFoundError as e:
-            logger.error(f"Tool {tool_name} not found: {e}")
-            return {
-                "success": False,
-                "error": f"Tool executable not found: {e}",
-                "tool": tool_name,
-            }
-        except PermissionError as e:
-            logger.error(f"Permission denied for {tool_name}: {e}")
-            return {
-                "success": False,
-                "error": f"Permission denied: {e}",
-                "tool": tool_name,
-                "hint": "Check file permissions or run with appropriate privileges",
-            }
-        except Exception as e:
-            logger.error(f"Unexpected error executing {tool_name}: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "tool": tool_name,
-            }
-
-    def _get_install_hint(self, tool_name: str) -> str:
-        """获取工具安装提示"""
-        hints = {
-            "sqlmap": "pip install sqlmap",
-            "nuclei": "go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
-            "ffuf": "go install -v github.com/ffuf/ffuf/v2@latest",
-            "httpx": "go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest",
-            "nmap": "apt install nmap (Linux) or download from nmap.org (Windows)",
-            "gdb": "apt install gdb (Linux)",
-            "hashcat": "apt install hashcat (Linux) or download from hashcat.net",
-            "john": "apt install john (Linux)",
+        return {
+            "success": result.success,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "exit_code": result.exit_code,
+            "error": result.error,
+            "tool": result.tool,
+            "hint": result.hint,
         }
-        return hints.get(tool_name, f"Install {tool_name} using your system package manager")
 
     async def execute_batch(
         self,
         commands: List[Dict[str, Any]],
         max_concurrent: int = 3,
     ) -> List[Dict[str, Any]]:
-        """
-        批量执行多个工具命令
+        """批量执行"""
+        results = await execute_batch(commands, max_concurrent)
 
-        Args:
-            commands: 命令列表 [{"tool": str, "args": list, "timeout": int}, ...]
-            max_concurrent: 最大并发数
-
-        Returns:
-            结果列表
-        """
-        semaphore = asyncio.Semaphore(max_concurrent)
-
-        async def execute_with_semaphore(cmd: Dict[str, Any]) -> Dict[str, Any]:
-            async with semaphore:
-                return await self.execute(
-                    tool_name=cmd.get("tool"),
-                    args=cmd.get("args", []),
-                    timeout=cmd.get("timeout", 120000),
-                    env=cmd.get("env"),
-                    cwd=cmd.get("cwd"),
-                )
-
-        tasks = [execute_with_semaphore(cmd) for cmd in commands]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # 处理异常结果
-        processed_results = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                processed_results.append({
-                    "success": False,
-                    "error": str(result),
-                    "tool": commands[i].get("tool"),
-                })
-            else:
-                processed_results.append(result)
-
-        return processed_results
+        return [
+            {
+                "success": r.success,
+                "stdout": r.stdout,
+                "stderr": r.stderr,
+                "exit_code": r.exit_code,
+                "error": r.error,
+                "tool": r.tool,
+            }
+            for r in results
+        ]
 
     def clear_cache(self):
-        """清除可用性缓存"""
-        self._availability_cache.clear()
-
-    def list_available_tools(self) -> List[str]:
-        """列出所有已配置且可用的工具"""
-        available = []
-        for tool_name in self.TOOL_PATHS.keys():
-            availability = self._availability_cache.get(tool_name)
-            if availability and availability.is_available:
-                available.append(tool_name)
-        return available
+        """兼容方法"""
+        pass
 
 
-# 全局执行器实例
+# 全局实例
 _executor: Optional[NativeExecutor] = None
 
 
@@ -345,7 +457,8 @@ def get_native_executor() -> NativeExecutor:
     return _executor
 
 
-async def check_tool_available(tool_name: str) -> ToolAvailability:
+# 快捷函数
+async def check_tool_available(tool_name: str) -> Dict[str, Any]:
     """快捷函数：检查工具是否可用"""
     executor = get_native_executor()
     return await executor.check_available(tool_name)
@@ -358,13 +471,16 @@ async def run_tool(
     **kwargs
 ) -> Dict[str, Any]:
     """快捷函数：执行工具"""
-    executor = get_native_executor()
-    return await executor.execute(tool_name, args, timeout, **kwargs)
+    return await execute_tool(tool_name, args, timeout, **kwargs)
 
 
 __all__ = [
+    "execute_tool",
+    "execute_batch",
+    "check_tool_permissions",
+    "ToolResult",
+    "PermissionResult",
     "NativeExecutor",
-    "ToolAvailability",
     "get_native_executor",
     "check_tool_available",
     "run_tool",
