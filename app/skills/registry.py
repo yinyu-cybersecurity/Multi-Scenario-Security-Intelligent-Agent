@@ -49,9 +49,12 @@ class Example:
 @dataclass
 class Skill:
     """Skill定义"""
-    name: str
+    name: str  # 显示名称，可以是中文
     description: str
     domain: str
+
+    # 唯一标识（文件名）
+    skill_id: str = ""  # 由registry加载时自动设置
 
     # 知识内容
     knowledge: str = ""
@@ -144,19 +147,27 @@ class SkillRegistry:
         self._tag_index: Dict[str, List[str]] = {}
 
     def register(self, skill: Skill) -> None:
-        """注册Skill"""
-        self._skills[skill.name] = skill
+        """注册Skill
 
-        # 建立域索引
+        使用skill_id作为注册key（文件名），name作为显示名称
+        """
+        # 必须有skill_id才能注册
+        if not skill.skill_id:
+            skill.skill_id = skill.name  # 如果没有skill_id，使用name作为fallback
+
+        # 用skill_id作为唯一标识注册
+        self._skills[skill.skill_id] = skill
+
+        # 建立域索引（用skill_id）
         if skill.domain not in self._domain_index:
             self._domain_index[skill.domain] = []
-        self._domain_index[skill.domain].append(skill.name)
+        self._domain_index[skill.domain].append(skill.skill_id)
 
-        # 建立标签索引
+        # 建立标签索引（用skill_id）
         for tag in skill.tags:
             if tag not in self._tag_index:
                 self._tag_index[tag] = []
-            self._tag_index[tag].append(skill.name)
+            self._tag_index[tag].append(skill.skill_id)
 
     def load_from_directory(self, directory: str) -> int:
         """
@@ -177,14 +188,15 @@ class SkillRegistry:
         for yaml_file in dir_path.glob("*.yaml"):
             try:
                 skill = Skill.from_yaml(str(yaml_file))
-                # 使用文件名作为唯一标识，避免name字段重复导致覆盖
+                # 使用文件名作为唯一标识skill_id
                 skill_id = yaml_file.stem  # 文件名去掉.yaml后缀
 
-                # 如果name为空或重复，使用文件名作为name
-                if not skill.name or skill.name in self._skills:
-                    # 保留原name作为显示名，但使用文件名作为注册ID
-                    skill_display_name = skill.name or skill_id
-                    skill.name = skill_id  # 注册用的唯一ID
+                # 设置skill_id（注册用的唯一ID）
+                skill.skill_id = skill_id
+
+                # name字段保留为显示名称（可以是中文）
+                if not skill.name:
+                    skill.name = skill_id  # 如果YAML中没有name，用文件名作为显示名
 
                 self.register(skill)
                 count += 1
@@ -198,18 +210,18 @@ class SkillRegistry:
         return self._skills.get(name)
 
     def list_skills(self) -> List[str]:
-        """列出所有Skill名称"""
+        """列出所有Skill ID（文件名）"""
         return list(self._skills.keys())
 
     def get_skills_by_domain(self, domain: str) -> List[Skill]:
         """按域获取Skills"""
-        skill_names = self._domain_index.get(domain, [])
-        return [self._skills[name] for name in skill_names]
+        skill_ids = self._domain_index.get(domain, [])
+        return [self._skills[skill_id] for skill_id in skill_ids]
 
     def get_skills_by_tag(self, tag: str) -> List[Skill]:
         """按标签获取Skills"""
-        skill_names = self._tag_index.get(tag, [])
-        return [self._skills[name] for name in skill_names]
+        skill_ids = self._tag_index.get(tag, [])
+        return [self._skills[skill_id] for skill_id in skill_ids]
 
     def find_matching_skills(
         self,
@@ -299,8 +311,21 @@ _registry: Optional[SkillRegistry] = None
 
 
 def get_skill_registry() -> SkillRegistry:
-    """获取全局Skill注册表"""
+    """
+    获取全局Skill注册表
+
+    自动加载skills目录下的所有YAML文件
+    """
     global _registry
     if _registry is None:
         _registry = SkillRegistry()
+
+        # 自动加载skills目录
+        from pathlib import Path
+        project_root = Path(__file__).parent.parent.parent
+        skills_dir = project_root / "skills"
+
+        if skills_dir.exists():
+            _registry.load_from_directory(str(skills_dir))
+
     return _registry
