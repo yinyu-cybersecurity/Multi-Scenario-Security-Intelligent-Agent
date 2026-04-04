@@ -39,6 +39,10 @@ async def query(
 ) -> AsyncGenerator[Dict, None]:
     """极简Query循环。框架只做消息传递+超时熔断+循环检测。"""
 
+    # === 初始化MCP工具 ===
+    from app.tools_v2.mcp.client import ensure_mcp_tools_registered
+    await ensure_mcp_tools_registered()
+
     tool_schemas = get_tool_registry_v2().get_all_schemas()
     time_budget = TimeBudget(config.timeout_seconds)
     loop_detector = LoopDetector()

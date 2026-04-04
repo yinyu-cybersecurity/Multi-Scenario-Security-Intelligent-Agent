@@ -41,6 +41,15 @@
       "command": "npx",
       "args": ["-y", "@anthropic-ai/mcp-server-playwright"],
       "env": {}
+    },
+    "openspace": {
+      "command": "D:/LangGraph2.0/langGraph/deploy/venv312/Scripts/openspace-mcp.exe",
+      "args": [],
+      "env": {
+        "OPENSPACE_HOST_SKILL_DIRS": "D:/LangGraph2.0/langGraph/deploy/skills",
+        "OPENSPACE_WORKSPACE": "D:/LangGraph2.0/langGraph/deploy/OpenSpace-main",
+        "OPENSPACE_API_KEY": "${OPENSPACE_API_KEY}"
+      }
     }
   },
 

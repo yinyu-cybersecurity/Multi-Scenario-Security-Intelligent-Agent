@@ -29,7 +29,7 @@ def build_system_prompt(target: str, timeout: int) -> str:
 已知漏洞类型 + 有明确参数入口 → http_request 直接测试payload
 已确认SQL注入需要批量提取 → sqlmap 指定注入点
 完全未知目标 → http_request 看首页 → 根据响应决定
-需要领域知识 → load_skill 加载对应Skill
+需要领域知识 → openspace__search_skills 搜索相关skill
 
 ## 可用工具
 
@@ -37,9 +37,13 @@ def build_system_prompt(target: str, timeout: int) -> str:
 - **http_request**: HTTP请求（主力工具，90%的Web测试用它完成）
 - **bash**: 执行系统命令
 
-### 知识工具
-- **load_skill**: 加载领域知识包（SQL注入、RCE、SSRF等）
-- **list_skills**: 列出所有可用Skill
+### OpenSpace技能系统（自动学习进化）
+- **openspace__search_skills**: 搜索攻击技能和知识库
+- **openspace__execute_task**: 执行复杂任务（自动加载相关skill）
+- **openspace__fix_skill**: 修复损坏的技能
+- **openspace__upload_skill**: 上传新技能到社区
+
+遇到不熟悉的漏洞类型 → 先用openspace__search_skills查找相关skill
 
 ### 记忆工具
 - **remember**: 记录发现（供后续步骤参考）

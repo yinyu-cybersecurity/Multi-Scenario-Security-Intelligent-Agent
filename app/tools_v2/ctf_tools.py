@@ -138,17 +138,6 @@ async def bash_handler(params: Dict[str, Any], context: Dict[str, Any]) -> ToolR
         return ToolResult(success=False, data=None, error=str(e))
 
 
-async def load_skill_handler(params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
-    """加载Skill知识包"""
-    skill_name = params.get("name")
-
-    if not skill_name:
-        return ToolResult(success=False, data=None, error="Skill name is required")
-
-    # TODO: 从skills/目录加载YAML文件
-    return ToolResult(success=True, data={"message": f"Skill '{skill_name}' loaded"})
-
-
 async def remember_handler(params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
     """记录发现"""
     key = params.get("key")
@@ -265,24 +254,10 @@ def register_ctf_tools():
         permissions=[ToolPermission.EXECUTE],
     ))
 
-    # 2. 知识工具
-    registry.register(buildTool(
-        name="load_skill",
-        description="加载领域知识包",
-        parameters=[
-            {"name": "name", "type": "string", "required": True, "description": "Skill名称"},
-        ],
-        handler=load_skill_handler,
-        permissions=[],
-    ))
-
-    registry.register(buildTool(
-        name="list_skills",
-        description="列出所有可用Skill",
-        parameters=[],
-        handler=lambda p, c: ToolResult(success=True, data={"skills": ["sqli", "rce", "ssrf", "xxe"]}),
-        permissions=[],
-    ))
+    # 删除冗余的load_skill/list_skills
+    # AI应该直接使用OpenSpace MCP工具:
+    # - openspace__search_skills: 搜索skill
+    # - openspace__execute_task: 执行任务（自动加载相关skill）
 
     # 3. 记忆工具
     registry.register(buildTool(

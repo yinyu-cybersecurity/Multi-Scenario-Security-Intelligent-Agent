@@ -1,0 +1,368 @@
+name: auto_recon
+description: 自动化信息收集 - 一键资产发现与漏洞探测，整合多种工具进行快速全面的信息收集
+version: "2.0"
+author: CTF-Agent Team
+tags: [recon, automation, asset-discovery, information-gathering, enumeration]
+priority: high
+
+# 使用场景
+scenarios:
+  - CTF比赛快速信息收集
+  - 内网资产自动发现
+  - Web应用全面扫描
+  - AD域环境侦察
+  - 多目标批量探测
+
+# 核心技术
+techniques:
+  - Multi-Tool Orchestration: 多工具协同自动化
+  - Asset Discovery Pipeline: 资产发现流水线
+  - Intelligent Scanning: 智能扫描策略
+  - Result Aggregation: 结果聚合分析
+  - Automated Reporting: 自动报告生成
+
+# 工具列表
+tools:
+  - nmap: 端口扫描和服务探测
+  - masscan: 快速端口扫描
+  - nuclei: 漏洞模板扫描
+  - ffuf: 目录模糊测试
+  - gobuster: 目录爆破
+  - dirsearch: 目录扫描
+  - whatweb: Web技术识别
+  - wafw00f: WAF检测
+  - subfinder: 子域名发现
+  - amass: 子域名枚举
+  - dnsx: DNS验证
+  - httpx: HTTP探测
+  - CrackMapExec: 内网扫描
+  - NetExec: 网络执行
+  - BloodHound: AD分析
+  - enum4linux: SMB枚举
+  - ldapdomaindump: LDAP枚举
+
+# 自动化框架
+automation_framework:
+  - concept: |
+      # 自动化信息收集框架
+
+      # 设计原则:
+      # 1. 分层探测: 从宏观到微观
+      # 2. 智能判断: 根据结果调整策略
+      # 3. 结果聚合: 统一格式输出
+      # 4. 超时控制: 合理时间预算
+
+      # 探测层次:
+      # Layer 1: 资产发现 (端口、域名)
+      # Layer 2: 服务识别 (服务类型、版本)
+      # Layer 3: 深度探测 (漏洞、配置)
+      # Layer 4: 针对性攻击 (利用链)
+
+# Web应用自动探测
+web_recon:
+  - pipeline: |
+      # Web应用自动化探测流水线
+
+      # Step 1: 基础探测
+
+      # HTTP探测
+      httpx -u target.com -status-code -title -tech-detect -follow-redirects
+
+      # 技术栈识别
+      whatweb target.com
+
+      # WAF检测
+      wafw00f target.com
+
+      # Step 2: 端口扫描
+
+      nmap -sV -sC -p- --min-rate 5000 target.com
+
+      # Step 3: 目录发现
+
+      # 使用ffuf
+      ffuf -u https://target.com/FUZZ -w wordlist.txt -mc all -fc 404 -t 50
+
+      # 使用gobuster
+      gobuster dir -u https://target.com -w wordlist.txt -t 50
+
+      # 使用dirsearch
+      python dirsearch.py -u https://target.com -e php,html,asp,aspx
+
+      # Step 4: 漏洞扫描
+
+      nuclei -u https://target.com -t cves/ -t vulnerabilities/ -severity critical,high
+
+      # Step 5: 参数发现
+
+      # API端点
+      ffuf -u https://target.com/api/FUZZ -w api_wordlist.txt
+
+      # 参数模糊测试
+      ffuf -u https://target.com/page?param=FUZZ -w param_wordlist.txt
+
+      # Step 6: 特定漏洞探测
+
+      # SQL注入探测
+      sqlmap -u "https://target.com/page?id=1" --batch --level=1 --risk=1
+
+      # XSS探测
+      dalfox url https://target.com
+
+  - one_line_recon: |
+      # 一键Web侦察
+
+      # 综合探测命令
+
+      # 快速模式
+      httpx -l targets.txt -status-code -title -tech-detect -cdn -waf -json -o results.json && nuclei -l results.json -t cves/,vulnerabilities/ -severity critical,high
+
+      # 详细模式
+      nmap -sV -sC -p- target.com -oA nmap_results && ffuf -u https://target.com/FUZZ -w SecLists/Discovery/Web-Content/common.txt -o ffuf_results.json && nuclei -u https://target.com -t all -o nuclei_results.txt
+
+# 内网自动探测
+intranet_recon:
+  - pipeline: |
+      # 内网自动化探测流水线
+
+      # Step 1: 主机发现
+
+      # 快速端口扫描
+      masscan -p 1-65535 192.168.1.0/24 --rate 10000
+
+      # 详细服务探测
+      nmap -sV -sC -p 445,135,139,3389,80,443,8080 --open 192.168.1.0/24
+
+      # Step 2: SMB枚举
+
+      # CrackMapExec SMB扫描
+      crackmapexec smb 192.168.1.0/24 -u '' -p '' --shares --users --groups
+
+      # enum4linux
+      enum4linux -a 192.168.1.10
+
+      # Step 3: LDAP枚举
+
+      # ldapdomaindump
+      ldapdomaindump -u 'domain\user' -p 'password' 192.168.1.10
+
+      # BloodHound数据收集
+      Sharphound.exe -c All
+
+      # Step 4: 漏洞扫描
+
+      # nuclei内网模板
+      nuclei -l internal_targets.txt -t cves/,vulnerabilities/ -severity critical,high
+
+      # Step 5: 凭证测试
+
+      # SMB凭证测试
+      crackmapexec smb 192.168.1.0/24 -u users.txt -p passwords.txt --no-bruteforce
+
+      # WinRM测试
+      crackmapexec winrm 192.168.1.0/24 -u users.txt -p passwords.txt
+
+  - ad_recon: |
+      # AD域自动化侦察
+
+      # 使用PowerView
+      Import-Module PowerView
+
+      # 获取域信息
+      Get-Domain
+      Get-DomainController
+      Get-DomainUser
+      Get-DomainGroup
+      Get-DomainComputer
+      Get-DomainTrust
+
+      # 检查委派
+      Get-DomainUser -TrustedToAuth
+      Get-DomainComputer -TrustedToAuth
+
+      # 检查ACL
+      Get-DomainObjectAcl -Identity 'Domain Admins' -ResolveGUIDs
+
+      # 使用BloodHound
+      # 数据采集
+      SharpHound.exe -c All,GPOLocalGroup,Session
+
+      # 分析
+      # 导入BloodHound GUI
+
+# CTF快速侦察
+ctf_recon:
+  - quick_scan: |
+      # CTF快速扫描
+
+      # 15秒快速探测
+
+      # Web目标
+      timeout 15 httpx -u $TARGET -status-code -title -tech-detect -follow-redirects
+
+      # 端口扫描(常见端口)
+      timeout 15 nmap -sV -sC -F $TARGET
+
+      # 目录快速扫描
+      timeout 15 ffuf -u $TARGET/FUZZ -w common.txt -t 100 -mc 200,301,302
+
+      # 漏洞快速扫描
+      timeout 15 nuclei -u $TARGET -t critical/ -silent
+
+  - full_scan: |
+      # CTF完整扫描
+
+      # 5分钟完整探测
+
+      # 端口全扫描
+      nmap -sV -sC -p- --min-rate 5000 $TARGET -oA nmap_full
+
+      # 目录深度扫描
+      ffuf -u $TARGET/FUZZ -w SecLists/Discovery/Web-Content/raft-medium-words.txt -t 100 -mc all -fc 404 -o ffuf_full
+
+      # 漏洞全扫描
+      nuclei -u $TARGET -t all -severity critical,high,medium -o nuclei_full
+
+      # 参数扫描
+      ffuf -u $TARGET/FUZZ -w param_names.txt -mc all
+
+      # SQL注入探测
+      sqlmap -u "$TARGET/page?id=1" --batch --level=3 --risk=2
+
+      # 备份文件扫描
+      ffuf -u $TARGET/FUZZ -w backup_wordlist.txt
+
+# 结果聚合
+result_aggregation:
+  - technique: |
+      # 结果聚合分析
+
+      # 整合不同工具输出
+
+      # JSON格式统一
+      # nmap: -oX nmap.xml
+      # ffuf: -o ffuf.json -json
+      # nuclei: -json -o nuclei.json
+
+      # 解析脚本
+      python aggregate_results.py --nmap nmap.xml --ffuf ffuf.json --nuclei nuclei.json --output final_report.html
+
+      # 关键信息提取:
+      # - 开放端口和服务
+      # - 发现的目录和文件
+      # - 检测到的漏洞
+      # - 潜在攻击路径
+
+# 时间预算策略
+time_budget:
+  - strategy: |
+      # 时间预算策略
+
+      # CTF比赛时间有限，需要合理分配
+
+      # 单目标时间分配:
+      # - 侦察阶段: 10%时间
+      # - 漏洞发现: 30%时间
+      # - 漏洞利用: 40%时间
+      # - 后渗透: 20%时间
+
+      # 探测优先级:
+      # 1. 先扫描常见高危端口
+      # 2. 使用快速模板扫描漏洞
+      # 3. 根据服务类型针对性探测
+
+      # 超时设置:
+      # - 快速扫描: 30秒
+      # - 中等扫描: 2分钟
+      # - 深度扫描: 5分钟
+
+# 工具编排脚本
+orchestration_script:
+  - python: |
+      # 自动化侦察脚本
+
+      import subprocess
+      import json
+      import time
+
+      def auto_recon(target, timeout=300):
+          results = {}
+          start_time = time.time()
+
+          # Phase 1: HTTP探测
+          if time.time() - start_time < timeout * 0.2:
+              print("[*] HTTP探测...")
+              subprocess.run(f"httpx -u {target} -json -o httpx.json", shell=True)
+
+          # Phase 2: 端口扫描
+          if time.time() - start_time < timeout * 0.4:
+              print("[*] 端口扫描...")
+              subprocess.run(f"nmap -sV -sC -F {target} -oA nmap", shell=True)
+
+          # Phase 3: 目录扫描
+          if time.time() - start_time < timeout * 0.6:
+              print("[*] 目录扫描...")
+              subprocess.run(f"ffuf -u {target}/FUZZ -w common.txt -json -o ffuf.json", shell=True)
+
+          # Phase 4: 漏洞扫描
+          if time.time() - start_time < timeout * 0.8:
+              print("[*] 漏洞扫描...")
+              subprocess.run(f"nuclei -u {target} -t critical/,high/ -json -o nuclei.json", shell=True)
+
+          return results
+
+      # 使用
+      auto_recon("http://target.com", timeout=180)
+
+# Payload模板
+payloads:
+  - name: "一键Web侦察Payload"
+    template: |
+      # 一键Web侦察
+
+      TARGET="http://target.com"
+
+      # 综合探测
+      echo "[*] 开始探测 $TARGET"
+
+      # HTTP探测
+      httpx -u $TARGET -status-code -title -tech-detect -cdn -waf -json
+
+      # 端口扫描
+      nmap -sV -sC -p- --min-rate 5000 $TARGET
+
+      # 目录扫描
+      ffuf -u $TARGET/FUZZ -w SecLists/Discovery/Web-Content/common.txt -t 100 -mc 200,301,302
+
+      # 漏洞扫描
+      nuclei -u $TARGET -t cves/,vulnerabilities/ -severity critical,high
+
+      echo "[*] 探测完成"
+
+  - name: "一键内网侦察Payload"
+    template: |
+      # 一键内网侦察
+
+      NETWORK="192.168.1.0/24"
+
+      # 主机发现
+      masscan -p 445,135,3389 $NETWORK --rate 10000
+
+      # SMB扫描
+      crackmapexec smb $NETWORK -u '' -p '' --shares
+
+      # 详细扫描
+      nmap -sV -sC -p 445,135,139,3389 $NETWORK --open
+
+      # BloodHound采集
+      SharpHound.exe -c All
+
+# 参考资源
+references:
+  - https://github.com/projectdiscovery/httpx
+  - https://github.com/projectdiscovery/nuclei
+  - https://github.com/ffuf/ffuf
+  - https://github.com/OJ/gobuster
+  - https://github.com/byt3bl33d3r/CrackMapExec
+  - https://github.com/BloodHoundAD/BloodHound
+  - https://github.com/danielmiessler/SecLists

