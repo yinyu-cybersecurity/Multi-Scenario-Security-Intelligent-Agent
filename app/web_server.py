@@ -11,7 +11,6 @@ import uvicorn
 
 from app.core.query import query, QueryConfig
 from app.prompts.ctf_system_prompt import build_system_prompt
-from app.tools_v2.ctf_tools import register_ctf_tools
 from app.logger import get_logger
 
 logger = get_logger("WebServer")
@@ -101,9 +100,6 @@ async def websocket_endpoint(websocket: WebSocket):
 async def run_agent(target: str, websocket: WebSocket):
     """运行Agent任务"""
     global _stop_flag
-
-    # 注册工具
-    register_ctf_tools()
 
     # 配置
     config = QueryConfig(

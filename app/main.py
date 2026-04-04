@@ -4,11 +4,7 @@
 """
 CTF-Agent 主入口 - 极简版本
 
-严格遵循计划.txt：
-- 无复杂初始化
-- 无TimeManager
-- 无Session管理
-- 只做一件事：启动Query循环
+MCP架构：所有工具通过MCP服务器注册
 """
 
 import asyncio
@@ -16,7 +12,6 @@ import sys
 
 from app.core.query import query, QueryConfig
 from app.prompts.ctf_system_prompt import build_system_prompt
-from app.tools_v2.ctf_tools import register_ctf_tools
 from app.logger import get_logger
 
 logger = get_logger("CTF-Agent")
@@ -24,9 +19,6 @@ logger = get_logger("CTF-Agent")
 
 async def main(target: str):
     """主入口 - 启动Query循环"""
-
-    # 注册工具（一次性）
-    register_ctf_tools()
 
     # 构建配置
     config = QueryConfig(
@@ -50,8 +42,9 @@ async def main(target: str):
     async for event in query(messages, config):
         if event["type"] == "assistant_message":
             content = event.get("content", "")
-            if content:
-                logger.info(f"AI: {content[:200]}")
+            tool_calls = event.get("tool_calls", [])
+            logger.info(f"AI Content: {content}")
+            logger.info(f"AI Tool Calls: {tool_calls}")
         elif event["type"] == "tool_result":
             logger.info(f"Tool: {event['tool_name']}")
         elif event["type"] == "complete":

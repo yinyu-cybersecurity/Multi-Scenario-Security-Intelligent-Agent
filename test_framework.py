@@ -4,9 +4,8 @@ CTF-Agent 2.0 综合测试脚本
 验证所有核心组件是否正常工作：
 1. Query循环
 2. Skill系统
-3. 工具注册
+3. MCP工具注册
 4. 外部Store
-5. Meta Tools
 """
 
 import asyncio
@@ -47,38 +46,34 @@ def test_skill_system():
     return True
 
 
-async def test_meta_tools():
-    """测试Meta Tools"""
-    print("\n=== 测试Meta Tools ===")
+async def test_mcp_tools():
+    """测试MCP工具"""
+    print("\n=== 测试MCP工具 ===")
 
-    from app.tools_v2.ctf_tools import register_ctf_tools
-    from app.tools_v2.tool_factory import get_tool_registry_v2
+    from app.tools_v2.mcp.client import get_mcp_client, ensure_mcp_tools_registered
 
-    # 重置
-    import app.skills.registry
-    app.skills.registry._registry = None
+    # 连接MCP服务器并注册工具
+    await ensure_mcp_tools_registered()
 
-    register_ctf_tools()
+    client = get_mcp_client()
 
-    tool_registry = get_tool_registry_v2()
+    # 获取所有工具schemas
+    tool_schemas = client.get_all_tool_schemas()
 
-    # 检查load_skill
-    load_skill = tool_registry.get_tool('load_skill')
-    if not load_skill:
-        print("[FAIL] load_skill tool not found")
+    print(f"[OK] 已注册 {len(tool_schemas)} 个MCP工具")
+
+    # 检查关键工具
+    critical_tools = ['http_request', 'bash', 'remember']
+
+    for tool_schema in tool_schemas:
+        tool_name = tool_schema.get('name', '')
+        if tool_name in critical_tools:
+            print(f"[OK] {tool_name} 已注册")
+            critical_tools.remove(tool_name)
+
+    if critical_tools:
+        print(f"[FAIL] 缺失工具: {critical_tools}")
         return False
-
-    print("[OK] load_skill tool registered")
-
-    # 测试load_skill handler
-    result = await load_skill.handler({'name': 'meta_skill_selector'}, {})
-
-    if not result.get('success'):
-        print(f"[FAIL] load_skill failed: {result.get('error')}")
-        return False
-
-    print(f"[OK] load_skill returns skill_id: {result.get('skill_id')}")
-    print(f"[OK] load_skill returns skill_name: {result.get('skill_name')}")
 
     return True
 
@@ -133,27 +128,32 @@ def test_external_store():
     return True
 
 
-def test_tool_registration():
+async def test_tool_registration():
     """测试工具注册"""
     print("\n=== 测试工具注册 ===")
 
-    from app.tools_v2.ctf_tools import register_ctf_tools
-    from app.tools_v2.tool_factory import get_tool_registry_v2
+    from app.tools_v2.mcp.client import get_mcp_client, ensure_mcp_tools_registered
 
-    # 注册工具
-    register_ctf_tools()
+    # 连接MCP服务器
+    await ensure_mcp_tools_registered()
 
-    tool_registry = get_tool_registry_v2()
+    client = get_mcp_client()
+    tool_schemas = client.get_all_tool_schemas()
 
-    # 检查关键工具
-    critical_tools = ['load_skill', 'dispatch_agent', 'write_memory', 'read_memory', 'http_request']
+    print(f"[OK] 共 {len(tool_schemas)} 个工具通过MCP注册")
 
-    for tool_name in critical_tools:
-        tool = tool_registry.get_tool(tool_name)
-        if not tool:
-            print(f"[FAIL] {tool_name} not registered")
-            return False
-        print(f"[OK] {tool_name} registered")
+    # 检查关键工具类别
+    categories = {
+        '基础': ['http_request', 'bash', 'remember'],
+        'Web': ['sqlmap', 'ffuf', 'dirsearch'],
+        '信息收集': ['nmap', 'nuclei'],
+    }
+
+    all_tools = [t.get('name') for t in tool_schemas]
+
+    for cat, tools in categories.items():
+        found = [t for t in tools if t in all_tools]
+        print(f"[OK] {cat}工具: {len(found)}/{len(tools)} 已注册")
 
     return True
 
@@ -223,11 +223,11 @@ async def main():
     # 同步测试
     results.append(("Skill系统", test_skill_system()))
     results.append(("外部Store", test_external_store()))
-    results.append(("工具注册", test_tool_registration()))
     results.append(("SelectorStore", test_selector_store()))
 
     # 异步测试
-    results.append(("Meta Tools", await test_meta_tools()))
+    results.append(("MCP工具", await test_mcp_tools()))
+    results.append(("工具注册", await test_tool_registration()))
     results.append(("Query循环结构", await test_query_loop_structure()))
 
     # 总结

@@ -27,20 +27,93 @@
   },
 
   "mcp_servers": {
-    "semgrep": {
-      "command": "uvx",
-      "args": ["semgrep-mcp-server"],
+    "ctf-core": {
+      "command": "python",
+      "args": ["mcp_servers/core_server.py"],
       "env": {}
     },
-    "context7": {
-      "command": "npx",
-      "args": ["-y", "@context7/mcp-server"],
+    "ctf-memory": {
+      "command": "python",
+      "args": ["mcp_servers/memory_server.py"],
       "env": {}
     },
-    "playwright": {
-      "command": "npx",
-      "args": ["-y", "@anthropic-ai/mcp-server-playwright"],
+    "ctf-web": {
+      "command": "python",
+      "args": ["mcp_servers/web_server.py"],
       "env": {}
+    },
+    "ctf-web-advanced": {
+      "command": "python",
+      "args": ["mcp_servers/web_advanced_server.py"],
+      "env": {}
+    },
+    "ctf-recon": {
+      "command": "python",
+      "args": ["mcp_servers/recon_server.py"],
+      "env": {}
+    },
+    "ctf-recon-advanced": {
+      "command": "python",
+      "args": ["mcp_servers/recon_advanced_server.py"],
+      "env": {}
+    },
+    "ctf-internal": {
+      "command": "python",
+      "args": ["mcp_servers/internal_server.py"],
+      "env": {}
+    },
+    "ctf-internal-advanced": {
+      "command": "python",
+      "args": ["mcp_servers/internal_advanced_server.py"],
+      "env": {}
+    },
+    "ctf-ad": {
+      "command": "python",
+      "args": ["mcp_servers/ad_server.py"],
+      "env": {}
+    },
+    "ctf-deserialization": {
+      "command": "python",
+      "args": ["mcp_servers/deserialization_server.py"],
+      "env": {}
+    },
+    "ctf-cloud": {
+      "command": "python",
+      "args": ["mcp_servers/cloud_server.py"],
+      "env": {}
+    },
+    "ctf-oa": {
+      "command": "python",
+      "args": ["mcp_servers/oa_server.py"],
+      "env": {}
+    },
+    "ctf-binary": {
+      "command": "python",
+      "args": ["mcp_servers/binary_server.py"],
+      "env": {}
+    },
+    "ctf-crypto": {
+      "command": "python",
+      "args": ["mcp_servers/crypto_server.py"],
+      "env": {}
+    },
+    "ctf-jndi": {
+      "command": "python",
+      "args": ["mcp_servers/jndi_server.py"],
+      "env": {}
+    },
+    "ctf-ai": {
+      "command": "python",
+      "args": ["mcp_servers/ai_server.py"],
+      "env": {}
+    },
+    "ctf-competition": {
+      "command": "python",
+      "args": ["mcp_servers/competition_server.py"],
+      "env": {
+        "COMPETITION_SERVER_HOST": "${COMPETITION_SERVER_HOST}",
+        "COMPETITION_AGENT_TOKEN": "${COMPETITION_AGENT_TOKEN}"
+      }
     },
     "openspace": {
       "command": "D:/LangGraph2.0/langGraph/deploy/venv312/Scripts/openspace-mcp.exe",

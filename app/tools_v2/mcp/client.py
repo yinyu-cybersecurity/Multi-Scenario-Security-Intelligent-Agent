@@ -237,8 +237,8 @@ async def ensure_mcp_tools_registered():
     client = get_mcp_client()
     registry = get_tool_registry_v2()
 
-    # 只连接openspace服务器（其他服务器可能未安装）
-    servers_to_connect = ["openspace"]
+    # 连接所有配置的MCP服务器
+    servers_to_connect = list(client._config.keys())
 
     for server_name in servers_to_connect:
         if server_name not in client._config:

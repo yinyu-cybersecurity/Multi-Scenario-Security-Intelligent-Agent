@@ -56,41 +56,37 @@ Client → Session → Connector → ConnectionManager → MCP SDK
 
 ```
 启动时:
-1. register_ctf_tools() → 注册本地12个工具
-2. ensure_mcp_tools_registered() → 连接OpenSpace，注册4个MCP工具
-3. tool_schemas = registry.get_all_schemas() → 获取所有工具schema
-4. AI自主决定调用哪个工具
+1. ensure_mcp_tools_registered() → 连接18个MCP服务器（包含OpenSpace）
+2. tool_schemas = client.get_all_tool_schemas() → 获取所有工具schema
+3. AI自主决定调用哪个工具
 ```
 
 ---
 
 ## 工具清单
 
-### 本地工具（12个）
+### MCP工具服务器（18个）
 
-| 工具 | 用途 | 权限 |
+| 服务器 | 工具 | 用途 |
 |------|------|------|
-| `http_request` | HTTP请求 | NETWORK |
-| `bash` | 系统命令 | EXECUTE |
-| `remember` | 记录发现 | - |
-| `recall` | 回忆发现 | - |
-| `sqlmap` | SQL注入利用 | EXECUTE, NETWORK |
-| `ffuf` | 目录爆破 | EXECUTE, NETWORK |
-| `nmap` | 端口扫描 | EXECUTE, NETWORK |
-| `nuclei` | 漏洞扫描 | EXECUTE, NETWORK |
-| `fscan` | 内网综合扫描 | EXECUTE, NETWORK |
-| `cloud_storage_check` | 云存储检测 | NETWORK |
-| `cloud_metadata` | 云元数据获取 | NETWORK |
-| `ai_probe` | AI模型探测 | NETWORK |
-
-### MCP工具（4个 - OpenSpace）
-
-| 工具 | 用途 |
-|------|------|
-| `openspace__search_skills` | 搜索攻击技能 |
-| `openspace__execute_task` | 执行任务（自动加载skill） |
-| `openspace__fix_skill` | 修复损坏的skill |
-| `openspace__upload_skill` | 上传新skill到社区 |
+| **ctf-basic** | http_request, bash, remember, recall | 基础工具 |
+| **ctf-web** | sqlmap, ffuf | Web安全 |
+| **ctf-web-advanced** | dirsearch, jwt_tool, gopherus, ssrfmap, xxeinjector, jsfinder, githacker, ghostcat | Web高级 |
+| **ctf-recon** | nmap, nuclei | 信息收集 |
+| **ctf-internal** | fscan, frp, proxy_chain | 内网渗透 |
+| **ctf-ad** | bloodhound, petitpotam, rubeus | AD域攻击 |
+| **ctf-deserialization** | ysoserial, marshalsec, phpggc | 反序列化 |
+| **ctf-cloud** | cloud_storage_check, cloud_metadata | 云安全 |
+| **ctf-ai** | ai_probe | AI安全 |
+| **ctf-subdomain** | subfinder | 子域名 |
+| **ctf-fingerprint** | whatweb | 指纹识别 |
+| **ctf-proxy** | xray | 代理扫描 |
+| **ctf-oa** | oa_tools | OA系统 |
+| **ctf-jndi** | jndiexploit | JNDI利用 |
+| **ctf-binary** | binary_tools | 二进制 |
+| **ctf-crypto** | crypto_tools | 密码学 |
+| **ctf-misc** | misc_tools | 杂项 |
+| **openspace** | search_skills, execute_task, fix_skill, upload_skill | Skill系统 |
 
 ---
 
@@ -200,20 +196,36 @@ AI在执行任务时：
 ```
 app/
 ├── core/
-│   ├── query.py           # Query循环（~80行）
+│   ├── query.py           # Query循环（~120行）
 │   ├── loop_detector.py   # 循环检测器
 │   └── time_manager.py    # 时间管理
 ├── tools_v2/
-│   ├── ctf_tools.py       # 本地工具定义
-│   ├── tool_factory.py    # 工具工厂
-│   ├── tool_result.py     # 工具结果
-│   ├── native_executor.py # 原生执行器
 │   └── mcp/
 │       └── client.py      # MCP客户端（~300行）
 ├── prompts/
 │   └── ctf_system_prompt.py  # 系统提示词
 ├── interactive.py         # 交互式模式
 └── web_server.py          # Web服务器
+
+mcp_servers/               # MCP服务器（18个）
+├── basic_server.py        # 基础工具
+├── web_server.py          # Web工具
+├── web_advanced_server.py # Web高级工具
+├── recon_server.py        # 信息收集
+├── internal_server.py     # 内网渗透
+├── ad_server.py           # AD域攻击
+├── deserialization_server.py  # 反序列化
+├── cloud_server.py        # 云安全
+├── ai_server.py           # AI安全
+├── subdomain_server.py    # 子域名
+├── fingerprint_server.py  # 指纹识别
+├── proxy_server.py        # 代理扫描
+├── oa_server.py           # OA系统
+├── jndi_server.py         # JNDI利用
+├── binary_server.py       # 二进制
+├── crypto_server.py       # 密码学
+├── misc_server.py         # 杂项
+└── openspace_server.py    # Skill系统
 
 skills/                    # 65+个skill文件
 ├── web_exploitation.yaml
@@ -229,7 +241,7 @@ frontend/
 │       └── useWebSocket.ts     # WebSocket连接
 └── dist/                       # 构建产物
 
-settings.json              # 单一配置文件
+settings.json              # 单一配置文件（包含18个MCP服务器配置）
 start_web.bat              # Web启动脚本
 start_interactive.bat      # 交互式启动脚本
 ```
@@ -285,12 +297,9 @@ venv312\Scripts\python -m app.main "http://target.com"
 ### 错误处理
 
 ```python
-# 所有工具返回统一格式
-return ToolResult(
-    success=True/False,
-    data=...,
-    error="..."  # 失败时
-)
+# MCP工具返回格式
+# 成功: [TextContent(type="text", text="结果JSON")]
+# 失败: [TextContent(type="text", text="Error: 错误信息")]
 ```
 
 ### 安全约束
@@ -318,6 +327,7 @@ return ToolResult(
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| 2.1 | 2026-04-04 | 完全迁移到MCP架构，18个MCP服务器，删除旧工具系统 |
 | 2.0 | 2026-04-04 | 集成OpenSpace MCP客户端，实现交互式模式 |
 | 1.5 | 2026-04-03 | 迁移到Claude Code架构 |
 | 1.0 | 2026-04-01 | 初始版本 |

@@ -16,8 +16,7 @@ import json
 
 from app.llm_client import llm_client
 from app.logger import get_logger
-from app.tools_v2.tool_factory import get_tool_registry_v2
-from app.tools_v2.tool_result import normalize_result
+from app.tools_v2.mcp.client import get_mcp_client
 from app.core.loop_detector import LoopDetector
 from app.core.time_manager import TimeBudget
 
@@ -43,7 +42,9 @@ async def query(
     from app.tools_v2.mcp.client import ensure_mcp_tools_registered
     await ensure_mcp_tools_registered()
 
-    tool_schemas = get_tool_registry_v2().get_all_schemas()
+    # 获取工具schemas（从MCP客户端获取）
+    client = get_mcp_client()
+    tool_schemas = client.get_all_tool_schemas()
     time_budget = TimeBudget(config.timeout_seconds)
     loop_detector = LoopDetector()
 
@@ -76,15 +77,14 @@ async def query(
         content = response.content or ""
         tool_calls = response.tool_calls or []
 
-        messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
-        yield {"type": "assistant_message", "content": content, "turn": turn}
+        # 构建消息（不包含空的tool_calls字段）
+        msg = {"role": "assistant", "content": content}
+        if tool_calls:
+            msg["tool_calls"] = tool_calls
+        messages.append(msg)
+        yield {"type": "assistant_message", "content": content, "turn": turn, "tool_calls": tool_calls}
 
-        # === 无工具调用 = 完成 ===
-        if not tool_calls:
-            yield {"type": "complete", "reason": "no_tool_calls"}
-            return
-
-        # === 执行工具 ===
+        # === 执行工具（如果有）===
         for tc in tool_calls:
             tool_id = tc.get("id", f"call_{turn}")
             function = tc.get("function", {})
@@ -102,14 +102,14 @@ async def query(
                 yield {"type": "loop_detected", "tool": tool_name}
                 continue
 
-            # 执行
-            tool = get_tool_registry_v2().get_tool(tool_name)
-            if tool:
-                result = await tool.execute(params=arguments, context={})
-                result_str = normalize_result(result)
-            else:
-                result_str = json.dumps({"status": "error", "error": f"Tool '{tool_name}' not found"})
+            # 执行工具（通过MCP）
+            try:
+                result = await client.call_tool(tool_name, arguments)
+                result_str = str(result)
+            except Exception as e:
+                result_str = json.dumps({"status": "error", "error": str(e)})
 
+            logger.info(f"[Query] Tool result for {tool_name}: {result_str[:500]}...")
             messages.append({"role": "tool", "tool_call_id": tool_id, "content": result_str})
             yield {"type": "tool_result", "tool_name": tool_name}
 
