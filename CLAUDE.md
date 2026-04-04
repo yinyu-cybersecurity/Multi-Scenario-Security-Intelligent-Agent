@@ -1,184 +1,163 @@
-# CTF-Agent 项目配置
+# CTF-Agent 2.0 项目文档
 
 ## 项目概述
 
-CTF-Agent 是一个基于 Claude Code 架构的智能 CTF 自动化求解框架，支持 Web、Pwn、Crypto、Reverse、Misc、内网渗透、云安全、AI安全等 8 个 CTF 方向。
+CTF-Agent 是一个基于 **Claude Code 架构** 的智能 CTF 自动化求解框架，实现 AI 完全自主决策攻击。
 
-**当前版本**: 2.0
-**架构基座**: Claude Code Query Loop + External Store
+**核心原则**: 框架做得越少越好，AI做得越多越好
+
+**版本**: 2.0
+**架构**: Claude Code Query Loop + MCP Client + OpenSpace Skill Engine
 
 ---
 
-## 核心架构
+## 架构设计
 
-### Claude Code Query 循环
+### 1. Query 循环（核心）
 
-CTF-Agent 采用 Claude Code 的 Query 循环模式，实现 AI 完全自主决策：
+极简消息循环，AI完全自主：
 
-```python
-from app.core.query import query, QueryConfig
-
-async def run_agent(target: str):
-    config = QueryConfig(
-        model="glm-5",
-        max_turns=200,
-        system_prompt="You are a CTF player...",
-    )
-
-    messages = [{"role": "user", "content": f"Target: {target}"}]
-
-    async for event in query(messages, config):
-        if event["type"] == "message":
-            print(event["message"]["content"])
-        elif event["type"] == "complete":
-            break
+```
+┌─────────────────────────────────────────────────────┐
+│                   Query Loop                         │
+│                                                      │
+│   while not done:                                    │
+│       response = llm.chat(messages, tools)           │
+│       if has_tool_calls(response):                   │
+│           results = execute_tools(tool_calls)        │
+│           messages.append(results)                   │
+│       else:                                          │
+│           done = True                                │
+│                                                      │
+│   框架仅干预2件事：                                   │
+│     1. 超时熔断（注入[TIMEOUT]消息）                  │
+│     2. 循环检测（注入[LOOP_DETECTED]消息）            │
+└─────────────────────────────────────────────────────┘
 ```
 
-### 外部 Store 状态管理
+### 2. MCP 客户端架构
 
-使用 Claude Code 的 External Store 模式，实现细粒度订阅和引用相等检查：
+采用 Claude Code 的 MCP 实现模式：
 
-```python
-from app.state.store import get_app_state_store
-
-store = get_app_state_store()
-
-# 获取状态
-state = store.get_state()
-
-# 更新状态（触发引用相等检查）
-store.set_state(lambda prev: prev.update({"key": "value"}))
-
-# 订阅变化
-unsubscribe = store.subscribe(lambda: print("State changed!"))
+```
+Client → Session → Connector → ConnectionManager → MCP SDK
 ```
 
-### 时间管理
+**关键组件**:
 
-超时是唯一熔断条件，AI 自主决定时间分配：
+| 组件 | 文件 | 职责 |
+|------|------|------|
+| MCPClient | `mcp/client.py` | 多服务器管理 |
+| MCPSession | `mcp/client.py` | 单服务器连接 |
+| MCPConnector | `mcp/client.py` | ClientSession包装 |
+| MCPConnectionManager | `mcp/client.py` | 任务隔离的async context |
 
-```python
-from app.core.time_manager import TimeManager, TaskType
+### 3. 工具注册流程
 
-tm = TimeManager()
-budget = tm.create_budget("session-1", TaskType.CTF_SINGLE_FLAG)
-
-# 检查超时
-if budget.is_timeout:
-    print("Time's up!")
-
-# 获取时间提示给 AI
-prompt = budget.get_status_prompt()
+```
+启动时:
+1. register_ctf_tools() → 注册本地12个工具
+2. ensure_mcp_tools_registered() → 连接OpenSpace，注册4个MCP工具
+3. tool_schemas = registry.get_all_schemas() → 获取所有工具schema
+4. AI自主决定调用哪个工具
 ```
 
 ---
 
-## 工具框架
+## 工具清单
 
-### 原生工具执行器
+### 本地工具（12个）
 
-直接调用系统工具，无需 Docker 开销：
+| 工具 | 用途 | 权限 |
+|------|------|------|
+| `http_request` | HTTP请求 | NETWORK |
+| `bash` | 系统命令 | EXECUTE |
+| `remember` | 记录发现 | - |
+| `recall` | 回忆发现 | - |
+| `sqlmap` | SQL注入利用 | EXECUTE, NETWORK |
+| `ffuf` | 目录爆破 | EXECUTE, NETWORK |
+| `nmap` | 端口扫描 | EXECUTE, NETWORK |
+| `nuclei` | 漏洞扫描 | EXECUTE, NETWORK |
+| `fscan` | 内网综合扫描 | EXECUTE, NETWORK |
+| `cloud_storage_check` | 云存储检测 | NETWORK |
+| `cloud_metadata` | 云元数据获取 | NETWORK |
+| `ai_probe` | AI模型探测 | NETWORK |
 
-```python
-from app.tools_v2.native_executor import get_native_executor
+### MCP工具（4个 - OpenSpace）
 
-executor = get_native_executor()
-
-# 检查工具可用性
-availability = await executor.check_available("sqlmap")
-
-# 执行工具
-result = await executor.execute(
-    tool_name="sqlmap",
-    args=["-u", "http://target.com?id=1", "--dbs"],
-    timeout=120000
-)
-```
-
-### buildTool 工厂模式
-
-```python
-from app.tools_v2.tool_factory import buildTool
-
-# 创建工具
-sqlmap_tool = buildTool(
-    name="sqlmap",
-    description="SQL注入自动化利用工具",
-    parameters={
-        "type": "object",
-        "properties": {
-            "target_url": {"type": "string", "format": "uri"},
-            "level": {"type": "integer", "minimum": 1, "maximum": 5}
-        },
-        "required": ["target_url"]
-    }
-)
-```
+| 工具 | 用途 |
+|------|------|
+| `openspace__search_skills` | 搜索攻击技能 |
+| `openspace__execute_task` | 执行任务（自动加载skill） |
+| `openspace__fix_skill` | 修复损坏的skill |
+| `openspace__upload_skill` | 上传新skill到社区 |
 
 ---
 
-## MCP 插件配置
+## Skill 系统
 
-### 已启用插件
+### Skill目录
 
-| 插件 | 功能 | CTF场景 |
-|------|------|---------|
-| semgrep-plugin | 静态代码扫描 | 漏洞模式匹配 |
-| context7 | 文档查询 | POC查询、技术文档 |
-| playwright | 浏览器自动化 | XSS/CSRF测试 |
-| chrome-devtools-mcp | 浏览器调试 | 前端漏洞利用 |
+```
+skills/
+├── web_exploitation.yaml    # Web渗透
+├── sqli_mysql.yaml          # MySQL注入
+├── rce.yaml                 # 远程代码执行
+├── ssrf.yaml                # SSRF攻击
+├── internal_network.yaml    # 内网渗透
+├── ad-attack.yaml           # AD域攻击
+├── container_escape.yaml    # 容器逃逸
+├── k8s_security.yaml        # K8s安全
+├── ai_model_attack.yaml     # AI模型攻击
+└── ... (共65+个skill)
+```
+
+### Skill 使用方式
+
+AI在执行任务时：
+1. 遇到不熟悉的漏洞类型 → 调用 `openspace__search_skills`
+2. 找到相关skill → 按skill指引执行
+3. 成功后 → OpenSpace自动提取新skill（DERIVED模式）
+
+### 比赛覆盖
+
+| 赛区 | 覆盖度 | 关键Skill |
+|------|--------|-----------|
+| 第一赛区：SRC真实场景 | 100% | src_automation, waf_bypass, auto_recon |
+| 第二赛区：CVE/云/AI | 100% | cve_database, container_escape, k8s_security, ai_model_attack |
+| 第三赛区：多层网络/OA | 100% | oa_exploitation, multi_stage_attack, proxy_chain |
+| 第四赛区：域渗透 | 100% | adcs_attack, golden_ticket, forest_trust, laps_attack |
 
 ---
 
-## 代码规范
+## 前端界面
 
-### 安全约束
+### 功能
 
-1. **禁止硬编码敏感信息**: API Key、密码等必须从环境变量读取
-2. **命令注入防护**: 所有用户输入必须经过验证
-3. **超时控制**: 所有工具调用设置合理超时
+- 实时监控AI决策流程
+- Stop按钮打断AI执行
+- Running状态指示器
+- 用户反馈输入（引导AI调整策略）
 
-### 错误处理
+### 启动方式
 
-```python
-def tool_handler(params: Dict, context: Dict) -> Dict:
-    try:
-        result = do_something(params)
-        return {"success": True, "data": result}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+```bash
+# 方式1: Web界面
+双击 start_web.bat
+访问 http://localhost:8000
+
+# 方式2: 命令行交互
+双击 start_interactive.bat
 ```
 
----
-
-## 目录结构
+### 交互流程
 
 ```
-app/
-├── core/              # 核心模块
-│   ├── query.py       # Query循环
-│   └── time_manager.py # 时间管理
-├── state/             # 状态管理
-│   └── store.py       # 外部Store
-├── tools_v2/          # 工具系统
-│   ├── native_executor.py  # 原生执行器
-│   └── tool_factory.py     # 工具工厂
-├── prompts/           # 提示词
-│   ├── ctf_system_prompt.py
-│   ├── tool_guidance.py
-│   └── error_recovery.py
-└── skills/            # Skill系统
-    └── skill_loader.py # 延迟加载
-
-frontend/src/
-├── components/
-│   └── DecisionFlow/  # 决策流组件
-├── hooks/
-│   └── useDecisionFlow.ts
-└── store/
-
-settings.json          # 单一配置文件
-scripts/install_tools.sh # 工具安装脚本
+输入目标地址 → Send → AI开始攻击
+                  ↓
+           观察AI决策
+                  ↓
+      点击Stop打断 或 输入反馈引导
 ```
 
 ---
@@ -190,47 +169,163 @@ scripts/install_tools.sh # 工具安装脚本
 ```json
 {
   "model": {
+    "provider": "openai",
     "name": "glm-5",
     "base_url": "https://open.bigmodel.cn/api/paas/v4/",
-    "api_key": "${LLM_API_KEY}"
+    "api_key": "${LLM_API_KEY}",
+    "timeout": 120
   },
+  
   "timeouts": {
     "ctf_single": 1800,
     "ctf_multi": 3600
   },
-  "tools": {
-    "native_execution": true
+  
+  "mcp_servers": {
+    "openspace": {
+      "command": "D:/LangGraph2.0/langGraph/deploy/venv312/Scripts/openspace-mcp.exe",
+      "env": {
+        "OPENSPACE_HOST_SKILL_DIRS": "D:/LangGraph2.0/langGraph/deploy/skills",
+        "OPENSPACE_WORKSPACE": "D:/LangGraph2.0/langGraph/deploy/OpenSpace-main"
+      }
+    }
   }
 }
 ```
 
 ---
 
-## 开发指南
+## 目录结构
 
-### 运行 CTF Agent
+```
+app/
+├── core/
+│   ├── query.py           # Query循环（~80行）
+│   ├── loop_detector.py   # 循环检测器
+│   └── time_manager.py    # 时间管理
+├── tools_v2/
+│   ├── ctf_tools.py       # 本地工具定义
+│   ├── tool_factory.py    # 工具工厂
+│   ├── tool_result.py     # 工具结果
+│   ├── native_executor.py # 原生执行器
+│   └── mcp/
+│       └── client.py      # MCP客户端（~300行）
+├── prompts/
+│   └── ctf_system_prompt.py  # 系统提示词
+├── interactive.py         # 交互式模式
+└── web_server.py          # Web服务器
 
-```bash
-# 命令行
-python -m app.main "http://target.com"
+skills/                    # 65+个skill文件
+├── web_exploitation.yaml
+├── internal_network.yaml
+└── ...
 
-# 带参数
-python -m app.main "http://target.com" -t web --timeout 30
+frontend/
+├── src/
+│   ├── components/
+│   │   ├── Chat/InputBar.tsx   # 输入框（Stop按钮）
+│   │   └── Console/            # 控制台
+│   └── hooks/
+│       └── useWebSocket.ts     # WebSocket连接
+└── dist/                       # 构建产物
+
+settings.json              # 单一配置文件
+start_web.bat              # Web启动脚本
+start_interactive.bat      # 交互式启动脚本
 ```
 
-### 安装工具
+---
+
+## 快速开始
+
+### 1. 安装依赖
 
 ```bash
-# Linux/macOS
-bash scripts/install_tools.sh
+# 创建Python 3.12虚拟环境
+py -3.12 -m venv venv312
+venv312\Scripts\activate
+pip install -r requirements.txt
 
+# 安装OpenSpace
+pip install -e ./OpenSpace-main
+```
+
+### 2. 配置环境变量
+
+```bash
 # Windows
-# 手动安装 nmap, Python, Go 工具
+set LLM_API_KEY=your_api_key
+set OPENSPACE_API_KEY=your_openspace_key  # 可选
+
+# 或在 settings.json 中直接配置
 ```
+
+### 3. 启动
+
+```bash
+# Web界面
+双击 start_web.bat
+访问 http://localhost:8000
+
+# 或命令行
+venv312\Scripts\python -m app.main "http://target.com"
+```
+
+---
+
+## 开发规范
+
+### 代码原则
+
+1. **极简主义**: 框架只做管道，智能全在AI
+2. **工具自治**: AI自主决定调用哪个工具
+3. **超时唯一熔断**: 不干预AI决策，只做超时保护
+4. **MCP标准**: 遵循Claude Code的MCP实现模式
+
+### 错误处理
+
+```python
+# 所有工具返回统一格式
+return ToolResult(
+    success=True/False,
+    data=...,
+    error="..."  # 失败时
+)
+```
+
+### 安全约束
+
+1. 禁止硬编码敏感信息
+2. 命令注入防护
+3. 所有工具调用设置超时
+
+---
+
+## 技术栈
+
+| 组件 | 技术 |
+|------|------|
+| 后端框架 | FastAPI + Uvicorn |
+| LLM调用 | LiteLLM |
+| MCP协议 | mcp (官方Python SDK) |
+| 前端 | React + TypeScript + Tailwind CSS |
+| WebSocket | fastapi.WebSocket |
+| 工具执行 | 原生系统调用 |
+
+---
+
+## 版本历史
+
+| 版本 | 日期 | 变更 |
+|------|------|------|
+| 2.0 | 2026-04-04 | 集成OpenSpace MCP客户端，实现交互式模式 |
+| 1.5 | 2026-04-03 | 迁移到Claude Code架构 |
+| 1.0 | 2026-04-01 | 初始版本 |
 
 ---
 
 ## 相关文档
 
-- [架构迁移设计文档](docs/superpowers/specs/2026-04-03-claude-code-architecture-migration-design.md)
-- [架构迁移实施计划](docs/superpowers/plans/2026-04-03-claude-code-architecture-migration-plan.md)
+- [架构迁移设计](docs/superpowers/specs/2026-04-03-claude-code-architecture-migration-design.md)
+- [Skill分析记录](SKILL_ANALYSIS.md)
+- [比赛API文档](第二届腾讯云黑客杯智能渗透挑战赛API文档.md)

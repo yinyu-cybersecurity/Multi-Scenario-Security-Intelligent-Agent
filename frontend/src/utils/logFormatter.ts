@@ -14,6 +14,7 @@ export const LOG_COLORS: Record<LogType, string> = {
   error: 'text-red-500',
   success: 'text-green-400',
   tool: 'text-cyan-500',
+  warning: 'text-yellow-500',
 };
 
 export const LOG_PREFIXES: Record<LogType, string> = {
@@ -24,6 +25,7 @@ export const LOG_PREFIXES: Record<LogType, string> = {
   error: '[Error]',
   success: '[Success]',
   tool: '[Tool]',
+  warning: '[Warning]',
 };
 
 /**

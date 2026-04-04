@@ -378,5 +378,73 @@ def register_ctf_tools():
     from app.tools_v2.tools import register_meta_tools
     register_meta_tools(registry)
 
+    # 8. thirdparty工具（通过bash调用）
+    # 极简配置：工具名、描述、命令模板
+    THIRDPARTY_TOOLS = [
+        # Web安全
+        ("dirsearch", "Web目录扫描工具", "python thirdparty/dirsearch/dirsearch.py -u {url}"),
+        ("jwt_tool", "JWT安全测试工具，支持解码、伪造、破解JWT Token", "python thirdparty/jwt_tool/jwt_tool.py {token}"),
+        ("gopherus", "Gopher协议SSRF利用工具", "python thirdparty/gopherus/gopherus.py --exploit {exploit_type}"),
+        ("ssrfmap", "SSRF攻击工具", "python thirdparty/ssrfmap/ssrfmap.py -r {request_file}"),
+        ("xxeinjector", "XXE注入工具", "python thirdparty/xxeinjector/xxeinjector.py {file}"),
+        ("jsfinder", "JS文件发现工具", "python thirdparty/jsfinder/JSFinder.py -u {url}"),
+        ("githacker", "Git泄露利用工具", "python thirdparty/githacker/GitHacker.py --url {url}"),
+        ("ghostcat", "Tomcat Ghostcat漏洞利用工具", "python thirdparty/ghostcat/ghostcat.py --url {url}"),
+
+        # Java反序列化
+        ("ysoserial", "Java反序列化利用工具", "java -jar thirdparty/ysoserial/ysoserial.jar {gadget} {command}"),
+        ("marshalsec", "Java反序列化利用工具", "java -cp thirdparty/marshalsec/marshalsec.jar {gadget}"),
+        ("jndiexploit", "JNDI注入利用工具", "java -jar thirdparty/jndiexploit/JNDIExploit.jar -i {ip}"),
+
+        # PHP安全
+        ("phpggc", "PHP反序列化利用工具", "php thirdparty/phpggc/phpggc {gadget} {parameters}"),
+        ("php_filter_chain", "PHP Filter链生成工具", "php thirdparty/php_filter_chain_generator/generate.py {chain}"),
+
+        # AD/Windows域
+        ("bloodhound", "AD关系分析工具", "thirdparty/bloodhound/BloodHound.exe"),
+        ("petitpotam", "AD认证攻击工具", "python thirdparty/petitpotam/PetitPotam.py {target} {listener}"),
+        ("rubeus", "Kerberos攻击工具", "thirdparty/rubeus/Rubeus.exe {action}"),
+
+        # 内网渗透
+        ("fscan_linux", "Linux内网综合扫描工具", "thirdparty/fscan_linux/fscan -h {target}"),
+        ("fscan_windows", "Windows内网综合扫描工具", "thirdparty/fscan_windows/fscan.exe -h {target}"),
+        ("frp", "内网穿透工具", "thirdparty/frp/frpc -c {config_file}"),
+
+        # 云安全
+        ("cloud_tools", "云安全工具集", "python thirdparty/cloud_tools/{tool_name}.py"),
+
+        # OA系统
+        ("oa_tools", "OA系统漏洞利用工具", "python thirdparty/oa_tools/{exploit}.py"),
+
+        # 代理扫描
+        ("xray", "被动扫描代理工具", "thirdparty/xray/xray webscan --url {url}"),
+
+        # 子域名
+        ("subfinder", "子域名发现工具", "thirdparty/subfinder/subfinder -d {domain}"),
+
+        # 指纹识别
+        ("whatweb", "Web指纹识别工具", "thirdparty/whatweb/whatweb {url}"),
+
+        # 二进制分析
+        ("binary_tools", "二进制分析工具集", "python thirdparty/binary_tools/{tool_name}.py"),
+
+        # 密码学
+        ("crypto_tools", "密码学工具集", "python thirdparty/crypto_tools/{tool_name}.py"),
+    ]
+
+    for tool_name, description, command_template in THIRDPARTY_TOOLS:
+        registry.register(buildTool(
+            name=tool_name,
+            description=description,
+            parameters=[
+                {"name": "args", "type": "string", "required": False, "description": "命令参数（可选，AI会自动构造）"},
+                {"name": "timeout", "type": "integer", "required": False, "description": "超时秒数", "default": 300},
+            ],
+            handler=lambda p, c, cmd=command_template: bash_handler(
+                {"command": cmd.format(**{k: v for k, v in p.items() if k != "timeout"}), "timeout": p.get("timeout", 300)}, c
+            ),
+            permissions=[ToolPermission.EXECUTE, ToolPermission.NETWORK],
+        ))
+
 
 __all__ = ["register_ctf_tools"]

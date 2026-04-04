@@ -4,12 +4,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { wsStore, useWSState } from '../store/wsStore';
 import { buildHook, BuiltHook } from './hookFactory';
-import type { WSMessage, NodeType, LogEntry, ToolExecution, Finding, Flag, Iteration, Attachment } from '../store/types';
-
-/**
- * 获取WebSocket URL
- * 支持相对路径和绝对路径
- */
+import type { WSMessage, ToolExecution, Flag, Attachment } from '../store/types';
 function getWebSocketUrl(): string {
   const envUrl = import.meta.env.VITE_WS_URL;
 
@@ -48,10 +43,7 @@ export function useWebSocket() {
     addLogEntry,
     updateLoopState,
     addToolExecution,
-    updateToolExecution,
-    addFinding,
     addFlag,
-    addIteration,
     setIsExecuting,
   } = useAppStore();
 
@@ -65,9 +57,113 @@ export function useWebSocket() {
       // 设置最后消息，供控制台事件处理器使用
       wsStore.setLastMessage(message);
 
+      // === 极简推导：从4种基础事件推导所有UI状态 ===
       switch (message.type) {
+        case 'assistant_message': {
+          const { content, turn } = message;
+
+          // 1. 推导迭代状态
+          if (turn) {
+            updateLoopState({ currentIteration: turn });
+          }
+
+          // 2. 记录AI消息日志
+          addLogEntry({
+            id: `assistant-${Date.now()}`,
+            timestamp: new Date(),
+            type: 'info',
+            message: content || '',
+            iteration: turn || 0,
+            node: 'think',
+          });
+
+          // 3. 推导Flag（正则提取）
+          const flagMatches = content?.match(/flag\{[^}]+\}/gi) || [];
+          flagMatches.forEach((flagValue: string) => {
+            addFlag({
+              id: `flag-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              value: flagValue,
+              timestamp: new Date(),
+              iteration: turn || 0,
+              copied: false,
+            } as Flag);
+
+            addLogEntry({
+              id: `flag-log-${Date.now()}`,
+              timestamp: new Date(),
+              type: 'success',
+              message: `🚩 发现Flag: ${flagValue}`,
+              iteration: turn || 0,
+              node: 'decide',
+            });
+          });
+
+          break;
+        }
+
+        case 'tool_result': {
+          const { tool_name } = message;
+
+          // 推导工具执行记录
+          const toolId = `tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          addToolExecution({
+            id: toolId,
+            toolName: tool_name || 'unknown',
+            status: 'success',
+            startTime: new Date(),
+            duration: 0,
+            iteration: 0,
+          } as ToolExecution);
+
+          addLogEntry({
+            id: `tool-${Date.now()}`,
+            timestamp: new Date(),
+            type: 'info',
+            message: `[工具] ${tool_name} 执行完成`,
+            iteration: 0,
+            node: 'act',
+          });
+
+          break;
+        }
+
+        case 'complete': {
+          const { reason } = message;
+
+          // 推导任务完成状态
+          const hasFlags = useAppStore.getState().flags.length > 0;
+          addLogEntry({
+            id: `complete-${Date.now()}`,
+            timestamp: new Date(),
+            type: hasFlags ? 'success' : 'info',
+            message: hasFlags
+              ? `✅ 任务完成，找到 ${useAppStore.getState().flags.length} 个Flag`
+              : `ℹ️ 任务结束: ${reason || '未知原因'}`,
+            iteration: 0,
+            node: 'decide',
+          });
+          setIsExecuting(false);
+
+          break;
+        }
+
+        case 'loop_detected': {
+          const { tool } = message;
+
+          addLogEntry({
+            id: `loop-${Date.now()}`,
+            timestamp: new Date(),
+            type: 'warning',
+            message: `⚠️ 检测到循环调用: ${tool}`,
+            iteration: 0,
+            node: 'think',
+          });
+
+          break;
+        }
+
+        // === 其他事件保持兼容 ===
         case 'connection_established': {
-          // 连接成功
           addLogEntry({
             id: `conn-${Date.now()}`,
             timestamp: new Date(),
@@ -75,148 +171,7 @@ export function useWebSocket() {
             message: '[System] Connected to CTF-Agent 2.0',
             iteration: 0,
             node: 'think',
-          } as LogEntry);
-          break;
-        }
-
-        case 'task_start': {
-          const { target } = message.data;
-          addLogEntry({
-            id: `task-${Date.now()}`,
-            timestamp: new Date(),
-            type: 'info',
-            message: `[Task] Starting: ${target}`,
-            iteration: 0,
-            node: 'think',
-          } as LogEntry);
-          break;
-        }
-
-        case 'iteration_start': {
-          const { iteration, timestamp } = message.data;
-          addIteration({
-            number: iteration,
-            startTime: new Date(timestamp),
-            nodes: {
-              think: { status: 'pending', startTime: new Date() },
-              act: { status: 'pending', startTime: new Date() },
-              reflect: { status: 'pending', startTime: new Date() },
-              decide: { status: 'pending', startTime: new Date() },
-            },
-            findings: [],
-            flags: [],
-          } as Iteration);
-          updateLoopState({ currentIteration: iteration });
-          addLogEntry({
-            id: `iter-${Date.now()}`,
-            timestamp: new Date(),
-            type: 'info',
-            message: `Iteration ${iteration} started`,
-            iteration,
-            node: 'think',
-          } as LogEntry);
-          break;
-        }
-
-        case 'node_start': {
-          const { node, iteration } = message.data;
-          updateLoopState({ currentNode: node as NodeType });
-          addLogEntry({
-            id: `node-${Date.now()}`,
-            timestamp: new Date(),
-            type: node as LogEntry['type'],
-            message: `Starting ${node}...`,
-            iteration,
-            node: node as NodeType,
-          } as LogEntry);
-          break;
-        }
-
-        case 'node_end': {
-          const { node, iteration, result } = message.data;
-          addLogEntry({
-            id: `node-end-${Date.now()}`,
-            timestamp: new Date(),
-            type: node as LogEntry['type'],
-            message: result,
-            iteration,
-            node: node as NodeType,
-          } as LogEntry);
-          break;
-        }
-
-        case 'log': {
-          addLogEntry({
-            ...message.data,
-            id: message.data.id || `log-${Date.now()}`,
-            timestamp: new Date(message.data.timestamp),
-          } as LogEntry);
-          break;
-        }
-
-        case 'tool_start': {
-          addToolExecution({
-            ...message.data,
-            id: message.data.id || `tool-${Date.now()}`,
-            startTime: new Date(message.data.startTime),
-          } as ToolExecution);
-          break;
-        }
-
-        case 'tool_complete': {
-          const { id, result, duration } = message.data;
-          updateToolExecution(id, {
-            status: 'success',
-            duration,
-            output: JSON.stringify(result, null, 2),
           });
-          break;
-        }
-
-        case 'finding': {
-          addFinding({
-            ...message.data,
-            id: message.data.id || `finding-${Date.now()}`,
-            timestamp: new Date(message.data.timestamp),
-          } as Finding);
-          break;
-        }
-
-        case 'flag': {
-          addFlag({
-            ...message.data,
-            id: message.data.id || `flag-${Date.now()}`,
-            timestamp: new Date(message.data.timestamp),
-          } as Flag);
-          break;
-        }
-
-        case 'iteration_end': {
-          const { iteration } = message.data;
-          addLogEntry({
-            id: `iter-end-${Date.now()}`,
-            timestamp: new Date(),
-            type: 'info',
-            message: `Iteration ${iteration} completed`,
-            iteration,
-            node: 'decide',
-          } as LogEntry);
-          break;
-        }
-
-        case 'task_complete': {
-          const { success, flags } = message.data;
-          addLogEntry({
-            id: `task-${Date.now()}`,
-            timestamp: new Date(),
-            type: success ? 'success' : 'error',
-            message: success
-              ? `Task completed successfully. Found ${flags.length} flags.`
-              : 'Task completed without finding flags.',
-            iteration: 0,
-            node: 'decide',
-          } as LogEntry);
-          setIsExecuting(false);
           break;
         }
 
@@ -228,24 +183,8 @@ export function useWebSocket() {
             message: '[System] Execution interrupted',
             iteration: 0,
             node: 'think',
-          } as LogEntry);
+          });
           setIsExecuting(false);
-          break;
-        }
-
-        case 'file_uploaded': {
-          const { filename, size } = message.data;
-          const sizeStr = size > 1024 * 1024
-            ? `${(size / (1024 * 1024)).toFixed(1)}MB`
-            : `${(size / 1024).toFixed(1)}KB`;
-          addLogEntry({
-            id: `file-${Date.now()}`,
-            timestamp: new Date(),
-            type: 'info',
-            message: `[File] Uploaded: ${filename} (${sizeStr})`,
-            iteration: 0,
-            node: 'think',
-          } as LogEntry);
           break;
         }
 
@@ -253,6 +192,18 @@ export function useWebSocket() {
           const { isExecuting } = message.data;
           setIsExecuting(isExecuting);
           break;
+        }
+
+        default: {
+          // 未知事件类型，记录为普通日志
+          addLogEntry({
+            id: `unknown-${Date.now()}`,
+            timestamp: new Date(),
+            type: 'info',
+            message: JSON.stringify(message),
+            iteration: 0,
+            node: 'think',
+          });
         }
       }
     } catch (error) {
@@ -263,10 +214,7 @@ export function useWebSocket() {
     addLogEntry,
     updateLoopState,
     addToolExecution,
-    updateToolExecution,
-    addFinding,
     addFlag,
-    addIteration,
     setIsExecuting,
   ]);
 

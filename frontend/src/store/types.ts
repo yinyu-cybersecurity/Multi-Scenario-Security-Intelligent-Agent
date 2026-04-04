@@ -2,7 +2,7 @@
 
 export type NodeType = 'think' | 'act' | 'reflect' | 'decide';
 
-export type LogType = 'info' | 'think' | 'act' | 'reflect' | 'error' | 'success' | 'tool';
+export type LogType = 'info' | 'think' | 'act' | 'reflect' | 'error' | 'success' | 'tool' | 'warning';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
 
@@ -116,6 +116,12 @@ export interface ChatState {
 
 // WebSocket message types
 export type WSMessage =
+  // 基础事件（后端实际发送）
+  | { type: 'assistant_message'; content?: string; turn?: number }
+  | { type: 'tool_result'; tool_name?: string }
+  | { type: 'complete'; reason?: string }
+  | { type: 'loop_detected'; tool?: string }
+  // 其他事件
   | { type: 'connection_established'; data: { message: string; timestamp: string } }
   | { type: 'task_start'; data: { target: string; description?: string; timestamp: string } }
   | { type: 'iteration_start'; data: { iteration: number; timestamp: string } }

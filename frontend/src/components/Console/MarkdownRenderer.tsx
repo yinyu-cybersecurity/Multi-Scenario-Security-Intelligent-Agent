@@ -70,16 +70,56 @@ export const MarkdownRenderer: React.FC<{
 
   // 渲染行内Markdown
   const renderInlineMarkdown = (text: string): React.ReactNode => {
-    // 简单处理行内代码
-    const parts = text.split(/`([^`]+)`/);
+    // Flag高亮（flag{...}）
+    const flagRegex = /flag\{[^}]+\}/gi;
+
+    // 错误高亮（[ERROR]、Error:、error:）
+    const errorRegex = /(\[ERROR\]|Error:|error:|错误|失败|failed|Failed)/g;
+
+    // 行内代码
+    const codeRegex = /`([^`]+)`/;
+
+    // 组合所有正则
+    const combinedRegex = new RegExp(
+      `(${flagRegex.source})|(${errorRegex.source})|(${codeRegex.source})`,
+      'gi'
+    );
+
+    const parts = text.split(combinedRegex);
+
     return parts.map((part, i) => {
-      if (i % 2 === 1) {
+      if (!part) return null;
+
+      // Flag高亮
+      if (flagRegex.test(part)) {
         return (
-          <code key={i} className="bg-gray-100 text-pink-600 px-1 py-0.5 rounded text-xs">
-            {part}
-          </code>
+          <span key={i} className="bg-yellow-200 text-yellow-900 px-2 py-1 rounded font-bold border border-yellow-400">
+            🚩 {part}
+          </span>
         );
       }
+
+      // 错误高亮
+      if (errorRegex.test(part)) {
+        return (
+          <span key={i} className="bg-red-100 text-red-700 px-1 py-0.5 rounded font-medium">
+            ⚠️ {part}
+          </span>
+        );
+      }
+
+      // 行内代码
+      if (codeRegex.test(part)) {
+        const codeMatch = part.match(codeRegex);
+        if (codeMatch) {
+          return (
+            <code key={i} className="bg-gray-100 text-pink-600 px-1 py-0.5 rounded text-xs">
+              {codeMatch[1]}
+            </code>
+          );
+        }
+      }
+
       return part;
     });
   };

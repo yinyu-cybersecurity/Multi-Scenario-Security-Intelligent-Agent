@@ -164,7 +164,7 @@ async def run_agent(target: str, websocket: WebSocket):
 # 静态文件服务（前端）
 @app.get("/")
 async def root():
-    return FileResponse("frontend/index.html")
+    return FileResponse("frontend/dist/index.html")
 
 
 @app.get("/api")
@@ -172,14 +172,29 @@ async def api_info():
     return {"message": "CTF-Agent 2.0 API", "status": "running", "arch": "Claude Code Query Loop"}
 
 
+@app.get("/assets/{path:path}")
+async def serve_assets(path: str):
+    """服务前端资源文件"""
+    import os
+    file_path = f"frontend/dist/assets/{path}"
+    if os.path.exists(file_path):
+        return FileResponse(file_path)
+    return {"error": "Not found"}, 404
+
+
 @app.get("/{path:path}")
 async def serve_frontend(path: str):
     """服务前端静态文件"""
     import os
+    # 先检查dist目录
+    file_path = f"frontend/dist/{path}"
+    if os.path.exists(file_path) and os.path.isfile(file_path):
+        return FileResponse(file_path)
+    # 再检查frontend目录
     file_path = f"frontend/{path}"
     if os.path.exists(file_path) and os.path.isfile(file_path):
         return FileResponse(file_path)
-    return FileResponse("frontend/index.html")
+    return FileResponse("frontend/dist/index.html")
 
 
 if __name__ == "__main__":
