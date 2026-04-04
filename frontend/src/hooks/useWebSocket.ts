@@ -163,6 +163,30 @@ export function useWebSocket() {
         }
 
         // === 其他事件保持兼容 ===
+        case 'status': {
+          const { status } = message;
+          if (status === 'started') {
+            setIsExecuting(true);
+          } else if (status === 'stopped' || status === 'interrupted') {
+            setIsExecuting(false);
+          }
+          break;
+        }
+
+        case 'error': {
+          const { message: errorMsg } = message;
+          addLogEntry({
+            id: `error-${Date.now()}`,
+            timestamp: new Date(),
+            type: 'error',
+            message: errorMsg || 'Unknown error',
+            iteration: 0,
+            node: 'think',
+          });
+          setIsExecuting(false);
+          break;
+        }
+
         case 'connection_established': {
           addLogEntry({
             id: `conn-${Date.now()}`,

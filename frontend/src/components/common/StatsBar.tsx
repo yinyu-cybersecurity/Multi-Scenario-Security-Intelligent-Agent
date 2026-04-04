@@ -15,7 +15,7 @@ export const StatsBar: React.FC = () => {
   useEffect(() => {
     fetch('/api/skills/count')
       .then(res => res.json())
-      .then(data => setSkillsCount(data.count))
+      .then(data => setSkillsCount(data.count || 0))
       .catch(() => setSkillsCount(0));
   }, []);
 

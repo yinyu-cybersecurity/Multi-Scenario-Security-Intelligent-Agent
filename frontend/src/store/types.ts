@@ -121,6 +121,8 @@ export type WSMessage =
   | { type: 'tool_result'; tool_name?: string }
   | { type: 'complete'; reason?: string }
   | { type: 'loop_detected'; tool?: string }
+  | { type: 'status'; status?: string; target?: string }
+  | { type: 'error'; message?: string }
   // 其他事件
   | { type: 'connection_established'; data: { message: string; timestamp: string } }
   | { type: 'task_start'; data: { target: string; description?: string; timestamp: string } }
