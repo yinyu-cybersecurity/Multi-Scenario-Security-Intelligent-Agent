@@ -321,6 +321,16 @@ export function useWebSocket() {
     wsStore.setConnected(false);
   }, []);
 
+  const sendStart = useCallback((target: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        command: 'start',
+        target: target,
+      }));
+      setIsExecuting(true);
+    }
+  }, [setIsExecuting]);
+
   const sendUserInput = useCallback((message: string, attachments: Attachment[]) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
@@ -330,9 +340,8 @@ export function useWebSocket() {
           attachments: attachments.map(a => ({ id: a.id, name: a.name, size: a.size, type: a.type })),
         },
       }));
-      setIsExecuting(true);
     }
-  }, [setIsExecuting]);
+  }, []);
 
   const sendInterrupt = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -354,6 +363,7 @@ export function useWebSocket() {
     reconnectAttempts: reconnectAttemptsRef.current,
     connect,
     disconnect,
+    sendStart,
     sendUserInput,
     sendInterrupt,
   };
