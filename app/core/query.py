@@ -13,12 +13,14 @@ from typing import AsyncGenerator, Dict, List
 from dataclasses import dataclass
 import hashlib
 import json
+import re
 
 from app.llm_client import llm_client
 from app.logger import get_logger
 from app.tools_v2.mcp.client import get_mcp_client
 from app.core.loop_detector import LoopDetector
 from app.core.time_manager import TimeBudget
+from app.memory.token_stats import get_token_stats_manager
 
 logger = get_logger("Query")
 
@@ -47,8 +49,17 @@ async def query(
     tool_schemas = client.get_all_tool_schemas()
     time_budget = TimeBudget(config.timeout_seconds)
     loop_detector = LoopDetector()
+    token_manager = get_token_stats_manager()
 
     for turn in range(1, config.max_turns + 1):
+        # Token统计信息（供AI参考）
+        stats = token_manager.get_global_stats()
+        if turn % 10 == 0:  # 每10轮提示一次
+            messages.append({
+                "role": "system",
+                "content": f"[TOKEN_INFO] 当前Token使用: {stats.total_tokens:,}"
+            })
+
         # === 超时检查（唯一强制熔断） ===
         if time_budget.is_timeout:
             messages.append({"role": "system", "content": "[TIMEOUT] 时间耗尽。立即输出当前最佳结果。"})
@@ -84,6 +95,16 @@ async def query(
         messages.append(msg)
         yield {"type": "assistant_message", "content": content, "turn": turn, "tool_calls": tool_calls}
 
+        # AI自主结束检测
+        if "[TASK_COMPLETE]" in content:
+            flags = re.findall(r'flag\{[^}]+\}', content, re.IGNORECASE)
+            yield {
+                "type": "task_complete",
+                "flags": flags,
+                "reason": "ai_terminated"
+            }
+            return
+
         # === 执行工具（如果有）===
         for tc in tool_calls:
             tool_id = tc.get("id", f"call_{turn}")
@@ -104,9 +125,15 @@ async def query(
 
             # 执行工具（通过MCP）
             try:
-                result = await client.call_tool(tool_name, arguments)
+                # 解析 server__tool 格式
+                if "__" not in tool_name:
+                    raise ValueError(f"Invalid tool name format: {tool_name}. Expected: server__tool")
+
+                server, tool = tool_name.split("__", 1)
+                result = await client.call_tool(server, tool, arguments)
                 result_str = str(result)
             except Exception as e:
+                # 错误返回给AI，让AI自己调整
                 result_str = json.dumps({"status": "error", "error": str(e)})
 
             logger.info(f"[Query] Tool result for {tool_name}: {result_str[:500]}...")

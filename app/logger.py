@@ -141,8 +141,9 @@ class LoggerManager:
 
     def _setup(self):
         """初始化日志配置"""
-        # 日志根目录
-        self._log_root = Path(os.environ.get('CTF_LOG_DIR', '/tmp/ctf_logs'))
+        # 日志根目录 - 使用项目目录下的logs，确保移植性
+        project_root = Path(__file__).parent.parent
+        self._log_root = Path(os.environ.get('CTF_LOG_DIR', str(project_root / 'logs')))
         self._log_root.mkdir(parents=True, exist_ok=True)
 
         # 当前任务日志目录

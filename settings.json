@@ -1,159 +1,22 @@
 {
-  "$schema": "./settings.schema.json",
-
   "model": {
-    "provider": "openai",
-    "name": "glm-5",
-    "base_url": "https://open.bigmodel.cn/api/paas/v4/",
-    "api_key": "${LLM_API_KEY}",
-    "timeout": 120,
-    "max_retries": 3,
-    "max_concurrent": 5
+    "name": "qwen3.5-plus",
+    "base_url": "https://coding.dashscope.aliyuncs.com/v1",
+    "api_key": "sk-sp-76fbf0d8416a44e0a58c5b7bac5f446d",
+    "timeout": 120
   },
-
   "timeouts": {
-    "ctf_single": 1800,
-    "ctf_multi": 3600,
-    "external_attack": 3600,
-    "internal_penetration": 7200,
-    "full_penetration": 10800
+    "task": 1800,
+    "tool_default": 300
   },
-
-  "tools": {
-    "native_execution": true,
-    "venv_path": "~/.ctf_agent/venv",
-    "timeout_multiplier": 1.0,
-    "dangerous_commands_require_confirmation": true
-  },
-
   "mcp_servers": {
-    "ctf-core": {
-      "command": "python",
-      "args": ["mcp_servers/core_server.py"],
-      "env": {}
-    },
-    "ctf-memory": {
-      "command": "python",
-      "args": ["mcp_servers/memory_server.py"],
-      "env": {}
-    },
-    "ctf-web": {
-      "command": "python",
-      "args": ["mcp_servers/web_server.py"],
-      "env": {}
-    },
-    "ctf-web-advanced": {
-      "command": "python",
-      "args": ["mcp_servers/web_advanced_server.py"],
-      "env": {}
-    },
-    "ctf-recon": {
-      "command": "python",
-      "args": ["mcp_servers/recon_server.py"],
-      "env": {}
-    },
-    "ctf-recon-advanced": {
-      "command": "python",
-      "args": ["mcp_servers/recon_advanced_server.py"],
-      "env": {}
-    },
-    "ctf-internal": {
-      "command": "python",
-      "args": ["mcp_servers/internal_server.py"],
-      "env": {}
-    },
-    "ctf-internal-advanced": {
-      "command": "python",
-      "args": ["mcp_servers/internal_advanced_server.py"],
-      "env": {}
-    },
-    "ctf-ad": {
-      "command": "python",
-      "args": ["mcp_servers/ad_server.py"],
-      "env": {}
-    },
-    "ctf-deserialization": {
-      "command": "python",
-      "args": ["mcp_servers/deserialization_server.py"],
-      "env": {}
-    },
-    "ctf-cloud": {
-      "command": "python",
-      "args": ["mcp_servers/cloud_server.py"],
-      "env": {}
-    },
-    "ctf-oa": {
-      "command": "python",
-      "args": ["mcp_servers/oa_server.py"],
-      "env": {}
-    },
-    "ctf-binary": {
-      "command": "python",
-      "args": ["mcp_servers/binary_server.py"],
-      "env": {}
-    },
-    "ctf-crypto": {
-      "command": "python",
-      "args": ["mcp_servers/crypto_server.py"],
-      "env": {}
-    },
-    "ctf-jndi": {
-      "command": "python",
-      "args": ["mcp_servers/jndi_server.py"],
-      "env": {}
-    },
-    "ctf-ai": {
-      "command": "python",
-      "args": ["mcp_servers/ai_server.py"],
-      "env": {}
-    },
-    "ctf-competition": {
-      "command": "python",
-      "args": ["mcp_servers/competition_server.py"],
+    "kali": {
+      "command": "python3",
+      "args": ["mcp_servers/kali_server.py"],
       "env": {
-        "COMPETITION_SERVER_HOST": "${COMPETITION_SERVER_HOST}",
-        "COMPETITION_AGENT_TOKEN": "${COMPETITION_AGENT_TOKEN}"
-      }
-    },
-    "openspace": {
-      "command": "D:/LangGraph2.0/langGraph/deploy/venv312/Scripts/openspace-mcp.exe",
-      "args": [],
-      "env": {
-        "OPENSPACE_HOST_SKILL_DIRS": "D:/LangGraph2.0/langGraph/deploy/skills",
-        "OPENSPACE_WORKSPACE": "D:/LangGraph2.0/langGraph/deploy/OpenSpace-main",
-        "OPENSPACE_API_KEY": "${OPENSPACE_API_KEY}"
+        "COMPETITION_SERVER_HOST": "",
+        "COMPETITION_AGENT_TOKEN": ""
       }
     }
-  },
-
-  "skills": {
-    "enabled": true,
-    "auto_recommend": true,
-    "lazy_load": true,
-    "skills_dir": "app/skills/data"
-  },
-
-  "memory": {
-    "enabled": true,
-    "persist_token_stats": true,
-    "prompt_cache_ttl": 3600
-  },
-
-  "frontend": {
-    "ws_url": "ws://localhost:8000/ws",
-    "pulse_animation": true,
-    "decision_flow_display": true
-  },
-
-  "competition": {
-    "server_host": "${COMPETITION_SERVER_HOST}",
-    "agent_token": "${COMPETITION_AGENT_TOKEN}",
-    "rate_limit_delay": 0.35
-  },
-
-  "logging": {
-    "level": "INFO",
-    "file": "logs/ctf_agent.log",
-    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
   }
 }

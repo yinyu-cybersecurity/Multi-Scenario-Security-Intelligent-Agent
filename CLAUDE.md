@@ -179,10 +179,10 @@ AI在执行任务时：
   
   "mcp_servers": {
     "openspace": {
-      "command": "D:/LangGraph2.0/langGraph/deploy/venv312/Scripts/openspace-mcp.exe",
+      "command": "./venv312/Scripts/openspace-mcp.exe",
       "env": {
-        "OPENSPACE_HOST_SKILL_DIRS": "D:/LangGraph2.0/langGraph/deploy/skills",
-        "OPENSPACE_WORKSPACE": "D:/LangGraph2.0/langGraph/deploy/OpenSpace-main"
+        "OPENSPACE_HOST_SKILL_DIRS": "./skills",
+        "OPENSPACE_WORKSPACE": "./OpenSpace-main"
       }
     }
   }

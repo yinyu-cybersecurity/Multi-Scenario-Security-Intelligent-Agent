@@ -1,73 +1,18 @@
+version: '3.8'
+
 services:
   ctf-agent:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     container_name: ctf-agent
-    # network_mode: host  # Windows不支持，使用端口映射
-    ports:
-      - "54565:54565" # Web UI (安全路径: /fisher_ctf_agent/)
-      - "8000:8000"   # HTTP Server (工具下载服务)
-      - "7000:7000"   # frps (FRP服务端)
-      - "10800:10800" # SOCKS5代理
-      - "4444:4444"   # Reverse Shell监听
-    privileged: true
     volumes:
-      - ./data:/app/data
-      - ./.memory:/app/.memory
-      - ./config.yaml:/app/config.yaml:ro
-      # 代码热更新 - 挂载所有模块目录
-      - ./app:/app
-      - ./tools:/app/tools
-      - ./web:/app/web
-      - ./internal_network:/app/internal_network
-      - ./remote_executor:/app/remote_executor
-      - ./crypto:/app/crypto
-      - ./pwn:/app/pwn
-      - ./reverse:/app/reverse
-      - ./misc:/app/misc
-      - ./ai_security:/app/ai_security
-      - ./cloud_security:/app/cloud_security
-      - ./memory:/app/memory
-      - ./rag_builder:/app/rag_builder
-      # 保护thirdparty目录不被覆盖（使用匿名卷）
-      - /app/thirdparty
-    environment:
-      - LLM_API_KEY=${LLM_API_KEY}
-      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.deepseek.com/v1}
-      - LOCAL_PUBLIC_IP=${LOCAL_PUBLIC_IP}
-      - HTTP_SERVER_PORT=${HTTP_SERVER_PORT:-8000}
-      - FRP_SERVER_PORT=${FRP_SERVER_PORT:-7000}
-      - FRP_SOCKS5_PORT=${FRP_SOCKS5_PORT:-10800}
-      - HF_HOME=/app/.cache/huggingface
-      - HF_ENDPOINT=https://hf-mirror.com
-    restart: unless-stopped
+      - ./skills:/app/skills
+      - ./logs:/app/logs
     stdin_open: true
     tty: true
-    # 默认启动Web UI
-    command: python /app/web/api.py
-
-  # CLI模式 - 命令行交互
-  ctf-agent-cli:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: ctf-agent-cli
-    ports:
-      - "8001:8000"   # HTTP Server
-      - "7001:7000"   # frps
-      - "10801:10800" # SOCKS5代理
-    privileged: true
-    volumes:
-      - ./data:/app/data
-      - ./config.yaml:/app/config.yaml:ro
-      - ./app:/app/app
-      - ./tools:/app/tools
     environment:
-      - LLM_API_KEY=${LLM_API_KEY}
-      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.deepseek.com/v1}
-      - LOCAL_PUBLIC_IP=${LOCAL_PUBLIC_IP}
-    profiles:
-      - cli
-    stdin_open: true
-    tty: true
+      # 目标URL
+      - TARGET=${TARGET:-}
+      # 比赛平台配置（可选）
+      - COMPETITION_SERVER_HOST=${COMPETITION_SERVER_HOST:-}
+      - COMPETITION_AGENT_TOKEN=${COMPETITION_AGENT_TOKEN:-}
+    command: ["python3", "-m", "app.cli", "${TARGET}"]

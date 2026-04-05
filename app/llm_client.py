@@ -16,6 +16,7 @@ from enum import Enum
 
 from app.settings import config
 from app.logger import get_logger
+from app.memory.token_stats import get_token_stats_manager
 
 logger = get_logger("LLM")
 
@@ -232,6 +233,22 @@ class LLMClient:
                     message = choice["message"]
                     content = message.get("content", "")
                     tool_calls = message.get("tool_calls")
+
+                    # 记录Token使用
+                    usage = result.get("usage", {})
+                    if usage:
+                        token_manager = get_token_stats_manager()
+                        token_manager.record_usage(
+                            model=model,
+                            prompt_tokens=usage.get("prompt_tokens", 0),
+                            completion_tokens=usage.get("completion_tokens", 0)
+                        )
+
+                    logger.info(f"[LLM] Response content length: {len(content)}")
+                    logger.info(f"[LLM] Tool calls count: {len(tool_calls) if tool_calls else 0}")
+                    if tool_calls:
+                        for tc in tool_calls:
+                            logger.info(f"[LLM] Tool: {tc.get('function', {}).get('name')}")
 
                     return LLMResult(
                         content or "",
