@@ -1,50 +1,17 @@
-# CTF-Agent Dependencies
-# Python requirements for Linux server deployment
+# CTF-Agent 核心依赖
 
-# Core Framework
-langgraph>=0.2.0
-langchain>=0.3.0
-langchain-core>=0.3.0
-openai>=1.0.0
-anthropic>=0.39.0
-
-# Web Framework (Backend API)
-fastapi>=0.109.0
-uvicorn[standard]>=0.27.0
-websockets>=12.0
-python-multipart>=0.0.6
-
-# HTTP & Networking
-requests>=2.31.0
+# HTTP
 httpx>=0.27.0
-urllib3>=2.0.0
 
-# Data Processing
-pyyaml>=6.0
-python-dotenv>=1.0.0
-pydantic>=2.0.0
-typing-extensions>=4.0.0
-
-# Security Tools Integration
-pwn>=1.0.0  # pwntools
-impacket>=0.11.0
-defusedxml>=0.7.0  # dirsearch依赖
-psycopg[binary]>=3.1.0  # dirsearch PostgreSQL依赖
-
-# Logging
-colorlog>=6.0.0
-rich>=13.0.0
-
-# Optional - Crypto
-pycryptodome>=3.20.0
-gmpy2>=2.1.0
-
-# Optional - Misc
-Pillow>=10.0.0
-python-magic>=0.4.27
-
-# MCP (Model Context Protocol)
+# MCP协议
 mcp>=1.0.0
 
-# Docker SDK
-docker>=7.0.0
+# LLM调用
+litellm>=1.0.0
+
+# 数据处理
+pyyaml>=6.0
+pydantic>=2.0.0
+
+# 日志
+colorlog>=6.0.0

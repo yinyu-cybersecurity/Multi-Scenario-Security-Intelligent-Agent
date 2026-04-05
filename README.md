@@ -6,22 +6,36 @@
 
 ## 特性
 
-- **极简架构**: 1个MCP服务器，6个基础能力
+- **极简架构**: 1个MCP服务器，12个工具
 - **完全操控**: AI可调用Kali Linux 300+安全工具
-- **Docker部署**: 一键启动，跨平台兼容
 - **技能系统**: 115个攻击技能
 - **比赛适配**: 内置CTF比赛工具链
 
 ## 快速开始
 
-### Docker部署（推荐）
+### 方式一：Kali虚拟机直接运行（推荐）
 
 ```bash
-# 克隆项目
-git clone https://github.com/your-repo/ctf-agent.git
+# 复制项目到Kali
 cd ctf-agent
 
+# 安装依赖
+pip3 install -r requirements.txt
+
 # 运行
+python3 -m app.cli http://target.com
+
+# 或使用脚本
+./run_kali.sh http://target.com
+
+# 比赛模式
+COMPETITION_SERVER_HOST=host COMPETITION_AGENT_TOKEN=token python3 -m app.cli http://target.com
+```
+
+### 方式二：Docker部署
+
+```bash
+# 构建并运行
 ./run.sh http://target.com
 
 # 比赛模式
@@ -93,18 +107,10 @@ mcp_servers/
 └── kali_server.py        # 唯一MCP服务器
 
 skills/                   # 115个攻击技能
-Dockerfile
-docker-compose.yml
-run.sh
+run_kali.sh               # Kali直接运行脚本
+run.sh                    # Docker运行脚本
 settings.json
 ```
-
-## 技术栈
-
-- **后端**: Python 3 + MCP Protocol
-- **LLM**: 支持 OpenAI/Qwen/GLM 等
-- **容器**: Docker + Kali Linux
-- **技能**: YAML格式，AI自主学习
 
 ## 许可证
 
