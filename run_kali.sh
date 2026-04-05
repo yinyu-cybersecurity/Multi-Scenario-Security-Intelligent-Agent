@@ -1,5 +1,5 @@
 #!/bin/bash
-# Kali直接运行脚本（非Docker）
+# Kali直接运行脚本
 
 set -e
 
@@ -19,4 +19,5 @@ export COMPETITION_AGENT_TOKEN="${3:-$COMPETITION_AGENT_TOKEN}"
 echo "Target: $TARGET"
 [ -n "$COMPETITION_SERVER_HOST" ] && echo "Competition: $COMPETITION_SERVER_HOST"
 
+# 直接使用系统Python，Kali已预装大部分依赖
 python3 -m app.cli "$TARGET"

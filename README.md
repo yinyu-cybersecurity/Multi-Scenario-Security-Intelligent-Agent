@@ -16,30 +16,23 @@
 ### 方式一：Kali虚拟机直接运行（推荐）
 
 ```bash
-# 复制项目到Kali
+# 复制项目到Kali后进入目录
 cd ctf-agent
 
-# 安装依赖
-pip3 install -r requirements.txt
-
-# 运行
-python3 -m app.cli http://target.com
-
-# 或使用脚本
+# 直接运行（自动创建虚拟环境）
+chmod +x run_kali.sh
 ./run_kali.sh http://target.com
 
 # 比赛模式
-COMPETITION_SERVER_HOST=host COMPETITION_AGENT_TOKEN=token python3 -m app.cli http://target.com
+./run_kali.sh http://target.com competition.host.com your-token
 ```
+
+首次运行会自动创建虚拟环境并安装依赖。
 
 ### 方式二：Docker部署
 
 ```bash
-# 构建并运行
 ./run.sh http://target.com
-
-# 比赛模式
-./run.sh http://target.com competition.host.com your-token
 ```
 
 ### 配置
