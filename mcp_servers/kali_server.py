@@ -204,13 +204,14 @@ async def call_tool(name: str, arguments: dict):
     elif name == "list_challenges":
         return await competition_api("GET", "/api/challenges")
     elif name == "start_challenge":
-        return await competition_api("POST", "/api/start_challenge", {"code": arguments["code"]})
+        return await competition_api("POST", "/api/challenge/start", {"code": arguments["code"]})
     elif name == "stop_challenge":
-        return await competition_api("POST", "/api/stop_challenge", {"code": arguments["code"]})
+        return await competition_api("POST", "/api/challenge/stop", {"code": arguments["code"]})
     elif name == "submit_flag":
-        return await competition_api("POST", "/api/submit", {"code": arguments["code"], "flag": arguments["flag"]})
+        return await competition_api("POST", "/api/challenge/submit", {"code": arguments["code"], "flag": arguments["flag"]})
     elif name == "view_hint":
-        return await competition_api("POST", "/api/hint", {"code": arguments["code"]})
+        code = arguments["code"]
+        return await competition_api("GET", f"/api/challenge/hint/{code}")
 
     # 技能系统
     elif name == "search_skills":
