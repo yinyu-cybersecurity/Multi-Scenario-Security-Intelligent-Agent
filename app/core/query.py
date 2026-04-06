@@ -39,12 +39,18 @@ logger = get_logger("Query")
 # Flag 自动检测
 # ============================================================================
 
-# 常见 CTF flag 格式（可扩展）
+# 常见 CTF flag 格式（覆盖主流平台）
 FLAG_PATTERNS = [
     re.compile(r'flag\{[^}]+\}', re.IGNORECASE),
     re.compile(r'FLAG\{[^}]+\}'),
     re.compile(r'ctf\{[^}]+\}', re.IGNORECASE),
     re.compile(r'key\{[^}]+\}', re.IGNORECASE),
+    re.compile(r'NSSCTF\{[^}]+\}', re.IGNORECASE),      # NSSCTF 平台
+    re.compile(r'ACTF\{[^}]+\}', re.IGNORECASE),        # ACTF 平台
+    re.compile(r'SCTF\{[^}]+\}', re.IGNORECASE),        # SCTF 平台
+    re.compile(r'[A-Z]+CTF\{[^}]+\}', re.IGNORECASE),   # 通配: XXCTF{...}
+    re.compile(r'hgame\{[^}]+\}', re.IGNORECASE),       # HGAME 平台
+    re.compile(r'syc\{[^}]+\}', re.IGNORECASE),         # SYC 平台
 ]
 
 
@@ -127,6 +133,8 @@ class QueryConfig:
     message_truncate_threshold: int = 8000
     # 并行工具
     parallel_tool_calls: bool = True
+    # 模式控制
+    auto_continue: bool = True  # 无工具调用时是否自动注入提示继续
 
 
 # ============================================================================
@@ -406,8 +414,11 @@ async def query(
             if flags:
                 yield {"type": "task_complete", "flags": flags, "reason": "flag_in_response"}
                 return
-            # AI 没有调用工具也没有 FLAG，可能是在思考或总结
-            # 注入提示让 AI 继续
+            # REPL 模式：不自动继续，等待用户输入
+            if not config.auto_continue:
+                yield {"type": "complete", "reason": "awaiting_user_input"}
+                return
+            # 自动攻击模式：注入提示让 AI 继续
             messages.append({
                 "role": "user",
                 "content": "继续攻击。如果已完成，输出 [TASK_COMPLETE] FLAG: flag{xxx}。如果卡住了，换一种方法。",

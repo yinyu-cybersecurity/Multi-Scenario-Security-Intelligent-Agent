@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import anyio
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -60,7 +61,7 @@ class MCPConnectionManager:
             self._task.cancel()
             try:
                 await self._task
-            except (asyncio.CancelledError, Exception):
+            except (asyncio.CancelledError, anyio.get_cancelled_exc_class(), Exception):
                 pass
 
     async def _run(self):
@@ -71,6 +72,9 @@ class MCPConnectionManager:
                 self._connected = True
                 self._ready.set()
                 await self._stop.wait()
+        except anyio.get_cancelled_exc_class():
+            # 任务被取消，正常退出
+            logger.debug(f"[MCP] Connection cancelled")
         except Exception as e:
             logger.error(f"[MCP] Connection error: {e}")
             self._ready.set()  # 解除等待
@@ -78,7 +82,9 @@ class MCPConnectionManager:
             self._connected = False
             if self._session:
                 try:
-                    await self._session.__aexit__(None, None, None)
+                    # 使用 anyio 的取消保护来安全退出
+                    with anyio.CancelScope(shield=True):
+                        await self._session.__aexit__(None, None, None)
                 except Exception:
                     pass
                 self._session = None

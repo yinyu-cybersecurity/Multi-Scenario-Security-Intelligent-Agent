@@ -35,6 +35,10 @@ case "$MODE" in
         echo "[Start] Competition Auto-Solve Mode"
         "$VENV_DIR/bin/python" -m app.cli --competition
         ;;
+    repl|r)
+        echo "[Start] Smart REPL Mode"
+        "$VENV_DIR/bin/python" -m app.cli --repl
+        ;;
     interactive|int|i)
         echo "[Start] Interactive Mode"
         "$VENV_DIR/bin/python" -m app.cli --interactive

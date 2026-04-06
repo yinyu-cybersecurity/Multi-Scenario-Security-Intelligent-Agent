@@ -37,7 +37,7 @@
 
   "mcp_servers": {
     "kali": {
-      "command": "python3",
+      "command": ".venv/bin/python3",
       "args": ["mcp_servers/kali_server.py"],
       "env": {}
     }

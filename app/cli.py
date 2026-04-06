@@ -36,6 +36,7 @@ def parse_args():
         "target": "",
         "competition": False,
         "interactive": False,
+        "repl": False,  # 新增智能 REPL 模式
         "host": "",
         "token": "",
         "timeout": 0,
@@ -49,6 +50,8 @@ def parse_args():
             args["competition"] = True
         elif arg == "--interactive" or arg == "-i":
             args["interactive"] = True
+        elif arg == "--repl" or arg == "-r":
+            args["repl"] = True
         elif arg == "--host":
             i += 1
             args["host"] = sys.argv[i] if i < len(sys.argv) else ""
@@ -234,7 +237,7 @@ async def main():
         os.environ["COMPETITION_AGENT_TOKEN"] = args["token"]
 
     # 无参数时显示用法
-    if not args["target"] and not args["competition"] and not args["interactive"]:
+    if not args["target"] and not args["competition"] and not args["interactive"] and not args["repl"]:
         # 检查环境变量是否已设置比赛模式
         if os.environ.get("COMPETITION_SERVER_HOST") and os.environ.get("COMPETITION_AGENT_TOKEN"):
             args["competition"] = True
@@ -243,9 +246,10 @@ async def main():
             print()
             print("Usage:")
             print("  python -m app.cli <target_url>              Single target attack")
+            print("  python -m app.cli --repl                     Smart interactive REPL")
             print("  python -m app.cli --competition              Competition auto-solve")
             print("  python -m app.cli --competition --host H --token T")
-            print("  python -m app.cli --interactive              Interactive mode")
+            print("  python -m app.cli --interactive              Legacy interactive mode")
             print()
             print("Environment Variables:")
             print("  LLM_API_KEY                 LLM API key (required)")
@@ -253,7 +257,10 @@ async def main():
             print("  COMPETITION_AGENT_TOKEN     Competition agent token")
             sys.exit(1)
 
-    if args["interactive"]:
+    if args["repl"]:
+        from app.repl import main as repl_main
+        repl_main()
+    elif args["interactive"]:
         from app.interactive import main as interactive_main
         interactive_main()
     elif args["competition"]:
