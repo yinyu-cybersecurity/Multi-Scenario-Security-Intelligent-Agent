@@ -1,75 +1,78 @@
-name: "supply chain"
-description: "supply-chain 攻击技术和利用方法"
-domain: "web"
-version: "1.0"
+name: supply chain
+description: supply-chain 攻击技术和利用方法
+domain: web
+version: '1.0'
 tags:
-  - web
-  - supply-chain
+- web
+- supply-chain
+knowledge: '# 供应链攻击
 
-knowledge: |
-  # 供应链攻击
-  
+
   ## 1. 拼写抢注(Typosquatting)
-  
+
+
   ```
+
   npm install express
+
   npm install exprees (假包)
+
   ```
-  
+
+
   ## 2. 依赖混淆
-  
+
+
   ```
+
   // 私有包名
+
   @company/internal-api
+
   ```
-  
+
+
   ## 3. CI/CD投毒
-  
+
+
   ```
+
   .github/workflows/ci.yml
+
   植入恶意代码
+
   ```
-  
+
+
   ## 4. 恶意依赖
-  
+
+
   ```
+
   依赖包含后门
+
   ```
-  
+
+
   ## 5. 代码签名
-  
+
+
   ```
+
   使用伪造证书签名
+
   ```
-  
+
+
   ## 6. 社区攻击
-  
+
+
   ```
+
   发布恶意npm包
+
   社会工程学
+
   ```
-  
 
-workflows:
-  - name: "自动检测和利用"
-    description: "自动检测漏洞并尝试利用"
-    steps:
-      - description: "信息收集和漏洞探测"
-        expected_output: "发现潜在漏洞点"
-      - description: "漏洞验证"
-        expected_output: "确认漏洞存在"
-      - description: "漏洞利用"
-        expected_output: "成功利用漏洞"
-
-tool_preferences:
-  nmap:
-    score: 0.8
-    reason: "端口和服务扫描"
-  nuclei:
-    score: 0.9
-    reason: "漏洞扫描"
-
-examples:
-  - scenario: "发现漏洞并获取敏感信息"
-    solution: "使用工具探测 -> 验证漏洞 -> 获取数据"
-    tools_used: ["nmap", "nuclei"]
+  '

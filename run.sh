@@ -1,36 +1,61 @@
 #!/bin/bash
-# Docker启动脚本
+# =============================================================================
+# CTF-Agent Docker 启动脚本
+# =============================================================================
 
 set -e
 
-# 构建镜像
-echo "构建Docker镜像..."
-docker build -t ctf-agent:latest .
+# 颜色
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
 
-# 检查参数
-if [ -z "$1" ]; then
-    echo "Usage: ./run.sh <target_url> [competition_host] [competition_token]"
-    echo ""
-    echo "Examples:"
-    echo "  普通模式:   ./run.sh http://target.com"
-    echo "  比赛模式:   ./run.sh http://target.com competition.example.com your-token"
+echo -e "${GREEN}"
+echo "  ╔═══════════════════════════════════════╗"
+echo "  ║        CTF-Agent Launcher             ║"
+echo "  ╚═══════════════════════════════════════╝"
+echo -e "${NC}"
+
+# 检查 .env 文件
+if [ ! -f ".env" ]; then
+    if [ -f ".env.example" ]; then
+        echo -e "${YELLOW}[WARN] .env not found. Creating from .env.example...${NC}"
+        cp .env.example .env
+        echo -e "${YELLOW}[WARN] Please edit .env with your API keys${NC}"
+    else
+        echo -e "${RED}[ERROR] .env file not found${NC}"
+        exit 1
+    fi
+fi
+
+# 检查关键环境变量
+source .env 2>/dev/null || true
+
+if [ -z "$LLM_API_KEY" ] || [ "$LLM_API_KEY" = "your_api_key_here" ]; then
+    echo -e "${RED}[ERROR] LLM_API_KEY not set in .env${NC}"
     exit 1
 fi
 
-TARGET="$1"
-COMP_HOST="${2:-$COMPETITION_SERVER_HOST}"
-COMP_TOKEN="${3:-$COMPETITION_AGENT_TOKEN}"
+# 构建镜像
+echo -e "${GREEN}[1/2] Building Docker image...${NC}"
+docker compose build
 
-# 运行容器
-echo "启动CTF-Agent"
-echo "  目标: $TARGET"
-[ -n "$COMP_HOST" ] && echo "  比赛平台: $COMP_HOST"
+# 启动
+MODE="${1:-competition}"
 
-docker run -it --rm \
-    -v "$(pwd)/skills:/app/skills" \
-    -v "$(pwd)/logs:/app/logs" \
-    -e TARGET="$TARGET" \
-    -e COMPETITION_SERVER_HOST="$COMP_HOST" \
-    -e COMPETITION_AGENT_TOKEN="$COMP_TOKEN" \
-    ctf-agent:latest \
-    python3 -m app.cli "$TARGET"
+case "$MODE" in
+    competition|comp|c)
+        echo -e "${GREEN}[2/2] Starting Competition Auto-Solve Mode...${NC}"
+        docker compose up
+        ;;
+    interactive|int|i)
+        echo -e "${GREEN}[2/2] Starting Interactive Mode...${NC}"
+        docker compose run --rm ctf-agent python3 -m app.cli --interactive
+        ;;
+    *)
+        # 当作目标 URL
+        echo -e "${GREEN}[2/2] Starting Single Target: $MODE${NC}"
+        docker compose run --rm ctf-agent python3 -m app.cli "$MODE"
+        ;;
+esac

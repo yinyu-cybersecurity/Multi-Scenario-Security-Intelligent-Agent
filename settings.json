@@ -2,21 +2,44 @@
   "model": {
     "name": "qwen3.5-plus",
     "base_url": "https://coding.dashscope.aliyuncs.com/v1",
-    "api_key": "sk-sp-76fbf0d8416a44e0a58c5b7bac5f446d",
-    "timeout": 120
+    "api_key": "${LLM_API_KEY}",
+    "timeout": 120,
+    "temperature": 0.1,
+    "fallback_models": []
   },
+
   "timeouts": {
     "task": 1800,
-    "tool_default": 300
+    "tool_default": 300,
+    "llm_call": 120,
+    "mcp_connect": 30
   },
+
+  "retry": {
+    "max_retries": 3,
+    "base_delay": 1.0,
+    "max_delay": 30.0
+  },
+
+  "competition": {
+    "server_host": "${COMPETITION_SERVER_HOST}",
+    "agent_token": "${COMPETITION_AGENT_TOKEN}",
+    "mcp_url": "",
+    "rate_limit": 0.35,
+    "max_concurrent_instances": 3
+  },
+
+  "query": {
+    "max_turns": 200,
+    "context_window_tokens": 120000,
+    "parallel_tool_calls": true
+  },
+
   "mcp_servers": {
     "kali": {
       "command": "python3",
       "args": ["mcp_servers/kali_server.py"],
-      "env": {
-        "COMPETITION_SERVER_HOST": "",
-        "COMPETITION_AGENT_TOKEN": ""
-      }
+      "env": {}
     }
   }
 }

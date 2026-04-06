@@ -1,18 +1,63 @@
-version: '3.8'
+# =============================================================================
+# CTF-Agent Docker Compose
+#
+# 用法:
+#   # 比赛自动模式
+#   docker compose up
+#
+#   # 单题模式
+#   docker compose run --rm ctf-agent python3 -m app.cli http://target.com
+#
+#   # 交互模式
+#   docker compose run --rm ctf-agent python3 -m app.cli --interactive
+# =============================================================================
 
 services:
   ctf-agent:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: ctf-agent
-    volumes:
-      - ./skills:/app/skills
-      - ./logs:/app/logs
     stdin_open: true
     tty: true
+
+    # 环境变量（从 .env 文件读取）
+    env_file:
+      - .env
+
     environment:
-      # 目标URL
-      - TARGET=${TARGET:-}
-      # 比赛平台配置（可选）
+      # 显式声明关键变量（.env 中的值会覆盖）
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_BASE_URL=${LLM_BASE_URL:-}
+      - LLM_MODEL=${LLM_MODEL:-}
       - COMPETITION_SERVER_HOST=${COMPETITION_SERVER_HOST:-}
       - COMPETITION_AGENT_TOKEN=${COMPETITION_AGENT_TOKEN:-}
-    command: ["python3", "-m", "app.cli", "${TARGET}"]
+      - COMPETITION_MCP_URL=${COMPETITION_MCP_URL:-}
+      - TASK_TIMEOUT=${TASK_TIMEOUT:-1800}
+      - PYTHONUNBUFFERED=1
+
+    volumes:
+      # 技能知识库（热加载）
+      - ./skills:/app/skills:ro
+      # 日志持久化
+      - ./logs:/app/logs
+      # 工作空间（AI 生成的脚本/文件）
+      - ctf-workspace:/app/workspace
+
+    # 网络配置（需要访问比赛靶机）
+    network_mode: host
+
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "4"
+
+    # 默认：比赛自动模式
+    command: ["python3", "-m", "app.cli", "--competition"]
+
+    restart: "no"
+
+volumes:
+  ctf-workspace:

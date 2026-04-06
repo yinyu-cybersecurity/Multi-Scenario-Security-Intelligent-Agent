@@ -1,33 +1,46 @@
 #!/bin/bash
-# Kali直接运行脚本
+# =============================================================================
+# CTF-Agent Kali 直接运行脚本（不使用 Docker）
+# =============================================================================
 
 set -e
 
-if [ -z "$1" ]; then
-    echo "Usage: ./run_kali.sh <target_url> [competition_host] [competition_token]"
-    echo ""
-    echo "Examples:"
-    echo "  ./run_kali.sh http://target.com"
-    echo "  ./run_kali.sh http://target.com competition.host.com your-token"
+# 加载 .env
+if [ -f ".env" ]; then
+    set -a
+    source .env
+    set +a
+fi
+
+# 检查 API key
+if [ -z "$LLM_API_KEY" ] || [ "$LLM_API_KEY" = "your_api_key_here" ]; then
+    echo "[ERROR] LLM_API_KEY not set. Edit .env file."
     exit 1
 fi
 
-TARGET="$1"
-export COMPETITION_SERVER_HOST="${2:-$COMPETITION_SERVER_HOST}"
-export COMPETITION_AGENT_TOKEN="${3:-$COMPETITION_AGENT_TOKEN}"
-
-echo "Target: $TARGET"
-[ -n "$COMPETITION_SERVER_HOST" ] && echo "Competition: $COMPETITION_SERVER_HOST"
-
-# 创建虚拟环境（避免系统包冲突）
+# 虚拟环境
 VENV_DIR=".venv"
 if [ ! -d "$VENV_DIR" ]; then
-    echo "Creating virtual environment..."
+    echo "[Setup] Creating virtual environment..."
     python3 -m venv "$VENV_DIR"
-    echo "Installing dependencies..."
     "$VENV_DIR/bin/pip" install --upgrade pip
-    "$VENV_DIR/bin/pip" install httpx mcp litellm pyyaml pydantic colorlog
+    "$VENV_DIR/bin/pip" install -r requirements.txt
 fi
 
-# 使用虚拟环境运行
-"$VENV_DIR/bin/python" -m app.cli "$TARGET"
+# 启动
+MODE="${1:-competition}"
+
+case "$MODE" in
+    competition|comp|c)
+        echo "[Start] Competition Auto-Solve Mode"
+        "$VENV_DIR/bin/python" -m app.cli --competition
+        ;;
+    interactive|int|i)
+        echo "[Start] Interactive Mode"
+        "$VENV_DIR/bin/python" -m app.cli --interactive
+        ;;
+    *)
+        echo "[Start] Single Target: $MODE"
+        "$VENV_DIR/bin/python" -m app.cli "$MODE"
+        ;;
+esac

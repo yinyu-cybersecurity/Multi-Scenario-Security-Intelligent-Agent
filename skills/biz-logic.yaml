@@ -1,99 +1,115 @@
-name: "业务逻辑漏洞"
-description: "业务逻辑缺陷检测和利用"
-domain: "web"
-version: "1.0"
+name: 业务逻辑漏洞
+description: 业务逻辑缺陷检测和利用
+domain: web
+version: '1.0'
 tags:
-  - web
-  - logic
-  - business
+- web
+- logic
+- business
+knowledge: '# 业务逻辑漏洞
 
-knowledge: |
-  # 业务逻辑漏洞
-  
+
   ## 1. IDOR越权遍历
-  
+
+
   ### 水平越权
-  
+
+
   ```
+
   /api/user/1 -> /api/user/2
+
   ```
-  
+
+
   ### 垂直越权
-  
+
+
   ```
+
   普通用户 -> 管理员功能
+
   ```
-  
+
+
   ## 2. 竞态条件攻击
-  
+
+
   ### 并发购买
-  
+
+
   ```
+
   1个商品 + 多个并发请求 = 多次购买
+
   ```
-  
+
+
   ### 优惠券滥用
-  
+
+
   ```
+
   一张优惠券 + 多次使用
+
   ```
-  
+
+
   ### 积分重复获取
-  
+
+
   ## 3. 价格篡改
-  
+
+
   ```
+
   POST /checkout
+
   {price: 100} -> 改为 1
+
   ```
-  
+
+
   ## 4. 流程绕过
-  
+
+
   ```
+
   Step1 -> Step3 (跳过Step2)
+
   ```
-  
+
+
   ## 5. 参数污染
-  
+
+
   ```
+
   POST /transfer?to=user1&amount=100&to=user2
+
   ```
-  
+
+
   ## 6. 权限绕过
-  
+
+
   ### 角色修改
-  
+
+
   ```
+
   修改role参数为admin
+
   ```
-  
+
+
   ### IP限制绕过
-  
+
+
   ```
+
   X-Forwarded-For: 127.0.0.1
+
   ```
-  
 
-workflows:
-  - name: "自动检测和利用"
-    description: "自动检测漏洞并尝试利用"
-    steps:
-      - description: "信息收集和漏洞探测"
-        expected_output: "发现潜在漏洞点"
-      - description: "漏洞验证"
-        expected_output: "确认漏洞存在"
-      - description: "漏洞利用"
-        expected_output: "成功利用漏洞"
-
-tool_preferences:
-  nmap:
-    score: 0.8
-    reason: "端口和服务扫描"
-  nuclei:
-    score: 0.9
-    reason: "漏洞扫描"
-
-examples:
-  - scenario: "发现漏洞并获取敏感信息"
-    solution: "使用工具探测 -> 验证漏洞 -> 获取数据"
-    tools_used: ["nmap", "nuclei"]
+  '

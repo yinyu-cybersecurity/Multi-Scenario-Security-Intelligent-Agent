@@ -15,26 +15,38 @@ venv
 # IDE
 .idea
 .vscode
+.claude
 
-# Node
-frontend/node_modules
+# Node / Frontend (not needed in container)
+frontend/
+OpenSpace-main/
+node_modules
 
 # Build artifacts
-frontend/dist
 build
+dist
 *.log
 
 # Data
-data/chroma_db
-data/rag_cache
+data/
 *.db
 *.sqlite3
 
-# Docker
-docker/*/Dockerfile
-!docker/all-in-one/Dockerfile
+# Logs (mounted as volume)
+logs/
 
-# Documentation
+# Documentation (not needed in container)
 docs/
 *.md
 !README.md
+
+# Environment files (secrets - passed via env vars)
+.env
+.env.*
+!.env.example
+
+# Large files
+*.tar.gz
+*.tar
+*.zip
+thirdparty/

