@@ -19,5 +19,15 @@ export COMPETITION_AGENT_TOKEN="${3:-$COMPETITION_AGENT_TOKEN}"
 echo "Target: $TARGET"
 [ -n "$COMPETITION_SERVER_HOST" ] && echo "Competition: $COMPETITION_SERVER_HOST"
 
-# 直接使用系统Python，Kali已预装大部分依赖
-python3 -m app.cli "$TARGET"
+# 创建虚拟环境（避免系统包冲突）
+VENV_DIR=".venv"
+if [ ! -d "$VENV_DIR" ]; then
+    echo "Creating virtual environment..."
+    python3 -m venv "$VENV_DIR"
+    echo "Installing dependencies..."
+    "$VENV_DIR/bin/pip" install --upgrade pip
+    "$VENV_DIR/bin/pip" install httpx mcp litellm pyyaml pydantic colorlog
+fi
+
+# 使用虚拟环境运行
+"$VENV_DIR/bin/python" -m app.cli "$TARGET"
