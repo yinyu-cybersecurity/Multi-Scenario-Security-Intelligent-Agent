@@ -284,10 +284,13 @@ MCP与扩展系统深度技术文档.md
 状态管理与上下文系统深度技术文档.md
 
 # =============================================================================
-# 文档目录（仅保留README.md）
+# 文档目录（仅保留README.md和specs）
 # =============================================================================
 docs/
 !docs/README.md
+!docs/superpowers/
+!docs/superpowers/specs/
+!docs/superpowers/specs/*.md
 *.jpg
 *.png
 *.jpeg
