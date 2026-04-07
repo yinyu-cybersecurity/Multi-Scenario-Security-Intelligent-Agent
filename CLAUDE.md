@@ -71,15 +71,20 @@ cp .env.example .env
 # 单题攻击
 ./run.sh http://target.com
 
-# 交互模式
+# 智能 REPL（推荐，交互式）
+./run.sh repl
+
+# 旧版交互模式
 ./run.sh interactive
 ```
 
 ### 3. Kali 直接运行
 
 ```bash
-./run_kali.sh competition
-./run_kali.sh http://target.com
+./run_kali.sh competition           # 比赛自动模式
+./run_kali.sh http://target.com     # 单题攻击
+./run_kali.sh repl                  # 智能 REPL
+./run_kali.sh interactive           # 旧版交互
 ```
 
 ### 4. Python 直接运行
@@ -87,7 +92,17 @@ cp .env.example .env
 ```bash
 python -m app.cli --competition                    # 比赛自动
 python -m app.cli http://target.com                # 单题攻击
-python -m app.cli --interactive                    # 交互模式
+python -m app.cli --repl                           # 智能 REPL
+python -m app.cli --interactive                    # 旧版交互
+```
+
+**注意**: 直接运行 Python 需要先激活虚拟环境或安装依赖：
+```bash
+# 激活虚拟环境（推荐）
+source .venv/bin/activate
+
+# 或安装依赖
+pip install -r requirements.txt
 ```
 
 ---
@@ -119,25 +134,34 @@ python -m app.cli --interactive                    # 交互模式
 
 ### kali_server.py（MCP 工具服务器）
 
+**基础工具（8个，始终可用）**：
+
 | 工具 | 用途 |
 |------|------|
 | **bash** | 执行任意 Kali 命令（300+ 安全工具） |
-| **http** | HTTP 请求（支持所有方法） |
+| **http** | HTTP 请求（GET/POST/PUT/DELETE，支持自定义 headers/body） |
 | **read** / **write** | 文件读写 |
 | **remember** / **recall** | 结构化记忆系统 |
-| **search_skills** | 搜索攻击知识库 |
+| **search_skills** | 搜索攻击知识库（124 SKILL.md） |
 | **read_skill** | 读取完整 skill 内容 |
+
+**比赛工具（5个，需要比赛环境变量）**：
+
+| 工具 | 用途 |
+|------|------|
 | **list_challenges** | 获取比赛题目列表 |
 | **start_challenge** | 启动题目实例 |
 | **stop_challenge** | 停止题目实例 |
 | **submit_flag** | 提交 FLAG |
-| **view_hint** | 查看提示（扣分） |
+| **view_hint** | 查看提示（扣 10% 分） |
+
+比赛工具触发条件：`COMPETITION_SERVER_HOST` 和 `COMPETITION_AGENT_TOKEN` 环境变量
 
 ---
 
 ## 技能系统
 
-115+ YAML 知识文件，覆盖：
+124 个 SKILL.md 知识文件，覆盖：
 
 | 类别 | 数量 | 示例 |
 |------|------|------|
