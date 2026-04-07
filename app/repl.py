@@ -23,6 +23,20 @@ from app.tools_v2.mcp.client import get_mcp_client, ensure_mcp_tools_registered
 
 logger = get_logger("REPL")
 
+# 全局标志：是否正在处理取消
+_cancelling = False
+
+
+def _handle_sigint(signum, frame):
+    """处理 Ctrl+C 信号"""
+    global _cancelling
+    if _cancelling:
+        # 第二次 Ctrl+C：忽略，让第一次清理完成
+        print("\n[Already cancelling, please wait...]", flush=True)
+        return
+    # 第一次 Ctrl+C：抛出 KeyboardInterrupt
+    raise KeyboardInterrupt()
+
 
 class SmartREPL:
     """智能 REPL 会话"""
@@ -100,6 +114,7 @@ class SmartREPL:
 
 async def print_stream(repl: SmartREPL, user_input: str):
     """流式打印 AI 响应"""
+    global _cancelling
     print()  # 空行分隔
 
     try:
@@ -149,10 +164,12 @@ async def print_stream(repl: SmartREPL, user_input: str):
         print()
 
     except (KeyboardInterrupt, asyncio.CancelledError):
+        _cancelling = True
         print("\n[Cancelled]", flush=True)
         # 清理可能不完整的消息
         if len(repl.messages) > 1 and repl.messages[-1].get("role") == "user":
             repl.messages.pop()
+        _cancelling = False
     except Exception as e:
         # 捕获所有其他异常（包括 MCP 重连错误）
         print(f"\n[Error] {e}", flush=True)
@@ -251,10 +268,13 @@ Tips:
             break
         except (KeyboardInterrupt, asyncio.CancelledError):
             # Ctrl+C 中断 - 打印提示并继续循环
+            global _cancelling
+            _cancelling = True
             print("\n[Interrupted] Type 'quit' to exit or continue chatting.")
             # 清理可能不完整的最后一条消息
             if len(repl.messages) > 1 and repl.messages[-1].get("role") == "user":
                 repl.messages.pop()
+            _cancelling = False
         except Exception as e:
             print(f"\n[Error] {e}")
             logger.error(f"REPL error: {e}")
@@ -262,6 +282,9 @@ Tips:
 
 def main():
     """入口"""
+    import signal
+    signal.signal(signal.SIGINT, _handle_sigint)
+
     task_id = f"repl_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     set_task(task_id)
     asyncio.run(repl_main())
