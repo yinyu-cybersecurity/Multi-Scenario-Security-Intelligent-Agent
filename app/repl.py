@@ -134,59 +134,66 @@ async def print_stream(repl: SmartREPL, user_input: str):
     """流式打印 AI 响应"""
     print()  # 空行分隔
 
-    async for event in repl.chat(user_input):
-        etype = event.get("type", "")
+    try:
+        async for event in repl.chat(user_input):
+            etype = event.get("type", "")
 
-        if etype == "assistant_message":
-            content = event.get("content", "")
-            tool_calls = event.get("tool_calls", [])
+            if etype == "assistant_message":
+                content = event.get("content", "")
+                tool_calls = event.get("tool_calls", [])
 
-            if content:
-                # 流式打印内容
-                print(content, end="", flush=True)
+                if content:
+                    # 流式打印内容
+                    print(content, end="", flush=True)
 
-            if tool_calls:
-                names = [tc.get("function", {}).get("name", "?") for tc in tool_calls]
-                print(f"\n  → Using: {', '.join(names)}", flush=True)
+                if tool_calls:
+                    names = [tc.get("function", {}).get("name", "?") for tc in tool_calls]
+                    print(f"\n  → Using: {', '.join(names)}", flush=True)
 
-        elif etype == "tool_result":
-            tool_name = event.get("tool_name", "")
-            # 从消息历史中获取最后的工具结果
-            for msg in reversed(repl.messages):
-                if msg.get("role") == "tool":
-                    result = msg.get("content", "")
-                    # 智能截断：保留首尾
-                    if len(result) > 300:
-                        preview = result[:150] + "\n...[truncated]...\n" + result[-100:]
-                    else:
-                        preview = result
-                    print(f"  ← {tool_name}:\n{preview}", flush=True)
-                    break
-            else:
-                print(f"  ← {tool_name}: [done]", flush=True)
+            elif etype == "tool_result":
+                tool_name = event.get("tool_name", "")
+                # 从消息历史中获取最后的工具结果
+                for msg in reversed(repl.messages):
+                    if msg.get("role") == "tool":
+                        result = msg.get("content", "")
+                        # 智能截断：保留首尾
+                        if len(result) > 300:
+                            preview = result[:150] + "\n...[truncated]...\n" + result[-100:]
+                        else:
+                            preview = result
+                        print(f"  ← {tool_name}:\n{preview}", flush=True)
+                        break
+                else:
+                    print(f"  ← {tool_name}: [done]", flush=True)
 
-        elif etype == "loop_detected":
-            print(f"  ⚠ Loop detected: {event.get('tool', '')}", flush=True)
+            elif etype == "loop_detected":
+                print(f"  ⚠ Loop detected: {event.get('tool', '')}", flush=True)
 
-        elif etype == "context_trimmed":
-            print(f"  ℹ Context trimmed: {event.get('removed', 0)} messages", flush=True)
+            elif etype == "context_trimmed":
+                print(f"  ℹ Context trimmed: {event.get('removed', 0)} messages", flush=True)
 
-        elif etype == "llm_error":
-            print(f"\n[Error] {event.get('error', '')}", flush=True)
+            elif etype == "llm_error":
+                print(f"\n[Error] {event.get('error', '')}", flush=True)
 
-        elif etype in ("task_complete", "complete"):
-            reason = event.get("reason", "")
-            if reason:
-                print(f"\n[Done: {reason}]", flush=True)
-            break
+            elif etype in ("task_complete", "complete"):
+                reason = event.get("reason", "")
+                if reason:
+                    print(f"\n[Done: {reason}]", flush=True)
+                break
 
-    print()  # 结束换行
+        print()  # 结束换行
+
+    except KeyboardInterrupt:
+        # 中断时打印提示，让外层循环处理
+        print("\n[Cancelled]")
+        raise  # 重新抛出，让外层处理
 
 
 async def repl_main():
     """REPL 主循环"""
     repl = SmartREPL()
     await repl.initialize()
+    should_exit = False
 
     print(f"""
 ╔══════════════════════════════════════════════════════════╗
@@ -204,12 +211,7 @@ async def repl_main():
 
     loop = asyncio.get_event_loop()
 
-    # 信号处理
-    def handle_sigint(sig, frame):
-        print("\n[Interrupted] Type 'quit' to exit")
-    signal.signal(signal.SIGINT, handle_sigint)
-
-    while True:
+    while not should_exit:
         try:
             # 异步获取输入
             user_input = await loop.run_in_executor(None, input, "\nYou: ")
@@ -223,6 +225,7 @@ async def repl_main():
             # 内置命令
             if cmd_lower in ("quit", "exit", "q"):
                 print("\nGoodbye! 👋")
+                should_exit = True
                 break
 
             elif cmd_lower == "help":
@@ -274,9 +277,15 @@ Tips:
 
         except EOFError:
             print("\nGoodbye!")
+            should_exit = True
             break
         except KeyboardInterrupt:
-            print("\n[Interrupted]")
+            # Ctrl+C 中断
+            print("\n[Interrupted] Press Ctrl+C again to quit, or type 'quit' to exit.")
+            # 清理可能不完整的最后一条消息
+            if len(repl.messages) > 1 and repl.messages[-1].get("role") == "user":
+                # 移除最后一条未完成的用户消息
+                repl.messages.pop()
         except Exception as e:
             print(f"\n[Error] {e}")
             logger.error(f"REPL error: {e}")
