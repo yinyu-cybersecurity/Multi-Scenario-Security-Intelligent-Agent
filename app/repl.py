@@ -180,9 +180,13 @@ async def print_stream(repl: SmartREPL, user_input: str):
 
         print()
 
-    except KeyboardInterrupt:
-        print("\n[Cancelled]")
-        # 不 raise，让调用者继续
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        print("\n[Cancelled]", flush=True)
+        # 不重新抛出 - 在这里处理干净，让 REPL 循环继续
+        # 清理可能不完整的消息
+        if len(repl.messages) > 1 and repl.messages[-1].get("role") == "user":
+            repl.messages.pop()
+        # 返回到调用者，让循环继续
 
 
 async def repl_main():
@@ -272,7 +276,7 @@ Tips:
         except EOFError:
             print("\nGoodbye!")
             break
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, asyncio.CancelledError):
             # Ctrl+C 中断 - 打印提示并继续循环
             print("\n[Interrupted] Type 'quit' to exit or continue chatting.")
             # 清理可能不完整的最后一条消息
