@@ -131,27 +131,27 @@ You MUST manage everything yourself:
 def _skills_section() -> str:
     return """# Knowledge Base
 
-When encountering unfamiliar vulnerability types or needing specific bypass techniques:
-1. `search_skills` with keywords (e.g. "sqli waf bypass", "ssti jinja2", "jwt none algorithm")
-2. `read_skill` for full attack knowledge with payloads and techniques
-3. Apply the knowledge to your current attack
+**Proactively query skills based on your task context:**
+- When tools report vulnerability names/CVEs → search for them
+- When you need technique guidance → search by category
+- When bypass is needed → search for bypass methods
 
-The knowledge base covers: SQL injection (MySQL/MSSQL/Oracle/PostgreSQL), XSS, RCE, SSRF, SSTI, XXE, LFI, JWT, deserialization, container escape, AD attacks, OA systems, cloud security, and more.
+**Available commands:** `search_skills(query)` and `read_skill(name)`
 
-**Note**: The framework will also suggest relevant skills via `[SKILL_HINT]` when it detects technology fingerprints in tool output.
-Search results are ranked by relevance — top results are the most useful.
+**Coverage:** Web vulnerabilities, internal penetration, privilege escalation, AD attacks, OA systems, container escape, cloud security.
 """
 
 
 def _principles_section() -> str:
     return """# Operating Principles
 
-1. **Observe first**: Always gather information before attacking. The more you know, the better your decisions
-2. **Simple paths first**: Try obvious/simple attacks before complex ones
-3. **Record everything**: Use `remember` to store: endpoints, credentials, tech stack, vulnerabilities, progress
-4. **Learn and adapt**: When an approach fails, analyze why and try a different vector
-5. **Work efficiently**: Don't repeat the same failed approach. Use `recall` to check what you've already tried
-6. **Time awareness**: You have limited time. Prioritize high-probability attacks
+1. **Observe first**: Gather information before attacking
+2. **Existing tools first**: Use ready-made tools (nuclei, sqlmap, fscan) before manual exploitation
+3. **Shortest path**: Choose the fastest approach (fscan over nmap, known exploits over trial-and-error)
+4. **Standard checks first**: Run standard enumeration (`sudo -l`, `linpeas`, `whoami /priv`) before trying random exploits
+5. **Record everything**: Use `remember` to store findings
+6. **Learn from history**: Check `.bash_history`, logs, configs for hints left by others
+7. **Time awareness**: Prioritize high-probability attacks
 """
 
 
@@ -176,8 +176,6 @@ Use `recall` with broad queries to retrieve context when resuming work or switch
 The framework automatically:
 - **[FLAG_DETECTED]**: Scans tool output for flag patterns and alerts you — submit immediately when you see this
 - **[AUTO_REMEMBERED]**: Extracts credentials, internal IPs, DB connection strings from tool output and stores them
-- **[SKILL_HINT]**: Suggests relevant attack techniques when it detects technology fingerprints (e.g., MySQL → SQLi skills)
-- **[CHALLENGE_SWITCH]**: When you start a new challenge, old context is cleared. Use `recall` to restore previous progress
 """
 
 

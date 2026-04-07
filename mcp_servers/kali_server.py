@@ -1052,46 +1052,11 @@ def _check_skill_triggers(output: str) -> str:
     """
     检查工具输出是否匹配 skill 触发词
 
-    Returns: 推荐提示字符串（空字符串表示无匹配）
+    Note: 已禁用自动推荐，改为AI主动调用 search_skills/read_skill
     """
-    if not output or len(output) < 20:
-        return ""
-
-    total_hints = sum(_skill_hint_counts.values())
-    if total_hints >= SKILL_HINT_MAX_PER_CHALLENGE:
-        return ""
-
-    # 取输出的前 5000 字符检查（避免在巨大输出上跑正则）
-    sample = output[:5000]
-
-    matched_skills = []
-    matched_categories = set()
-
-    for cat, (patterns, skills) in _COMPILED_TRIGGERS.items():
-        if cat in _skill_hint_counts and _skill_hint_counts[cat] >= 2:
-            continue  # 每类最多推荐 2 次
-
-        for pattern in patterns:
-            if pattern.search(sample):
-                if cat not in matched_categories:
-                    matched_categories.add(cat)
-                    matched_skills.extend(skills[:2])  # 每类最多推 2 个
-                    _skill_hint_counts[cat] = _skill_hint_counts.get(cat, 0) + 1
-                break  # 同类触发一次即可
-
-    if not matched_skills:
-        return ""
-
-    # 去重
-    seen = set()
-    unique_skills = []
-    for s in matched_skills:
-        if s not in seen:
-            seen.add(s)
-            unique_skills.append(s)
-
-    skills_str = ", ".join(f"read_skill('{s}')" for s in unique_skills[:3])
-    return f"\n[SKILL_HINT] Relevant techniques detected. Consider: {skills_str}"
+    # 禁用基于关键词的自动推荐，避免误报
+    # AI 应根据任务上下文主动查询 skills
+    return ""
 
 
 def reset_skill_hint_counts():
