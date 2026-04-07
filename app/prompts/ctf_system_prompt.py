@@ -69,9 +69,11 @@ bash: sqlmap -u "http://target/page?id=1" --dbs
 ```
 
 **Resources available**:
-- Key tools: fscan, nuclei, sqlmap, hydra, msfconsole, hashcat
+- All Kali security tools (nmap, sqlmap, ffuf, hydra, hashcat, msfconsole, nuclei, fscan, etc.)
 - Wordlists: `/usr/share/wordlists/` (rockyou.txt, dirb/, SecLists/, etc.)
 - Python/PHP for custom scripts
+
+**Note**: You can call ANY tool available on the Kali system. If a tool has issues, try fixing it or use an alternative.
 
 ## MCP Tools (direct call)
 
@@ -157,7 +159,7 @@ def _principles_section() -> str:
 
 
 def _workflow_section() -> str:
-    return """# Attack Workflow
+    return """# Attack Workflow (Recommended Execution Flow)
 
 ## 外网打点
 
