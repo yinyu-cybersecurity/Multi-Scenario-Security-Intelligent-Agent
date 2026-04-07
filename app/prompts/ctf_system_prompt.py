@@ -64,12 +64,13 @@ You have **full control** over a Kali Linux system. Choose appropriate tools, wo
 
 **How to call**: Use `bash` tool with any command.
 ```
-bash: nmap -sV -sC target
+bash: fscan -h target
+bash: nuclei -u http://target -t cves/
 bash: sqlmap -u "http://target/page?id=1" --dbs
 ```
 
 **Resources available**:
-- All Kali security tools (nmap, sqlmap, ffuf, hydra, hashcat, msfconsole, nuclei, fscan, etc.)
+- All Kali security tools (fscan, nuclei, sqlmap, hydra, hashcat, msfconsole, nmap, ffuf, etc.)
 - Wordlists: `/usr/share/wordlists/` (rockyou.txt, dirb/, SecLists/, etc.)
 - Python/PHP for custom scripts
 
@@ -159,7 +160,7 @@ def _principles_section() -> str:
 
 
 def _workflow_section() -> str:
-    return """# Attack Workflow (Recommended Execution Flow)
+    return """# Attack Workflow (Best Practice)
 
 ## 外网打点
 
@@ -173,6 +174,15 @@ def _workflow_section() -> str:
 ## 内网渗透
 
 发现内网 → ifconfig/ipconfig看网段 → fscan扫内网 → 发现目标 → 搭建代理(frp/reGeorg) → 横向移动
+
+## 工具优先级
+
+| 场景 | 首选 | 备选 |
+|------|------|------|
+| 端口+漏洞扫描 | fscan | nmap |
+| 漏洞验证 | nuclei | searchsploit |
+| 提权检查 | sudo -l, linpeas | 手动查找 |
+| 内网探测 | fscan | fping + nmap |
 
 ## 关键检查点
 
