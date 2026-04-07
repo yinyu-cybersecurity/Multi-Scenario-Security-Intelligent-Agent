@@ -1,0 +1,152 @@
+---
+name: 逆向工程攻击
+description: Use when encountering 静态分析、动态调试、反混淆、符号执行
+---
+
+# 逆向工程攻击
+
+## Info
+
+- **Domain**: reverse
+- **Tags**: reverse, disassembly, debugging, deobfuscation
+
+## 攻击思路
+```
+文件识别 → 保护机制分析 → 反汇编/反编译 → 关键函数定位 → 算法还原 → 绕过/破解
+```
+
+## 文件格式识别
+
+| 格式 | Magic Number | 工具 |
+|------|--------------|------|
+| ELF | 7F 45 4C 46 | readelf, objdump |
+| PE | 4D 5A | PE-bear, CFF Explorer |
+| Mach-O | FE ED FE CF | otool, MachOView |
+| APK | 50 4B 03 04 | jadx, apktool |
+| DEX | 64 65 78 0A | jadx, dex2jar |
+
+```bash
+file binary
+xxd -l 16 binary
+readelf -h binary
+```
+
+## 保护机制矩阵
+
+| 保护类型 | 检测方法 | 绕过技术 |
+|----------|----------|----------|
+| 加壳 |Entropy分析、入口异常 | 脱壳工具/手动脱壳 |
+| 反调试 | IsDebuggerPresent | Patch/Hook |
+| 虚拟化 | VM Handler识别 | VMTrace/Dump |
+| 混淆 | 控制流复杂度 | 符号执行/去混淆 |
+| SMC | 代码自修改 | 内存Dump |
+
+## 静态分析技术
+
+### 反汇编工具
+
+| 工具 | 适用场景 | 特点 |
+|------|----------|------|
+| IDA Pro | 全平台 | Hex-Rays反编译 |
+| Ghidra | 全平台免费 | NSA开发 |
+| Binary Ninja | 全平台 | 中间语言分析 |
+| radare2 | 全平台免费 | 命令行强大 |
+
+### 关键定位
+
+| 定位目标 | 方法 |
+|----------|------|
+| 输入验证 | 字符串搜索→交叉引用 |
+| 加密算法 | 数学函数特征识别 |
+| 网络通信 | send/recv等API |
+| 反调试代码 | IsDebuggerPresent等 |
+
+```bash
+# 字符串搜索
+strings binary | grep -i "password|key|flag"
+
+# API定位
+objdump -d binary | grep -E "call.*strcmp|call.*malloc"
+
+# Ghidra脚本
+findReferencesTo("password");
+```
+
+## 动态调试技术
+
+| 调试器 | 平台 | 特点 |
+|--------|------|------|
+| GDB/pwndbg | Linux | 命令行强大 |
+| x64dbg | Windows | GUI友好 |
+| LLDB | macOS | Xcode集成 |
+| Frida | 全平台 | 动态Hook |
+
+### 断点策略
+
+```bash
+# GDB调试
+gdb binary
+break main
+break *0x400500
+watch *(int*)$rsp
+set follow-fork-mode child
+
+# Frida Hook
+frida -l hook.js -f binary
+Interceptor.attach(Module.findExportByName(null, "strcmp"), {
+  onEnter: function(args) { console.log(args[0], args[1]); }
+});
+```
+
+## 反混淆技术
+
+| 混淆类型 | 特征 | 去混淆方法 |
+|----------|------|------------|
+| 控制流平坦化 | 大量switch分发 | CFG恢复脚本 |
+| 不透明谓词 | 永真/永假条件 | 符号执行消除 |
+| 字符串加密 | 动态解密调用 | Hook解密函数 |
+| 指令替换 | 等价指令序列 | 模式匹配替换 |
+| 垃圾代码 | 无效指令插入 | 死代码消除 |
+
+### 控制流恢复
+```python
+# Ghidra脚本识别分发器
+for block in basicBlocks:
+    if hasSwitchLikePattern(block):
+        markAsDispatcher(block)
+        recoverOriginalCFG(block)
+```
+
+## 符号执行
+
+| 工具 | 特点 | 适用场景 |
+|------|------|----------|
+| angr | Python框架 | 自动路径探索 |
+| Triton | 动态符号执行 | 污点分析 |
+| KLEE | LLVM级别 | 程序验证 |
+
+```python
+import angr
+proj = angr.Project("binary", auto_load_libs=False)
+state = proj.factory.entry_state()
+simgr = proj.factory.simgr(state)
+simgr.explore(find=0x400500, avoid=0x400600)
+if simgr.found:
+    solution = simgr.found[0].posix.dumps(0)
+```
+
+## Android逆向
+
+```bash
+# APK解包
+apktool d app.apk -o output/
+jadx -d output/ app.apk
+
+# DEX分析
+dex2jar app.apk
+jd-gui app-dex2jar.jar
+
+# Native库分析
+readelf -h libnative.so
+IDA Pro → libnative.so
+```

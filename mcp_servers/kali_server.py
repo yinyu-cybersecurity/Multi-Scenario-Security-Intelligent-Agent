@@ -32,6 +32,13 @@ from collections import Counter
 from pathlib import Path
 from datetime import datetime
 
+# OpenSpace 集成
+try:
+    from app.tools_v2.skill_engine import get_skill_engine, initialize_skill_engine
+    SKILL_ENGINE_AVAILABLE = True
+except ImportError:
+    SKILL_ENGINE_AVAILABLE = False
+
 server = Server("kali")
 
 # === 全局配置 ===
@@ -764,12 +771,33 @@ def _tfidf_search(query: str, top_k: int = 10) -> list:
 
 
 async def search_skills_handler(query: str):
-    """搜索技能 — TF-IDF 排序，返回最相关结果"""
+    """搜索技能 — 优先使用 OpenSpace，回退到 TF-IDF"""
     skills_dir = PROJECT_ROOT / "skills"
     if not skills_dir.exists():
         return [TextContent(type="text", text="Skills directory not found")]
 
-    # 首次调用时建索引
+    # 尝试使用 OpenSpace 技能引擎
+    if SKILL_ENGINE_AVAILABLE:
+        try:
+            engine = get_skill_engine()
+            if not engine._initialized:
+                initialize_skill_engine(skills_dir)
+            results = engine.search(query, top_k=10)
+
+            if results:
+                output = []
+                for r in results:
+                    output.append({
+                        "name": r.get('name', ''),
+                        "description": r.get('description', ''),
+                        "relevance": r.get('score', 0),
+                        "path": r.get('path', ''),
+                    })
+                return [TextContent(type="text", text=json.dumps(output, indent=2, ensure_ascii=False))]
+        except Exception as e:
+            print(f"[SkillEngine] OpenSpace search failed: {e}")
+
+    # 回退：TF-IDF 搜索
     if not _index_built:
         _build_skill_index()
 
@@ -846,8 +874,34 @@ def _extract_skill_summary(content: str, fallback_name: str) -> dict:
 
 
 async def read_skill_handler(name: str):
-    """读取完整 skill 内容"""
+    """读取完整 skill 内容 — 优先使用 OpenSpace，回退到文件读取"""
     skills_dir = PROJECT_ROOT / "skills"
+
+    # 尝试使用 OpenSpace 技能引擎
+    if SKILL_ENGINE_AVAILABLE:
+        try:
+            engine = get_skill_engine()
+            if not engine._initialized:
+                initialize_skill_engine(skills_dir)
+            skill = engine.read_skill(name)
+            if skill:
+                content = f"# {skill.get('name', name)}\n\n"
+                if skill.get('description'):
+                    content += f"**Description**: {skill.get('description')}\n\n"
+                if skill.get('tags'):
+                    content += f"**Tags**: {', '.join(skill.get('tags', []))}\n\n"
+                if skill.get('domain'):
+                    content += f"**Domain**: {skill.get('domain')}\n\n"
+                content += "---\n\n"
+                content += skill.get('content', '')
+                # 截断超长内容
+                if len(content) > 30000:
+                    content = content[:30000] + "\n\n... [SKILL TRUNCATED]"
+                return [TextContent(type="text", text=content)]
+        except Exception as e:
+            print(f"[SkillEngine] OpenSpace read failed: {e}")
+
+    # 回退：直接文件读取
 
     # 尝试多种路径
     candidates = [

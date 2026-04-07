@@ -1,0 +1,111 @@
+---
+name: 远程代码执行攻击链
+description: Use when encountering rce攻击思维链 - 文件上传、命令注入、反序列化、框架漏洞
+---
+
+# 远程代码执行攻击链
+
+## Info
+
+- **Domain**: web
+- **Tags**: web, rce
+
+# RCE攻击思维链
+
+```
+入口点识别 → 文件上传/命令注入/反序列化/框架漏洞
+       ↓
+获取执行 → WebShell/反弹连接/内存马
+       ↓
+权限维持 → 定时任务/后门用户/SSH公钥
+```
+
+---
+
+## 文件上传
+
+**绕过思路**:
+| 防护 | 绕过方法 |
+|------|----------|
+| 后缀黑名单 | php5/phtml/phps/php7等变种 |
+| Content-Type | 改为 image/jpeg |
+| 文件头检测 | 添加GIF89a/PNG头 |
+| 二次渲染 | 配合条件竞争 |
+| 路径可控 | 00截断/上传.htaccess |
+
+**关键技术**:
+- 图片马: 合并图片和PHP代码
+- .htaccess: 让jpg当php执行
+- 条件竞争: 上传→快速访问→执行
+
+---
+
+## 命令注入
+
+**连接符**: `;` `|` `||` `&` `&&` 换行符 反引号 `$()`
+
+**无回显利用**:
+- 反向连接: 使用bash/python/perl等
+- DNS外带: 通过子域名带出数据
+- HTTP外带: 通过请求带出数据
+
+**绕过空格**: `$IFS` `${IFS}` 重定向符号
+
+**绕过关键字**:
+- 变量拼接
+- 编码绕过(Base64/Hex)
+- 通配符替代
+
+---
+
+## 反序列化RCE
+
+### PHP
+- **魔术方法链**: `__destruct/__wakeup/__toString/__get`
+- **Phar反序列化**: 通过file_exists等触发
+- **原生类**: SoapClient(SSRF)/DirectoryIterator/SplFileObject
+
+### Java
+- **工具**: ysoserial生成payload
+- **常见链**: CommonsCollections/CommonsBeanutils/Spring
+- **入口**: ObjectInputStream/JRMP
+
+### Python
+- **Pickle**: `__reduce__`方法
+- **绕过**: 黑名单模块替代
+
+---
+
+## 框架漏洞RCE
+
+| 框架 | 漏洞 | 利用方式 |
+|------|------|---------|
+| Log4j | JNDI注入 | jndi:ldap协议 |
+| Spring | SpEL | 表达式执行 |
+| Fastjson | 反序列化 | JdbcRowSetImpl |
+| Shiro | RememberMe | 反序列化链 |
+| Struts2 | OGNL | OGNL表达式 |
+| ThinkPHP | RCE | invokefunction |
+
+---
+
+## 反向连接方式
+
+各语言都有对应的反向连接方法:
+- Bash: 使用tcp重定向
+- Python: socket + subprocess
+- PHP: fsockopen + exec
+- Perl: socket + open
+- NC: -e参数或管道
+
+**注意**: 目标需有出网能力
+
+---
+
+## 内存马
+
+| 语言 | 类型 |
+|------|------|
+| PHP | 不死马(进程循环生成) |
+| Java | Filter/Servlet/Valve |
+| Spring | Controller内存马 |

