@@ -487,38 +487,10 @@ def _auto_extract_and_remember(output: str, source: str = "bash") -> str:
     """
     从工具输出中自动提取关键信息并存入记忆
 
-    Returns: 追加到输出的提示信息（如果有提取到东西）
+    Note: 已禁用自动提取，改为AI主动调用remember工具
+    避免误识别无关信息
     """
-    if not output or len(output) < 10:
-        return ""
-
-    findings = []
-
-    for category, patterns in _AUTO_EXTRACT_PATTERNS.items():
-        for pattern in patterns:
-            matches = pattern.findall(output)
-            if matches:
-                # 去重并限制数量
-                unique_matches = list(dict.fromkeys(matches))[:5]
-                for match in unique_matches:
-                    match_str = match if isinstance(match, str) else str(match)
-                    # 过滤太短或明显是占位符的
-                    if len(match_str) < 3 or match_str.lower() in ("true", "false", "null", "none", "xxx"):
-                        continue
-                    key = f"auto:{category}:{match_str[:30]}"
-                    memory_store[key] = {
-                        "value": match_str,
-                        "category": category,
-                        "timestamp": datetime.now().isoformat(),
-                        "source": source,
-                    }
-                    findings.append(f"{category}: {match_str}")
-
-    if findings:
-        _save_memory()
-        notice = "\n[AUTO_REMEMBERED] " + " | ".join(findings[:5])
-        return notice
-
+    # 禁用自动提取，AI应主动调用 remember 工具
     return ""
 
 

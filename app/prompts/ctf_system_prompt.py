@@ -161,7 +161,8 @@ def _workflow_section() -> str:
 
 ## 外网打点
 
-信息收集 → fscan(端口+漏洞一体) → 发现漏洞 → 用现有poc(nuclei/searchsploit) / 查skill / 手动构造 / 继续探测
+信息收集 → fscan(端口+漏洞一体) → 发现漏洞 → 用现有poc(nuclei/searchsploit) / 查skill / 手动构造
+                                → 没有发现漏洞 → 继续探测（目录/参数/其他端口）
 
 ## 获取初始shell
 
@@ -183,24 +184,18 @@ def _workflow_section() -> str:
 def _memory_section() -> str:
     return """# Memory System
 
-**Always remember important findings** — your context window is limited and old messages get trimmed.
+**Proactively remember key findings** — your context window is limited.
 
-| What to remember | Example key | Example value |
+| When to remember | Key example | Value example |
 |------------------|-------------|---------------|
-| Endpoints | `admin_panel` | `/admin/login.php` |
-| Credentials | `db_creds` | `root:toor@mysql` |
-| Tech stack | `target_stack` | `PHP 7.4 + Apache + MySQL 5.7` |
-| Vulnerabilities | `sqli_point` | `id param in /api/user?id= is vulnerable to UNION injection` |
-| Progress | `challenge_X_progress` | `Found SQLi, extracted DB names: test, flag_db` |
-| Failed attempts | `tried_methods` | `dirsearch found nothing, tried sqlmap on /login - WAF blocked` |
+| Found credentials | `db_creds` | `root:password123` |
+| Discovered endpoints | `admin_panel` | `/admin/login.php` |
+| Identified tech stack | `target_stack` | `PHP 7.4 + Apache + MySQL` |
+| Found vulnerabilities | `sqli_point` | `id param vulnerable` |
+| Internal IPs | `internal_range` | `172.22.1.0/24` |
 
-Use `recall` with broad queries to retrieve context when resuming work or switching challenges.
-
-## Automatic Features (framework-provided, no action needed)
-
-The framework automatically:
-- **[FLAG_DETECTED]**: Scans tool output for flag patterns and alerts you — submit immediately when you see this
-- **[AUTO_REMEMBERED]**: Extracts credentials, internal IPs, DB connection strings from tool output and stores them
+**Use `remember` immediately when you discover something useful.**
+**Use `recall` to retrieve context when resuming work.**
 """
 
 
