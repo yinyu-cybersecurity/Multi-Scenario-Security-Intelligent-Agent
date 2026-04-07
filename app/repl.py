@@ -143,7 +143,6 @@ async def print_stream(repl: SmartREPL, user_input: str):
                 tool_calls = event.get("tool_calls", [])
 
                 if content:
-                    # 流式打印内容
                     print(content, end="", flush=True)
 
                 if tool_calls:
@@ -152,11 +151,9 @@ async def print_stream(repl: SmartREPL, user_input: str):
 
             elif etype == "tool_result":
                 tool_name = event.get("tool_name", "")
-                # 从消息历史中获取最后的工具结果
                 for msg in reversed(repl.messages):
                     if msg.get("role") == "tool":
                         result = msg.get("content", "")
-                        # 智能截断：保留首尾
                         if len(result) > 300:
                             preview = result[:150] + "\n...[truncated]...\n" + result[-100:]
                         else:
@@ -181,19 +178,17 @@ async def print_stream(repl: SmartREPL, user_input: str):
                     print(f"\n[Done: {reason}]", flush=True)
                 break
 
-        print()  # 结束换行
+        print()
 
     except KeyboardInterrupt:
-        # 中断时打印提示，让外层循环处理
         print("\n[Cancelled]")
-        raise  # 重新抛出，让外层处理
+        # 不 raise，让调用者继续
 
 
 async def repl_main():
     """REPL 主循环"""
     repl = SmartREPL()
     await repl.initialize()
-    should_exit = False
 
     print(f"""
 ╔══════════════════════════════════════════════════════════╗
@@ -211,7 +206,7 @@ async def repl_main():
 
     loop = asyncio.get_event_loop()
 
-    while not should_exit:
+    while True:
         try:
             # 异步获取输入
             user_input = await loop.run_in_executor(None, input, "\nYou: ")
@@ -225,7 +220,6 @@ async def repl_main():
             # 内置命令
             if cmd_lower in ("quit", "exit", "q"):
                 print("\nGoodbye! 👋")
-                should_exit = True
                 break
 
             elif cmd_lower == "help":
@@ -277,14 +271,12 @@ Tips:
 
         except EOFError:
             print("\nGoodbye!")
-            should_exit = True
             break
         except KeyboardInterrupt:
-            # Ctrl+C 中断
-            print("\n[Interrupted] Press Ctrl+C again to quit, or type 'quit' to exit.")
+            # Ctrl+C 中断 - 打印提示并继续循环
+            print("\n[Interrupted] Type 'quit' to exit or continue chatting.")
             # 清理可能不完整的最后一条消息
             if len(repl.messages) > 1 and repl.messages[-1].get("role") == "user":
-                # 移除最后一条未完成的用户消息
                 repl.messages.pop()
         except Exception as e:
             print(f"\n[Error] {e}")
@@ -295,11 +287,7 @@ def main():
     """入口"""
     task_id = f"repl_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     set_task(task_id)
-
-    try:
-        asyncio.run(repl_main())
-    except KeyboardInterrupt:
-        print("\nGoodbye!")
+    asyncio.run(repl_main())
 
 
 if __name__ == "__main__":
