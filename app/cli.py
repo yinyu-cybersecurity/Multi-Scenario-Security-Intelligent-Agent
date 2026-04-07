@@ -17,6 +17,7 @@ CTF-Agent CLI - 支持单题模式 + 比赛自动模式
 """
 
 import asyncio
+import json
 import os
 import sys
 import time
@@ -77,12 +78,13 @@ async def run_single_target(target: str, timeout: int = 0):
     task_id = f"single_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     set_task(task_id)
 
-    print(f"\n{'='*60}")
-    print(f"  CTF-Agent | Single Target Mode")
-    print(f"  Target : {target}")
-    print(f"  Model  : {model}")
-    print(f"  Timeout: {timeout}s ({timeout//60}min)")
-    print(f"{'='*60}\n")
+    print(f"\n{'─'*60}")
+    print(f"  🎯 CTF-Agent | Single Target Mode")
+    print(f"{'─'*60}")
+    print(f"  📍 Target : {target}")
+    print(f"  🤖 Model  : {model}")
+    print(f"  ⏱  Timeout: {timeout}s ({timeout//60}min)")
+    print(f"{'─'*60}\n")
 
     qconfig = QueryConfig(
         model=model,
@@ -127,12 +129,13 @@ async def run_competition(timeout: int = 0):
     task_id = f"competition_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     set_task(task_id)
 
-    print(f"\n{'='*60}")
-    print(f"  CTF-Agent | Competition Auto-Solve Mode")
-    print(f"  Model  : {model}")
-    print(f"  Timeout: {timeout}s ({timeout//60}min)")
-    print(f"  Mode   : AI Full Autonomous")
-    print(f"{'='*60}\n")
+    print(f"\n{'─'*60}")
+    print(f"  🏆 CTF-Agent | Competition Auto-Solve Mode")
+    print(f"{'─'*60}")
+    print(f"  🤖 Model  : {model}")
+    print(f"  ⏱  Timeout: {timeout}s ({timeout//60}min)")
+    print(f"  🎮 Mode   : AI Full Autonomous")
+    print(f"{'─'*60}\n")
 
     qconfig = QueryConfig(
         model=model,
@@ -167,7 +170,7 @@ async def run_competition(timeout: int = 0):
 
 
 def _handle_event(event: dict, flags_found: list):
-    """处理 Query 事件流"""
+    """处理 Query 事件流 - 复刻 Claude Code CLI 显示风格"""
     etype = event.get("type", "")
 
     if etype == "assistant_message":
@@ -176,27 +179,101 @@ def _handle_event(event: dict, flags_found: list):
         remaining = event.get("time_remaining", 0)
         tool_calls = event.get("tool_calls", [])
 
+        # 显示 AI 思考内容
         if content:
-            # 控制台输出 AI 思考内容
             display = content if len(content) <= 500 else content[:500] + "..."
             print(f"\n[AI|T{turn}|{remaining}s] {display}")
 
+        # 显示工具调用详情
         if tool_calls:
-            tools_str = ", ".join(
-                tc.get("function", {}).get("name", "?") for tc in tool_calls
-            )
-            print(f"  -> Calling: {tools_str}")
+            for tc in tool_calls:
+                func = tc.get("function", {})
+                tool_name = func.get("name", "?")
+                args_str = func.get("arguments", "{}")
+
+                # 解析参数
+                try:
+                    args = json.loads(args_str)
+                except:
+                    args = {}
+
+                # 提取服务器和工具名
+                if "__" in tool_name:
+                    server, tool = tool_name.split("__", 1)
+                    display_name = f"{tool}"
+                else:
+                    display_name = tool_name
+
+                # 特殊处理 bash 命令显示
+                if tool == "bash" and "command" in args:
+                    cmd = args["command"]
+                    # 截断长命令
+                    cmd_display = cmd if len(cmd) <= 80 else cmd[:77] + "..."
+                    print(f"  → {display_name}({cmd_display})")
+                elif tool == "http" and "url" in args:
+                    url = args["url"]
+                    method = args.get("method", "GET")
+                    print(f"  → {display_name}({method} {url[:60]})")
+                elif tool == "remember":
+                    key = args.get("key", "")
+                    print(f"  → {display_name}(key=\"{key}\")")
+                elif tool == "recall":
+                    query = args.get("query", "")
+                    print(f"  → {display_name}(query=\"{query}\")")
+                else:
+                    # 通用显示：显示关键参数
+                    key_args = []
+                    for k, v in args.items():
+                        if k in ("command", "url", "path", "query", "key", "value", "code", "flag"):
+                            val_str = str(v)[:40]
+                            key_args.append(f"{k}={val_str!r}")
+                    if key_args:
+                        print(f"  → {display_name}({', '.join(key_args)})")
+                    else:
+                        print(f"  → {display_name}()")
 
     elif etype == "tool_result":
         tool_name = event.get("tool_name", "")
-        print(f"  <- {tool_name}")
+        result_preview = event.get("result_preview", "")
+        result_length = event.get("result_length", 0)
+        has_error = event.get("has_error", False)
+        is_loop = event.get("is_loop", False)
+
+        # 提取工具名
+        if "__" in tool_name:
+            server, tool = tool_name.split("__", 1)
+            display_name = tool
+        else:
+            display_name = tool_name
+
+        if is_loop:
+            print(f"  ← {display_name}: [LOOP DETECTED] 跳过重复调用")
+        elif has_error:
+            # 显示错误信息
+            error_preview = result_preview[:100] if result_preview else "error"
+            print(f"  ← {display_name}: ❌ {error_preview}")
+        else:
+            # 显示结果摘要
+            if result_length > 200:
+                print(f"  ← {display_name}: ✓ ({result_length} chars)")
+            elif result_preview:
+                # 显示简短结果
+                preview = result_preview[:100].replace("\n", " ")
+                print(f"  ← {display_name}: {preview}")
+            else:
+                print(f"  ← {display_name}: ✓")
 
     elif etype == "loop_detected":
-        print(f"  [!] Loop detected: {event.get('tool', '')}")
+        tool = event.get("tool", "")
+        print(f"  [!] Loop detected: {tool}")
 
     elif etype == "context_trimmed":
         removed = event.get("removed", 0)
-        print(f"  [~] Context trimmed: {removed} messages removed")
+        reason = event.get("reason", "")
+        if reason:
+            print(f"  [~] Context trimmed: {removed} messages ({reason})")
+        else:
+            print(f"  [~] Context trimmed: {removed} messages removed")
 
     elif etype == "llm_error":
         print(f"  [!] LLM error: {event.get('error', '')}")
@@ -205,26 +282,27 @@ def _handle_event(event: dict, flags_found: list):
         flags = event.get("flags", [])
         reason = event.get("reason", "")
         flags_found.extend(flags)
-        print(f"\n[COMPLETE] {reason}")
+        print(f"\n✅ [COMPLETE] {reason}")
         if flags:
             for f in flags:
-                print(f"  FLAG: {f}")
+                print(f"  🚩 FLAG: {f}")
 
     elif etype == "complete":
         reason = event.get("reason", "")
-        print(f"\n[DONE] {reason}")
+        print(f"\n⏹ [DONE] {reason}")
 
 
 def _print_summary(flags_found: list, elapsed: float):
     """打印执行摘要"""
-    print(f"\n{'='*60}")
-    print(f"  Execution Summary")
-    print(f"  Time   : {elapsed:.0f}s ({elapsed/60:.1f}min)")
-    print(f"  Flags  : {len(flags_found)}")
+    print(f"\n{'─'*60}")
+    print(f"  📊 Execution Summary")
+    print(f"{'─'*60}")
+    print(f"  ⏱  Time   : {elapsed:.0f}s ({elapsed/60:.1f}min)")
+    print(f"  🚩 Flags  : {len(flags_found)}")
     if flags_found:
         for f in flags_found:
-            print(f"    {f}")
-    print(f"{'='*60}\n")
+            print(f"       • {f}")
+    print(f"{'─'*60}\n")
 
 
 async def main():

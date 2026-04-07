@@ -400,31 +400,3 @@ testing_scripts:
               }
               return report
 
-# 防御措施
-defense:
-  - Agent安全设计:
-      - 明确的工具权限边界
-      - 操作审核机制
-      - 输入净化与验证
-      - 输出审查与过滤
-      - 异常行为监控
-
-  - 具体防御:
-      - 禁止危险工具直接暴露
-      - 工具参数严格验证
-      - 系统提示词保护
-      - 多轮对话行为监控
-      - 权限分级与隔离
-
-  - 监控检测:
-      - 监控异常工具调用
-      - 检测越狱尝试模式
-      - 分析Agent决策路径
-      - 记录所有操作日志
-
-# 参考资源
-references:
-  - https://arxiv.org/abs/2309.03409 (Agent安全综述)
-  - https://github.com/LLM-Safety-Research/AgentBench
-  - https://arxiv.org/abs/2310.00914 (Tool Abuse)
-  - https://arxiv.org/abs/2307.04634 (Prompt Injection)

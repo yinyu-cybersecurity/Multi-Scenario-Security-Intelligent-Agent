@@ -320,25 +320,3 @@ certipy_workflow:
       # 4. 持久化
       certipy shadow -u 'administrator@domain.local' -p 'password' -target 'Target_User'
 
-# 防御检测
-defense:
-  - 检测方法:
-      - 监控证书申请日志
-      - 检查异常SAN请求
-      - 审计PKI对象ACL
-      - 监控证书模板修改
-
-  - 修复建议:
-      - 审查所有证书模板配置
-      - 限制SAN扩展使用
-      - 加强PKI对象ACL
-      - 启用强证书映射
-      - 监控异常证书使用
-
-# 参考资源
-references:
-  - https://github.com/GhostPack/Certify
-  - https://github.com/ly4k/Certipy
-  - https://github.com/GhostPack/PSPKIAudit
-  - https://posts.specterops.io/certified-pre-owned
-  - https://adsecurity.org/?p=3775

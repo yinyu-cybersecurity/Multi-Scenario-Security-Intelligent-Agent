@@ -9,6 +9,7 @@ MCP 客户端 - 企业级标准
 """
 
 import asyncio
+import atexit
 import json
 import os
 from pathlib import Path
@@ -121,12 +122,28 @@ class MCPHttpConnection:
 
         headers = {"Authorization": f"Bearer {self._token}"}
         self._ctx_manager = streamablehttp_client(self._url, headers=headers)
-        read, write, _ = await self._ctx_manager.__aenter__()
 
-        self._session = ClientSession(read, write)
-        await self._session.__aenter__()
-        self._connected = True
-        return self._session
+        try:
+            read, write, _ = await self._ctx_manager.__aenter__()
+            self._session = ClientSession(read, write)
+            await self._session.__aenter__()
+            self._connected = True
+            return self._session
+        except Exception as e:
+            # 连接失败时清理已分配的资源
+            if self._session:
+                try:
+                    await self._session.__aexit__(None, None, None)
+                except Exception:
+                    pass
+                self._session = None
+            if self._ctx_manager:
+                try:
+                    await self._ctx_manager.__aexit__(None, None, None)
+                except Exception:
+                    pass
+                self._ctx_manager = None
+            raise RuntimeError(f"MCP HTTP connection failed: {e}")
 
     async def disconnect(self):
         self._connected = False
@@ -297,9 +314,13 @@ class MCPClient:
     def __init__(self, config_path: Optional[str] = None):
         self._sessions: Dict[str, MCPSession] = {}
         self._config: Dict[str, Dict] = {}
+        self._cleanup_registered = False
 
         if config_path:
             self._load_config(config_path)
+
+        # 注册退出清理
+        self._register_cleanup()
 
     def _load_config(self, path: str):
         config_file = Path(path)
@@ -389,6 +410,30 @@ class MCPClient:
             except Exception as e:
                 logger.warning(f"[MCP] Error closing {session.name}: {e}")
         self._sessions.clear()
+
+    def _register_cleanup(self):
+        """注册程序退出时的清理函数"""
+        if self._cleanup_registered:
+            return
+        self._cleanup_registered = True
+
+        def _sync_cleanup():
+            """同步清理函数（atexit 回调）"""
+            if not self._sessions:
+                return
+            # 尝试同步关闭（可能不完全，但总比没有好）
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.close_all())
+            except RuntimeError:
+                # 没有运行中的事件循环，创建新的
+                try:
+                    asyncio.run(self.close_all())
+                except Exception as e:
+                    logger.debug(f"[MCP] Cleanup error: {e}")
+
+        atexit.register(_sync_cleanup)
+        logger.debug("[MCP] Registered atexit cleanup handler")
 
     async def call_tool(self, server: str, tool: str, args: Dict) -> Any:
         """调用指定服务器的工具"""

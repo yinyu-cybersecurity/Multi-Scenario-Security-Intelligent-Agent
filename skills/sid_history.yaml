@@ -309,9 +309,3 @@ payloads:
       Enter-PSSession -ComputerName DC_B.B.local -Credential backdoor@A.local
 
 # 参考资源
-references:
-  - https://adsecurity.org/?p=1772
-  - https://posts.specterops.io/sid-history-as-a-persistence-mechanism
-  - https://github.com/GhostPack/PowerView
-  - https://github.com/gentilkiwi/mimikatz
-  - https://www.dsinternals.com/

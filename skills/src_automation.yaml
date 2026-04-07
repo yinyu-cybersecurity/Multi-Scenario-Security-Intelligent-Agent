@@ -158,12 +158,6 @@ payloads:
               condition: or
 
 # 检测方法
-detection:
-  - 存活性检测: HTTP状态码、响应时间、页面内容
-  - CDN/WAF检测: 响应头分析、IP归属查询
-  - 技术栈检测: 特征指纹、JS文件分析、Meta标签
-  - 漏洞验证: 回显检测、延时检测、外部交互
-
 # 效率优化策略
 optimization:
   - 并发控制: 控制扫描并发数，避免触发WAF/限速
@@ -185,9 +179,3 @@ waf_evasion:
     - 随机UA: 使用随机User-Agent列表
 
 # 参考资源
-references:
-  - https://github.com/projectdiscovery/nuclei
-  - https://github.com/projectdiscovery/subfinder
-  - https://github.com/projectdiscovery/httpx
-  - https://nuclei.projectdiscovery.io/templates/
-  - https://www.hackerone.com/resources

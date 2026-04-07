@@ -285,49 +285,6 @@ persistence:
       # 配置软件安装分发恶意软件
 
 # 检测和防御
-defense:
-  - detection: |
-      # 检测GPO攻击
-
-      # 1. 监控GPO修改事件
-      # 事件ID: 4739 (域策略更改)
-      # 事件ID: 5136 (目录服务修改)
-
-      # 2. 监控SYSVOL文件修改
-
-      # 3. 审计计划任务XML修改
-
-      # 4. 定期审计GPO ACL
-
-      # PowerShell检测脚本
-      Get-WinEvent -FilterHashtable @{
-        LogName='Security'
-        ID=4739
-      } | Where-Object {
-        $_.Message -match "Group Policy"
-      }
-
-      # 检查异常计划任务
-      Get-GPO -All | ForEach-Object {
-        $xml = Get-GPOReport -Name $_.DisplayName -ReportType XML
-        if ($xml -match "ScheduledTask" -and $xml -match "cmd.exe|powershell.exe") {
-          Write-Host "可疑GPO: $($_.DisplayName)"
-        }
-      }
-
-  - mitigation: |
-      # 缓解措施
-
-      # 1. 严格限制GPO编辑权限
-
-      # 2. 审计GPO ACL变更
-
-      # 3. 监控SYSVOL文件修改
-
-      # 4. 使用GPO备份和版本控制
-
-      # 5. 定期审查GPO内容
-
 # 完整攻击流程
 attack_chain:
   - step1: "GPO枚举和ACL分析"
@@ -370,9 +327,3 @@ payloads:
       Add-RegistryGPO -GPOName "Target GPO" -Key "HKLM\Software\Microsoft\Windows\CurrentVersion\Run" -ValueName "Backdoor" -ValueType "REG_SZ" -ValueData "C:\Windows\Temp\backdoor.exe"
 
 # 参考资源
-references:
-  - https://github.com/PowerShellMafia/PowerSploit
-  - https://github.com/rootSySdk/PowerGPOAbuse
-  - https://github.com/GhostPack/SharpGPOAbuse
-  - https://adsecurity.org/?p=2729
-  - https://www.harmj0y.net/blog/redteaming/abusing-gpo-permissions/

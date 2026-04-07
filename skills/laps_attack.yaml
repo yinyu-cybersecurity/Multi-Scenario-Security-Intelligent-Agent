@@ -286,46 +286,6 @@ persistence:
       # 在获取本地管理员权限后安装持久化后门
 
 # 检测和防御
-defense:
-  - detection: |
-      # 检测LAPS攻击
-
-      # 1. 监控ms-MCS-AdmPwd读取
-      # 事件ID: 4662 (对象访问)
-      # ObjectType: 28630ebc-41d5-11d1-a9c1-0000f80367c1
-
-      # 2. 监控异常的密码读取模式
-      # 批量读取多台计算机密码
-
-      # 3. 审计ACL变更
-
-      # 4. 监控LAPS管理组成员变更
-
-      # PowerShell检测脚本
-      Get-WinEvent -FilterHashtable @{
-        LogName='Security'
-        ID=4662
-      } | Where-Object {
-        $_.Message -match "28630ebc-41d5-11d1-a9c1-0000f80367c1"
-      }
-
-  - mitigation: |
-      # 缓解措施
-
-      # 1. 严格限制读取权限
-      # 只授予必要的管理员
-
-      # 2. 定期审计ACL
-      # 使用LAPSToolkit定期审计
-
-      # 3. 监控密码读取日志
-
-      # 4. 使用分层管理组
-      # 不同OU使用不同的管理组
-
-      # 5. 密码复杂度要求
-      # 设置足够的密码长度和复杂度
-
 # 完整攻击流程
 attack_chain:
   - step1: "检测LAPS部署"
@@ -382,10 +342,3 @@ payloads:
       }
 
 # 参考资源
-references:
-  - https://github.com/PowerShellMafia/PowerSploit
-  - https://github.com/leakedsecurity/LAPSToolkit
-  - https://github.com/kfosaaen/Get-LAPSPasswords
-  - https://github.com/GhostPack/SharpLAPS
-  - https://adsecurity.org/?p=1790
-  - https://www.microsoft.com/en-us/download/details.aspx?id=46899

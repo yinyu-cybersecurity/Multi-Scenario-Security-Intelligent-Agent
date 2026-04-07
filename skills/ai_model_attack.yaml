@@ -417,37 +417,3 @@ infrastructure_vulnerabilities:
       # 加载时执行恶意代码
       model = pickle.load(open('model.pkl', 'rb'))
 
-# 防御建议
-defense:
-  - Prompt注入防御:
-      - 输入过滤与净化
-      - 输出审查
-      - 系统提示词隔离
-      - 多轮对话监控
-
-  - 模型窃取防御:
-      - API速率限制
-      - 输出扰动
-      - 模型水印
-      - 差分隐私
-
-  - 对抗样本防御:
-      - 对抗训练
-      - 输入预处理
-      - 输出检测
-      - 模型加固
-
-  - 数据保护:
-      - 训练数据审计
-      - 差分隐私训练
-      - 访问控制
-      - 数据加密
-
-# 参考资源
-references:
-  - https://github.com/Trusted-AI/adversarial-robustness-toolbox
-  - https://github.com/tensorflow/cleverhans
-  - https://github.com/jind11/TextAttack
-  - https://llm-security.github.io/
-  - https://arxiv.org/abs/2302.03275 (LLM安全综述)
-  - https://arxiv.org/abs/2209.07586 (模型窃取)

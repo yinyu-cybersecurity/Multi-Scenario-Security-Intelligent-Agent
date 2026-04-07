@@ -44,9 +44,10 @@ BASH_OUTPUT_MAX_CHARS = 15000  # 单次 bash 输出最大字符数
 BASH_OUTPUT_HEAD_CHARS = 6000  # 截断时保留头部
 BASH_OUTPUT_TAIL_CHARS = 6000  # 截断时保留尾部
 
-# 比赛 API 限频
+# 比赛 API 限频（异步锁保护，防止竞态条件）
 _last_api_call_time = 0.0
 API_RATE_LIMIT_INTERVAL = 0.35  # 秒
+_api_rate_lock = asyncio.Lock()  # 异步锁保护并发访问
 
 
 # ============================================================================
@@ -604,13 +605,14 @@ async def competition_api(method: str, endpoint: str, data: dict = None):
             text="Competition not configured. Set COMPETITION_SERVER_HOST and COMPETITION_AGENT_TOKEN env vars.",
         )]
 
-    # 限频保护
-    global _last_api_call_time
-    now = time.time()
-    elapsed = now - _last_api_call_time
-    if elapsed < API_RATE_LIMIT_INTERVAL:
-        await asyncio.sleep(API_RATE_LIMIT_INTERVAL - elapsed)
-    _last_api_call_time = time.time()
+    # 限频保护（使用异步锁防止并发竞态）
+    async with _api_rate_lock:
+        global _last_api_call_time
+        now = time.time()
+        elapsed = now - _last_api_call_time
+        if elapsed < API_RATE_LIMIT_INTERVAL:
+            await asyncio.sleep(API_RATE_LIMIT_INTERVAL - elapsed)
+        _last_api_call_time = time.time()
 
     try:
         host = COMPETITION_HOST

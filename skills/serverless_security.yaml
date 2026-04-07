@@ -505,31 +505,3 @@ ctf_scenarios:
       curl https://api.execute-api.../trigger-lambda
 
       # Lambda读取S3返回flag
-
-# 防御措施
-defense:
-  - 函数安全:
-      - 最小权限原则
-      - 环境变量加密
-      - 代码审计
-      - 输入验证
-
-  - 依赖安全:
-      - 依赖审计
-      - 锁定版本
-      - 使用可信源
-      - 定期更新
-
-  - 监控审计:
-      - CloudWatch监控
-      - 异常调用检测
-      - 审计日志记录
-      - 成本监控
-
-# 参考资源
-references:
-  - https://docs.aws.amazon.com/lambda/
-  - https://github.com/RhinoSecurityLabs/pacu
-  - https://github.com/RhinoSecurityLabs/cloudgoat
-  - https://azure.microsoft.com/en-us/services/functions/
-  - https://cloud.google.com/functions

@@ -253,6 +253,9 @@ async def query(
     2. 超时熔断 + 循环检测
     3. 上下文窗口管理
 
+    注意：此函数会原地修改传入的 messages 列表。
+    如果需要保留原始消息，调用者应在传入前复制。
+
     事件类型：
     - assistant_message: AI 输出
     - tool_result: 工具执行结果
@@ -288,12 +291,15 @@ async def query(
 
         # === 上下文窗口管理 ===
         old_len = len(messages)
-        messages = manage_context_window(
+        new_messages = manage_context_window(
             messages,
             max_tokens=config.context_window_tokens,
             reserve_tokens=config.context_reserve_tokens,
             truncate_threshold=config.message_truncate_threshold,
         )
+        # 原地更新，保持引用一致性
+        if new_messages is not messages:
+            messages[:] = new_messages
         if len(messages) < old_len:
             yield {"type": "context_trimmed", "removed": old_len - len(messages)}
 
@@ -361,11 +367,13 @@ async def query(
                 # 上下文超长 -> 强制裁剪 50% 并重试
                 logger.warning("[Query] Context length exceeded, force trimming...")
                 half = len(messages) // 2
-                messages = messages[:1] + messages[half:]
-                messages.insert(1, {
+                # 原地更新，保持引用一致性
+                trimmed = messages[:1] + messages[half:]
+                trimmed.insert(1, {
                     "role": "system",
                     "content": "[CONTEXT_RESET] 上下文已大幅裁剪。请基于记忆（recall）恢复之前的进度。",
                 })
+                messages[:] = trimmed
                 yield {"type": "context_trimmed", "removed": half, "reason": "context_length_error"}
                 continue
 
@@ -431,11 +439,12 @@ async def query(
 
         if config.parallel_tool_calls and len(tool_calls) > 1:
             # 并行执行多个工具调用
-            await _execute_tools_parallel(
+            results = await _execute_tools_parallel(
                 tool_calls, client, loop_detector, messages, turn,
             )
-            for tc in tool_calls:
-                yield {"type": "tool_result", "tool_name": tc.get("function", {}).get("name", "")}
+            for tc, result_info in zip(tool_calls, results):
+                tool_name = tc.get("function", {}).get("name", "")
+                yield {"type": "tool_result", "tool_name": tool_name, **result_info}
         else:
             # 顺序执行
             for tc in tool_calls:
@@ -443,14 +452,14 @@ async def query(
                 function = tc.get("function", {})
                 tool_name = function.get("name", "")
 
-                result_str = await _execute_single_tool(
+                result_info = await _execute_single_tool(
                     tc, client, loop_detector, messages, turn,
                 )
 
-                if result_str == "__LOOP__":
+                if result_info.get("is_loop"):
                     yield {"type": "loop_detected", "tool": tool_name}
                 else:
-                    yield {"type": "tool_result", "tool_name": tool_name}
+                    yield {"type": "tool_result", "tool_name": tool_name, **result_info}
 
         # === 切题上下文清理（工具执行后）===
         if switch_code:
@@ -472,8 +481,8 @@ async def _execute_single_tool(
     loop_detector: LoopDetector,
     messages: List[Dict],
     turn: int,
-) -> str:
-    """执行单个工具调用，返回结果字符串"""
+) -> Dict:
+    """执行单个工具调用，返回结果信息字典"""
     tool_id = tc.get("id", f"call_{turn}")
     function = tc.get("function", {})
     tool_name = function.get("name", "")
@@ -488,7 +497,7 @@ async def _execute_single_tool(
     if loop_detector.record(tool_name, args_hash):
         warning = loop_detector.get_warning()
         messages.append({"role": "tool", "tool_call_id": tool_id, "content": warning})
-        return "__LOOP__"
+        return {"is_loop": True}
 
     # 执行工具（通过 MCP）
     try:
@@ -511,7 +520,15 @@ async def _execute_single_tool(
         result_str += flag_notice
 
     messages.append({"role": "tool", "tool_call_id": tool_id, "content": result_str})
-    return result_str
+
+    # 返回详细信息供 CLI 显示
+    return {
+        "is_loop": False,
+        "arguments": arguments,
+        "result_preview": result_str[:500] if len(result_str) > 500 else result_str,
+        "result_length": len(result_str),
+        "has_error": "error" in result_str.lower()[:100],
+    }
 
 
 async def _execute_tools_parallel(
@@ -520,8 +537,8 @@ async def _execute_tools_parallel(
     loop_detector: LoopDetector,
     messages: List[Dict],
     turn: int,
-):
-    """并行执行多个工具调用"""
+) -> List[Dict]:
+    """并行执行多个工具调用，返回结果信息列表"""
 
     async def _exec_one(tc: Dict, index: int):
         tool_id = tc.get("id", f"call_{turn}_{index}")
@@ -536,7 +553,9 @@ async def _execute_tools_parallel(
         # 循环检测
         args_hash = hashlib.md5(json.dumps(arguments, sort_keys=True).encode()).hexdigest()[:8]
         if loop_detector.record(tool_name, args_hash):
-            return tool_id, loop_detector.get_warning()
+            content = loop_detector.get_warning()
+            messages.append({"role": "tool", "tool_call_id": tool_id, "content": content})
+            return {"is_loop": True, "arguments": arguments}
 
         try:
             if "__" not in tool_name:
@@ -551,26 +570,41 @@ async def _execute_tools_parallel(
                     f"\n\n[FLAG_DETECTED] Found potential flag(s): {', '.join(flags_found)}\n"
                     f"SUBMIT IMMEDIATELY: submit_flag(code=..., flag=\"{flags_found[0]}\")"
                 )
-            return tool_id, result_str
         except Exception as e:
-            return tool_id, json.dumps({"status": "error", "error": str(e)}, ensure_ascii=False)
+            result_str = json.dumps({"status": "error", "error": str(e)}, ensure_ascii=False)
+
+        messages.append({"role": "tool", "tool_call_id": tool_id, "content": result_str})
+
+        return {
+            "is_loop": False,
+            "arguments": arguments,
+            "result_preview": result_str[:500] if len(result_str) > 500 else result_str,
+            "result_length": len(result_str),
+            "has_error": "error" in result_str.lower()[:100],
+        }
 
     # 并行执行
     tasks = [_exec_one(tc, i) for i, tc in enumerate(tool_calls)]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # 按顺序添加结果到消息
+    # 处理异常结果
+    final_results = []
     for i, result in enumerate(results):
         if isinstance(result, Exception):
             tool_id = tool_calls[i].get("id", f"call_{turn}_{i}")
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_id,
-                "content": json.dumps({"status": "error", "error": str(result)}, ensure_ascii=False),
+            error_str = json.dumps({"status": "error", "error": str(result)}, ensure_ascii=False)
+            messages.append({"role": "tool", "tool_call_id": tool_id, "content": error_str})
+            final_results.append({
+                "is_loop": False,
+                "arguments": {},
+                "result_preview": error_str,
+                "result_length": len(error_str),
+                "has_error": True,
             })
         else:
-            tool_id, content = result
-            messages.append({"role": "tool", "tool_call_id": tool_id, "content": content})
+            final_results.append(result)
+
+    return final_results
 
 
 __all__ = ["query", "QueryConfig"]

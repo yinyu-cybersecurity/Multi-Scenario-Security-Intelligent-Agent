@@ -504,30 +504,3 @@ failure_recovery:
           # 尝试备用C2
           beacon.connect_backup_c2()
           # 或等待重连窗口
-
-# 防御检测
-detection:
-  - 多阶段攻击检测:
-      - 监控异常网络流量模式
-      - 检测可疑进程创建链
-      - 分析异常登录模式
-      - 监控持久化机制创建
-      - 检测C2通信特征
-
-  - 防御建议:
-      - 实施分层防御策略
-      - 部署SIEM进行行为分析
-      - 建立威胁情报系统
-      - 定期进行红队演练
-      - 实施最小权限原则
-      - 强化终端检测响应(EDR)
-
-# 参考资源
-references:
-  - https://attack.mitre.org/
-  - https://github.com/redcanaryco/atomic-red-team
-  - https://github.com/mitre/caldera
-  - https://www.cobaltstrike.com/
-  - https://github.com/BC-SECURITY/Empire
-  - https://github.com/sliverimplant/sliver
-  - https://www.lockheedmartin.com/en-us/capabilities/cyber/cyber-kill-chain.html

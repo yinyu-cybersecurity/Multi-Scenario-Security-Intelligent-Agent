@@ -117,8 +117,6 @@ critical_cves:
       # nuclei检测
       nuclei -t cves/CVE-2021-44228.yaml -l targets.txt
 
-      # 修复: 升级到Log4j 2.17.0+
-
   - Spring4Shell (CVE-2022-22965):
     severity: 9.8 (Critical)
     affected: Spring Framework 5.3.0-5.3.17, 5.2.0-5.2.19
@@ -128,8 +126,6 @@ critical_cves:
 
       # nuclei检测
       nuclei -t cves/CVE-2022-22965.yaml
-
-      # 修复: 升级Spring Framework
 
   - ProxyLogon (CVE-2021-26855):
     severity: 9.8 (Critical)
@@ -142,8 +138,6 @@ critical_cves:
       # 使用自动化工具
       proxylogon_scan.py -t https://target.com
 
-      # 修复: 安装Microsoft安全更新
-
   - CVE-2023-44487 (HTTP/2 Rapid Reset):
     severity: 7.5 (High)
     affected: 多种HTTP/2实现
@@ -153,8 +147,6 @@ critical_cves:
 
       # 检测方法
       h2scan -t target.com
-
-      # 修复: 应用厂商补丁
 
 # 补丁分析流程
 patch_analysis:
@@ -291,10 +283,3 @@ cve_monitoring:
       # - 影响范围包含项目组件
 
 # 参考资源
-references:
-  - https://nvd.nist.gov/
-  - https://cve.mitre.org/
-  - https://www.exploit-db.com/
-  - https://vulners.com/
-  - https://github.com/projectdiscovery/nuclei-templates
-  - https://github.com/trickest/cve

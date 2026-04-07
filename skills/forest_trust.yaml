@@ -448,31 +448,6 @@ detection_defense:
 
       # 检查来自其他林的认证
 
-      # 防御措施:
-
-      # 1. 启用SID过滤
-
-      # 对于非林信任,启用SID过滤
-      netdom trust source.forest.com /domain:target.forest.com /quarantine:yes
-
-      # 2. 限制信任范围
-
-      # 只创建必要的信任
-      # 定期审查信任关系
-
-      # 3. 监控信任账户
-
-      # 信任账户密码定期重置
-      # 监控信任账户活动
-
-      # 4. 启用选择性认证
-
-      # 限制信任可访问的资源
-
-      # 5. 林隔离
-
-      # 对敏感资源实施额外保护
-
 # CTF场景示例
 ctf_scenarios:
   - template: |
@@ -532,10 +507,3 @@ ctf_scenarios:
       # 3. 利用外域账户访问
 
 # 参考资源
-references:
-  - https://adsecurity.org/?p=1588
-  - https://github.com/BloodHoundAD/BloodHound
-  - https://attack.mitre.org/techniques/T1199/
-  - https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2008-R2-and-2008/cc772560(v=ws.10)
-  - https://github.com/gentilkiwi/mimikatz
-  - https://github.com/GhostPack/Rubeus

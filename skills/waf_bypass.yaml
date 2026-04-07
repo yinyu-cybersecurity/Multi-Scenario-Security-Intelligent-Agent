@@ -321,9 +321,3 @@ chunked_bypass:
       0
 
 # 参考资源
-references:
-  - https://github.com/0xInfection/Awesome-WAF-Bypasses
-  - https://github.com/sqlmapproject/sqlmap/wiki/Usage
-  - https://owasp.org/www-community/attacks/SQL_Injection_Bypassing_WAF
-  - https://portswigger.net/web-security/request-smuggling
-  - https://caon.in/docs/waf-bypass

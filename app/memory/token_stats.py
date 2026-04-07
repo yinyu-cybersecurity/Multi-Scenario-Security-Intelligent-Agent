@@ -120,9 +120,15 @@ class TokenStatsManager:
             return dict(self._stats)
 
     def get_global_stats(self) -> TokenUsage:
-        """获取全局统计"""
+        """获取全局统计（返回副本，防止外部修改内部状态）"""
         with self._stats_lock:
-            return self._global_stats
+            return TokenUsage(
+                prompt_tokens=self._global_stats.prompt_tokens,
+                completion_tokens=self._global_stats.completion_tokens,
+                total_tokens=self._global_stats.total_tokens,
+                request_count=self._global_stats.request_count,
+                last_request=self._global_stats.last_request,
+            )
 
     def reset_stats(self, model: Optional[str] = None) -> None:
         """

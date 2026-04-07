@@ -500,38 +500,3 @@ data_disguise:
       # 3. Base64伪装为Cookie
       # 4. 嵌入PDF/Word文档
       # 5. ZIP压缩加密
-
-# 防御检测
-detection:
-  - DNS隧道检测:
-      - 监控DNS查询长度异常
-      - 检测高频DNS查询
-      - 分析DNS查询内容特征
-      - 监控TXT记录异常
-
-  - ICMP隧道检测:
-      - 监控ICMP包大小异常
-      - 检测ICMP频率异常
-      - 分析ICMP数据内容
-
-  - HTTP隐蔽通道检测:
-      - 监控HTTP流量异常
-      - 检测非标准User-Agent
-      - 分析Header内容异常
-      - 检测图片流量模式
-
-  - 防御建议:
-      - 实施严格的DNS监控
-      - 限制ICMP出站
-      - DLP系统部署
-      - 流量行为分析
-      - 数据分类标记
-
-# 参考资源
-references:
-  - https://github.com/iagox86/dnscat2
-  - https://github.com/yarrick/iodine
-  - https://github.com/espes/ptunnel
-  - https://attack.mitre.org/techniques/T1041/
-  - https://attack.mitre.org/techniques/T1048/
-  - https://www.hackingarticles.in/dns-tunneling-iodine/

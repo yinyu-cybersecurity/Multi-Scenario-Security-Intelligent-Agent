@@ -358,11 +358,3 @@ payloads:
       SharpHound.exe -c All
 
 # 参考资源
-references:
-  - https://github.com/projectdiscovery/httpx
-  - https://github.com/projectdiscovery/nuclei
-  - https://github.com/ffuf/ffuf
-  - https://github.com/OJ/gobuster
-  - https://github.com/byt3bl33d3r/CrackMapExec
-  - https://github.com/BloodHoundAD/BloodHound
-  - https://github.com/danielmiessler/SecLists

