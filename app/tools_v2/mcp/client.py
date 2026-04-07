@@ -61,8 +61,10 @@ class MCPConnectionManager:
         if self._task:
             self._task.cancel()
             try:
-                await self._task
-            except (asyncio.CancelledError, anyio.get_cancelled_exc_class(), Exception):
+                # 给任务一点时间来清理
+                await asyncio.wait_for(self._task, timeout=5.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError, anyio.get_cancelled_exc_class(), Exception):
+                # 任务取消是预期行为
                 pass
 
     async def _run(self):
@@ -82,11 +84,15 @@ class MCPConnectionManager:
         finally:
             self._connected = False
             if self._session:
+                # 简单清理，不使用 anyio cancel scope
+                # 因为 shield=True 在嵌套取消时会出错
                 try:
-                    # 使用 anyio 的取消保护来安全退出
-                    with anyio.CancelScope(shield=True):
-                        await self._session.__aexit__(None, None, None)
-                except Exception:
+                    await asyncio.wait_for(
+                        self._session.__aexit__(None, None, None),
+                        timeout=5.0
+                    )
+                except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
+                    # 超时或取消时放弃清理
                     pass
                 self._session = None
 
