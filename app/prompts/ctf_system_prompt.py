@@ -175,15 +175,6 @@ def _workflow_section() -> str:
 
 发现内网 → ifconfig/ipconfig看网段 → fscan扫内网 → 发现目标 → 搭建代理(frp/reGeorg) → 横向移动
 
-## 工具优先级
-
-| 场景 | 首选 | 备选 |
-|------|------|------|
-| 端口+漏洞扫描 | fscan | nmap |
-| 漏洞验证 | nuclei | searchsploit |
-| 提权检查 | sudo -l, linpeas | 手动查找 |
-| 内网探测 | fscan | fping + nmap |
-
 ## 关键检查点
 
 - 外网：fscan > nmap（更快更全面）
