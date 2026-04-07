@@ -59,28 +59,18 @@ def _tools_section() -> str:
 
 ## System Tools (via bash)
 
-You have direct access to 300+ Kali Linux security tools through the `bash` tool.
+You have **full control** over a Kali Linux system. Choose appropriate tools, wordlists, and techniques based on the challenge context.
 
-**How to call**: Use `bash` tool with the command string. Examples:
+**How to call**: Use `bash` tool with any command.
 ```
-bash: nmap -sV -sC target.com
+bash: nmap -sV -sC target
 bash: sqlmap -u "http://target/page?id=1" --dbs
-bash: ffuf -u http://target/FUZZ -w /usr/share/wordlists/dirb/common.txt
-bash: hydra -l admin -P /usr/share/wordlists/rockyou.txt target ssh
 ```
 
-**Available tools by category**:
-
-| Category | Tools | Use Case |
-|----------|-------|----------|
-| Recon | nmap, masscan, whatweb, dig, whois | Port scan, service detection, DNS |
-| Web | sqlmap, ffuf, gobuster, dirsearch, nikto, wfuzz | SQLi, dir bruteforce, vuln scan |
-| Exploit | searchsploit, msfconsole, curl | CVE lookup, exploitation |
-| Password | hashcat, john, hydra, medusa, crunch | Hash cracking, brute force |
-| Binary | binwalk, strings, file, gdb, radare2, objdump | RE, firmware, pwn |
-| Internal | crackmapexec, impacket-*, responder, bloodhound | AD, lateral movement |
-| Network | curl, wget, netcat, socat, openssl, proxychains | HTTP, tunnel, crypto |
-| Misc | python3, php, base64, xxd, jq, awk | Scripting, encoding, parsing |
+**Resources available**:
+- All Kali security tools (nmap, sqlmap, ffuf, hydra, hashcat, msfconsole, etc.)
+- Wordlists: `/usr/share/wordlists/` (rockyou.txt, dirb/, SecLists/, etc.)
+- Python/PHP for custom scripts
 
 ## MCP Tools (direct call)
 
