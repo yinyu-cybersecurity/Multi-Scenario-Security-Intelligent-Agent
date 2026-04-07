@@ -319,7 +319,8 @@ def _print_summary(flags_found: list, elapsed: float):
     print(f"{'─'*60}\n")
 
 
-async def main():
+def _run():
+    """入口 - 根据模式决定是否使用 asyncio"""
     args = parse_args()
 
     # 应用命令行参数到环境变量
@@ -330,7 +331,6 @@ async def main():
 
     # 无参数时显示用法
     if not args["target"] and not args["competition"] and not args["interactive"] and not args["repl"]:
-        # 检查环境变量是否已设置比赛模式
         if os.environ.get("COMPETITION_SERVER_HOST") and os.environ.get("COMPETITION_AGENT_TOKEN"):
             args["competition"] = True
         else:
@@ -349,17 +349,25 @@ async def main():
             print("  COMPETITION_AGENT_TOKEN     Competition agent token")
             sys.exit(1)
 
+    # REPL 和 interactive 模式有自己的事件循环
     if args["repl"]:
         from app.repl import main as repl_main
         repl_main()
     elif args["interactive"]:
         from app.interactive import main as interactive_main
         interactive_main()
-    elif args["competition"]:
+    else:
+        # 异步模式：competition 或 single target
+        asyncio.run(main_async(args))
+
+
+async def main_async(args: dict):
+    """异步主函数"""
+    if args["competition"]:
         await run_competition(args["timeout"])
     else:
         await run_single_target(args["target"], args["timeout"])
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    _run()
