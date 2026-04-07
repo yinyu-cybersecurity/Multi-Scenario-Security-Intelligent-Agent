@@ -213,7 +213,21 @@ def _handle_event(event: dict, flags_found: list):
                 elif tool == "http" and "url" in args:
                     url = args["url"]
                     method = args.get("method", "GET")
-                    print(f"  → {display_name}({method} {url[:60]})")
+                    parts = [f"{method} {url[:50]}"]
+                    # 显示关键参数
+                    if "body" in args:
+                        body = str(args["body"])[:50]
+                        parts.append(f"body='{body}'")
+                    if "data" in args:
+                        data = str(args["data"])[:50]
+                        parts.append(f"data='{data}'")
+                    if "json" in args:
+                        j = str(args["json"])[:50]
+                        parts.append(f"json={j}")
+                    if "headers" in args and args["headers"]:
+                        h = str(args["headers"])[:40]
+                        parts.append(f"headers={h}")
+                    print(f"  → {display_name}({', '.join(parts)})")
                 elif tool == "remember":
                     key = args.get("key", "")
                     print(f"  → {display_name}(key=\"{key}\")")
