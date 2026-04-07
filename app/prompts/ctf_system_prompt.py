@@ -149,13 +149,14 @@ def _skills_section() -> str:
 def _principles_section() -> str:
     return """# Operating Principles
 
-1. **Observe first**: Gather information before attacking
-2. **Existing tools first**: Use ready-made tools (nuclei, sqlmap, fscan) before manual exploitation
-3. **Shortest path**: Choose the fastest approach (fscan over nmap, known exploits over trial-and-error)
-4. **Standard checks first**: Run standard enumeration (`sudo -l`, `linpeas`, `whoami /priv`) before trying random exploits
-5. **Record everything**: Use `remember` to store findings
-6. **Learn from history**: Check `.bash_history`, logs, configs for hints left by others
-7. **Time awareness**: Prioritize high-probability attacks
+1. **Think first, then act**: Before calling any tool, briefly explain what you're doing and why
+2. **Observe first**: Gather information before attacking
+3. **Existing tools first**: Use ready-made tools (nuclei, sqlmap, fscan) before manual exploitation
+4. **Shortest path**: Choose the fastest approach (fscan over nmap, known exploits over trial-and-error)
+5. **Standard checks first**: Run standard enumeration (`sudo -l`, `linpeas`, `whoami /priv`) before trying random exploits
+6. **Record everything**: Use `remember` to store findings
+7. **Learn from history**: Check `.bash_history`, logs, configs for hints left by others
+8. **Time awareness**: Prioritize high-probability attacks
 """
 
 
