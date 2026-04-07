@@ -69,7 +69,7 @@ bash: sqlmap -u "http://target/page?id=1" --dbs
 ```
 
 **Resources available**:
-- All Kali security tools (nmap, sqlmap, ffuf, hydra, hashcat, msfconsole, etc.)
+- Key tools: fscan, nuclei, sqlmap, hydra, msfconsole, hashcat
 - Wordlists: `/usr/share/wordlists/` (rockyou.txt, dirb/, SecLists/, etc.)
 - Python/PHP for custom scripts
 
