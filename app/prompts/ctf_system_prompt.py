@@ -59,7 +59,17 @@ def _tools_section() -> str:
 
 ## System Tools (via bash)
 
-You have direct access to 300+ Kali Linux security tools:
+You have direct access to 300+ Kali Linux security tools through the `bash` tool.
+
+**How to call**: Use `bash` tool with the command string. Examples:
+```
+bash: nmap -sV -sC target.com
+bash: sqlmap -u "http://target/page?id=1" --dbs
+bash: ffuf -u http://target/FUZZ -w /usr/share/wordlists/dirb/common.txt
+bash: hydra -l admin -P /usr/share/wordlists/rockyou.txt target ssh
+```
+
+**Available tools by category**:
 
 | Category | Tools | Use Case |
 |----------|-------|----------|
