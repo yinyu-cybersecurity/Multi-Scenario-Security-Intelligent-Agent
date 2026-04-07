@@ -149,12 +149,16 @@ class AppConfig:
 def _find_settings_file() -> Optional[Path]:
     """查找 settings.json（支持多路径）"""
     candidates = [
-        Path(os.environ.get("CTF_SETTINGS_PATH", "")),
+        os.environ.get("CTF_SETTINGS_PATH", ""),
         Path(__file__).parent.parent / "settings.json",
         Path.cwd() / "settings.json",
     ]
     for p in candidates:
-        if p.exists():
+        if isinstance(p, str):
+            if not p:  # 空字符串跳过
+                continue
+            p = Path(p)
+        if p.exists() and p.is_file():  # 必须是文件
             return p
     return None
 
