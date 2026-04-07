@@ -24,42 +24,6 @@ from app.tools_v2.mcp.client import get_mcp_client, ensure_mcp_tools_registered
 logger = get_logger("REPL")
 
 
-# 系统提示词 - REPL 模式
-REPL_SYSTEM_PROMPT = """You are CTF-Agent, an AI penetration testing assistant.
-
-**Your Capabilities**:
-- Access to Kali Linux tools via MCP (nmap, sqlmap, burpsuite, etc.)
-- HTTP client for web testing
-- File system access for scripts and tools
-- Structured memory system
-
-**Operating Modes**:
-1. **Chat/Help**: Answer questions, explain concepts, guide users
-2. **Recon**: Explore targets, gather information
-3. **Attack**: Active exploitation, capture flags
-4. **Analysis**: Analyze results, suggest strategies
-
-**Guidelines**:
-- Be proactive: suggest next steps, tools, or approaches
-- Explain your reasoning when making decisions
-- Use tools autonomously when needed (e.g., self-check, environment inspection)
-- When user says "check environment", inspect MCP tools and Kali availability
-- When given a target URL, start recon automatically
-- Always ask before destructive actions (rm, drop, etc.)
-
-**Available Commands** (tell user when they ask):
-- `help` - Show this help
-- `tools` - List available MCP tools
-- `check` - Self-check environment
-- `target <url>` - Set target and start recon
-- `attack` - Start active exploitation
-- `clear` - Clear conversation
-- `quit` - Exit
-
-Respond naturally. Use tools when appropriate. Be helpful and educational.
-"""
-
-
 class SmartREPL:
     """智能 REPL 会话"""
 
@@ -95,20 +59,24 @@ class SmartREPL:
             print(f"[Setup] Error: {e}")
             self.connected = False
 
-        # 初始化消息
+        # 初始化消息 - 使用统一的系统提示词
+        system_prompt = build_system_prompt("interactive", 3600, competition_mode=False)
         self.messages = [
-            {"role": "system", "content": REPL_SYSTEM_PROMPT}
+            {"role": "system", "content": system_prompt}
         ]
 
     async def chat(self, user_input: str):
         """处理用户输入，返回事件流"""
         self.messages.append({"role": "user", "content": user_input})
 
+        # 从已初始化的messages中获取系统提示词
+        system_prompt = self.messages[0]["content"] if self.messages else ""
+
         qconfig = QueryConfig(
             model=app_config.LLM_MODEL,
             max_turns=app_config.query.max_turns,
             timeout_seconds=300,  # 5分钟超时
-            system_prompt=REPL_SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             context_window_tokens=app_config.query.context_window_tokens,
             parallel_tool_calls=app_config.query.parallel_tool_calls,
             auto_continue=False,  # REPL 模式：不自动继续
