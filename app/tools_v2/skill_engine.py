@@ -56,27 +56,53 @@ class OpenSpaceSkillEngine:
 
     def initialize(self, skills_dir: Path):
         """初始化技能引擎"""
-        self._skills_dir = skills_dir
+        self._skills_dir = Path(skills_dir) if isinstance(skills_dir, str) else skills_dir
 
         if OPENSACE_AVAILABLE:
             try:
-                # 使用 OpenSpace 的 SkillRegistry
-                self._registry = SkillRegistry()
-                self._registry.register_skill_dir(str(skills_dir))
-                print(f"[OpenSpace] Initialized with {len(self._registry._skills)} skills")
+                # 使用 OpenSpace 的 SkillRegistry (需要 Path 列表)
+                self._registry = SkillRegistry(skill_dirs=[self._skills_dir])
+                discovered = self._registry.discover()
+                print(f"[OpenSpace] Initialized with {len(discovered)} skills")
             except Exception as e:
+                import traceback
                 print(f"[OpenSpace] Failed to initialize: {e}")
+                traceback.print_exc()
                 self._registry = None
 
-        # 如果 OpenSpace 不可用，加载 YAML 技能作为回退
-        if not self._registry:
-            self._load_yaml_skills()
+        # 如果 OpenSpace 不可用，加载本地技能作为回退
+        if not self._registry or not self._registry._skills:
+            self._load_local_skills()
 
-    def _load_yaml_skills(self):
-        """加载 YAML 格式的技能（回退方案）"""
+    def _load_local_skills(self):
+        """加载本地技能（SKILL.md 和 YAML 格式）"""
         if not self._skills_dir or not self._skills_dir.exists():
             return
 
+        # 加载 SKILL.md 格式
+        for skill_dir in self._skills_dir.iterdir():
+            if not skill_dir.is_dir():
+                continue
+            skill_file = skill_dir / "SKILL.md"
+            if skill_file.exists():
+                try:
+                    content = skill_file.read_text(encoding='utf-8')
+                    fm = parse_frontmatter(content)
+                    name = fm.get('name', skill_dir.name)
+                    self._yaml_skills[name] = {
+                        'path': skill_file,
+                        'data': {
+                            'name': name,
+                            'description': fm.get('description', ''),
+                            'knowledge': strip_frontmatter(content),
+                            'tags': [],
+                            'domain': '',
+                        },
+                    }
+                except Exception as e:
+                    print(f"[SkillEngine] Failed to load {skill_dir.name}: {e}")
+
+        # 加载 YAML 格式（兼容）
         import yaml
         for yaml_file in self._skills_dir.glob("*.yaml"):
             try:
@@ -91,11 +117,11 @@ class OpenSpaceSkillEngine:
             except Exception:
                 pass
 
-        print(f"[SkillEngine] Loaded {len(self._yaml_skills)} YAML skills (fallback mode)")
+        print(f"[SkillEngine] Loaded {len(self._yaml_skills)} skills (fallback mode)")
 
     def search(self, query: str, top_k: int = 10) -> List[Dict]:
         """
-        搜索技能
+        搜索技能（仅本地）
 
         Args:
             query: 搜索查询
@@ -104,17 +130,21 @@ class OpenSpaceSkillEngine:
         Returns:
             技能列表，每个包含 name, description, score, path
         """
-        if self._registry:
-            # 使用 OpenSpace 搜索
+        if self._registry and self._registry._skills:
+            # 使用 OpenSpace 搜索（本地 TF-IDF + BM25）
             try:
-                candidates = self._registry.match_skills(query, top_k=top_k)
+                candidates = self._registry._prefilter_skills(
+                    query,
+                    list(self._registry._skills.values()),
+                    top_k
+                )
                 results = []
-                for candidate in candidates:
+                for meta in candidates:
                     results.append({
-                        'name': candidate.skill_name,
-                        'description': candidate.description,
-                        'score': candidate.score,
-                        'path': str(candidate.skill_dir) if hasattr(candidate, 'skill_dir') else '',
+                        'name': meta.name,
+                        'description': meta.description,
+                        'score': 1.0,
+                        'path': str(meta.path.parent),
                     })
                 return results
             except Exception as e:
@@ -162,7 +192,7 @@ class OpenSpaceSkillEngine:
 
     def read_skill(self, name: str) -> Optional[Dict]:
         """
-        读取技能完整内容
+        读取技能完整内容（仅本地）
 
         Args:
             name: 技能名称
@@ -170,7 +200,7 @@ class OpenSpaceSkillEngine:
         Returns:
             技能内容字典，包含 name, description, content
         """
-        # 首先尝试从 YAML 技能读取
+        # 首先尝试从本地缓存读取
         if name in self._yaml_skills:
             data = self._yaml_skills[name]['data']
             return {
@@ -183,18 +213,16 @@ class OpenSpaceSkillEngine:
             }
 
         # 尝试从 OpenSpace registry 读取
-        if self._registry:
+        if self._registry and self._registry._skills:
             try:
-                skill_meta = self._registry.get_skill(name)
-                if skill_meta:
-                    content = skill_meta.skill_dir.joinpath('SKILL.md').read_text(encoding='utf-8')
-                    body = strip_frontmatter(content)
-                    fm = parse_frontmatter(content)
+                meta = self._registry.get_skill_by_name(name)
+                if meta:
+                    content = self._registry.load_skill_content(meta.skill_id)
                     return {
-                        'name': fm.get('name', name),
-                        'description': fm.get('description', ''),
-                        'content': body,
-                        'path': str(skill_meta.skill_dir),
+                        'name': meta.name,
+                        'description': meta.description,
+                        'content': content or '',
+                        'path': str(meta.path.parent),
                     }
             except Exception:
                 pass

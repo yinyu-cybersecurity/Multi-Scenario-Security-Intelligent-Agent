@@ -1,0 +1,193 @@
+---
+name: src-automation
+description: Use when performing SRC/Bug Bounty automated testing - covering asset discovery, vulnerability scanning, verification, and report generation workflow
+---
+
+# SRC自动化众测流程
+
+## Info
+
+- **Tags**: src, automation, bug-bounty, reconnaissance, workflow
+- **Priority**: high
+
+## 使用场景
+
+- SRC众测平台自动化测试
+- 企业资产安全评估
+- 大规模资产漏洞发现
+- 持续性安全监控
+
+## 核心技术
+
+- 资产自动化发现: 子域名枚举、端口扫描、服务识别、CDN检测
+- 批量漏洞扫描: Nuclei模板批量检测、自定义POC批量验证
+- 智能去重过滤: 重复资产识别、误报过滤、有效漏洞筛选
+- 自动化报告: 标准化漏洞报告生成、风险评估、修复建议
+
+## 工具列表
+
+| 工具 | 用途 |
+|------|------|
+| subfinder | 子域名枚举工具 |
+| httpx | HTTP服务探测与特征识别 |
+| nuclei | 漏洞模板批量扫描 |
+| ffuf | 目录模糊测试 |
+| nmap | 端口扫描与服务识别 |
+| whatweb | Web技术栈识别 |
+| wpscan | WordPress漏洞扫描 |
+| joomscan | Joomla漏洞扫描 |
+| arjun | 参数发现工具 |
+| dalfox | XSS自动化扫描 |
+| sqlmap | SQL注入自动化检测 |
+| xsstrike | XSS高级检测 |
+
+## 攻击链
+
+1. **资产收集** - 使用subfinder/httpx进行子域名枚举和服务探测
+2. **资产去重** - 对收集的资产进行去重和存活性验证
+3. **技术识别** - 使用whatweb识别目标技术栈
+4. **批量扫描** - 使用nuclei进行已知漏洞批量检测
+5. **深度测试** - 对疑似漏洞进行手动验证和深度测试
+6. **漏洞确认** - 验证漏洞可利用性和影响范围
+7. **报告生成** - 生成标准化漏洞报告
+
+## 自动化脚本模板
+
+### 全自动资产发现
+
+```bash
+# 一键资产发现脚本
+# target: 目标域名或IP
+
+# 1. 子域名枚举
+subfinder -d $target -silent -o subdomains.txt
+
+# 2. HTTP服务探测
+httpx -l subdomains.txt -silent -status-code -title -tech-detect -o alive_hosts.txt
+
+# 3. 端口扫描
+nmap -iL subdomains.txt -p 21,22,80,443,8080,8443,3306,6379,27017 -T4 -oN ports.txt
+
+# 4. CDN检测
+for host in $(cat alive_hosts.txt | cut -d' ' -f1); do
+  curl -s "https://cdnfinder.com/api/check?url=$host" | jq '.cdn'
+done
+```
+
+### Nuclei批量漏洞扫描
+
+```bash
+# 批量漏洞扫描脚本
+
+# 1. 基础扫描（cve/技术漏洞）
+nuclei -l alive_hosts.txt -t cves/ -t vulnerabilities/ -severity critical,high -o critical_vulns.txt
+
+# 2. 信息泄露检测
+nuclei -l alive_hosts.txt -t exposures/ -o exposures.txt
+
+# 3. 自定义模板扫描
+nuclei -l alive_hosts.txt -t custom_templates/ -o custom_results.txt
+
+# 4. 结果统计
+echo "扫描完成，统计结果："
+grep -c "critical" critical_vulns.txt
+grep -c "high" critical_vulns.txt
+grep -c "medium" exposures.txt
+```
+
+### 参数发现与注入测试
+
+```bash
+# 参数发现脚本
+
+# 1. 发现隐藏参数
+arjun -u $target_url -oJ params.json
+
+# 2. 对发现的参数进行SQL注入测试
+for param in $(cat params.json | jq '.parameters[]' | tr -d '"'); do
+  sqlmap -u "$target_url?$param=test" --batch --level=1 --risk=1 --threads=5
+done
+
+# 3. XSS测试
+dalfox url $target_url --blind --mining all
+```
+
+### 报告生成模板
+
+```json
+{
+  "target": "$target",
+  "vulnerability": {
+    "type": "$vuln_type",
+    "severity": "$severity",
+    "cve": "$cve_id",
+    "description": "$description",
+    "proof_of_concept": "$poc",
+    "impact": "$impact",
+    "remediation": "$fix"
+  },
+  "metadata": {
+    "timestamp": "$timestamp",
+    "scanner": "CTF-Agent",
+    "confidence": "$confidence"
+  }
+}
+```
+
+## SRC平台适配
+
+| 平台 | 要求 |
+|------|------|
+| HackerOne | 需符合H1报告格式，包含Impact评估 |
+| BugCrowd | 需提供详细POC和修复建议 |
+| TryHackMe | 简化报告，侧重学习价值 |
+| 国内SRC | 需中文报告，包含详细修复步骤 |
+
+## Nuclei模板示例
+
+```yaml
+id: sensitive-info-exposure
+
+info:
+  name: Sensitive Information Exposure
+  severity: medium
+  description: Detects exposure of sensitive files
+
+requests:
+  - method: GET
+    paths:
+      - "{{BaseURL}}/.git/config"
+      - "{{BaseURL}}/.env"
+      - "{{BaseURL}}/config.php"
+      - "{{BaseURL}}/web.config"
+      - "{{BaseURL}}/backup.sql"
+    matchers:
+      - type: word
+        words:
+          - "password"
+          - "secret"
+          - "api_key"
+        condition: or
+```
+
+## 效率优化策略
+
+- 并发控制: 控制扫描并发数，避免触发WAF/限速
+- 智能去重: 基于相似度算法去除重复资产
+- 优先级排序: 按资产价值排序扫描顺序
+- 断点续扫: 支持扫描中断后的继续执行
+- 结果缓存: 缓存已扫描结果，避免重复扫描
+
+## WAF规避
+
+### 速率限制规避
+- 使用延迟: `nuclei -rate-limit 50`
+- 分布式扫描: 多IP轮换
+
+### IP封禁规避
+- 使用代理池: `proxychains4 nuclei`
+- Tor网络: 配置Tor代理
+
+### 特征检测规避
+- 自定义UA: `nuclei -header "User-Agent: Custom"`
+- 随机UA: 使用随机User-Agent列表
