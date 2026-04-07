@@ -182,11 +182,16 @@ async def print_stream(repl: SmartREPL, user_input: str):
 
     except (KeyboardInterrupt, asyncio.CancelledError):
         print("\n[Cancelled]", flush=True)
-        # 不重新抛出 - 在这里处理干净，让 REPL 循环继续
         # 清理可能不完整的消息
         if len(repl.messages) > 1 and repl.messages[-1].get("role") == "user":
             repl.messages.pop()
-        # 返回到调用者，让循环继续
+    except Exception as e:
+        # 捕获所有其他异常（包括 MCP 重连错误）
+        print(f"\n[Error] {e}", flush=True)
+        logger.error(f"print_stream error: {e}")
+        # 清理不完整的消息
+        if len(repl.messages) > 1 and repl.messages[-1].get("role") == "user":
+            repl.messages.pop()
 
 
 async def repl_main():

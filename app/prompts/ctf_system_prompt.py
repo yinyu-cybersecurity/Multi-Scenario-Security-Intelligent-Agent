@@ -34,6 +34,7 @@ def build_system_prompt(
         _tools_section(),
         _competition_section() if is_competition else "",
         _skills_section(),
+        _workflow_section(),
         _principles_section(),
         _memory_section(),
         _target_section(target, timeout, is_competition),
@@ -152,6 +153,30 @@ def _principles_section() -> str:
 5. **Record everything**: Use `remember` to store findings
 6. **Learn from history**: Check `.bash_history`, logs, configs for hints left by others
 7. **Time awareness**: Prioritize high-probability attacks
+"""
+
+
+def _workflow_section() -> str:
+    return """# Attack Workflow
+
+## 外网打点
+
+信息收集 → fscan(端口+漏洞一体) → 发现漏洞 → 用现有poc(nuclei/searchsploit) / 查skill / 手动构造 / 继续探测
+
+## 获取初始shell
+
+低权限 → 需要提权? → 否：直接利用 / 是：sudo -l, suid, linpeas → 获取高权限
+
+## 内网渗透
+
+发现内网 → ifconfig/ipconfig看网段 → fscan扫内网 → 发现目标 → 搭建代理(frp/reGeorg) → 横向移动
+
+## 关键检查点
+
+- 外网：fscan > nmap（更快更全面）
+- 提权：先查 `sudo -l`、`find / -perm -4000`，再跑 linpeas
+- 内网：先看网络配置，再扫，再搭代理
+- 历史：`.bash_history`、`.mysql_history` 可能有现成命令
 """
 
 
