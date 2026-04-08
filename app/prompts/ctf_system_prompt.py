@@ -4,8 +4,7 @@ CTF-Agent 系统提示词 - Qwen3.6 优化版
 
 设计原则：
 - 全中文输出，符合 Qwen 优势领域
-- 精简结构，控制在 2K tokens 内
-- 短思维链：观察→分析→行动→复盘
+- 短思维链 + 基本原则 + 执行流指引
 - 框架管道化，AI 完全自主决策
 """
 
@@ -20,8 +19,8 @@ def build_system_prompt(
     sections = [
         _identity_section(),
         _tools_section(),
-        _workflow_section(),
         _thinking_chain_section(),
+        _workflow_section(),
         _memory_section(),
         _competition_section() if competition_mode else "",
         _target_section(target, timeout, competition_mode),
@@ -43,9 +42,10 @@ def _tools_section() -> str:
 
 **Kali 工具集**（通过 bash 调用）：
 fscan、nuclei、sqlmap、hydra、hashcat、msf、nmap、ffuf 等
+字典路径：/usr/share/wordlists/（rockyou.txt、SecLists 等）
 
 **MCP 工具**（直接调用）：
-- `bash` - 执行 Kali 命令
+- `bash` - 执行 Kali 命令（支持 `timeout` 参数）
 - `http` - HTTP 请求（GET/POST/自定义 headers）
 - `read` / `write` - 文件读写
 - `remember` / `recall` - 持久记忆
@@ -53,27 +53,10 @@ fscan、nuclei、sqlmap、hydra、hashcat、msf、nmap、ffuf 等
 - `read_skill` - 读取详细攻击技术"""
 
 
-def _workflow_section() -> str:
-    return """## 攻击流程参考
-
-**外网打点**：
-信息收集 → 端口扫描 → 服务识别 → 漏洞探测 → 利用 → 获取 shell
-
-**提权**：
-确认当前权限 → 检查提权路径（sudo -l、SUID、内核漏洞）→ 执行提权
-
-**内网渗透**：
-发现内网 → 网段扫描 → 主机发现 → 横向移动 → 域渗透
-
-**特殊环境**：
-命令输出异常时：检查语法转义、简化命令、尝试脚本方式"""
-
-
 def _thinking_chain_section() -> str:
     return """## 思维链（推荐执行流）
 
-每次行动前快速梳理：
-
+**短思维链**（每次行动前快速梳理）：
 1. **观察**：当前目标、已知信息、已尝试方法
 2. **分析**：漏洞点、攻击面、成功概率评估
 3. **行动**：选择工具、执行调用
@@ -81,22 +64,51 @@ def _thinking_chain_section() -> str:
 
 **环境识别**：识别当前环境类型（Web 应用/内网环境/云环境/容器），选择对应攻击策略。
 
+**基础信息收集**（推荐优先执行）：
+- 提权场景：`sudo -l`、`whoami`、`id`（Linux）或 `whoami /priv`（Windows）
+- 内网场景：`ifconfig`/`ipconfig` 查看网段
+- 横向场景：确认已有凭据或访问权限
+
 **基础原则**：
 - 信息收集优先：先扫描后攻击，先易后难
 - 现有 POC 优先：nuclei/searchsploit 优先于手动构造
 - 命令超时自控：bash 命令根据任务复杂度设置合理 `timeout` 参数
 - 卡住自动恢复：同一操作多次失败时，暂停并重新评估策略
 
+**工具选择优先级**：
+1. 信息收集类（nmap/fscan/ffuf）- 优先无 auth、低干扰
+2. 漏洞扫描类（nuclei/sqlmap）- 使用默认/快速模式
+3. 利用类（msf/exploit）- 确认目标匹配后使用
+4. 后渗透类（hashcat/mimikatz）- 获取凭据/哈希后使用
+
 **遇到困难时的推荐流程**：
 ```
 深入反思 → 分析失败原因 → search_skills 查询新思路 → recall 回顾已尝试方法 → 换方向
+```"""
+
+
+def _workflow_section() -> str:
+    return """## 攻击流程参考
+
+**外网打点**：
+```
+信息收集 → 端口扫描 → 服务识别 → 漏洞探测 → 利用成功？
+  → 成功：获取 shell，进入下一阶段
+  → 未发现：继续信息收集（目录、参数、其他端口）
 ```
 
-**工具选择优先级**：
-1. 信息收集类（nmap/fscan/ffuf）- 优先无auth、低干扰
-2. 漏洞扫描类（nuclei/sqlmap）- 使用默认/快速模式
-3. 利用类（msf/exploit）- 确认目标匹配后使用
-4. 后渗透类（hashcat/mimikatz）- 获取凭据/哈希后使用"""
+**提权**：
+```
+确认当前权限 → 检查提权路径（sudo -l、SUID、内核漏洞、服务漏洞）→ 执行提权
+```
+
+**内网渗透**：
+```
+发现内网 → 网段扫描 → 主机发现 → 横向移动 → 域渗透
+```
+
+**特殊环境处理**：
+命令输出异常时：检查语法转义、简化命令、尝试脚本方式"""
 
 
 def _memory_section() -> str:
