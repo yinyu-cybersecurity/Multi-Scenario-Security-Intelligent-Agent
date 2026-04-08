@@ -287,6 +287,11 @@ async def query(
     consecutive_errors = 0
     max_consecutive_errors = 5
 
+    # === 时间盒反思机制 ===
+    start_time = time.time()
+    last_reflection = start_time
+    reflection_interval = 900  # 15分钟
+
     for turn in range(1, config.max_turns + 1):
 
         # === 上下文窗口管理 ===
@@ -349,6 +354,24 @@ async def query(
                 "role": "system",
                 "content": f"[INFO] Turn {turn}/{config.max_turns} | Token: {stats.total_tokens:,} | Time: {int(remaining)}s remaining",
             })
+
+        # === 时间盒反思（每 15 分钟）===
+        elapsed_since_reflection = time.time() - last_reflection
+        if elapsed_since_reflection >= reflection_interval:
+            reflection_prompt = {
+                "role": "user",
+                "content": f"""[REFLECTION] 已运行 {int((time.time() - start_time) // 60)} 分钟，请评估当前进度：
+
+1. **已尝试的攻击路径**：简要列出已测试的方法
+2. **成功/失败分析**：为什么成功或失败？
+3. **最有希望的方向**：下一步该做什么？
+4. **是否需要切换策略**：如果当前路径不工作，是否应该换方向？
+
+如果已找到FLAG，立即输出 [TASK_COMPLETE] FLAG: flag{xxx}"""
+            }
+            messages.append(reflection_prompt)
+            last_reflection = time.time()
+            yield {"type": "reflection_prompted", "elapsed_minutes": int((time.time() - start_time) // 60)}
 
         # === LLM 调用 ===
         response = await llm_client.call_with_details(

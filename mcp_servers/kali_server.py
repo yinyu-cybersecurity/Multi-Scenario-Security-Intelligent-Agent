@@ -181,6 +181,40 @@ async def list_tools():
                 "required": ["name"],
             },
         ),
+
+        # === OpenSpace 技能管理 ===
+        Tool(
+            name="create_skill",
+            description="Create a new skill file to record attack techniques or experiences.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Skill name (e.g. 'cloud_aws', 'sqli_waf_bypass')"},
+                    "content": {"type": "string", "description": "Skill content in YAML format"},
+                },
+                "required": ["name", "content"],
+            },
+        ),
+        Tool(
+            name="update_skill",
+            description="Update an existing skill file with new information.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Skill name to update"},
+                    "content": {"type": "string", "description": "New content to append or merge"},
+                },
+                "required": ["name", "content"],
+            },
+        ),
+        Tool(
+            name="list_skills",
+            description="List all available skill files in the knowledge base.",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+            },
+        ),
     ]
 
     # === 比赛工具（仅在比赛模式下注册）===
@@ -273,6 +307,16 @@ async def call_tool(name: str, arguments: dict):
         "recall": lambda: retrieve_memory(arguments.get("query", "")),
         "search_skills": lambda: search_skills_handler(arguments.get("query", "")),
         "read_skill": lambda: read_skill_handler(arguments.get("name", "")),
+        # OpenSpace 技能管理
+        "create_skill": lambda: create_skill_handler(
+            arguments.get("name", ""),
+            arguments.get("content", ""),
+        ),
+        "update_skill": lambda: update_skill_handler(
+            arguments.get("name", ""),
+            arguments.get("content", ""),
+        ),
+        "list_skills": lambda: list_skills_handler(),
         # 比赛工具 - 严格对齐官方 API 文档
         "list_challenges": lambda: competition_api("GET", "/api/challenges"),
         "start_challenge": lambda: _start_challenge_with_reset(arguments.get("code", "")),
@@ -1035,6 +1079,89 @@ def reset_skill_hint_counts():
     """切题时重置推荐计数"""
     global _skill_hint_counts
     _skill_hint_counts = {}
+
+
+# ============================================================================
+# OpenSpace 技能管理
+# ============================================================================
+
+SKILLS_DIR = PROJECT_ROOT / "skills"
+
+
+def create_skill_handler(name: str, content: str):
+    """创建新的 skill 文件"""
+    if not name:
+        return [TextContent(type="text", text="Error: skill name is required")]
+
+    # 安全检查：防止路径遍历
+    safe_name = name.replace("..", "").replace("/", "_").replace("\\", "_")
+    skill_path = SKILLS_DIR / f"{safe_name}.yaml"
+
+    try:
+        # 验证 YAML 格式
+        yaml.safe_load(content)
+    except yaml.YAMLError as e:
+        return [TextContent(type="text", text=f"Error: Invalid YAML format - {e}")]
+
+    # 检查是否已存在
+    if skill_path.exists():
+        return [TextContent(type="text", text=f"Warning: Skill '{name}' already exists. Use update_skill to modify.")]
+
+    # 创建文件
+    skill_path.write_text(content, encoding="utf-8")
+    return [TextContent(type="text", text=f"Skill created: {safe_name}\nPath: {skill_path}")]
+
+
+def update_skill_handler(name: str, content: str):
+    """更新现有 skill 文件"""
+    if not name:
+        return [TextContent(type="text", text="Error: skill name is required")]
+
+    safe_name = name.replace("..", "").replace("/", "_").replace("\\", "_")
+    skill_path = SKILLS_DIR / f"{safe_name}.yaml"
+
+    if not skill_path.exists():
+        return [TextContent(type="text", text=f"Error: Skill '{name}' not found. Use create_skill to create new skills.")]
+
+    try:
+        # 读取现有内容
+        existing = yaml.safe_load(skill_path.read_text(encoding="utf-8"))
+        new_content = yaml.safe_load(content)
+
+        # 合并内容
+        if isinstance(existing, dict) and isinstance(new_content, dict):
+            existing.update(new_content)
+            merged = yaml.dump(existing, allow_unicode=True, default_flow_style=False)
+        else:
+            merged = content
+
+        skill_path.write_text(merged, encoding="utf-8")
+        return [TextContent(type="text", text=f"Skill updated: {safe_name}")]
+    except yaml.YAMLError as e:
+        return [TextContent(type="text", text=f"Error: Invalid YAML format - {e}")]
+
+
+def list_skills_handler():
+    """列出所有可用的 skill 文件"""
+    if not SKILLS_DIR.exists():
+        return [TextContent(type="text", text="Skills directory not found")]
+
+    skills = []
+    for f in SKILLS_DIR.glob("*.yaml"):
+        try:
+            content = yaml.safe_load(f.read_text(encoding="utf-8"))
+            name = f.stem
+            desc = content.get("description", "No description")[:60]
+            tags = ", ".join(content.get("tags", [])[:3])
+            skills.append(f"  - {name}: {desc}... [{tags}]")
+        except Exception:
+            skills.append(f"  - {f.stem}: (error reading)")
+
+    if not skills:
+        return [TextContent(type="text", text="No skills found")]
+
+    result = f"Available skills ({len(skills)} total):\n" + "\n".join(skills)
+    return [TextContent(type="text", text=result)]
 
 
 async def _start_challenge_with_reset(code: str):

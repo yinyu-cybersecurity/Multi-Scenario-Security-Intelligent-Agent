@@ -136,6 +136,8 @@ def _thinking_chain_section() -> str:
 - 还需要什么信息？
 - 有哪些可行的方法？
 
+**注意识别当前环境类型**（Web应用/内网环境/云环境），选择对应的攻击策略。
+
 推荐先获取基础信息：
 - 提权场景：`sudo -l`、`whoami`、`id`（Linux）或 `whoami /priv`（Windows）
 - 内网场景：`ifconfig`/`ipconfig` 查看网段

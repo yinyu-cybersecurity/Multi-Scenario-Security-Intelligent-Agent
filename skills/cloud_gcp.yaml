@@ -1,0 +1,62 @@
+name: GCP云环境渗透
+description: GCP云环境信息收集和利用技术
+domain: cloud
+version: '1.0'
+tags:
+- cloud
+- gcp
+- privilege-escalation
+knowledge: |
+  # GCP云环境渗透
+
+  ## 信息收集
+
+  ### 元数据服务
+  ```bash
+  # 获取实例元数据
+  curl -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/"
+
+  # 获取服务账户令牌
+  curl -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token"
+
+  # 获取项目信息
+  curl -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/project/project-id"
+  ```
+
+  ### GCloud CLI 枚举
+  ```bash
+  # 列出项目
+  gcloud projects list
+
+  # 列出计算实例
+  gcloud compute instances list
+
+  # 列出存储桶
+  gsutil ls
+
+  # 列出服务账户
+  gcloud iam service-accounts list
+  ```
+
+  ## 常见攻击路径
+
+  ### 1. 服务账户密钥泄露
+  ```bash
+  # 创建服务账户密钥
+  gcloud iam service-accounts keys create key.json --iam-account=sa@project.iam.gserviceaccount.com
+  ```
+
+  ### 2. Cloud Storage 公开访问
+  ```bash
+  # 列出桶内容
+  gsutil ls gs://bucket-name/
+
+  # 下载文件
+  gsutil cp gs://bucket-name/file.txt ./
+  ```
+
+  ### 3. Compute Engine SSH
+  ```bash
+  # SSH 连接到实例
+  gcloud compute ssh instance-name --zone=zone
+  ```

