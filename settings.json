@@ -1,10 +1,10 @@
 {
   "model": {
-    "name": "qwen3.5-plus",
+    "name": "qwen3.6-plus",
     "base_url": "https://coding.dashscope.aliyuncs.com/v1",
     "api_key": "${LLM_API_KEY}",
     "timeout": 120,
-    "temperature": 0.1,
+    "temperature": 0.6,
     "fallback_models": []
   },
 
@@ -30,8 +30,10 @@
   },
 
   "query": {
-    "max_turns": 200,
-    "context_window_tokens": 120000,
+    "max_turns": 500,
+    "context_window_tokens": 262144,
+    "context_reserve_tokens": 8192,
+    "message_truncate_threshold": 16000,
     "parallel_tool_calls": true
   },
 

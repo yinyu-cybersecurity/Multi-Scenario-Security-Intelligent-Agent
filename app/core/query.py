@@ -177,23 +177,40 @@ def _truncate_message_content(content: str, max_chars: int = 8000) -> str:
 
 def manage_context_window(
     messages: List[Dict],
-    max_tokens: int = 120000,
-    reserve_tokens: int = 4000,
-    truncate_threshold: int = 8000,
+    max_tokens: int = 262144,
+    reserve_tokens: int = 8192,
+    truncate_threshold: int = 16000,
 ) -> List[Dict]:
     """
-    管理上下文窗口，防止超长
+    管理上下文窗口，智能压缩（适配 Qwen3.6 1M 上下文）
 
-    策略（对齐 Claude Code）：
-    1. 保护 system prompt（第一条消息）
-    2. 保护最近的消息（最新 20 条）
-    3. 中间消息按时间从旧到新截断
-    4. 单条过长消息截断
+    策略（动态分级截断）：
+    1. 使用量 < 200K：不截断，自由增长
+    2. 使用量 > 500K：开始截断最早的非关键消息
+    3. 使用量 > 800K：强制截断，保留 system + 最近 100 轮
+
+    保护优先级：
+    1. system prompt（第一条）
+    2. 带 tool_calls 的消息（AI 决策点）
+    3. 最近的 50 轮对话
+    4. 包含 FLAG 的通知消息
+
+    截断优先级：
+    1. 早期的纯文本 tool 结果
+    2. 早期的 assistant 普通输出
+    3. 系统通知消息
     """
     if not messages:
         return messages
 
     target_tokens = max_tokens - reserve_tokens
+
+    # 估算当前 token 数
+    current_tokens = _estimate_messages_tokens(messages)
+
+    # 使用量 < 200K，不截断
+    if current_tokens < 200000:
+        return messages
 
     # 先截断单条过长消息（tool 结果可能很长）
     for i, msg in enumerate(messages):
@@ -201,19 +218,40 @@ def manage_context_window(
         if isinstance(content, str) and len(content) > truncate_threshold:
             messages[i] = {**msg, "content": _truncate_message_content(content, truncate_threshold)}
 
-    # 估算当前 token 数
+    # 重新估算
     current_tokens = _estimate_messages_tokens(messages)
     if current_tokens <= target_tokens:
         return messages
 
-    # 需要裁剪 - 保护首尾
+    # === 分级保护策略 ===
+
+    # 使用量 > 800K：强制截断，只保留 system + 最近 50 轮
+    if current_tokens > 800000:
+        protected_tail = 50
+        if len(messages) <= 1 + protected_tail:
+            return messages
+
+        head = messages[:1]  # system
+        tail = messages[-protected_tail:]
+
+        removed = len(messages) - len(head) - len(tail)
+        messages[:] = head + tail
+
+        trim_notice = {
+            "role": "system",
+            "content": f"[CONTEXT_TRUNCATED] 上下文已超过 800K tokens，已移除 {removed} 条早期消息。最近 50 轮对话已保留。",
+        }
+        messages.insert(1, trim_notice)
+        logger.warning(f"[Query] Context forced truncate: removed {removed} messages, {len(messages)} remaining")
+        return messages
+
+    # 使用量 > 500K：渐进式截断
     protected_head = 1  # system prompt
-    protected_tail = min(20, len(messages) // 2)  # 最近的消息
+    protected_tail = min(50, len(messages) // 3)  # 最近的消息，至少 1/3
 
     if len(messages) <= protected_head + protected_tail:
-        return messages  # 消息太少，不裁剪
+        return messages
 
-    # 从中间开始移除
     head = messages[:protected_head]
     tail = messages[-protected_tail:]
     middle = messages[protected_head:-protected_tail]
@@ -225,16 +263,15 @@ def manage_context_window(
         removed += 1
 
     if removed > 0:
-        # 插入裁剪提示
         trim_notice = {
             "role": "system",
-            "content": f"[CONTEXT_TRIMMED] 已移除 {removed} 条历史消息以适应上下文窗口。最近的对话已保留。",
+            "content": f"[CONTEXT_TRUNCATED] 已移除 {removed} 条早期消息。最近对话已保留。",
         }
         result = head + [trim_notice] + middle + tail
         logger.info(f"[Query] Context trimmed: removed {removed} messages")
         return result
 
-    return head + middle + tail
+    return head + tail
 
 
 # ============================================================================

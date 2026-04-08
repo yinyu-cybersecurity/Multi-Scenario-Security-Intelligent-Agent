@@ -87,10 +87,10 @@ class MCPServerConfig:
 @dataclass
 class QueryConfig:
     """Query Loop 配置"""
-    max_turns: int = 200
-    context_window_tokens: int = 120000  # 上下文窗口大小
-    context_reserve_tokens: int = 4000   # 为响应预留的token
-    message_truncate_threshold: int = 8000  # 单条消息截断阈值
+    max_turns: int = 500
+    context_window_tokens: int = 262144  # 上下文窗口大小
+    context_reserve_tokens: int = 8192   # 为响应预留的token
+    message_truncate_threshold: int = 16000  # 单条消息截断阈值
     parallel_tool_calls: bool = True      # 是否并行执行工具
 
 
