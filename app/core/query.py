@@ -287,9 +287,9 @@ async def query(
     consecutive_errors = 0
     max_consecutive_errors = 5
 
-    # === 空响应保护（防卡死）===
+    # === 卡住恢复机制（无限恢复，不终止）===
     consecutive_empty_responses = 0
-    max_empty_responses = 3
+    consecutive_identical_calls = 0
 
     # === 时间盒反思机制 ===
     start_time = time.time()
@@ -450,26 +450,34 @@ async def query(
                 yield {"type": "task_complete", "flags": flags, "reason": "flag_in_response"}
                 return
 
-            # 空响应检测
+            # 空响应检测 - 恢复机制而非终止
             if not content.strip():
                 consecutive_empty_responses += 1
-                if consecutive_empty_responses >= max_empty_responses:
-                    # 连续多次空响应 — 强制终止，防止无限循环
-                    yield {"type": "complete", "reason": "consecutive_empty_responses"}
-                    return
-                # 注入更强警告
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        "[EMPTY_RESPONSE_WARNING] Your last response had no content and no tool calls. "
-                        "This suggests you're stuck or uncertain. "
-                        "Please: 1) Output your current progress 2) Choose a tool to proceed "
-                        "3) Or explicitly state [TASK_COMPLETE] if you believe the task is done."
-                    ),
-                })
+                if consecutive_empty_responses >= 3:
+                    # 注入强制恢复提示
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            "[STUCK_RECOVERY] You've provided empty responses 3 times in a row. "
+                            "This indicates you're stuck. RECOVERY ACTIONS:\n"
+                            "1. Use recall(query=\"progress\") to check what you've tried\n"
+                            "2. Use list_challenges to see current status\n"
+                            "3. Pick a different challenge or attack method\n"
+                            "4. Use search_skills to find new techniques\n"
+                            "DO NOT stay silent. Choose an action NOW."
+                        ),
+                    })
+                    consecutive_empty_responses = 0  # 重置，给AI新机会
+                    yield {"type": "recovery_triggered", "reason": "empty_responses"}
+                else:
+                    # 轻度警告
+                    messages.append({
+                        "role": "user",
+                        "content": "[PROMPT] Please respond with your next action or current progress.",
+                    })
                 continue
             else:
-                consecutive_empty_responses = 0  # 重置
+                consecutive_empty_responses = 0  # 有内容则重置
 
             # REPL 模式：不自动继续，等待用户输入
             if not config.auto_continue:
@@ -482,7 +490,7 @@ async def query(
             })
             continue
 
-        # === 单次响应相同 tool_calls 检测（防卡死）===
+        # === 单次响应相同 tool_calls 检测（无限恢复）===
         if tool_calls and len(tool_calls) > 1:
             # 检查是否有多个相同的 tool_calls（参数完全一样）
             tc_signatures = []
@@ -499,18 +507,8 @@ async def query(
             most_common_sig, most_common_count = sig_counts.most_common(1)[0]
 
             if most_common_count >= 3:
-                # 单次响应中存在 3+ 个相同的 tool_calls — 强制打破
-                warning_msg = (
-                    f"[IDENTICAL_CALLS_CRITICAL] You generated {most_common_count} identical tool calls "
-                    f"({most_common_sig[:50]}...) in a single response. "
-                    f"This indicates a logic error. Same input ALWAYS produces same output. "
-                    f"STOP and reconsider your strategy. Use only ONE call with different parameters, "
-                    f"or try a completely different approach. "
-                    f"If truly stuck, use search_skills to find new techniques."
-                )
-                messages.append({"role": "system", "content": warning_msg})
-                logger.warning(f"[Query] Detected {most_common_count} identical tool_calls in single response")
-                # 只保留第一个相同的调用，丢弃重复的
+                consecutive_identical_calls += 1
+                # 去重：只保留第一个相同的调用
                 seen_sigs = set()
                 unique_tool_calls = []
                 for tc in tool_calls:
@@ -521,7 +519,18 @@ async def query(
                         unique_tool_calls.append(tc)
                 tool_calls = unique_tool_calls
                 msg["tool_calls"] = tool_calls
-                yield {"type": "identical_calls_detected", "count": most_common_count, "tool": most_common_sig.split(":")[0]}
+
+                # 注入恢复提示
+                recovery_hint = (
+                    f"[DUPLICATE_RECOVERY] You generated {most_common_count} identical calls. "
+                    f"Duplicates removed. Same input ALWAYS gives same output - no need to repeat.\n"
+                    f"If stuck: 1) Try different parameters 2) Use search_skills for new ideas "
+                    f"3) recall(query=\"progress\") to review what's been tried."
+                )
+                messages.append({"role": "system", "content": recovery_hint})
+                yield {"type": "duplicate_calls_recovered", "count": most_common_count, "tool": most_common_sig.split(":")[0]}
+            else:
+                consecutive_identical_calls = 0
 
         # === 执行工具 ===
         # 检测切题 — 在执行前记录
