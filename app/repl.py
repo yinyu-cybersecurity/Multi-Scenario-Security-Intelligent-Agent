@@ -153,7 +153,8 @@ async def print_stream(repl: SmartREPL, user_input: str):
         # 清理可能不完整的消息
         if len(repl.messages) > 1 and repl.messages[-1].get("role") == "user":
             repl.messages.pop()
-        # 不重新抛出，让 REPL 继续运行
+        # 重新抛出，让调用者知道任务被取消
+        raise
     except Exception as e:
         print(f"\n[Error] {e}", flush=True)
         logger.error(f"print_stream error: {e}")
@@ -183,7 +184,8 @@ async def repl_main():
     loop = asyncio.get_running_loop()
 
     # 信号处理状态
-    interrupt_count = [0]  # 使用列表来在闭包中修改
+    interrupt_count = [0]
+    current_task = [None]  # 当前正在运行的 print_stream 任务
 
     def handle_sigint():
         """处理 Ctrl+C 信号"""
@@ -193,8 +195,12 @@ async def repl_main():
             print("\n[Force quit]", flush=True)
             raise KeyboardInterrupt()
         else:
-            # 第一次 Ctrl+C：打印提示
-            print("\n[Interrupted] Press Ctrl+C again to quit, or continue chatting.", flush=True)
+            # 第一次 Ctrl+C：取消当前任务
+            if current_task[0] and not current_task[0].done():
+                current_task[0].cancel()
+                print("\n[Interrupted] Cancelling current operation...", flush=True)
+            else:
+                print("\n[Interrupted] Press Ctrl+C again to quit.", flush=True)
 
     # 设置信号处理器 - 在事件循环内部
     try:
@@ -238,7 +244,16 @@ Commands:
                     print(f"\nAvailable Tools:\n{repl.get_tool_list()}")
 
                 elif cmd_lower == "check":
-                    await print_stream(repl, "Please check the environment: verify MCP connection, list available Kali tools, and test a simple bash command.")
+                    # 创建任务以便可以取消
+                    current_task[0] = asyncio.create_task(
+                        print_stream(repl, "Please check the environment: verify MCP connection, list available Kali tools, and test a simple bash command.")
+                    )
+                    try:
+                        await current_task[0]
+                    except asyncio.CancelledError:
+                        print("\n[Operation cancelled]", flush=True)
+                    finally:
+                        current_task[0] = None
 
                 elif cmd_lower == "clear":
                     system_prompt = build_system_prompt("interactive", 3600, competition_mode=False)
@@ -248,14 +263,36 @@ Commands:
                 elif cmd_lower.startswith("target "):
                     url = cmd[7:].strip()
                     repl.target = url
-                    await print_stream(repl, f"Target set to: {url}\nPlease start reconnaissance.")
+                    current_task[0] = asyncio.create_task(
+                        print_stream(repl, f"Target set to: {url}\nPlease start reconnaissance.")
+                    )
+                    try:
+                        await current_task[0]
+                    except asyncio.CancelledError:
+                        print("\n[Operation cancelled]", flush=True)
+                    finally:
+                        current_task[0] = None
 
                 elif cmd.startswith("http://") or cmd.startswith("https://"):
                     repl.target = cmd
-                    await print_stream(repl, f"Target detected: {cmd}\nStarting reconnaissance.")
+                    current_task[0] = asyncio.create_task(
+                        print_stream(repl, f"Target detected: {cmd}\nStarting reconnaissance.")
+                    )
+                    try:
+                        await current_task[0]
+                    except asyncio.CancelledError:
+                        print("\n[Operation cancelled]", flush=True)
+                    finally:
+                        current_task[0] = None
 
                 else:
-                    await print_stream(repl, cmd)
+                    current_task[0] = asyncio.create_task(print_stream(repl, cmd))
+                    try:
+                        await current_task[0]
+                    except asyncio.CancelledError:
+                        print("\n[Operation cancelled]", flush=True)
+                    finally:
+                        current_task[0] = None
 
             except EOFError:
                 print("\nGoodbye!")

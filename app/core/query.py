@@ -287,6 +287,10 @@ async def query(
     consecutive_errors = 0
     max_consecutive_errors = 5
 
+    # === 空响应保护（防卡死）===
+    consecutive_empty_responses = 0
+    max_empty_responses = 3
+
     # === 时间盒反思机制 ===
     start_time = time.time()
     last_reflection = start_time
@@ -445,6 +449,28 @@ async def query(
             if flags:
                 yield {"type": "task_complete", "flags": flags, "reason": "flag_in_response"}
                 return
+
+            # 空响应检测
+            if not content.strip():
+                consecutive_empty_responses += 1
+                if consecutive_empty_responses >= max_empty_responses:
+                    # 连续多次空响应 — 强制终止，防止无限循环
+                    yield {"type": "complete", "reason": "consecutive_empty_responses"}
+                    return
+                # 注入更强警告
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "[EMPTY_RESPONSE_WARNING] Your last response had no content and no tool calls. "
+                        "This suggests you're stuck or uncertain. "
+                        "Please: 1) Output your current progress 2) Choose a tool to proceed "
+                        "3) Or explicitly state [TASK_COMPLETE] if you believe the task is done."
+                    ),
+                })
+                continue
+            else:
+                consecutive_empty_responses = 0  # 重置
+
             # REPL 模式：不自动继续，等待用户输入
             if not config.auto_continue:
                 yield {"type": "complete", "reason": "awaiting_user_input"}
@@ -455,6 +481,47 @@ async def query(
                 "content": "继续攻击。如果已完成，输出 [TASK_COMPLETE] FLAG: flag{xxx}。如果卡住了，换一种方法。",
             })
             continue
+
+        # === 单次响应相同 tool_calls 检测（防卡死）===
+        if tool_calls and len(tool_calls) > 1:
+            # 检查是否有多个相同的 tool_calls（参数完全一样）
+            tc_signatures = []
+            for tc in tool_calls:
+                func = tc.get("function", {})
+                name = func.get("name", "")
+                args = func.get("arguments", "{}")
+                sig = f"{name}:{args}"
+                tc_signatures.append(sig)
+
+            # 统计相同签名的数量
+            from collections import Counter
+            sig_counts = Counter(tc_signatures)
+            most_common_sig, most_common_count = sig_counts.most_common(1)[0]
+
+            if most_common_count >= 3:
+                # 单次响应中存在 3+ 个相同的 tool_calls — 强制打破
+                warning_msg = (
+                    f"[IDENTICAL_CALLS_CRITICAL] You generated {most_common_count} identical tool calls "
+                    f"({most_common_sig[:50]}...) in a single response. "
+                    f"This indicates a logic error. Same input ALWAYS produces same output. "
+                    f"STOP and reconsider your strategy. Use only ONE call with different parameters, "
+                    f"or try a completely different approach. "
+                    f"If truly stuck, use search_skills to find new techniques."
+                )
+                messages.append({"role": "system", "content": warning_msg})
+                logger.warning(f"[Query] Detected {most_common_count} identical tool_calls in single response")
+                # 只保留第一个相同的调用，丢弃重复的
+                seen_sigs = set()
+                unique_tool_calls = []
+                for tc in tool_calls:
+                    func = tc.get("function", {})
+                    sig = f"{func.get('name', '')}:{func.get('arguments', '{}')}"
+                    if sig not in seen_sigs:
+                        seen_sigs.add(sig)
+                        unique_tool_calls.append(tc)
+                tool_calls = unique_tool_calls
+                msg["tool_calls"] = tool_calls
+                yield {"type": "identical_calls_detected", "count": most_common_count, "tool": most_common_sig.split(":")[0]}
 
         # === 执行工具 ===
         # 检测切题 — 在执行前记录
