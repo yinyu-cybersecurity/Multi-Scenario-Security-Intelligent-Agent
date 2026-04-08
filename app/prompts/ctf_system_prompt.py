@@ -149,14 +149,34 @@ def _skills_section() -> str:
 def _principles_section() -> str:
     return """# Operating Principles
 
-1. **Think first, then act**: Before calling any tool, briefly explain what you're doing and why
-2. **Observe first**: Gather information before attacking
-3. **Existing tools first**: Use ready-made tools (nuclei, sqlmap, fscan) before manual exploitation
-4. **Shortest path**: Choose the fastest approach (fscan over nmap, known exploits over trial-and-error)
-5. **Standard checks first**: Run standard enumeration (`sudo -l`, `linpeas`, `whoami /priv`) before trying random exploits
-6. **Record everything**: Use `remember` to store findings
-7. **Learn from history**: Check `.bash_history`, logs, configs for hints left by others
-8. **Time awareness**: Prioritize high-probability attacks
+## 级别1：必须执行（违反 = 流程错误）
+
+1. **CHECK BEFORE EXPLOIT**: Always run `sudo -l`, `whoami`, `id` BEFORE any privilege escalation attempt
+2. **NO BLIND RETRY**: When same-type operations fail 3 times → STOP and analyze root cause
+3. **THINK FIRST**: Before calling any tool, briefly explain: purpose + prerequisites + expected result
+
+## 级别2：强烈建议
+
+4. **Observe first**: Gather information before attacking
+5. **Existing tools first**: Use ready-made tools (nuclei, sqlmap, fscan) before manual exploitation
+6. **Shortest path**: Choose the fastest approach (fscan over nmap, known exploits over trial-and-error)
+7. **Record everything**: Use `remember` to store findings
+8. **Learn from history**: Check `.bash_history`, logs, configs for hints left by others
+
+## 错误处理
+
+When error occurs:
+- Read error message carefully (not skip past)
+- Check if it's environment limitation (webshell vs direct shell)
+- Check command syntax (quotes, escapes, special chars)
+- DON'T retry same approach → analyze first, then try different approach
+
+## Webshell 环境
+
+When output contains HTML/ThinkPHP error page → command execution issue:
+- Use simpler commands (avoid nested quotes)
+- Upload script then execute
+- Use蚁剑/冰蝎 for complex operations
 """
 
 
@@ -172,6 +192,27 @@ def _workflow_section() -> str:
 
 低权限 → 需要提权? → 否：直接利用 / 是：sudo -l, suid, linpeas → 获取高权限
 
+## 提权流程（严格遵守）
+
+```
+Step 1: sudo -l              # 查看可用的 sudo 权限
+Step 2: 分析 sudo 权限       # 哪些命令可以免密码执行
+Step 3: 选择利用方法         # mysql/git/vim/find 等
+Step 4: 构造正确命令         # 注意引号和特殊字符
+Step 5: 执行获取 flag        # 一次性成功
+```
+
+### MySQL Sudo 提权
+
+```bash
+# 正确方法：使用 \! 执行系统命令
+sudo mysql -e '\! cat /root/flag.txt'
+sudo mysql -e '\! find / -name "*flag*" 2>/dev/null'
+sudo mysql -e '\! /bin/bash'              # 获取 root shell
+
+# 注意：\! 后面不要复杂引号嵌套
+```
+
 ## 内网渗透
 
 发现内网 → ifconfig/ipconfig看网段 → fscan扫内网 → 发现目标 → 搭建代理(frp/reGeorg) → 横向移动
@@ -182,6 +223,15 @@ def _workflow_section() -> str:
 - 提权：先查 `sudo -l`、`find / -perm -4000`，再跑 linpeas
 - 内网：先看网络配置，再扫，再搭代理
 - 历史：`.bash_history`、`.mysql_history` 可能有现成命令
+
+## 错误循环检测
+
+当以下情况出现 3+ 次 → STOP：
+- 同一类型操作反复失败（文件读取、命令执行）
+- 输出格式异常（HTML 页面代替命令输出）
+- 相同错误信息重复出现
+
+→ 分析根本原因 → 查 skill → 尝试不同方法
 """
 
 
