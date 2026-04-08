@@ -23,20 +23,6 @@ from app.tools_v2.mcp.client import get_mcp_client, ensure_mcp_tools_registered
 
 logger = get_logger("REPL")
 
-# 全局标志：是否正在处理取消
-_cancelling = False
-
-
-def _handle_sigint(signum, frame):
-    """处理 Ctrl+C 信号"""
-    global _cancelling
-    if _cancelling:
-        # 第二次 Ctrl+C：忽略，让第一次清理完成
-        print("\n[Already cancelling, please wait...]", flush=True)
-        return
-    # 第一次 Ctrl+C：抛出 KeyboardInterrupt
-    raise KeyboardInterrupt()
-
 
 class SmartREPL:
     """智能 REPL 会话"""
@@ -114,7 +100,6 @@ class SmartREPL:
 
 async def print_stream(repl: SmartREPL, user_input: str):
     """流式打印 AI 响应"""
-    global _cancelling
     print()  # 空行分隔
 
     try:
@@ -163,18 +148,15 @@ async def print_stream(repl: SmartREPL, user_input: str):
 
         print()
 
-    except (KeyboardInterrupt, asyncio.CancelledError):
-        _cancelling = True
+    except asyncio.CancelledError:
         print("\n[Cancelled]", flush=True)
         # 清理可能不完整的消息
         if len(repl.messages) > 1 and repl.messages[-1].get("role") == "user":
             repl.messages.pop()
-        _cancelling = False
+        # 不重新抛出，让 REPL 继续运行
     except Exception as e:
-        # 捕获所有其他异常（包括 MCP 重连错误）
         print(f"\n[Error] {e}", flush=True)
         logger.error(f"print_stream error: {e}")
-        # 清理不完整的消息
         if len(repl.messages) > 1 and repl.messages[-1].get("role") == "user":
             repl.messages.pop()
 
@@ -198,26 +180,51 @@ async def repl_main():
 ╚══════════════════════════════════════════════════════════╝
 """)
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
-    while True:
-        try:
-            # 异步获取输入
-            user_input = await loop.run_in_executor(None, input, "\nYou: ")
-            cmd = user_input.strip()
+    # 信号处理状态
+    interrupt_count = [0]  # 使用列表来在闭包中修改
 
-            if not cmd:
-                continue
+    def handle_sigint():
+        """处理 Ctrl+C 信号"""
+        interrupt_count[0] += 1
+        if interrupt_count[0] >= 2:
+            # 第二次 Ctrl+C：强制退出
+            print("\n[Force quit]", flush=True)
+            raise KeyboardInterrupt()
+        else:
+            # 第一次 Ctrl+C：打印提示
+            print("\n[Interrupted] Press Ctrl+C again to quit, or continue chatting.", flush=True)
 
-            cmd_lower = cmd.lower()
+    # 设置信号处理器 - 在事件循环内部
+    try:
+        loop.add_signal_handler(signal.SIGINT, handle_sigint)
+    except (NotImplementedError, OSError):
+        # Windows 或其他不支持的平台
+        pass
 
-            # 内置命令
-            if cmd_lower in ("quit", "exit", "q"):
-                print("\nGoodbye! 👋")
-                break
+    try:
+        while True:
+            try:
+                # 重置中断计数
+                interrupt_count[0] = 0
 
-            elif cmd_lower == "help":
-                print("""
+                # 异步获取输入
+                user_input = await loop.run_in_executor(None, input, "\nYou: ")
+                cmd = user_input.strip()
+
+                if not cmd:
+                    continue
+
+                cmd_lower = cmd.lower()
+
+                # 内置命令
+                if cmd_lower in ("quit", "exit", "q"):
+                    print("\nGoodbye!")
+                    break
+
+                elif cmd_lower == "help":
+                    print("""
 Commands:
   help          Show this help
   tools         List available MCP tools
@@ -225,66 +232,48 @@ Commands:
   target <url>  Set target and start reconnaissance
   clear         Clear conversation history
   quit          Exit REPL
-
-Tips:
-  - Just chat naturally, AI will understand
-  - Say "check environment" to inspect tools
-  - Paste a URL to start recon automatically
-  - Ask about any tool or technique
 """)
-                continue
 
-            elif cmd_lower == "tools":
-                print(f"\nAvailable Tools:\n{repl.get_tool_list()}")
-                continue
+                elif cmd_lower == "tools":
+                    print(f"\nAvailable Tools:\n{repl.get_tool_list()}")
 
-            elif cmd_lower == "check":
-                await print_stream(repl, "Please check the environment: verify MCP connection, list available Kali tools, and test a simple bash command like 'whoami'.")
-                continue
+                elif cmd_lower == "check":
+                    await print_stream(repl, "Please check the environment: verify MCP connection, list available Kali tools, and test a simple bash command.")
 
-            elif cmd_lower == "clear":
-                repl.messages = [{"role": "system", "content": REPL_SYSTEM_PROMPT}]
-                print("[Conversation cleared]")
-                continue
+                elif cmd_lower == "clear":
+                    system_prompt = build_system_prompt("interactive", 3600, competition_mode=False)
+                    repl.messages = [{"role": "system", "content": system_prompt}]
+                    print("[Conversation cleared]")
 
-            elif cmd_lower.startswith("target "):
-                url = cmd[7:].strip()
-                repl.target = url
-                await print_stream(repl, f"Target set to: {url}\nPlease start reconnaissance. Use nmap to scan ports, then explore the web service if HTTP is open.")
-                continue
+                elif cmd_lower.startswith("target "):
+                    url = cmd[7:].strip()
+                    repl.target = url
+                    await print_stream(repl, f"Target set to: {url}\nPlease start reconnaissance.")
 
-            # 检测 URL 自动开始 recon
-            elif cmd.startswith("http://") or cmd.startswith("https://"):
-                repl.target = cmd
-                await print_stream(repl, f"Target detected: {cmd}\nStarting reconnaissance. First, I'll check what services are running.")
-                continue
+                elif cmd.startswith("http://") or cmd.startswith("https://"):
+                    repl.target = cmd
+                    await print_stream(repl, f"Target detected: {cmd}\nStarting reconnaissance.")
 
-            # 普通对话
-            else:
-                await print_stream(repl, cmd)
+                else:
+                    await print_stream(repl, cmd)
 
-        except EOFError:
-            print("\nGoodbye!")
-            break
-        except (KeyboardInterrupt, asyncio.CancelledError):
-            # Ctrl+C 中断 - 打印提示并继续循环
-            global _cancelling
-            _cancelling = True
-            print("\n[Interrupted] Type 'quit' to exit or continue chatting.")
-            # 清理可能不完整的最后一条消息
-            if len(repl.messages) > 1 and repl.messages[-1].get("role") == "user":
-                repl.messages.pop()
-            _cancelling = False
-        except Exception as e:
-            print(f"\n[Error] {e}")
-            logger.error(f"REPL error: {e}")
+            except EOFError:
+                print("\nGoodbye!")
+                break
+
+    except KeyboardInterrupt:
+        # 由信号处理器抛出的强制退出
+        print("\nGoodbye!")
+    finally:
+        # 清理信号处理器
+        try:
+            loop.remove_signal_handler(signal.SIGINT)
+        except (NotImplementedError, ValueError, OSError):
+            pass
 
 
 def main():
     """入口"""
-    import signal
-    signal.signal(signal.SIGINT, _handle_sigint)
-
     task_id = f"repl_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     set_task(task_id)
     asyncio.run(repl_main())
