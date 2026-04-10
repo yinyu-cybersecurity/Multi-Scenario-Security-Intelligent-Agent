@@ -202,3 +202,49 @@ Get-NetGPPPassword
 Get-ObjectAcl -SamAccountName user -ResolveGUIDs
 Find-InterestingDomainAcl -ResolveGUIDs
 ```
+
+---
+
+## 11. 子域名发现
+
+```
+字典爆破: 尝试常见前缀(www, mail, api, dev, test, admin)
+DNS查询: AXFR请求、DNS缓存记录
+```
+
+---
+
+## 12. 信息泄露漏洞
+
+### 源码泄漏
+| 文件/特征 | 工具 |
+|-----------|------|
+| .git, .svn, .DS_Store, CVS/, .hg/ | git-dumper, dvcs-ripper, GitHack |
+| Webpack .map文件 | reverse-sourcemap, 浏览器Sources面板 |
+
+### 备份文件泄漏
+```
+.bak, .swp, .old, .tar.gz, .zip, www.rar
+工具: DirBuster, Dirsearch, 御剑
+```
+
+### 配置文件泄漏
+```
+config.js, config.php, web.config, .env, properties
+```
+
+### 日志文件泄漏
+```
+logs/, debug.log, access.log
+```
+
+---
+
+## 13. .git源码泄露
+
+```bash
+# 检测: 访问 http://target.com/.git/ → 403(存在) 或 404(不存在)
+# 利用:
+python GitHack.py http://target.com/.git/
+# 恢复: git checkout .
+```

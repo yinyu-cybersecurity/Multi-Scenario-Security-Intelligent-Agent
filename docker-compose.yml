@@ -33,12 +33,13 @@ services:
       - COMPETITION_SERVER_HOST=${COMPETITION_SERVER_HOST:-}
       - COMPETITION_AGENT_TOKEN=${COMPETITION_AGENT_TOKEN:-}
       - COMPETITION_MCP_URL=${COMPETITION_MCP_URL:-}
+      - COMPETITION_LLM_BASE_URL=${COMPETITION_LLM_BASE_URL:-}
       - TASK_TIMEOUT=${TASK_TIMEOUT:-1800}
       - PYTHONUNBUFFERED=1
 
     volumes:
       # 技能知识库（热加载）
-      - ./skills:/app/skills:ro
+      - ./skills_v2:/app/skills_v2:ro
       # 日志持久化
       - ./logs:/app/logs
       # 工作空间（AI 生成的脚本/文件）

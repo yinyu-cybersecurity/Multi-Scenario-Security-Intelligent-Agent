@@ -214,6 +214,7 @@ class LLMClient:
                 models_to_try.append(fb)
 
         last_result = None
+        primary_model_error = None  # 保存主模型的原始错误
 
         for model_name in models_to_try:
             for attempt in range(retry_policy.max_retries + 1):
@@ -236,6 +237,10 @@ class LLMClient:
                     return result
 
                 last_result = result
+
+                # 保存主模型的原始错误（用于调试）
+                if model_name == models_to_try[0] and primary_model_error is None:
+                    primary_model_error = result
 
                 # 上下文超长 -> 不重试，需要调用者截断
                 if result.error_type == LLMErrorType.CONTEXT_LENGTH:
@@ -260,6 +265,10 @@ class LLMClient:
             # 当前模型全部重试失败，尝试下一个 fallback
             if len(models_to_try) > 1:
                 logger.warning(f"[LLM] {model_name} exhausted, trying next fallback...")
+
+        # 如果最终失败且主模型有错误信息，附加到返回结果
+        if last_result and primary_model_error and last_result.model_used != models_to_try[0]:
+            logger.info(f"[LLM] Primary model error was: {primary_model_error.error_type.value} - {primary_model_error.error_message[:200]}")
 
         return last_result or LLMResult(
             content="",
@@ -292,6 +301,7 @@ class LLMClient:
             "model": model,
             "messages": messages,
             "temperature": temperature,
+            "top_p": 0.8,  # Qwen3.6 推荐值
         }
 
         if max_tokens:

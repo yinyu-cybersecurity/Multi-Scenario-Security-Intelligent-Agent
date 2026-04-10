@@ -61,7 +61,10 @@ def parse_args():
             args["token"] = sys.argv[i] if i < len(sys.argv) else ""
         elif arg == "--timeout":
             i += 1
-            args["timeout"] = int(sys.argv[i]) if i < len(sys.argv) else 0
+            try:
+                args["timeout"] = int(sys.argv[i]) if i < len(sys.argv) else 0
+            except (ValueError, IndexError):
+                args["timeout"] = 0
         elif not arg.startswith("-"):
             args["target"] = arg
         i += 1
@@ -194,7 +197,7 @@ def _handle_event(event: dict, flags_found: list):
                 # 解析参数
                 try:
                     args = json.loads(args_str)
-                except:
+                except json.JSONDecodeError:
                     args = {}
 
                 # 提取服务器和工具名
@@ -291,6 +294,19 @@ def _handle_event(event: dict, flags_found: list):
 
     elif etype == "llm_error":
         print(f"  [!] LLM error: {event.get('error', '')}")
+
+    elif etype == "reflection_prompted":
+        elapsed = event.get("elapsed_minutes", 0)
+        print(f"  [↩] Reflection triggered ({elapsed} min elapsed)")
+
+    elif etype == "duplicate_calls_recovered":
+        count = event.get("count", 0)
+        tool = event.get("tool", "")
+        print(f"  [↩] Duplicate calls recovered: {count}x {tool} → deduplicated")
+
+    elif etype == "recovery_triggered":
+        reason = event.get("reason", "")
+        print(f"  [↩] Stuck recovery triggered: {reason}")
 
     elif etype == "task_complete":
         flags = event.get("flags", [])

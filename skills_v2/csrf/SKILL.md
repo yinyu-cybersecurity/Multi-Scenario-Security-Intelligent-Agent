@@ -139,3 +139,60 @@ Burp Suite: 右键请求 -> Generate CSRF PoC
 </form>
 <script>document.getElementById('csrf').submit();</script>
 ```
+
+## 防护策略
+
+### 双重提交 Cookie
+```
+服务器每次请求返回 CSRF 令牌，要求随请求一起发送。
+攻击者无法获取该令牌，即使伪造请求也无效。
+```
+
+### 验证 Referer/Origin 头
+```
+优先判断 Origin 字段
+如果 Origin 不存在，再判断 Referer
+确保请求来自受信任的源
+注意：IE11 跨站 CORS 请求不携带 Origin
+302 重定向后 Origin 丢失
+```
+
+### SameSite Cookie 属性
+```
+Set-Cookie: foo=1; Samesite=Strict    # 任何跨域请求都不携带
+Set-Cookie: bar=2; Samesite=Lax       # 仅 GET 链接跳转携带
+Set-Cookie: baz=3; Samesite=None      # 需要 Secure 标志
+
+Strict: 最安全，但用户体验差（每次跨域访问需重新登录）
+Lax: 平衡安全和体验，推荐使用
+None: 最不安全，仅用于特定场景
+```
+
+### 双重 Cookie 验证
+```
+1. 用户访问时注入随机 Cookie（如 csrfcookie=v8g9e4ksfhw）
+2. 前端请求时将 Cookie 值添加到 URL 参数或请求头
+3. 后端验证 Cookie 中的值与参数是否一致
+注意：子域名被 XSS 攻击时可被利用，不是最佳方案
+```
+
+### Token 验证（主流方案）
+```
+Token 存储在 localStorage 中
+每次请求通过请求头携带
+只要没有 XSS 漏洞泄露 Token，CSRF 攻击就无法成功
+```
+
+### 后端接口安全
+```
+- 严格管理上传接口，防止非预期内容（如 HTML）
+- 添加 Header: X-Content-Type-Options: nosniff
+- 用户上传的图片进行转存或校验，不使用用户直接提供的链接
+```
+
+## CSRF + XSS 组合攻击
+```
+如果页面存在 XSS，可以先通过 XSS 窃取 Token
+然后用 Token 发起 CSRF 请求
+所以 Token 方案的前提是页面没有 XSS 漏洞
+```

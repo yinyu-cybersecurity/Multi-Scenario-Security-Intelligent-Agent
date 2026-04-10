@@ -186,14 +186,19 @@ async def repl_main():
     # 信号处理状态
     interrupt_count = [0]
     current_task = [None]  # 当前正在运行的 print_stream 任务
+    cancel_flag = asyncio.Event()  # 用于信号通知取消
 
     def handle_sigint():
-        """处理 Ctrl+C 信号"""
+        """处理 Ctrl+C 信号 - 仅设置标志位，不抛出异常"""
         interrupt_count[0] += 1
         if interrupt_count[0] >= 2:
-            # 第二次 Ctrl+C：强制退出
+            # 第二次 Ctrl+C：设置取消标志并退出
             print("\n[Force quit]", flush=True)
-            raise KeyboardInterrupt()
+            # 取消当前任务
+            if current_task[0] and not current_task[0].done():
+                current_task[0].cancel()
+            # 设置事件让主循环退出
+            cancel_flag.set()
         else:
             # 第一次 Ctrl+C：取消当前任务
             if current_task[0] and not current_task[0].done():
@@ -211,6 +216,11 @@ async def repl_main():
 
     try:
         while True:
+            # 检查是否被信号要求退出
+            if cancel_flag.is_set():
+                print("\nGoodbye!")
+                break
+
             try:
                 # 重置中断计数
                 interrupt_count[0] = 0
@@ -297,10 +307,24 @@ Commands:
             except EOFError:
                 print("\nGoodbye!")
                 break
+            except KeyboardInterrupt:
+                # Ctrl+C 在 input() 时触发
+                # 如果有当前任务，取消它而非退出
+                if current_task[0] and not current_task[0].done():
+                    current_task[0].cancel()
+                    print("\n[Interrupted] Cancelling current operation. Press Ctrl+C again to quit.", flush=True)
+                    # 等待任务取消完成
+                    try:
+                        await current_task[0]
+                    except asyncio.CancelledError:
+                        pass
+                    finally:
+                        current_task[0] = None
+                else:
+                    # 没有当前任务，确认退出
+                    print("\nGoodbye!")
+                    break
 
-    except KeyboardInterrupt:
-        # 由信号处理器抛出的强制退出
-        print("\nGoodbye!")
     finally:
         # 清理信号处理器
         try:

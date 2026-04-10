@@ -53,6 +53,8 @@ class MCPConnectionManager:
             if self._task:
                 self._task.cancel()
             raise RuntimeError("MCP server startup timeout (30s)")
+        if self._session is None:
+            raise RuntimeError("MCP server startup failed: session not initialized")
         return self._session
 
     async def stop(self):
@@ -276,18 +278,25 @@ class MCPSession:
         try:
             if not self._initialized or not self._connector.is_connected:
                 await self.initialize()
-            return await self._connector.call_tool(name, arguments)
+            result = await self._connector.call_tool(name, arguments)
+            self._reconnect_count = 0  # 成功调用后重置
+            return result
         except Exception as e:
             if self._reconnect_count < self._max_reconnects:
                 self._reconnect_count += 1
-                logger.warning(f"[MCP] {self.name} call failed, reconnecting ({self._reconnect_count})...")
+                backoff = 2 ** self._reconnect_count  # 指数退避: 4s, 8s, 16s
+                logger.warning(f"[MCP] {self.name} call failed, reconnecting in {backoff}s ({self._reconnect_count})...")
+                await asyncio.sleep(backoff)
                 self._initialized = False
                 try:
                     await self._connector.disconnect()
                 except Exception:
                     pass
-                await self.initialize()
-                return await self._connector.call_tool(name, arguments)
+                try:
+                    await self.initialize()
+                    return await self._connector.call_tool(name, arguments)
+                except Exception as reconnect_error:
+                    raise RuntimeError(f"MCP {self.name} reconnect failed: {reconnect_error}")
             raise
 
     def get_tool_schemas(self) -> List[Dict]:
@@ -427,16 +436,16 @@ class MCPClient:
             """同步清理函数（atexit 回调）"""
             if not self._sessions:
                 return
-            # 尝试同步关闭（可能不完全，但总比没有好）
+            # 仅在有运行中的事件循环时尝试异步清理
             try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(self.close_all())
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(self.close_all())
+                elif not loop.is_closed():
+                    loop.run_until_complete(self.close_all())
             except RuntimeError:
-                # 没有运行中的事件循环，创建新的
-                try:
-                    asyncio.run(self.close_all())
-                except Exception as e:
-                    logger.debug(f"[MCP] Cleanup error: {e}")
+                # 没有可用的事件循环，跳过清理
+                pass
 
         atexit.register(_sync_cleanup)
         logger.debug("[MCP] Registered atexit cleanup handler")

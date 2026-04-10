@@ -9,6 +9,7 @@ OpenSpace Skill Engine 集成
 
 import os
 import sys
+import yaml
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
@@ -20,9 +21,9 @@ if OPENSPACE_DIR.exists():
 try:
     from openspace.skill_engine.registry import SkillRegistry
     from openspace.skill_engine.skill_utils import parse_frontmatter, strip_frontmatter
-    OPENSACE_AVAILABLE = True
+    OPENSPACE_AVAILABLE = True
 except ImportError:
-    OPENSACE_AVAILABLE = False
+    OPENSPACE_AVAILABLE = False
 
 from mcp.types import TextContent
 
@@ -58,7 +59,7 @@ class OpenSpaceSkillEngine:
         """初始化技能引擎"""
         self._skills_dir = Path(skills_dir) if isinstance(skills_dir, str) else skills_dir
 
-        if OPENSACE_AVAILABLE:
+        if OPENSPACE_AVAILABLE:
             try:
                 # 使用 OpenSpace 的 SkillRegistry (需要 Path 列表)
                 self._registry = SkillRegistry(skill_dirs=[self._skills_dir])
@@ -103,7 +104,6 @@ class OpenSpaceSkillEngine:
                     print(f"[SkillEngine] Failed to load {skill_dir.name}: {e}")
 
         # 加载 YAML 格式（兼容）
-        import yaml
         for yaml_file in self._skills_dir.glob("*.yaml"):
             try:
                 with open(yaml_file, 'r', encoding='utf-8') as f:

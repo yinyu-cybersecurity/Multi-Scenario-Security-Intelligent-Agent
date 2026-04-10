@@ -130,6 +130,7 @@ class InteractiveSession:
 async def interactive_mode():
     """交互式主循环"""
     session = InteractiveSession()
+    _active_tasks: set = set()  # 跟踪活动任务，防止垃圾回收和丢失异常
 
     print("""
 +----------------------------------------------------------+
@@ -172,10 +173,14 @@ async def interactive_mode():
             if cmd_lower.startswith("target "):
                 target = cmd[7:].strip()
                 if target:
-                    asyncio.create_task(session.run(target))
+                    task = asyncio.create_task(session.run(target))
+                    _active_tasks.add(task)
+                    task.add_done_callback(_active_tasks.discard)
 
             elif cmd_lower == "competition":
-                asyncio.create_task(session.run("competition", timeout=18000, competition=True))
+                task = asyncio.create_task(session.run("competition", timeout=18000, competition=True))
+                _active_tasks.add(task)
+                task.add_done_callback(_active_tasks.discard)
 
             elif cmd_lower == "stop":
                 session.stop()

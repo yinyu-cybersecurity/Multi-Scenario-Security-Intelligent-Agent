@@ -4,7 +4,7 @@
     "base_url": "https://coding.dashscope.aliyuncs.com/v1",
     "api_key": "${LLM_API_KEY}",
     "timeout": 120,
-    "temperature": 0.6,
+    "temperature": 0.1,
     "fallback_models": []
   },
 
@@ -39,7 +39,7 @@
 
   "mcp_servers": {
     "kali": {
-      "command": ".venv/bin/python3",
+      "command": "python3",
       "args": ["mcp_servers/kali_server.py"],
       "env": {}
     }

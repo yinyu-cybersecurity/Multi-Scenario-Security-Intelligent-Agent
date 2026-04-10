@@ -58,8 +58,8 @@ db.sqlite3
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# Environments
-.env
+# Environments - 私有仓库保留 .env
+# .env
 .env.local
 .env.*.local
 .venv

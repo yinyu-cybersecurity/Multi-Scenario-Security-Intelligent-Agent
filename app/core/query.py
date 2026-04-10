@@ -19,6 +19,7 @@
 
 from typing import AsyncGenerator, Dict, List, Optional
 from dataclasses import dataclass
+from collections import Counter
 import asyncio
 import hashlib
 import json
@@ -31,8 +32,61 @@ from app.tools_v2.mcp.client import get_mcp_client
 from app.core.loop_detector import LoopDetector
 from app.core.time_manager import TimeBudget
 from app.memory.token_stats import get_token_stats_manager
+from app.settings import config as app_config
 
 logger = get_logger("Query")
+
+
+# ============================================================================
+# 比赛实例跟踪（模块级状态）
+# ============================================================================
+
+class ChallengeInstanceTracker:
+    """跟踪当前活跃的 challenge 实例，提供信息给 AI 决策（软限制，不强制）"""
+
+    def __init__(self, max_instances: int = 3):
+        self.max_instances = max_instances
+        self.active: set = set()
+
+    @property
+    def count(self) -> int:
+        return len(self.active)
+
+    @property
+    def slots_available(self) -> int:
+        return max(0, self.max_instances - self.count)
+
+    def start(self, code: str):
+        self.active.add(code)
+
+    def stop(self, code: str):
+        self.active.discard(code)
+
+    def format_status(self) -> str:
+        if not self.active:
+            return "Active instances: 0/3 (all slots available)"
+        return f"Active instances: {self.count}/{self.max_instances} [{', '.join(sorted(self.active))}]"
+
+
+# 模块级实例跟踪器（D4: 使用 max_concurrent_instances 配置）
+_instance_tracker = ChallengeInstanceTracker(
+    max_instances=app_config.competition.max_concurrent_instances
+    if app_config.competition.max_concurrent_instances > 0
+    else 3
+)
+
+# 当前正在攻击的 challenge code（用于 Flag 自动提交和实例跟踪）
+_current_challenge_code: Optional[str] = None
+
+
+def _get_instance_tracker() -> ChallengeInstanceTracker:
+    """获取实例跟踪器（允许外部访问）"""
+    return _instance_tracker
+
+
+def _get_current_challenge_code() -> Optional[str]:
+    """获取当前 challenge code（允许外部访问）"""
+    return _current_challenge_code
 
 
 # ============================================================================
@@ -40,32 +94,16 @@ logger = get_logger("Query")
 # ============================================================================
 
 # 常见 CTF flag 格式（覆盖主流平台）
-FLAG_PATTERNS = [
-    re.compile(r'flag\{[^}]+\}', re.IGNORECASE),
-    re.compile(r'FLAG\{[^}]+\}'),
-    re.compile(r'ctf\{[^}]+\}', re.IGNORECASE),
-    re.compile(r'key\{[^}]+\}', re.IGNORECASE),
-    re.compile(r'NSSCTF\{[^}]+\}', re.IGNORECASE),      # NSSCTF 平台
-    re.compile(r'ACTF\{[^}]+\}', re.IGNORECASE),        # ACTF 平台
-    re.compile(r'SCTF\{[^}]+\}', re.IGNORECASE),        # SCTF 平台
-    re.compile(r'[A-Z]+CTF\{[^}]+\}', re.IGNORECASE),   # 通配: XXCTF{...}
-    re.compile(r'hgame\{[^}]+\}', re.IGNORECASE),       # HGAME 平台
-    re.compile(r'syc\{[^}]+\}', re.IGNORECASE),         # SYC 平台
-]
+# 比赛 flag 格式：flag{...}（唯一精确匹配）
+# 避免使用 key{...} 等宽泛正则导致误报配置文本
+FLAG_PATTERN = re.compile(r'flag\{[^}]+\}', re.IGNORECASE)
 
 
 def _scan_for_flags(text: str) -> list:
-    """扫描文本中的疑似 flag，返回去重列表"""
+    """扫描文本中的 flag，返回去重列表"""
     if not text:
         return []
-    flags = []
-    seen = set()
-    for pattern in FLAG_PATTERNS:
-        for match in pattern.findall(text):
-            if match not in seen:
-                seen.add(match)
-                flags.append(match)
-    return flags
+    return list(set(FLAG_PATTERN.findall(text)))
 
 
 # ============================================================================
@@ -93,26 +131,45 @@ def reset_context_for_new_challenge(
     """
     切题时重置上下文 — 保留 system prompt + 最近 5 条消息
 
-    注入提示让 AI 用 recall 恢复记忆
+    D1+D2 修复:
+    - 更新实例跟踪状态（start 新实例）
+    - 切题通知中注入实例槽位使用情况
+    - 如果之前有旧实例，记录日志（不自动 stop，AI 自主管理）
     """
+    global _current_challenge_code
+
     if len(messages) <= 6:
         return messages  # 消息太少，不需要清理
 
     system_prompt = messages[0]  # 始终保留
     recent = messages[-5:]        # 保留最近 5 条（包含 start_challenge 的调用和结果）
 
-    # 构建切题通知
+    # D1: 记录旧实例切换（不自动 stop，AI 自主管理）
+    old_code = _current_challenge_code
+    if old_code and old_code != challenge_code:
+        logger.info(f"[Query] Challenge switch: {old_code} → {challenge_code} "
+                    f"(instances: {_instance_tracker.format_status()})")
+
+    # D2: 更新跟踪状态
+    _instance_tracker.start(challenge_code)
+    _current_challenge_code = challenge_code
+
+    # 构建切题通知（包含实例状态 — D4 软限制）
+    per_challenge_seconds = 600  # 每题建议 10 分钟
     switch_notice = {
         "role": "system",
         "content": (
-            f"[CHALLENGE_SWITCH] Switched to challenge: {challenge_code}\n"
-            f"Previous context has been cleared to save tokens.\n"
-            f"Use recall(query=\"{challenge_code}\") to retrieve any previous progress on this challenge.\n"
-            f"Use recall(query=\"progress\") to review overall competition status."
+            f"[CHALLENGE_SWITCH] Switched to: {challenge_code}\n"
+            f"Context cleared to save tokens.\n"
+            f"recall(query=\"{challenge_code}\") for previous progress.\n"
+            f"recall(query=\"progress\") for competition status.\n"
+            f"[INSTANCES] {_instance_tracker.format_status()}\n"
+            f"[TIME_BUDGET] ~{per_challenge_seconds}s per challenge. "
+            f"If stuck 2-3 approaches, move on."
         ),
     }
 
-    logger.info(f"[Query] Context reset for challenge switch: {challenge_code}, kept {len(recent)} recent messages")
+    logger.info(f"[Query] Context reset: {challenge_code}, kept {len(recent)} recent messages")
     return [system_prompt, switch_notice] + recent
 
 
@@ -322,16 +379,18 @@ async def query(
         config.model = app_config.model.name
 
     consecutive_errors = 0
-    max_consecutive_errors = 5
+    max_consecutive_errors = 10  # 在容错和及时止损之间平衡
 
     # === 卡住恢复机制（无限恢复，不终止）===
     consecutive_empty_responses = 0
-    consecutive_identical_calls = 0
 
     # === 时间盒反思机制 ===
     start_time = time.time()
     last_reflection = start_time
     reflection_interval = 900  # 15分钟
+
+    # 时间警告标记：确保每种警告只注入一次（P2 修复）
+    time_warning_issued = {"warning": False, "critical": False}
 
     for turn in range(1, config.max_turns + 1):
 
@@ -374,27 +433,31 @@ async def query(
             yield {"type": "complete", "reason": "timeout"}
             return
 
-        # === 时间警告（非阻塞）===
+        # === 时间警告（每种只注入一次，LLM 能看到所有历史消息）===
         remaining = time_budget.remaining_seconds
         ratio = time_budget.remaining_ratio
-        if ratio < 0.1:
+        if ratio < 0.1 and not time_warning_issued["critical"]:
             messages.append({
                 "role": "system",
                 "content": f"[CRITICAL] 仅剩 {int(remaining)}s！必须立即收敛到最有可能的攻击路径。",
             })
-        elif ratio < 0.2:
+            time_warning_issued["critical"] = True
+        elif ratio < 0.2 and not time_warning_issued["warning"]:
             messages.append({
                 "role": "system",
                 "content": f"[TIME_WARNING] 剩余 {int(remaining)}s。优先完成当前最有可能成功的攻击。",
             })
+            time_warning_issued["warning"] = True
 
-        # === Token 统计（每 15 轮提示一次）===
+        # === Token 统计（每 15 轮注入精简消息）===
         if turn % 15 == 0:
             stats = token_manager.get_global_stats()
+            total_k = stats.total_tokens // 1000
             messages.append({
                 "role": "system",
-                "content": f"[INFO] Turn {turn}/{config.max_turns} | Token: {stats.total_tokens:,} | Time: {int(remaining)}s remaining",
+                "content": f"[TOKEN] {total_k}K used",
             })
+            logger.info(f"[Query] Turn {turn}/{config.max_turns} | Token: {stats.total_tokens:,} | Time: {int(remaining)}s remaining")
 
         # === 时间盒反思（每 15 分钟）===
         elapsed_since_reflection = time.time() - last_reflection
@@ -539,12 +602,10 @@ async def query(
                 tc_signatures.append(sig)
 
             # 统计相同签名的数量
-            from collections import Counter
             sig_counts = Counter(tc_signatures)
             most_common_sig, most_common_count = sig_counts.most_common(1)[0]
 
             if most_common_count >= 3:
-                consecutive_identical_calls += 1
                 # 去重：只保留第一个相同的调用
                 seen_sigs = set()
                 unique_tool_calls = []
@@ -566,12 +627,21 @@ async def query(
                 )
                 messages.append({"role": "system", "content": recovery_hint})
                 yield {"type": "duplicate_calls_recovered", "count": most_common_count, "tool": most_common_sig.split(":")[0]}
-            else:
-                consecutive_identical_calls = 0
 
         # === 执行工具 ===
         # 检测切题 — 在执行前记录
         switch_code = _is_challenge_switch(tool_calls)
+
+        # 检测 stop_challenge 调用（用于更新实例跟踪）
+        stop_codes = []
+        for tc in tool_calls:
+            func = tc.get("function", {})
+            if func.get("name", "").endswith("stop_challenge"):
+                try:
+                    args = json.loads(func.get("arguments", "{}"))
+                    stop_codes.append(args.get("code", ""))
+                except Exception:
+                    pass
 
         if config.parallel_tool_calls and len(tool_calls) > 1:
             # 并行执行多个工具调用
@@ -596,6 +666,12 @@ async def query(
                     yield {"type": "loop_detected", "tool": tool_name}
                 else:
                     yield {"type": "tool_result", "tool_name": tool_name, **result_info}
+
+        # 更新实例跟踪：stop_challenge 成功后移除跟踪
+        for code in stop_codes:
+            if code:
+                _instance_tracker.stop(code)
+                logger.info(f"[Query] Instance stopped: {code} ({_instance_tracker.format_status()})")
 
         # === 切题上下文清理（工具执行后）===
         if switch_code:
@@ -650,10 +726,25 @@ async def _execute_single_tool(
     flags_found = _scan_for_flags(result_str)
     if flags_found:
         flag_notice = (
-            f"\n\n[FLAG_DETECTED] Found potential flag(s) in output: {', '.join(flags_found)}\n"
-            f"SUBMIT IMMEDIATELY if in competition mode: submit_flag(code=..., flag=\"{flags_found[0]}\")"
+            f"\n\n[FLAG_DETECTED] Found potential flag(s): {', '.join(flags_found)}\n"
+            f"SUBMIT IMMEDIATELY: submit_flag(code=..., flag=\"{flags_found[0]}\")"
         )
         result_str += flag_notice
+
+        # D3: 半自动提交 — 如果已知当前 challenge code，同时尝试自动提交
+        if _current_challenge_code:
+            code = _current_challenge_code
+            flag = flags_found[0]
+            logger.info(f"[Query] Auto-submitting flag for {code}: {flag[:20]}...")
+            try:
+                submit_result = await client.call_tool(
+                    "competition", "submit_flag",
+                    {"code": code, "flag": flag},
+                )
+                submit_str = str(submit_result)
+                result_str += f"\n[AUTO_SUBMIT] submit_flag({code}): {submit_str[:200]}"
+            except Exception as e:
+                result_str += f"\n[AUTO_SUBMIT_FAILED] {e}"
 
     messages.append({"role": "tool", "tool_call_id": tool_id, "content": result_str})
 
@@ -706,6 +797,19 @@ async def _execute_tools_parallel(
                     f"\n\n[FLAG_DETECTED] Found potential flag(s): {', '.join(flags_found)}\n"
                     f"SUBMIT IMMEDIATELY: submit_flag(code=..., flag=\"{flags_found[0]}\")"
                 )
+                # D3: 半自动提交
+                if _current_challenge_code:
+                    code = _current_challenge_code
+                    flag = flags_found[0]
+                    logger.info(f"[Query] Auto-submit flag (parallel) for {code}: {flag[:20]}...")
+                    try:
+                        submit_result = await client.call_tool(
+                            "competition", "submit_flag",
+                            {"code": code, "flag": flag},
+                        )
+                        result_str += f"\n[AUTO_SUBMIT] submit_flag({code}): {str(submit_result)[:200]}"
+                    except Exception as e:
+                        result_str += f"\n[AUTO_SUBMIT_FAILED] {e}"
         except Exception as e:
             result_str = json.dumps({"status": "error", "error": str(e)}, ensure_ascii=False)
 

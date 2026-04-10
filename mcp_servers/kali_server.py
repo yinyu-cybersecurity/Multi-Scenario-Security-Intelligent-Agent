@@ -24,6 +24,7 @@ import asyncio
 import httpx
 import json
 import math
+import signal
 import os
 import re
 import time
@@ -45,6 +46,22 @@ server = Server("kali")
 PROJECT_ROOT = Path(__file__).parent.parent
 COMPETITION_HOST = os.environ.get("COMPETITION_SERVER_HOST", "")
 COMPETITION_TOKEN = os.environ.get("COMPETITION_AGENT_TOKEN", "")
+
+# HTTP 连接池复用（全局客户端，懒初始化）
+_http_client: httpx.AsyncClient | None = None
+
+
+async def _get_http_client(timeout: int = 30, follow_redirects: bool = True) -> httpx.AsyncClient:
+    """获取或创建全局 HTTP 客户端（连接池复用）"""
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(
+            timeout=timeout,
+            follow_redirects=follow_redirects,
+            verify=False,  # CTF 场景常有自签名证书
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        )
+    return _http_client
 
 # bash 输出限制
 BASH_OUTPUT_MAX_CHARS = 15000  # 单次 bash 输出最大字符数
@@ -334,7 +351,10 @@ async def call_tool(name: str, arguments: dict):
 
     handler = handlers.get(name)
     if handler:
-        return await handler()
+        result = handler()
+        if asyncio.iscoroutine(result):
+            return await result
+        return result
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
 
@@ -363,6 +383,7 @@ async def exec_bash(command: str, timeout: int):
             command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,  # New process group for clean timeout kills
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
 
@@ -380,79 +401,75 @@ async def exec_bash(command: str, timeout: int):
             del result["stderr"]
 
         result_text = json.dumps(result, indent=2, ensure_ascii=False)
-
-        # 自动提取关键信息
-        auto_notice = _auto_extract_and_remember(stdout_str + " " + stderr_str, source="bash")
-        if auto_notice:
-            result_text += auto_notice
-
-        # Skill 自动推荐
-        skill_hint = _check_skill_triggers(stdout_str + " " + stderr_str)
-        if skill_hint:
-            result_text += skill_hint
-
         return [TextContent(type="text", text=result_text)]
 
     except asyncio.TimeoutError:
+        # 尝试读取已产生的部分输出
+        partial_stdout = ""
+        partial_stderr = ""
         try:
-            proc.kill()
+            if proc.stdout and not proc.stdout.at_eof():
+                raw = await proc.stdout.read(8192)
+                partial_stdout = raw.decode("utf-8", errors="replace")
+            if proc.stderr and not proc.stderr.at_eof():
+                raw = await proc.stderr.read(4096)
+                partial_stderr = raw.decode("utf-8", errors="replace")
         except Exception:
             pass
-        return [TextContent(
-            type="text",
-            text=json.dumps({
-                "exit_code": -1,
-                "error": f"Command timed out after {timeout}s",
-                "hint": "Try adding timeout flags to the command, or increase the timeout parameter",
-            }, ensure_ascii=False),
-        )]
+        # 杀整个进程组
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except Exception:
+            try:
+                proc.kill()  # fallback: 杀 shell
+            except Exception:
+                pass
+        # 等待进程完全清理，防止僵尸进程
+        try:
+            await proc.communicate()
+        except Exception:
+            pass
+        error_detail = {
+            "exit_code": -1,
+            "error": f"Command timed out after {timeout}s",
+            "hint": "Try adding timeout flags to the command, or increase the timeout parameter",
+        }
+        if partial_stdout.strip():
+            error_detail["partial_stdout"] = _truncate_output(partial_stdout)
+        if partial_stderr.strip():
+            error_detail["partial_stderr"] = _truncate_output(partial_stderr)
+        return [TextContent(type="text", text=json.dumps(error_detail, indent=2, ensure_ascii=False))]
     except Exception as e:
         return [TextContent(type="text", text=f"Error: {e}")]
 
 
 async def http_request(args: dict):
-    """HTTP 请求"""
+    """HTTP 请求 — 复用连接池"""
     try:
         timeout = args.get("timeout", 30)
         follow_redirects = args.get("follow_redirects", True)
-        async with httpx.AsyncClient(
-            timeout=timeout,
-            follow_redirects=follow_redirects,
-            verify=False,  # CTF 场景常有自签名证书
-        ) as client:
-            method = args.get("method", "GET").upper()
-            url = args["url"]
-            headers = args.get("headers", {})
-            body = args.get("body", "")
+        client = await _get_http_client(timeout, follow_redirects)
 
-            resp = await client.request(method, url, headers=headers, content=body if body else None)
+        method = args.get("method", "GET").upper()
+        url = args["url"]
+        headers = args.get("headers", {})
+        body = args.get("body", "")
 
-            content = resp.text
-            # 截断过长响应
-            if len(content) > 15000:
-                content = content[:7000] + f"\n\n... [RESPONSE TRUNCATED: {len(resp.text)} chars total] ...\n\n" + content[-5000:]
+        resp = await client.request(method, url, headers=headers, content=body if body else None)
 
-            result = {
-                "status_code": resp.status_code,
-                "headers": dict(resp.headers),
-                "body": content,
-                "url": str(resp.url),  # 显示最终URL（跟随重定向后）
-            }
-            result_text = json.dumps(result, indent=2, ensure_ascii=False)
+        content = resp.text
+        # 截断过长响应
+        if len(content) > 15000:
+            content = content[:7000] + f"\n\n... [RESPONSE TRUNCATED: {len(resp.text)} chars total] ...\n\n" + content[-5000:]
 
-            # 自动提取关键信息（body + 关键 headers）
-            headers_str = " ".join(f"{k}:{v}" for k, v in resp.headers.items()
-                                   if k.lower() in ("server", "x-powered-by", "set-cookie", "www-authenticate"))
-            auto_notice = _auto_extract_and_remember(content + " " + headers_str, source="http")
-            if auto_notice:
-                result_text += auto_notice
-
-            # Skill 自动推荐
-            skill_hint = _check_skill_triggers(content)
-            if skill_hint:
-                result_text += skill_hint
-
-            return [TextContent(type="text", text=result_text)]
+        result = {
+            "status_code": resp.status_code,
+            "headers": dict(resp.headers),
+            "body": content,
+            "url": str(resp.url),  # 显示最终URL（跟随重定向后）
+        }
+        result_text = json.dumps(result, indent=2, ensure_ascii=False)
+        return [TextContent(type="text", text=result_text)]
     except Exception as e:
         return [TextContent(type="text", text=json.dumps({"error": str(e)}, ensure_ascii=False))]
 
@@ -498,6 +515,7 @@ async def write_file(path: str, content: str):
 
 MEMORY_FILE = str(PROJECT_ROOT / "logs" / "memory.json")
 memory_store = {}
+_memory_lock = asyncio.Lock()  # 保护并行 remember 调用
 
 
 # ============================================================================
@@ -559,15 +577,16 @@ def _save_memory():
 
 
 async def store_memory(key: str, value: str, category: str = "general"):
-    """存储记忆（带时间戳和分类）"""
-    _load_memory()
-    memory_store[key] = {
-        "value": value,
-        "category": category,
-        "timestamp": datetime.now().isoformat(),
-    }
-    _save_memory()
-    count = len(memory_store)
+    """存储记忆（带时间戳和分类，异步锁保护防止竞态）"""
+    async with _memory_lock:
+        _load_memory()
+        memory_store[key] = {
+            "value": value,
+            "category": category,
+            "timestamp": datetime.now().isoformat(),
+        }
+        _save_memory()
+        count = len(memory_store)
     return [TextContent(type="text", text=f"Remembered: {key} [{category}] (total: {count} entries)")]
 
 
@@ -578,8 +597,11 @@ async def retrieve_memory(query: str):
         return [TextContent(type="text", text="Memory is empty. Use 'remember' to store information.")]
 
     query_lower = query.lower()
+    query_tokens = _tokenize(query_lower)
+    if not query_tokens:
+        query_tokens = [query_lower]
 
-    # 搜索匹配
+    # 搜索匹配 - OR 逻辑：任一 token 匹配即返回
     results = {}
     for k, v in memory_store.items():
         # 兼容旧格式（纯字符串）和新格式（带 category/timestamp）
@@ -591,7 +613,7 @@ async def retrieve_memory(query: str):
             val_str = str(v)
             searchable = f"{k} {val_str}".lower()
 
-        if query_lower in searchable:
+        if any(token in searchable for token in query_tokens):
             results[k] = v
 
     if not results:
@@ -620,7 +642,7 @@ async def competition_api(method: str, endpoint: str, data: dict = None):
     - POST /api/submit            提交FLAG {"code": "xxx", "flag": "flag{xxx}"}
     - POST /api/hint              查看提示 {"code": "xxx"}（扣10%分）
 
-    限频: 每秒3次（所有接口共享）
+    限频: 每秒3次（所有接口共享），0.35s 间隔
     """
     if not COMPETITION_HOST or not COMPETITION_TOKEN:
         return [TextContent(
@@ -628,60 +650,91 @@ async def competition_api(method: str, endpoint: str, data: dict = None):
             text="Competition not configured. Set COMPETITION_SERVER_HOST and COMPETITION_AGENT_TOKEN env vars.",
         )]
 
-    # 限频保护（使用异步锁防止并发竞态）
+    # 限频 + 请求 + 重试 原子操作（防止并发竞态）
     async with _api_rate_lock:
         global _last_api_call_time
+        # 限速等待
         now = time.time()
         elapsed = now - _last_api_call_time
         if elapsed < API_RATE_LIMIT_INTERVAL:
             await asyncio.sleep(API_RATE_LIMIT_INTERVAL - elapsed)
-        _last_api_call_time = time.time()
 
-    try:
-        host = COMPETITION_HOST
-        if not host.startswith("http"):
-            host = f"http://{host}"
-        url = f"{host}{endpoint}"
+        try:
+            host = COMPETITION_HOST
+            if not host.startswith("http"):
+                host = f"http://{host}"
+            url = f"{host}{endpoint}"
 
-        headers = {
-            "Agent-Token": COMPETITION_TOKEN,
-            "Content-Type": "application/json",
-        }
+            headers = {
+                "Agent-Token": COMPETITION_TOKEN,
+                "Content-Type": "application/json",
+            }
 
-        async with httpx.AsyncClient(timeout=30) as client:
+            client = await _get_http_client(30, follow_redirects=True)
             if method == "GET":
                 resp = await client.get(url, headers=headers)
             else:
                 resp = await client.post(url, headers=headers, json=data or {})
 
-            # 处理限频
+            # 处理限频 — 指数退避重试（仅一次）
             if resp.status_code == 429:
-                await asyncio.sleep(1.0)
-                # 重试一次
+                await asyncio.sleep(2.0)  # 指数退避：首次重试等 2s
                 if method == "GET":
                     resp = await client.get(url, headers=headers)
                 else:
                     resp = await client.post(url, headers=headers, json=data or {})
 
+            _last_api_call_time = time.time()
+
+        except Exception as e:
+            _last_api_call_time = time.time()
+            return [TextContent(type="text", text=json.dumps({
+                "error": str(e),
+                "endpoint": endpoint,
+                "hint": "Check COMPETITION_SERVER_HOST connectivity",
+            }, ensure_ascii=False))]
+
+    # 锁外处理响应（不占锁时间）
+    if resp.status_code == 429:
+        result = {
+            "error": "Rate limited by competition server",
+            "http_status": 429,
+            "hint": "Too many requests. Wait 5+ seconds before retrying. "
+                    "Rate limit: 3 requests/second shared across all API calls.",
+        }
+        return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))]
+
+    result = {}
+    content_type = resp.headers.get("content-type", "")
+    if "application/json" in content_type:
+        try:
             result = resp.json()
+        except Exception:
+            result = {"_raw_response": resp.text[:2000]}
+    else:
+        result = {"_raw_response": resp.text[:2000]}
 
-            # 增强返回信息
-            if resp.status_code != 200:
-                result["_http_status"] = resp.status_code
-                result["_hint"] = "Check error codes in API documentation"
+    # 增强返回信息
+    if resp.status_code != 200:
+        result["_http_status"] = resp.status_code
+        status_hints = {
+            400: "Bad request. Check parameters format.",
+            401: "Invalid Agent-Token. Check COMPETITION_AGENT_TOKEN.",
+            403: "Forbidden. Check permissions or slot availability.",
+            404: "Endpoint or challenge not found. Check challenge code.",
+            408: "Request timeout. Server may be overloaded.",
+            429: "Rate limited. Wait before retrying.",
+            500: "Server error. Retry in a few seconds.",
+            502: "Bad gateway. Server may be restarting.",
+            503: "Service unavailable. Server may be down.",
+        }
+        result["_hint"] = status_hints.get(resp.status_code, "Check error details above.")
 
-            return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))]
-
-    except Exception as e:
-        return [TextContent(type="text", text=json.dumps({
-            "error": str(e),
-            "endpoint": endpoint,
-            "hint": "Check COMPETITION_SERVER_HOST connectivity",
-        }, ensure_ascii=False))]
+    return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))]
 
 
 # ============================================================================
-# 技能系统 — TF-IDF 搜索引擎
+# 技能系统 — TF-IDF 搜索引擎（基于 skills_v2/SKILL.md 目录格式）
 # ============================================================================
 
 # TF-IDF 索引（启动时构建）
@@ -692,40 +745,49 @@ _total_docs = 0
 
 
 def _tokenize(text: str) -> list:
-    """简单分词：提取英文单词 + 数字 + 中文单字"""
+    """简单分词：提取英文单词 + 数字 + 中文字符"""
     if not text:
         return []
     # 英文单词和数字
     tokens = re.findall(r'[a-zA-Z][a-zA-Z0-9_\-]{1,}|[0-9]+', text.lower())
+    # 中文字符（逐字提取，连续中文字符作为独立 token）
+    cn_tokens = re.findall(r'[\u4e00-\u9fff]+', text.lower())
+    tokens.extend(cn_tokens)
     return tokens
 
 
 def _build_skill_index():
-    """构建 TF-IDF 倒排索引"""
+    """构建 TF-IDF 倒排索引（基于 skills_v2/SKILL.md）"""
     global _skill_index, _idf_cache, _index_built, _total_docs
 
-    skills_dir = PROJECT_ROOT / "skills"
+    skills_dir = PROJECT_ROOT / "skills_v2"
     if not skills_dir.exists():
         return
 
     doc_freq = Counter()  # term → 出现在多少文档中
 
-    for skill_file in skills_dir.glob("*.yaml"):
+    for skill_dir in skills_dir.iterdir():
+        if not skill_dir.is_dir():
+            continue
+        skill_file = skill_dir / "SKILL.md"
+        if not skill_file.exists():
+            continue
+
         try:
             content = skill_file.read_text(encoding="utf-8", errors="replace")
-            stem = skill_file.stem
+            stem = skill_dir.name
 
-            # 提取元数据
+            # 提取 frontmatter 元数据
             meta = _extract_skill_summary(content, stem)
 
-            # 分词（文件名 + 描述 + knowledge 全文）
-            name_tokens = _tokenize(stem.replace("_", " ").replace("-", " "))
+            # 分词
+            name_tokens = _tokenize(stem.replace("-", " "))
             desc_tokens = _tokenize(meta.get("description", ""))
             domain_tokens = _tokenize(meta.get("domain", ""))
-            knowledge_tokens = _tokenize(content)
+            content_tokens = _tokenize(content)
 
             # 文件名和描述权重 3x（更重要）
-            all_tokens = name_tokens * 3 + desc_tokens * 3 + domain_tokens * 2 + knowledge_tokens
+            all_tokens = name_tokens * 3 + desc_tokens * 3 + domain_tokens * 2 + content_tokens
             term_counts = Counter(all_tokens)
 
             _skill_index[stem] = {
@@ -750,6 +812,33 @@ def _build_skill_index():
         _idf_cache[term] = math.log((_total_docs + 1) / (df + 1)) + 1  # smooth IDF
 
     _index_built = True
+
+
+def _extract_skill_summary(content: str, fallback_name: str) -> dict:
+    """从 Markdown frontmatter 提取摘要"""
+    meta = {
+        "name": fallback_name,
+        "description": "",
+        "domain": "",
+        "preview": "",
+    }
+    # 提取 frontmatter
+    match = re.match(r'^---\n(.*?)\n---', content, re.DOTALL)
+    if match:
+        try:
+            front = yaml.safe_load(match.group(1))
+            if isinstance(front, dict):
+                meta["name"] = front.get("name", fallback_name)
+                meta["description"] = front.get("description", "")
+        except Exception:
+            pass
+    # 提取 domain
+    domain_match = re.search(r'\*\*Domain\*\*:\s*(\S+)', content)
+    if domain_match:
+        meta["domain"] = domain_match.group(1)
+    # 预览
+    meta["preview"] = content[:300] + "..." if len(content) > 300 else content
+    return meta
 
 
 def _tfidf_search(query: str, top_k: int = 10) -> list:
@@ -788,7 +877,7 @@ def _tfidf_search(query: str, top_k: int = 10) -> list:
 
 async def search_skills_handler(query: str):
     """搜索技能 — 优先使用 OpenSpace，回退到 TF-IDF"""
-    skills_dir = PROJECT_ROOT / "skills"
+    skills_dir = PROJECT_ROOT / "skills_v2"
     if not skills_dir.exists():
         return [TextContent(type="text", text="Skills directory not found")]
 
@@ -823,18 +912,20 @@ async def search_skills_handler(query: str):
         # Fallback: 子串匹配（兜底）
         query_lower = query.lower()
         fallback = []
-        for skill_file in skills_dir.glob("*.yaml"):
-            if query_lower in skill_file.stem.lower():
-                meta = _extract_skill_summary(
-                    skill_file.read_text(encoding="utf-8", errors="replace"),
-                    skill_file.stem,
-                )
-                fallback.append(meta)
+        for skill_dir in skills_dir.iterdir():
+            if not skill_dir.is_dir():
+                continue
+            if query_lower in skill_dir.name.lower():
+                skill_file = skill_dir / "SKILL.md"
+                if skill_file.exists():
+                    content = skill_file.read_text(encoding="utf-8", errors="replace")
+                    meta = _extract_skill_summary(content, skill_dir.name)
+                    fallback.append(meta)
         if fallback:
             return [TextContent(type="text", text=json.dumps(fallback[:10], indent=2, ensure_ascii=False))]
 
         # 返回全部 skill 名
-        all_skills = sorted([f.stem for f in skills_dir.glob("*.yaml")])
+        all_skills = sorted([d.name for d in skills_dir.iterdir() if d.is_dir() and (d / "SKILL.md").exists()])
         return [TextContent(
             type="text",
             text=f"No skills match: {query}\n\nAvailable skills ({len(all_skills)}):\n" +
@@ -847,7 +938,7 @@ async def search_skills_handler(query: str):
     for skill_name, score, meta, matched_terms in results:
         entry = {
             "name": meta.get("name", skill_name),
-            "file": f"{skill_name}.yaml",
+            "file": skill_name,
             "description": meta.get("description", ""),
             "domain": meta.get("domain", ""),
             "relevance": round(score, 4),
@@ -859,39 +950,9 @@ async def search_skills_handler(query: str):
     return [TextContent(type="text", text=json.dumps(output, indent=2, ensure_ascii=False))]
 
 
-def _extract_skill_summary(content: str, fallback_name: str) -> dict:
-    """从 YAML 内容提取摘要"""
-    try:
-        data = yaml.safe_load(content)
-        if isinstance(data, dict):
-            name = data.get("name", fallback_name)
-            desc = data.get("description", "")
-            domain = data.get("domain", "")
-            # 提取 knowledge 的前 300 字符作为预览
-            knowledge = data.get("knowledge", "")
-            preview = knowledge[:300] + "..." if len(knowledge) > 300 else knowledge
-            return {
-                "name": name,
-                "file": f"{fallback_name}.yaml",
-                "description": desc,
-                "domain": domain,
-                "preview": preview,
-            }
-    except Exception:
-        pass
-
-    # 非标准 YAML，提取前几行
-    lines = content.split("\n")[:5]
-    return {
-        "name": fallback_name,
-        "file": f"{fallback_name}.yaml",
-        "preview": "\n".join(lines),
-    }
-
-
 async def read_skill_handler(name: str):
     """读取完整 skill 内容 — 优先使用 OpenSpace，回退到文件读取"""
-    skills_dir = PROJECT_ROOT / "skills"
+    skills_dir = PROJECT_ROOT / "skills_v2"
 
     # 尝试使用 OpenSpace 技能引擎
     if SKILL_ENGINE_AVAILABLE:
@@ -917,17 +978,20 @@ async def read_skill_handler(name: str):
         except Exception as e:
             print(f"[SkillEngine] OpenSpace read failed: {e}")
 
-    # 回退：直接文件读取
-
-    # 尝试多种路径
+    # 回退：直接文件读取（skills_v2 目录格式）
     candidates = [
-        skills_dir / f"{name}.yaml",
-        skills_dir / f"{name}.yml",
-        skills_dir / name,
+        skills_dir / name / "SKILL.md",
+        skills_dir / name.lower() / "SKILL.md",
+        skills_dir / name.replace("_", "-") / "SKILL.md",
+        skills_dir / name.replace("-", "_") / "SKILL.md",
     ]
 
     for path in candidates:
         if path.exists():
+            # 路径遍历保护：解析后的路径必须在 skills 目录内
+            resolved = path.resolve()
+            if not resolved.is_relative_to(skills_dir.resolve()):
+                continue
             content = path.read_text(encoding="utf-8", errors="replace")
             # 截断超长 skill
             if len(content) > 30000:
@@ -935,7 +999,8 @@ async def read_skill_handler(name: str):
             return [TextContent(type="text", text=content)]
 
     # 未找到，列出相似名称
-    available = sorted([f.stem for f in skills_dir.glob("*.yaml") if name.lower() in f.stem.lower()])
+    available = sorted([d.name for d in skills_dir.iterdir()
+                       if d.is_dir() and name.lower() in d.name.lower()])
     if available:
         return [TextContent(
             type="text",
@@ -946,216 +1011,82 @@ async def read_skill_handler(name: str):
     return [TextContent(type="text", text=f"Skill '{name}' not found. Use search_skills to find available skills.")]
 
 
-# ============================================================================
-# Skill 自动推荐（触发词 → Skill 映射）
-# ============================================================================
-
-# 技术指纹 → 推荐的 skill（按优先级排列）
-SKILL_TRIGGERS = {
-    # Web 漏洞触发
-    "sqli": {
-        "triggers": [
-            "sql syntax", "mysql", "mariadb", "postgresql", "sqlite", "mssql",
-            "ora-", "oracle", "sql error", "union select", "' or ", "sql injection",
-            "information_schema", "pg_catalog",
-        ],
-        "skills": ["sqli_mysql", "sqli_waf-bypass", "sqli_blind"],
-    },
-    "xss": {
-        "triggers": [
-            "<script", "alert(", "onerror=", "onload=", "javascript:",
-            "xss", "cross-site scripting", "content-type: text/html",
-        ],
-        "skills": ["xss", "xss_waf-bypass"],
-    },
-    "ssti": {
-        "triggers": [
-            "jinja2", "mako", "twig", "freemarker", "velocity",
-            "{{", "${", "template", "49", "7*7",
-            "smarty", "thymeleaf",
-        ],
-        "skills": ["ssti", "ssti_ssti-detail"],
-    },
-    "ssrf": {
-        "triggers": [
-            "ssrf", "server-side request", "url=", "fetch=", "redirect=",
-            "gopher://", "file://", "dict://", "127.0.0.1", "0.0.0.0", "169.254.169.254",
-        ],
-        "skills": ["ssrf", "ssrf_waf-bypass"],
-    },
-    "lfi": {
-        "triggers": [
-            "include(", "require(", "file_get_contents", "../", "..\\",
-            "/etc/passwd", "c:\\windows", "path traversal", "local file inclusion",
-            "php://filter", "php://input",
-        ],
-        "skills": ["lfi", "lfi_waf-bypass"],
-    },
-    "rce": {
-        "triggers": [
-            "command injection", "exec(", "system(", "popen(", "eval(",
-            "os.system", "subprocess", "; id", "| id", "$(id)", "`id`",
-            "remote code execution",
-        ],
-        "skills": ["rce", "rce_waf-bypass"],
-    },
-    "xxe": {
-        "triggers": [
-            "xml", "<!DOCTYPE", "<!ENTITY", "xxe", "xml external entity",
-            "application/xml", "text/xml", "libxml",
-        ],
-        "skills": ["xxe", "xxe_waf-bypass"],
-    },
-    "jwt": {
-        "triggers": [
-            "jwt", "json web token", "eyj", "bearer ", "hs256", "rs256",
-            "alg", "none algorithm",
-        ],
-        "skills": ["jwt", "jwt_jwt-detail"],
-    },
-    "upload": {
-        "triggers": [
-            "file upload", "multipart", "upload", ".php", ".jsp", ".asp",
-            "webshell", "content-disposition",
-        ],
-        "skills": ["file-vulns"],
-    },
-    "deserialization": {
-        "triggers": [
-            "unserialize", "deserialize", "pickle", "marshal", "objectinputstream",
-            "gadget", "ysoserial", "__wakeup", "__destruct", "rO0AB",
-        ],
-        "skills": ["framework"],
-    },
-    # 内网/提权触发
-    "privesc": {
-        "triggers": [
-            "suid", "sudo", "getcap", "linpeas", "setuid", "/etc/shadow",
-            "privilege escalation", "root",
-        ],
-        "skills": ["privesc_privilege-escalation"],
-    },
-    "ad_attack": {
-        "triggers": [
-            "active directory", "kerberos", "ntlm", "ldap", "bloodhound",
-            "mimikatz", "krbtgt", "as-rep", "kerberoast", "golden ticket",
-            "domain controller", "dc01",
-        ],
-        "skills": ["ad-attack_ad-attack", "adcs_attack"],
-    },
-    "container": {
-        "triggers": [
-            "docker", "container", "kubernetes", "k8s", "pod",
-            "/.dockerenv", "cgroup", "mount namespace",
-        ],
-        "skills": ["container_escape", "k8s_security"],
-    },
-}
-
-# 预编译所有 trigger 为正则（不区分大小写）
-_COMPILED_TRIGGERS = {}
-for _cat, _cfg in SKILL_TRIGGERS.items():
-    _patterns = [re.compile(re.escape(t), re.IGNORECASE) for t in _cfg["triggers"]]
-    _COMPILED_TRIGGERS[_cat] = (_patterns, _cfg["skills"])
-
-# 每题最多推荐次数限制（避免噪音）
-_skill_hint_counts = {}
-_current_challenge_code = ""
-SKILL_HINT_MAX_PER_CHALLENGE = 5
-
-
-def _check_skill_triggers(output: str) -> str:
-    """
-    检查工具输出是否匹配 skill 触发词
-
-    Note: 已禁用自动推荐，改为AI主动调用 search_skills/read_skill
-    """
-    # 禁用基于关键词的自动推荐，避免误报
-    # AI 应根据任务上下文主动查询 skills
-    return ""
-
-
-def reset_skill_hint_counts():
-    """切题时重置推荐计数"""
-    global _skill_hint_counts
-    _skill_hint_counts = {}
-
 
 # ============================================================================
 # OpenSpace 技能管理
 # ============================================================================
 
-SKILLS_DIR = PROJECT_ROOT / "skills"
+SKILLS_DIR = PROJECT_ROOT / "skills_v2"
 
 
 def create_skill_handler(name: str, content: str):
-    """创建新的 skill 文件"""
+    """创建新的 skill 文件（skills_v2 目录格式）"""
     if not name:
         return [TextContent(type="text", text="Error: skill name is required")]
 
     # 安全检查：防止路径遍历
     safe_name = name.replace("..", "").replace("/", "_").replace("\\", "_")
-    skill_path = SKILLS_DIR / f"{safe_name}.yaml"
-
-    try:
-        # 验证 YAML 格式
-        yaml.safe_load(content)
-    except yaml.YAMLError as e:
-        return [TextContent(type="text", text=f"Error: Invalid YAML format - {e}")]
+    skill_dir = SKILLS_DIR / safe_name
+    skill_path = skill_dir / "SKILL.md"
 
     # 检查是否已存在
     if skill_path.exists():
         return [TextContent(type="text", text=f"Warning: Skill '{name}' already exists. Use update_skill to modify.")]
 
-    # 创建文件
+    # 创建目录和文件
+    skill_dir.mkdir(parents=True, exist_ok=True)
     skill_path.write_text(content, encoding="utf-8")
+
+    # 重建搜索索引
+    _build_skill_index()
+
     return [TextContent(type="text", text=f"Skill created: {safe_name}\nPath: {skill_path}")]
 
 
 def update_skill_handler(name: str, content: str):
-    """更新现有 skill 文件"""
+    """更新现有 skill 文件（覆盖模式）"""
     if not name:
         return [TextContent(type="text", text="Error: skill name is required")]
 
     safe_name = name.replace("..", "").replace("/", "_").replace("\\", "_")
-    skill_path = SKILLS_DIR / f"{safe_name}.yaml"
+    skill_dir = SKILLS_DIR / safe_name
+    skill_path = skill_dir / "SKILL.md"
 
     if not skill_path.exists():
         return [TextContent(type="text", text=f"Error: Skill '{name}' not found. Use create_skill to create new skills.")]
 
     try:
-        # 读取现有内容
-        existing = yaml.safe_load(skill_path.read_text(encoding="utf-8"))
-        new_content = yaml.safe_load(content)
+        # 覆盖写入（AI 如需保留原有内容应自行包含）
+        skill_path.write_text(content, encoding="utf-8")
 
-        # 合并内容
-        if isinstance(existing, dict) and isinstance(new_content, dict):
-            existing.update(new_content)
-            merged = yaml.dump(existing, allow_unicode=True, default_flow_style=False)
-        else:
-            merged = content
+        # 重建搜索索引
+        _build_skill_index()
 
-        skill_path.write_text(merged, encoding="utf-8")
         return [TextContent(type="text", text=f"Skill updated: {safe_name}")]
-    except yaml.YAMLError as e:
-        return [TextContent(type="text", text=f"Error: Invalid YAML format - {e}")]
+    except Exception as e:
+        return [TextContent(type="text", text=f"Error: Failed to update skill - {e}")]
 
 
 def list_skills_handler():
-    """列出所有可用的 skill 文件"""
+    """列出所有可用的 skill 文件（skills_v2 目录格式）"""
     if not SKILLS_DIR.exists():
         return [TextContent(type="text", text="Skills directory not found")]
 
     skills = []
-    for f in SKILLS_DIR.glob("*.yaml"):
+    for skill_dir in SKILLS_DIR.iterdir():
+        if not skill_dir.is_dir():
+            continue
+        skill_file = skill_dir / "SKILL.md"
+        if not skill_file.exists():
+            continue
         try:
-            content = yaml.safe_load(f.read_text(encoding="utf-8"))
-            name = f.stem
-            desc = content.get("description", "No description")[:60]
-            tags = ", ".join(content.get("tags", [])[:3])
-            skills.append(f"  - {name}: {desc}... [{tags}]")
+            content = skill_file.read_text(encoding="utf-8")
+            meta = _extract_skill_summary(content, skill_dir.name)
+            name = meta.get("name", skill_dir.name)
+            desc = meta.get("description", "No description")[:60]
+            skills.append(f"  - {name}: {desc}...")
         except Exception:
-            skills.append(f"  - {f.stem}: (error reading)")
+            skills.append(f"  - {skill_dir.name}: (error reading)")
 
     if not skills:
         return [TextContent(type="text", text="No skills found")]
@@ -1165,8 +1096,7 @@ def list_skills_handler():
 
 
 async def _start_challenge_with_reset(code: str):
-    """启动新题时自动重置 skill 推荐计数"""
-    reset_skill_hint_counts()
+    """启动新题（包装器，预留给未来添加重置逻辑）"""
     return await competition_api("POST", "/api/start_challenge", {"code": code})
 
 
