@@ -85,6 +85,17 @@ class LoopDetector:
     def loop_count(self) -> int:
         return self._loop_count
 
+    def get_recent_pattern(self) -> str:
+        """获取最近最频繁的循环模式描述"""
+        if not self._history:
+            return "无循环"
+        recent = list(self._history)[-self._window:]
+        counts = Counter(recent)
+        most_common_key, count = counts.most_common(1)[0]
+        tool = most_common_key.split(":")[0]
+        args_hash = most_common_key.split(":")[-1] if ":" in most_common_key else "?"
+        return f"{tool} 重复 {count} 次 (args_hash: {args_hash})"
+
     def reset(self):
         """重置（用于切换题目时）"""
         self._history.clear()

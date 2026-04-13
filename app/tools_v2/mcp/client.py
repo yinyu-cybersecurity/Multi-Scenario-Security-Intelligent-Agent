@@ -189,6 +189,7 @@ class MCPConnector:
         self._manager: Optional[MCPConnectionManager] = None
         self._tools: List[Dict] = []
         self._session: Optional[ClientSession] = None
+        self._call_semaphore = asyncio.Semaphore(4)  # 允许同 server 最多 4 个并发调用
 
         if http_url:
             self._http_conn = MCPHttpConnection(http_url, http_token)
@@ -235,12 +236,14 @@ class MCPConnector:
         return False
 
     async def call_tool(self, name: str, arguments: Dict) -> Any:
-        if not self._session:
-            raise RuntimeError("Not connected")
-        result = await self._session.call_tool(name, arguments)
-        if result.content:
-            return "\n".join(c.text for c in result.content if hasattr(c, "text"))
-        return result.model_dump()
+        """调用工具，允许有限并行（Semaphore(4)）"""
+        async with self._call_semaphore:
+            if not self._session:
+                raise RuntimeError("Not connected")
+            result = await self._session.call_tool(name, arguments)
+            if result.content:
+                return "\n".join(c.text for c in result.content if hasattr(c, "text"))
+            return result.model_dump()
 
     def get_tools(self) -> List[Dict]:
         return self._tools
@@ -259,6 +262,7 @@ class MCPSession:
         self._initialized = False
         self._max_reconnects = max_reconnects
         self._reconnect_count = 0
+        self._reconnect_lock = asyncio.Lock()  # 保护重连序列，防止并行调用崩溃
 
     async def initialize(self) -> bool:
         if self._initialized and self._connector.is_connected:
@@ -283,20 +287,22 @@ class MCPSession:
             return result
         except Exception as e:
             if self._reconnect_count < self._max_reconnects:
-                self._reconnect_count += 1
-                backoff = 2 ** self._reconnect_count  # 指数退避: 4s, 8s, 16s
-                logger.warning(f"[MCP] {self.name} call failed, reconnecting in {backoff}s ({self._reconnect_count})...")
-                await asyncio.sleep(backoff)
-                self._initialized = False
-                try:
-                    await self._connector.disconnect()
-                except Exception:
-                    pass
-                try:
-                    await self.initialize()
-                    return await self._connector.call_tool(name, arguments)
-                except Exception as reconnect_error:
-                    raise RuntimeError(f"MCP {self.name} reconnect failed: {reconnect_error}")
+                # 用锁保护整个重连序列，防止并行调用在 disconnect 期间拿到 None session
+                async with self._reconnect_lock:
+                    self._reconnect_count += 1
+                    backoff = 2 ** self._reconnect_count  # 指数退避: 2s, 4s, 8s
+                    logger.warning(f"[MCP] {self.name} call failed, reconnecting in {backoff}s ({self._reconnect_count})...")
+                    await asyncio.sleep(backoff)
+                    self._initialized = False
+                    try:
+                        await self._connector.disconnect()
+                    except Exception:
+                        pass
+                    try:
+                        await self.initialize()
+                        return await self._connector.call_tool(name, arguments)
+                    except Exception as reconnect_error:
+                        raise RuntimeError(f"MCP {self.name} reconnect failed: {reconnect_error}")
             raise
 
     def get_tool_schemas(self) -> List[Dict]:

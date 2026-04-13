@@ -9,22 +9,35 @@ FROM kalilinux/kali-rolling
 
 # 避免交互式安装
 ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
 
 # 设置 locale
-RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
+RUN apt-get update && apt-get install -y --no-install-recommends locales \
+    && if [ -f /etc/locale.gen ]; then sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen; fi \
+    && rm -rf /var/lib/apt/lists/*
 ENV LANG=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
 
-# 安装 Python3 + pip + fscan/nuclei（Go 工具）
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# 设置清华源 + 阿里源（国内加速，HTTP 协议）
+RUN echo "deb http://mirrors.tuna.tsinghua.edu.cn/kali kali-rolling main contrib non-free non-free-firmware" > /etc/apt/sources.list && \
+    echo "deb http://mirrors.aliyun.com/kali kali-rolling main contrib non-free non-free-firmware" >> /etc/apt/sources.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-venv \
     golang-go \
-    && rm -rf /var/lib/apt/lists/* \
-    && go install github.com/shadow1ng/fscan@latest \
+    git \
+    wget \
+    unzip \
+    kali-linux-default \
+    && rm -rf /var/lib/apt/lists/*
+
+# 编译 fscan + 安装 nuclei
+RUN cd /tmp && git clone --depth 1 https://github.com/shadow1ng/fscan.git \
+    && cd fscan && go build -o /usr/local/bin/fscan . \
+    && cd / && rm -rf /tmp/fscan \
     && go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest \
-    && cp /root/go/bin/fscan /usr/local/bin/ \
     && cp /root/go/bin/nuclei /usr/local/bin/ \
     && nuclei -update-templates
 

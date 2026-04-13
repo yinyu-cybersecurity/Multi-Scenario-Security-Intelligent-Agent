@@ -40,9 +40,11 @@ docs/
 *.md
 !README.md
 
-# Environment files (secrets - passed via env vars)
-.env
-.env.*
+# Environment files
+# .env.* (ignore env overrides, keep .env for private deployment)
+.env.local
+.env.*.local
+!.env
 !.env.example
 
 # Large files

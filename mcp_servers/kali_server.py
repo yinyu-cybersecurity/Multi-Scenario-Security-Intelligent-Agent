@@ -30,8 +30,9 @@ import re
 import time
 import yaml
 from collections import Counter
-from pathlib import Path
 from datetime import datetime
+from typing import Dict, List
+from pathlib import Path
 
 # OpenSpace 集成
 try:
@@ -64,9 +65,24 @@ async def _get_http_client(timeout: int = 30, follow_redirects: bool = True) -> 
     return _http_client
 
 # bash 输出限制
-BASH_OUTPUT_MAX_CHARS = 15000  # 单次 bash 输出最大字符数
-BASH_OUTPUT_HEAD_CHARS = 6000  # 截断时保留头部
-BASH_OUTPUT_TAIL_CHARS = 6000  # 截断时保留尾部
+BASH_OUTPUT_MAX_CHARS = 50000  # 单次 bash 输出最大字符数
+BASH_OUTPUT_HEAD_CHARS = 20000  # 截断时保留头部
+BASH_OUTPUT_TAIL_CHARS = 20000  # 截断时保留尾部
+
+# 运行中命令的状态追踪（用于 bash_status 工具）
+_running_commands: Dict[str, Dict] = {}  # exec_id -> {pid, command, start_time, stdout_lines, stderr_lines, done, exit_code}
+_command_id_counter = 0
+
+
+def _cleanup_old_commands():
+    """清理已完成超过 5 分钟的命令，防止内存泄漏"""
+    now = time.time()
+    to_delete = [
+        eid for eid, cmd in _running_commands.items()
+        if cmd.get("done") and now - cmd.get("done_time", cmd.get("start_time", 0)) > 300
+    ]
+    for eid in to_delete:
+        del _running_commands[eid]
 
 # 比赛 API 限频（异步锁保护，防止竞态条件）
 _last_api_call_time = 0.0
@@ -87,15 +103,32 @@ async def list_tools():
             description=(
                 "Execute any bash command. Full access to Kali Linux 300+ security tools "
                 "(nmap, sqlmap, ffuf, hashcat, hydra, gobuster, nuclei, crackmapexec, etc). "
-                "Output is auto-truncated if too long."
+                "Output is auto-truncated if too long. "
+                "Set background=true for long-running services (HTTP server, listener, tunnel)."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "command": {"type": "string", "description": "The command to execute"},
                     "timeout": {"type": "integer", "default": 300, "description": "Timeout in seconds"},
+                    "background": {"type": "boolean", "default": False, "description": "Run in background, return immediately with PID"},
                 },
                 "required": ["command"],
+            },
+        ),
+        Tool(
+            name="bash_status",
+            description=(
+                "查询正在运行的 bash 命令状态和部分输出。"
+                "传入 bash(background=True) 返回的 exec_id。"
+                "返回：运行状态（running/done）、已运行时间、部分 stdout/stderr。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "exec_id": {"type": "string", "description": "命令执行 ID，如 'cmd_0'"},
+                },
+                "required": ["exec_id"],
             },
         ),
         Tool(
@@ -312,7 +345,12 @@ async def list_tools():
 @server.call_tool()
 async def call_tool(name: str, arguments: dict):
     handlers = {
-        "bash": lambda: exec_bash(arguments.get("command", ""), arguments.get("timeout", 300)),
+        "bash": lambda: exec_bash(
+            arguments.get("command", ""),
+            arguments.get("timeout", 300),
+            arguments.get("background", False),
+        ),
+        "bash_status": lambda: bash_status_handler(arguments.get("exec_id", "")),
         "http": lambda: http_request(arguments),
         "read": lambda: read_file(arguments.get("path", ""), arguments.get("max_size", 50000)),
         "write": lambda: write_file(arguments.get("path", ""), arguments.get("content", "")),
@@ -362,9 +400,34 @@ async def call_tool(name: str, arguments: dict):
 # 基础能力实现
 # ============================================================================
 
+def _clean_bash_output(stdout: str) -> str:
+    """清理 bash 输出中的 ANSI 转义码、回车符、HTML 标签和 Shell 垃圾"""
+    # 1. 去除 ANSI 转义码（如 \x1b[2K, \x1b[31m 等）
+    stdout = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', stdout)
+    # 2. 去除回车符 \r
+    stdout = re.sub(r'\r', '', stdout)
+    # 3. 去除所有 HTML 标签（通用，不针对特定框架）
+    stdout = re.sub(r'<[^>]+>', '', stdout)
+    # 4. 去除 Shell 提示符（如 root@kali:~# 、$ 、# ）
+    stdout = re.sub(r'^[\w@:.~-]+[#$%]\s*', '', stdout, flags=re.MULTILINE)
+    # 5. 去除进度条残留（如 [====> ] 45%、████████ 100%）
+    stdout = re.sub(r'\[[=\s>]*\]\s*\d+%', '', stdout)
+    stdout = re.sub(r'█+\s*\d+%', '', stdout)
+    # 6. 去除表格分隔线（如 ─────────、═════════）
+    stdout = re.sub(r'[─═]{5,}', '', stdout)
+    # 7. 合并产生的连续空行
+    stdout = re.sub(r'\n{3,}', '\n\n', stdout)
+    # 8. 去除首尾空白
+    stdout = stdout.strip()
+    return stdout
+
+
 def _truncate_output(text: str, max_chars: int = BASH_OUTPUT_MAX_CHARS) -> str:
-    """智能截断长输出，保留头尾"""
+    """智能截断长输出，保留头尾 — flag 内容不截断"""
     if len(text) <= max_chars:
+        return text
+    # flag 内容不截断
+    if "flag{" in text.lower():
         return text
     return (
         text[:BASH_OUTPUT_HEAD_CHARS]
@@ -373,74 +436,249 @@ def _truncate_output(text: str, max_chars: int = BASH_OUTPUT_MAX_CHARS) -> str:
     )
 
 
-async def exec_bash(command: str, timeout: int):
-    """执行 bash 命令 - AI 可调用任何 Kali 工具"""
+async def exec_bash(command: str, timeout: int, background: bool = False):
+    """执行 bash 命令 — 行级异步读取，支持 bash_status 查询"""
+    global _command_id_counter
+
     if not command:
         return [TextContent(type="text", text="Error: empty command")]
 
-    try:
-        proc = await asyncio.create_subprocess_shell(
-            command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            start_new_session=True,  # New process group for clean timeout kills
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    # 定期清理旧命令
+    _cleanup_old_commands()
 
-        stdout_str = _truncate_output(stdout.decode("utf-8", errors="replace"))
-        stderr_str = _truncate_output(stderr.decode("utf-8", errors="replace"))
-
-        result = {
-            "exit_code": proc.returncode,
-            "stdout": stdout_str,
-            "stderr": stderr_str,
-        }
-
-        # 简化输出：如果 stderr 为空则省略
-        if not stderr_str.strip():
-            del result["stderr"]
-
-        result_text = json.dumps(result, indent=2, ensure_ascii=False)
-        return [TextContent(type="text", text=result_text)]
-
-    except asyncio.TimeoutError:
-        # 尝试读取已产生的部分输出
-        partial_stdout = ""
-        partial_stderr = ""
+    # === 后台模式：启动后返回 exec_id，可后续用 bash_status 查询 ===
+    if background:
         try:
-            if proc.stdout and not proc.stdout.at_eof():
-                raw = await proc.stdout.read(8192)
-                partial_stdout = raw.decode("utf-8", errors="replace")
-            if proc.stderr and not proc.stderr.at_eof():
-                raw = await proc.stderr.read(4096)
-                partial_stderr = raw.decode("utf-8", errors="replace")
-        except Exception:
-            pass
+            proc = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
+            )
+            exec_id = f"cmd_{_command_id_counter}"
+            _command_id_counter += 1
+
+            _running_commands[exec_id] = {
+                "pid": proc.pid,
+                "command": command[:500],
+                "start_time": time.time(),
+                "stdout_lines": [],
+                "stderr_lines": [],
+                "done": False,
+                "exit_code": None,
+                "proc": proc,  # 保留进程引用用于后续 kill
+                "timeout": timeout,
+            }
+
+            # 启动后台读取任务
+            asyncio.create_task(_read_command_output(exec_id, proc, timeout))
+
+            return [TextContent(type="text", text=json.dumps({
+                "exit_code": "running",
+                "exec_id": exec_id,
+                "pid": proc.pid,
+                "background": True,
+                "message": f"Background process started (PID {proc.pid}). Use bash_status(exec_id='{exec_id}') to check progress.",
+            }, indent=2))]
+        except Exception as e:
+            return [TextContent(type="text", text=json.dumps({
+                "exit_code": -1,
+                "error": str(e),
+                "background": True,
+            }, indent=2))]
+
+    # === 前台模式：行级异步读取，超时/完成时返回 ===
+    proc = await asyncio.create_subprocess_shell(
+        command,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
+    )
+
+    exec_id = f"cmd_{_command_id_counter}"
+    _command_id_counter += 1
+
+    stdout_buffer: List[str] = []
+    stderr_buffer: List[str] = []
+
+    _running_commands[exec_id] = {
+        "pid": proc.pid,
+        "command": command[:500],
+        "start_time": time.time(),
+        "stdout_lines": stdout_buffer,
+        "stderr_lines": stderr_buffer,
+        "done": False,
+        "exit_code": None,
+    }
+
+    async def _read_stream(stream, buffer):
+        """行级异步读取"""
+        while True:
+            line = await stream.readline()
+            if not line:
+                break
+            decoded = line.decode("utf-8", errors="replace")
+            buffer.append(decoded)
+            # 限制 buffer 大小防止内存溢出
+            if len(buffer) > 1000:
+                buffer[:] = buffer[-500:]
+
+    reader_tasks = [
+        asyncio.create_task(_read_stream(proc.stdout, stdout_buffer)),
+        asyncio.create_task(_read_stream(proc.stderr, stderr_buffer)),
+    ]
+
+    timed_out = False
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=timeout)
+    except asyncio.TimeoutError:
+        timed_out = True
         # 杀整个进程组
         try:
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         except Exception:
             try:
-                proc.kill()  # fallback: 杀 shell
+                proc.kill()
             except Exception:
                 pass
-        # 等待进程完全清理，防止僵尸进程
+        await proc.wait()
+
+    # 等待读取器完成
+    for t in reader_tasks:
+        t.cancel()
         try:
-            await proc.communicate()
-        except Exception:
+            await t
+        except (asyncio.CancelledError, Exception):
             pass
+
+    # 构建结果
+    stdout_str = "".join(stdout_buffer)
+    stderr_str = "".join(stderr_buffer)
+
+    _running_commands[exec_id]["done"] = True
+    _running_commands[exec_id]["done_time"] = time.time()
+    if not timed_out:
+        _running_commands[exec_id]["exit_code"] = proc.returncode
+
+    if timed_out:
+        stdout_str = _truncate_output(_clean_bash_output(stdout_str))
+        stderr_str = _truncate_output(stderr_str)
         error_detail = {
             "exit_code": -1,
             "error": f"Command timed out after {timeout}s",
             "hint": "Try adding timeout flags to the command, or increase the timeout parameter",
         }
-        if partial_stdout.strip():
-            error_detail["partial_stdout"] = _truncate_output(partial_stdout)
-        if partial_stderr.strip():
-            error_detail["partial_stderr"] = _truncate_output(partial_stderr)
+        if stdout_str.strip():
+            error_detail["partial_stdout"] = stdout_str
+        if stderr_str.strip():
+            error_detail["partial_stderr"] = stderr_str
         return [TextContent(type="text", text=json.dumps(error_detail, indent=2, ensure_ascii=False))]
-    except Exception as e:
-        return [TextContent(type="text", text=f"Error: {e}")]
+
+    stdout_str = _truncate_output(_clean_bash_output(stdout_str))
+    stderr_str = _truncate_output(stderr_str)
+
+    # 自动提取关键信息到记忆系统
+    _auto_extract_and_remember(stdout_str, "bash")
+
+    result = {
+        "exit_code": proc.returncode,
+        "stdout": stdout_str,
+    }
+    if stderr_str.strip():
+        result["stderr"] = stderr_str
+
+    return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))]
+
+
+async def _read_command_output(exec_id: str, proc, timeout: int):
+    """后台读取命令输出（用于 background=True 模式）"""
+    if exec_id not in _running_commands:
+        return
+
+    cmd = _running_commands[exec_id]
+    stdout_buffer = cmd["stdout_lines"]
+    stderr_buffer = cmd["stderr_lines"]
+
+    async def _read_stream(stream, buffer):
+        while True:
+            line = await stream.readline()
+            if not line:
+                break
+            decoded = line.decode("utf-8", errors="replace")
+            buffer.append(decoded)
+            if len(buffer) > 1000:
+                buffer[:] = buffer[-500:]
+
+    reader_tasks = [
+        asyncio.create_task(_read_stream(proc.stdout, stdout_buffer)),
+        asyncio.create_task(_read_stream(proc.stderr, stderr_buffer)),
+    ]
+
+    timed_out = False
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=timeout)
+    except asyncio.TimeoutError:
+        timed_out = True
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        await proc.wait()
+
+    for t in reader_tasks:
+        t.cancel()
+        try:
+            await t
+        except (asyncio.CancelledError, Exception):
+            pass
+
+    cmd["done"] = True
+    cmd["done_time"] = time.time()
+    if not timed_out:
+        cmd["exit_code"] = proc.returncode
+
+
+def bash_status_handler(exec_id: str):
+    """查询正在运行的命令状态"""
+    if not exec_id or exec_id not in _running_commands:
+        return [TextContent(type="text", text=json.dumps({
+            "error": f"Unknown exec_id: {exec_id}",
+            "hint": "Use bash(background=True) to get an exec_id, then poll with bash_status.",
+        }, indent=2))]
+
+    cmd = _running_commands[exec_id]
+    elapsed = round(time.time() - cmd["start_time"], 1)
+
+    stdout_preview = "".join(cmd["stdout_lines"])
+    stderr_preview = "".join(cmd["stderr_lines"])
+
+    # 截断增量输出
+    if len(stdout_preview) > 4000:
+        stdout_preview = stdout_preview[:2000] + "\n...[truncated]...\n" + stdout_preview[-1000:]
+    if len(stderr_preview) > 2000:
+        stderr_preview = stderr_preview[:1000] + "\n...[truncated]...\n" + stderr_preview[-500:]
+
+    result = {
+        "exec_id": exec_id,
+        "pid": cmd["pid"],
+        "command": cmd["command"],
+        "status": "done" if cmd["done"] else "running",
+        "elapsed_seconds": elapsed,
+        "stdout_length": len("".join(cmd["stdout_lines"])),
+        "stderr_length": len("".join(cmd["stderr_lines"])),
+    }
+
+    if stdout_preview.strip():
+        result["partial_stdout"] = _clean_bash_output(stdout_preview)
+    if stderr_preview.strip():
+        result["partial_stderr"] = stderr_preview
+    if cmd.get("exit_code") is not None:
+        result["exit_code"] = cmd["exit_code"]
+
+    return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))]
 
 
 async def http_request(args: dict):
@@ -458,9 +696,19 @@ async def http_request(args: dict):
         resp = await client.request(method, url, headers=headers, content=body if body else None)
 
         content = resp.text
-        # 截断过长响应
-        if len(content) > 15000:
-            content = content[:7000] + f"\n\n... [RESPONSE TRUNCATED: {len(resp.text)} chars total] ...\n\n" + content[-5000:]
+        # 截断过长响应 — flag 不截断
+        HTTP_RESPONSE_MAX_CHARS = 50000
+        HTTP_HEAD_CHARS = 25000
+        HTTP_TAIL_CHARS = 25000
+
+        if "flag{" in content.lower():
+            pass  # 包含 flag 的内容完整保留，不截断
+        elif len(content) > HTTP_RESPONSE_MAX_CHARS:
+            content = (
+                content[:HTTP_HEAD_CHARS]
+                + f"\n\n... [RESPONSE TRUNCATED: {len(content)} chars total, showing first {HTTP_HEAD_CHARS} and last {HTTP_TAIL_CHARS}] ...\n\n"
+                + content[-HTTP_TAIL_CHARS:]
+            )
 
         result = {
             "status_code": resp.status_code,
@@ -550,9 +798,8 @@ def _auto_extract_and_remember(output: str, source: str = "bash") -> str:
     从工具输出中自动提取关键信息并存入记忆
 
     Note: 已禁用自动提取，改为AI主动调用remember工具
-    避免误识别无关信息
+    框架不应代替AI做判断，AI应自主决定记录什么
     """
-    # 禁用自动提取，AI应主动调用 remember 工具
     return ""
 
 
@@ -591,12 +838,21 @@ async def store_memory(key: str, value: str, category: str = "general"):
 
 
 async def retrieve_memory(query: str):
-    """检索记忆"""
+    """检索记忆（最多返回 10 条，空查询只返回 key 列表）"""
     _load_memory()
     if not memory_store:
         return [TextContent(type="text", text="Memory is empty. Use 'remember' to store information.")]
 
-    query_lower = query.lower()
+    query_lower = query.lower().strip()
+
+    # 空查询或过短查询：只返回 key 列表
+    if not query_lower or len(query_lower) < 2:
+        all_keys = list(memory_store.keys())
+        summary = f"Memory contains {len(all_keys)} entries.\nKeys: {', '.join(all_keys[:30])}"
+        if len(all_keys) > 30:
+            summary += f"\n... and {len(all_keys) - 30} more. Use a specific query to search."
+        return [TextContent(type="text", text=summary)]
+
     query_tokens = _tokenize(query_lower)
     if not query_tokens:
         query_tokens = [query_lower]
@@ -604,7 +860,6 @@ async def retrieve_memory(query: str):
     # 搜索匹配 - OR 逻辑：任一 token 匹配即返回
     results = {}
     for k, v in memory_store.items():
-        # 兼容旧格式（纯字符串）和新格式（带 category/timestamp）
         if isinstance(v, dict):
             val_str = v.get("value", "")
             cat = v.get("category", "general")
@@ -617,14 +872,17 @@ async def retrieve_memory(query: str):
             results[k] = v
 
     if not results:
-        # 返回所有记忆的 key 列表帮助 AI
         all_keys = list(memory_store.keys())
         return [TextContent(
             type="text",
             text=f"No match for: {query}\nAvailable keys: {', '.join(all_keys[:20])}",
         )]
 
-    return [TextContent(type="text", text=json.dumps(results, indent=2, ensure_ascii=False))]
+    # 限制最多返回 10 条
+    limited = dict(list(results.items())[:10])
+    total = len(results)
+    header = f"Found {total} matches (showing top 10):\n" if total > 10 else ""
+    return [TextContent(type="text", text=header + json.dumps(limited, indent=2, ensure_ascii=False))]
 
 
 # ============================================================================
@@ -677,14 +935,16 @@ async def competition_api(method: str, endpoint: str, data: dict = None):
                 resp = await client.post(url, headers=headers, json=data or {})
 
             # 处理限频 — 指数退避重试（仅一次）
+            retry_after_429 = False
             if resp.status_code == 429:
+                retry_after_429 = True
                 await asyncio.sleep(2.0)  # 指数退避：首次重试等 2s
                 if method == "GET":
                     resp = await client.get(url, headers=headers)
                 else:
                     resp = await client.post(url, headers=headers, json=data or {})
 
-            _last_api_call_time = time.time()
+            _last_api_call_time = time.time()  # 在重试后更新时间戳，精确限频
 
         except Exception as e:
             _last_api_call_time = time.time()

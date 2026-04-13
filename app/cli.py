@@ -143,10 +143,11 @@ async def run_competition(timeout: int = 0):
     qconfig = QueryConfig(
         model=model,
         max_turns=app_config.query.max_turns,
-        timeout_seconds=timeout,
+        timeout_seconds=0,  # 比赛模式不禁用超时，由比赛服务器控制
         system_prompt=build_system_prompt("competition", timeout, competition_mode=True),
         context_window_tokens=app_config.query.context_window_tokens,
         parallel_tool_calls=app_config.query.parallel_tool_calls,
+        competition_mode=True,
     )
 
     messages = [

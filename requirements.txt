@@ -12,3 +12,6 @@ pydantic>=2.0.0
 
 # 日志
 colorlog>=6.0.0
+
+# Token 计数（真实 BPE tokenizer，用于上下文窗口管理）
+tiktoken>=0.7.0

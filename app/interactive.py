@@ -91,8 +91,26 @@ class InteractiveSession:
                         names = [tc.get("function", {}).get("name", "?") for tc in tool_calls]
                         print(f"  -> {', '.join(names)}")
 
+                elif etype == "tool_start":
+                    print(f"  [▶] {event.get('tool_name', '')}")
+
+                elif etype == "tool_running":
+                    elapsed = event.get('elapsed_seconds', 0)
+                    print(f"  [⏳] {event.get('tool_name', '')} — {elapsed}s")
+
+                elif etype == "tool_complete":
+                    duration = event.get('duration', 0)
+                    has_error = event.get('has_error', False)
+                    status = "ERR" if has_error else "OK"
+                    print(f"  [{status}] {event.get('tool_name', '')} — {duration}s")
+
                 elif etype == "tool_result":
                     print(f"  <- {event.get('tool_name', '')}")
+
+                elif etype == "tool_execution_summary":
+                    total = event.get('total', 0)
+                    errors = event.get('errors', 0)
+                    print(f"  [Σ] {total} tools, {errors} errors")
 
                 elif etype == "loop_detected":
                     print(f"  [!] Loop: {event.get('tool', '')}")

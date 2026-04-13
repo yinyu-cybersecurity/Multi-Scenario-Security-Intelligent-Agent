@@ -9,7 +9,7 @@
   },
 
   "timeouts": {
-    "task": 1800,
+    "task": 3600,
     "tool_default": 300,
     "llm_call": 120,
     "mcp_connect": 30
@@ -31,10 +31,16 @@
 
   "query": {
     "max_turns": 500,
-    "context_window_tokens": 262144,
-    "context_reserve_tokens": 8192,
+    "context_window_tokens": 1048576,
+    "context_reserve_tokens": 32768,
     "message_truncate_threshold": 16000,
     "parallel_tool_calls": true
+  },
+
+  "advisor": {
+    "enabled": true,
+    "evaluate_interval": 3,
+    "compress_interval": 15
   },
 
   "mcp_servers": {
@@ -42,6 +48,14 @@
       "command": "python3",
       "args": ["mcp_servers/kali_server.py"],
       "env": {}
+    },
+    "null_zone_forum": {
+      "command": "python3",
+      "args": ["mcp_servers/null_zone_forum.py"],
+      "env": {
+        "AGENT_BEARER_TOKEN": "${NULL_ZONE_FORUM_TOKEN}",
+        "SERVER_HOST": "${NULL_ZONE_FORUM_HOST}"
+      }
     }
   }
 }

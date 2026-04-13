@@ -75,7 +75,7 @@ class SmartREPL:
         qconfig = QueryConfig(
             model=app_config.LLM_MODEL,
             max_turns=app_config.query.max_turns,
-            timeout_seconds=300,  # 5分钟超时
+            timeout_seconds=3600,  # 1小时超时
             system_prompt=system_prompt,
             context_window_tokens=app_config.query.context_window_tokens,
             parallel_tool_calls=app_config.query.parallel_tool_calls,
@@ -117,13 +117,33 @@ async def print_stream(repl: SmartREPL, user_input: str):
                     names = [tc.get("function", {}).get("name", "?") for tc in tool_calls]
                     print(f"\n  → Using: {', '.join(names)}", flush=True)
 
+            elif etype == "tool_start":
+                print(f"\n  [▶] {event.get('tool_name', '')}", flush=True)
+
+            elif etype == "tool_running":
+                elapsed = event.get('elapsed_seconds', 0)
+                print(f"\n  [⏳] {event.get('tool_name', '')} — running {elapsed}s", flush=True)
+
+            elif etype == "tool_complete":
+                duration = event.get('duration', 0)
+                has_error = event.get('has_error', False)
+                status = "ERR" if has_error else "OK"
+                print(f"\n  [{status}] {event.get('tool_name', '')} — {duration}s", flush=True)
+
+            elif etype == "tool_execution_summary":
+                total = event.get('total', 0)
+                errors = event.get('errors', 0)
+                print(f"\n  [Σ] {total} tools executed, {errors} errors", flush=True)
+
             elif etype == "tool_result":
                 tool_name = event.get("tool_name", "")
                 for msg in reversed(repl.messages):
                     if msg.get("role") == "tool":
                         result = msg.get("content", "")
-                        if len(result) > 300:
-                            preview = result[:150] + "\n...[truncated]...\n" + result[-100:]
+                        # 显示截断阈值提高到 2000 字符
+                        if len(result) > 2000:
+                            # 保留头 1500 + 尾 400，中间标记
+                            preview = result[:1500] + "\n...[truncated, total " + str(len(result)) + " chars]...\n" + result[-400:]
                         else:
                             preview = result
                         print(f"  ← {tool_name}:\n{preview}", flush=True)
@@ -131,11 +151,36 @@ async def print_stream(repl: SmartREPL, user_input: str):
                 else:
                     print(f"  ← {tool_name}: [done]", flush=True)
 
-            elif etype == "loop_detected":
-                print(f"  ⚠ Loop detected: {event.get('tool', '')}", flush=True)
-
             elif etype == "context_trimmed":
-                print(f"  ℹ Context trimmed: {event.get('removed', 0)} messages", flush=True)
+                reason = event.get("reason", "")
+                removed = event.get("removed", 0)
+                if reason == "challenge_switch":
+                    print(f"\n  [Switch] Context reset for new challenge ({removed} messages cleared)", flush=True)
+                else:
+                    print(f"\n  [Trim] Context trimmed: {removed} messages", flush=True)
+
+            elif etype == "context_compressed":
+                summary = event.get("summary", "")
+                removed = event.get("removed", 0)
+                pre_tokens = event.get("pre_tokens", 0)
+                post_tokens = event.get("post_tokens", 0)
+                print(f"\n{'='*50}", flush=True)
+                print(f"  [Compressed] {pre_tokens:,} → {post_tokens:,} tokens ({removed} messages removed)", flush=True)
+                for line in summary.split("\n"):
+                    print(f"    {line}", flush=True)
+                print(f"{'='*50}", flush=True)
+
+            elif etype == "advisor_intervention":
+                guidance = event.get("guidance", "")
+                print(f"\n  [Advisor] {guidance}", flush=True)
+
+            elif etype == "duplicate_calls_removed":
+                count = event.get("count", 0)
+                tool = event.get("tool", "")
+                print(f"\n  [Dedup] Removed {count} duplicate {tool} calls", flush=True)
+
+            elif etype == "loop_detected":
+                print(f"\n  [Loop] Detected: {event.get('tool', '')}", flush=True)
 
             elif etype == "llm_error":
                 print(f"\n[Error] {event.get('error', '')}", flush=True)

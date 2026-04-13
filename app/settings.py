@@ -86,11 +86,19 @@ class MCPServerConfig:
 
 
 @dataclass
+class AdvisorConfig:
+    """Advisor Agent 配置"""
+    enabled: bool = True
+    evaluate_interval: int = 3       # 每 N 轮评估一次
+    compress_interval: int = 15      # 每 N 轮压缩一次上下文
+
+
+@dataclass
 class QueryConfig:
     """Query Loop 配置"""
     max_turns: int = 500
-    context_window_tokens: int = 262144  # 上下文窗口大小
-    context_reserve_tokens: int = 8192   # 为响应预留的token
+    context_window_tokens: int = 1048576  # Qwen3.6 1M 上下文
+    context_reserve_tokens: int = 32768   # 32K 为响应预留
     message_truncate_threshold: int = 16000  # 单条消息截断阈值
     parallel_tool_calls: bool = True      # 是否并行执行工具
 
@@ -103,6 +111,7 @@ class AppConfig:
     retry: RetryConfig = field(default_factory=RetryConfig)
     competition: CompetitionConfig = field(default_factory=CompetitionConfig)
     query: QueryConfig = field(default_factory=QueryConfig)
+    advisor: AdvisorConfig = field(default_factory=AdvisorConfig)
     mcp_servers: Dict[str, MCPServerConfig] = field(default_factory=dict)
 
     # 兼容旧接口的属性
@@ -245,6 +254,8 @@ def _apply_json_config(cfg: AppConfig, data: dict):
         cfg.competition.mcp_url = c.get("mcp_url", cfg.competition.mcp_url)
         cfg.competition.llm_base_url = _resolve_env_var(c.get("llm_base_url", ""))
         cfg.competition.rate_limit = c.get("rate_limit", cfg.competition.rate_limit)
+        cfg.competition.max_concurrent_instances = c.get("max_concurrent_instances", cfg.competition.max_concurrent_instances)
+        cfg.competition.hint_penalty = c.get("hint_penalty", cfg.competition.hint_penalty)
 
     # Query 配置
     if "query" in data:
@@ -254,6 +265,13 @@ def _apply_json_config(cfg: AppConfig, data: dict):
         cfg.query.context_reserve_tokens = q.get("context_reserve_tokens", cfg.query.context_reserve_tokens)
         cfg.query.message_truncate_threshold = q.get("message_truncate_threshold", cfg.query.message_truncate_threshold)
         cfg.query.parallel_tool_calls = q.get("parallel_tool_calls", cfg.query.parallel_tool_calls)
+
+    # Advisor 配置
+    if "advisor" in data:
+        a = data["advisor"]
+        cfg.advisor.enabled = a.get("enabled", cfg.advisor.enabled)
+        cfg.advisor.evaluate_interval = a.get("evaluate_interval", cfg.advisor.evaluate_interval)
+        cfg.advisor.compress_interval = a.get("compress_interval", cfg.advisor.compress_interval)
 
     # MCP 服务器配置
     if "mcp_servers" in data:
@@ -291,8 +309,13 @@ def _apply_env_overrides(cfg: AppConfig):
         cfg.competition.agent_token = v
     if v := os.environ.get("COMPETITION_MCP_URL"):
         cfg.competition.mcp_url = v
-    if v := os.environ.get("COMPETITION_LLM_BASE_URL"):
-        cfg.model.base_url = v  # 比赛模式下使用网关URL
+    # Advisor
+    if v := os.environ.get("ADVISOR_ENABLED"):
+        cfg.advisor.enabled = v.lower() in ("true", "1", "yes")
+    if v := os.environ.get("ADVISOR_EVALUATE_INTERVAL"):
+        cfg.advisor.evaluate_interval = int(v)
+    if v := os.environ.get("ADVISOR_COMPRESS_INTERVAL"):
+        cfg.advisor.compress_interval = int(v)
 
 
 def _validate_config(cfg: AppConfig):
@@ -331,6 +354,7 @@ __all__ = [
     "CompetitionConfig",
     "MCPServerConfig",
     "QueryConfig",
+    "AdvisorConfig",
     "config",
     "load_config",
 ]
