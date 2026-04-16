@@ -163,6 +163,14 @@ class LoggerManager:
         console_handler.handleError = lambda record: None
         root_logger.addHandler(console_handler)
 
+        # 静音 httpx 和 httpcore 请求日志（LLM 调用产生大量无价值 DEBUG 行）
+        # 只保留错误和警告，LLM 摘要日志已足够
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+        logging.getLogger("httpcore.connection").setLevel(logging.WARNING)
+        logging.getLogger("httpcore.http11").setLevel(logging.WARNING)
+        logging.getLogger("httpcore.http2").setLevel(logging.WARNING)
+
         self._loggers: Dict[str, logging.Logger] = {}
 
     def set_task(self, task_id: str):

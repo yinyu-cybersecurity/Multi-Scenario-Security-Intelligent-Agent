@@ -44,10 +44,8 @@ class InteractiveSession:
 
         qconfig = QueryConfig(
             model=model,
-            max_turns=app_config.query.max_turns,
             timeout_seconds=timeout,
             system_prompt=build_system_prompt(target, timeout, competition_mode=competition),
-            context_window_tokens=app_config.query.context_window_tokens,
             parallel_tool_calls=app_config.query.parallel_tool_calls,
         )
 

@@ -48,14 +48,6 @@
       "command": "python3",
       "args": ["mcp_servers/kali_server.py"],
       "env": {}
-    },
-    "null_zone_forum": {
-      "command": "python3",
-      "args": ["mcp_servers/null_zone_forum.py"],
-      "env": {
-        "AGENT_BEARER_TOKEN": "${NULL_ZONE_FORUM_TOKEN}",
-        "SERVER_HOST": "${NULL_ZONE_FORUM_HOST}"
-      }
     }
   }
 }

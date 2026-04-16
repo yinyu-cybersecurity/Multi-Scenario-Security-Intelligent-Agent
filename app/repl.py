@@ -74,10 +74,8 @@ class SmartREPL:
 
         qconfig = QueryConfig(
             model=app_config.LLM_MODEL,
-            max_turns=app_config.query.max_turns,
             timeout_seconds=3600,  # 1小时超时
             system_prompt=system_prompt,
-            context_window_tokens=app_config.query.context_window_tokens,
             parallel_tool_calls=app_config.query.parallel_tool_calls,
             auto_continue=False,  # REPL 模式：不自动继续
         )

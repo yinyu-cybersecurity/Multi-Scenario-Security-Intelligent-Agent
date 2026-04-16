@@ -96,10 +96,6 @@ class AdvisorConfig:
 @dataclass
 class QueryConfig:
     """Query Loop 配置"""
-    max_turns: int = 500
-    context_window_tokens: int = 1048576  # Qwen3.6 1M 上下文
-    context_reserve_tokens: int = 32768   # 32K 为响应预留
-    message_truncate_threshold: int = 16000  # 单条消息截断阈值
     parallel_tool_calls: bool = True      # 是否并行执行工具
 
 
@@ -260,10 +256,6 @@ def _apply_json_config(cfg: AppConfig, data: dict):
     # Query 配置
     if "query" in data:
         q = data["query"]
-        cfg.query.max_turns = q.get("max_turns", cfg.query.max_turns)
-        cfg.query.context_window_tokens = q.get("context_window_tokens", cfg.query.context_window_tokens)
-        cfg.query.context_reserve_tokens = q.get("context_reserve_tokens", cfg.query.context_reserve_tokens)
-        cfg.query.message_truncate_threshold = q.get("message_truncate_threshold", cfg.query.message_truncate_threshold)
         cfg.query.parallel_tool_calls = q.get("parallel_tool_calls", cfg.query.parallel_tool_calls)
 
     # Advisor 配置

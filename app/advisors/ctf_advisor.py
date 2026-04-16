@@ -81,6 +81,7 @@ ADVISOR_SYSTEM_PROMPT = """## 身份
 ### 关键提醒
 - 获取 shell 后标准动作：whoami → sudo -l → id → env → 信息收集
 - 内网渗透标准动作：发现网段 → 建立隧道(frp/ssh/chisel) → 扫描 → 横向移动
+- OOB 外带用内网 IP（bash: hostname -I），不要用 127.0.0.1
 - 文件传输：Kali 启动 HTTP server → 目标 wget / write 工具 base64 编码
 - Flag 格式：flag{...}，发现立即 submit_flag
 - 相同输入 = 相同输出，不要重复已失败的尝试
@@ -136,20 +137,38 @@ _EVALUATE_BASE_TEMPLATE = """## 任务
 ```json
 {{
   "need_intervention": true/false,
+  "suggest_challenge_switch": true/false,
   "reason": "为什么需要/不需要干预（50字以内）",
-  "guidance": "如果需要干预，给出具体的指导消息（100字以内）。如果不需要，留空。",
+  "guidance": "如果需要干预，给出具体的指导消息。如果不需要，留空。",
   "predicted_next_steps": ["步骤1", "步骤2", "步骤3"],
   "unaddressed_guidance": ["仍未被采纳的历史建议（由你自行判断，不要包含已解决的）"]
 }}
 ```
 
-指导消息的要求：
-1. 语气：简洁、直接、有建设性
-2. **必须要求 Operator 回应**：结尾使用问句，如"你是否看到了？打算怎么处理？"
-3. 如果有循环检测器报告的信息，结合它给出更精准的判断
-4. 如果工具结果显示了关键信息被 Operator 忽略，指出具体内容
-5. `predicted_next_steps` 必须列出 1-3 个具体的下一步行动
-6. `unaddressed_guidance` 列出仍然未被采纳的历史建议（如果有的话）"""
+**suggest_challenge_switch 规则**：
+- 当同一题目超过 20 分钟无明显进展时设为 true
+- 当同一方法重复失败 5 次以上时设为 true
+- 当存在更简单明显的其他题目时设为 true
+
+指导消息的要求（必须遵守）：
+1. **长度**：200-400 字，不要一句话敷衍
+2. **格式**：必须按以下三段式结构输出：
+   - **【已知事实】**：列出你从 Operator 最近的行动中观察到的具体事实（用了什么工具、得到了什么结果、忽略了什么信息）
+   - **【问题分析】**：基于事实分析问题所在（方向错误？工具选择不当？遗漏关键信息？效率低下？）
+   - **【具体行动指令】**：给出明确可执行的下一步操作，包括具体工具名、命令模式、skill 文件名、模板路径等
+3. **必须要求 Operator 回应**：结尾使用问句，如"你是否看到了？打算怎么处理？"
+4. 如果有循环检测器报告的信息，结合它给出更精准的判断
+5. 如果工具结果显示了关键信息被 Operator 忽略，指出具体内容
+6. `predicted_next_steps` 必须列出 1-3 个具体的下一步行动
+7. `unaddressed_guidance` 列出仍然未被采纳的历史建议（如果有的话）
+
+**好的指导消息示例**：
+```
+【已知事实】你在 SQL 注入上已经连续失败了 4 次：sqlmap 无结果、手动 payload 无报错、WAF 拦截了 3 次请求。你已知的线索是目标使用 ThinkPHP 5.0.23。
+【问题分析】你在同一个方向（SQL 注入）反复尝试但方法单一，没有查找 ThinkPHP 5.0.23 的已知漏洞。这属于"用猜代替查"。
+【具体行动指令】立即执行 searchsploit thinkphp 5.0.23 查找已知 EXP，然后用 nuclei -t http/cves/2023/ 扫描相关 CVE。如果需要技术细节，调用 search_skills('thinkphp rce')。
+你是否看到了这个问题？打算立即执行哪个方案？
+```"""
 
 # 分阶段评估标准 — 每个阶段只关注 3 个核心维度
 # 格式：(stage_title, stage_intro, criteria_text)
@@ -160,16 +179,14 @@ _STAGE_CRITERIA = {
         """**1. 覆盖面检查**：
 - 扫描范围够不够？是否只扫了部分端口/服务？
 - 是否遗漏了关键信息（版本、技术栈、入口点）？
-- 有没有跳过侦察直接尝试攻击？（过早攻击 = 盲目）
+- 有没有跳过侦察直接尝试攻击？
 
 **2. 效率评估**：
 - 侦察速度合理吗？是否在一个目标上花费太久？
 - 是否在重复扫描同一目标？
-- 工具选择是否高效（fscan 一体化 vs 逐个扫描）？
 
 **3. 下一步规划**：
-- 根据已发现的服务，预测接下来最可能的攻击面
-- Operator 的下一步是否在合理路径上？"""
+- 根据已发现的服务，预测接下来最可能的攻击面"""
     ),
 
     "vuln_discovery": (
@@ -186,8 +203,7 @@ _STAGE_CRITERIA = {
 - 连续 3 次无发现后是否换了方向？
 
 **3. 下一步规划**：
-- 发现漏洞后，Operator 是否在做正确的利用准备？
-- 如果超过15分钟无发现，建议换目标或查 skill"""
+- 发现漏洞后，Operator 是否在做正确的利用准备？"""
     ),
 
     "vuln_exploit": (
@@ -202,9 +218,8 @@ _STAGE_CRITERIA = {
 - Operator 是否在盲目发送 payload 而不分析漏洞原理？
 - 是否确认了利用条件（版本匹配、WAF、权限）？
 
-**3. 时间警告**：
-- 如果超过20分钟未成功利用，强烈建议换漏洞或换题
-- 是否有更简单的路径被忽略了？"""
+**3. 时间检查**：
+- 如果超过20分钟未成功利用，建议换漏洞或换题"""
     ),
 
     "privesc": (
@@ -218,9 +233,8 @@ _STAGE_CRITERIA = {
 - 是否在尝试已知可用的提权方法？
 - 连续失败后是否换了提权向量？
 
-**3. 时间警告**：
-- 如果超过15分钟未提权成功，检查是否遗漏了更简单的路径
-- 是否已经可以读取目标文件但不需要提权？"""
+**3. 时间检查**：
+- 超过15分钟未提权成功，检查是否遗漏了更简单的路径"""
     ),
 
     "lateral": (
@@ -234,9 +248,8 @@ _STAGE_CRITERIA = {
 - 是否在用正确的内网扫描方法？
 - 是否发现了新的凭据但没有使用？
 
-**3. 时间警告**：
-- 横向移动通常较慢，但超过25分钟无进展需检查策略
-- 是否有更直接的入口点被忽略了？"""
+**3. 时间检查**：
+- 横向移动通常较慢，但超过25分钟无进展需检查策略"""
     ),
 
     "objective": (
@@ -248,11 +261,9 @@ _STAGE_CRITERIA = {
 
 **2. 最后一步检查**：
 - flag 格式是 flag{...}，是否识别到了但没注意到？
-- 是否还有其他 flag 在同一目录？
 
 **3. 多 Flag 检查**：
-- 题目是否有多个 flag？是否只找到了一个？
-- 找到后立即提交了吗？"""
+- 题目是否有多个 flag？是否只找到了一个？"""
     ),
 }
 
@@ -278,24 +289,29 @@ _FULL_CRITERIA = """请评估：
 - Operator 是否在重复已失败的操作？
 - 是否有违反标准攻击节奏的行为？
 
-**5. 循环确认**：
+**5. "3次失败换方向"原则检查**（关键）：
+- Operator 是否在同一端点/方法上连续失败 3 次以上？
+- 如果是，Operator 是否已经换了方向？
+- 如果没有换方向，**必须立即干预**，强制要求换方向
+
+**6. 循环确认**：
 - 循环检测器是否报告了重复模式？
 - 如果有，Operator 是否在调整策略？
 
-**6. 前瞻性预测**（最重要的部分）：
+**7. 前瞻性预测**（最重要的部分）：
 - 基于当前攻击阶段，预测接下来 3 步应该做什么？
 - Operator 的下一步行动是否在合理路径上？
 - 如果 Operator 正在做偏离路径的事（如发现 RCE 后不去利用而去读通用技能），立即干预！
 - **预测性干预的优先级高于事后评估**。如果 Operator 的下一步明显偏离了合理路径，`need_intervention` 必须为 true
 
-**7. 进度与时间评估**（关键）：
+**8. 进度与时间评估**（关键）：
    - 估算当前挑战已花费的时间（根据消息轮数、工具调用频率）
    - 如果超过20分钟（约150轮）无明显进展，明确建议换题
    - 判断当前是"已找到突破口可深入"还是"仍在盲目尝试"
    - 如果连续10轮以上没有实质性发现，发出强烈警告
    - 记录之前建议的时间节点，跟踪是否改善
 
-**8. 历史建议跟踪**（由你自行判断）：
+**9. 历史建议跟踪**（由你自行判断）：
 - 上方"历史建议"中列出了你之前给出的建议。**请根据最近的工具调用和操作，判断这些建议是否已被采纳。**
 - 如果已采纳：从 `unaddressed_guidance` 中移除
 - 如果未采纳：保留在 `unaddressed_guidance` 中，并在本次干预中升级语气
@@ -360,17 +376,6 @@ ASSESSMENT_PROMPT = """## 任务
 
 {recon_cache}
 
-### 工具执行状态标记
-
-消息中可能包含以下工具执行状态标记，用于判断工具执行情况：
-- [TOOL_STARTED] — 工具已启动，参数已列出
-- [TOOL_RUNNING] — 工具仍在执行中，附带已运行时间（still in progress）
-- [TOOL_COMPLETED] — 工具成功完成，附带耗时和输出长度
-- [TOOL_FAILED] — 工具执行失败，附带错误原因
-- [TOOL_TIMEOUT] — 工具执行超时，命令被强制终止
-
-根据这些状态判断：哪些工具已完成、哪些还在运行、是否有工具失败需要调整策略。
-
 ---
 
 请判断：
@@ -421,6 +426,7 @@ class CTFAdvisor:
         self._last_summary = ""
         # 后台侦察循环状态
         self._recon_cache: Dict[str, Dict[str, Dict]] = {}  # {challenge_code: {stage: data}}
+        self._challenge_progress_cache: Dict[str, str] = {}  # {challenge_code: summary} — 题目关闭时保存的进度摘要
         self._current_recon_challenge_code: Optional[str] = None  # 当前挑战的 recon 缓存 key
         self._predicted_stage: Optional[str] = None  # 上次预测的阶段
         self._current_stage: Optional[str] = None  # 当前评估的攻击阶段
@@ -479,6 +485,17 @@ class CTFAdvisor:
         self._last_time_warning_turn.clear()
         self._current_recon_challenge_code = None
         self._current_thinking_challenge_code = None
+        # 注意：不清空 _challenge_progress_cache，切题后仍保留
+
+    def save_challenge_progress(self, code: str, summary: str):
+        """保存某道题的进度摘要（题目关闭时调用）"""
+        if code and summary:
+            self._challenge_progress_cache[code] = summary[:2000]
+            logger.info(f"[Advisor] Saved progress for challenge {code}")
+
+    def get_challenge_progress(self, code: str) -> Optional[str]:
+        """获取某道题的历史进度（重新开始时注入）"""
+        return self._challenge_progress_cache.get(code)
 
     def _get_current_challenge_cache(self) -> Optional[Dict[str, Dict]]:
         """获取当前挑战的 recon 缓存（按 stage 隔离）"""
@@ -589,26 +606,27 @@ class CTFAdvisor:
             )
 
             if not result.success or not result.content:
-                return None, []
+                return None, [], False
 
             parsed = self._parse_json(result.content)
             if not parsed:
-                return None, []
+                return None, [], False
 
             unaddressed = parsed.get("unaddressed_guidance", [])
             if not isinstance(unaddressed, list):
                 unaddressed = []
 
+            switch_challenge = parsed.get("suggest_challenge_switch", False)
+
             # 正常干预判断
             if parsed.get("need_intervention") and parsed.get("guidance"):
                 guidance = parsed["guidance"].strip()
                 if guidance:
-                    # 如果有未被采纳的历史建议，追加到消息中
                     if unaddressed:
                         unaddressed_text = "\n仍未解决的历史问题: " + "; ".join(unaddressed[:3])
                         guidance += unaddressed_text
                     logger.info(f"[Advisor] Intervention: {parsed.get('reason', '')}")
-                    return guidance, unaddressed
+                    return guidance, unaddressed, switch_challenge
 
             # 没有干预但有需要跟踪的建议，也返回（作为温和提醒）
             if unaddressed and parsed.get("guidance"):
@@ -617,7 +635,7 @@ class CTFAdvisor:
                     unaddressed_text = "\n历史未决问题: " + "; ".join(unaddressed[:3])
                     guidance += unaddressed_text
                     logger.info(f"[Advisor] Follow-up: {parsed.get('reason', '')}")
-                    return guidance, unaddressed
+                    return guidance, unaddressed, switch_challenge
 
             # 强制最大干预间隔：超过 6 轮未干预，返回强制进度确认
             if turns_since_last_intervention >= 6:
@@ -628,13 +646,13 @@ class CTFAdvisor:
                     steps_text = "\n建议后续步骤: " + " -> ".join(next_steps[:3])
                 check_msg = f"[ADVISOR_CHECK] {reason}{steps_text}。请回应你的判断。"
                 logger.info(f"[Advisor] Forced check at turn+{turns_since_last_intervention}")
-                return check_msg, unaddressed
+                return check_msg, unaddressed, switch_challenge
 
-            return None, unaddressed
+            return None, unaddressed, switch_challenge
 
         except Exception as e:
             logger.warning(f"[Advisor] Evaluate failed: {e}")
-            return None, []
+            return None, [], False
 
     async def compress_conversation(
         self,

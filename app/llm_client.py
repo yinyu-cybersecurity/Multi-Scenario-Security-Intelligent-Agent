@@ -380,6 +380,24 @@ class LLMClient:
             logger.info(f"[LLM] {model} | {duration:.1f}s | "
                         f"content={len(content)}c | tools={len(tool_calls) if tool_calls else 0}")
 
+            # 记录 LLM 思考内容（前 500 字符）
+            if content and len(content.strip()) > 10:
+                preview = content[:500].replace('\n', ' ')
+                if len(content) > 500:
+                    preview += '...'
+                logger.debug(f"[LLM] Content: {preview}")
+
+            # 记录工具调用详情
+            if tool_calls:
+                for tc in tool_calls:
+                    func = tc.get("function", {})
+                    name = func.get("name", "")
+                    args = func.get("arguments", "{}")
+                    args_preview = args[:300].replace('\n', ' ')
+                    if len(args) > 300:
+                        args_preview += '...'
+                    logger.debug(f"[LLM] Tool call: {name}({args_preview})")
+
             return LLMResult(
                 content=content,
                 error_type=LLMErrorType.SUCCESS,

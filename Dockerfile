@@ -41,6 +41,16 @@ RUN cd /tmp && git clone --depth 1 https://github.com/shadow1ng/fscan.git \
     && cp /root/go/bin/nuclei /usr/local/bin/ \
     && nuclei -update-templates
 
+# 安装 SecLists 字典 + 解压 rockyou.txt + jq + nmap 权限修复
+RUN apt-get update && apt-get install -y --no-install-recommends seclists jq \
+    && if [ -f /usr/share/wordlists/rockyou.txt.gz ]; then \
+        cd /usr/share/wordlists && gunzip -f rockyou.txt.gz; \
+    fi \
+    && if command -v nmap &>/dev/null; then \
+        setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /usr/bin/nmap 2>/dev/null || true; \
+    fi \
+    && rm -rf /var/lib/apt/lists/*
+
 # ---- Application ----
 WORKDIR /app
 
